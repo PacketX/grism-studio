@@ -953,13 +953,14 @@ export default function GrismStudio() {
           <span className="brand-sub">studio</span>
         </div>
         <nav className="tabs">
-          {[["templates","Templates"],["filters","Filters"],["inputs","Inputs"],["outputs","Outputs"],["actions","Actions"],["chain","Chain"],["export","Export"]].map(([k, label]) => (
+          {[["templates","Templates"],["filters","Filters"],["inputs","Inputs"],["outputs","Outputs"],["actions","Actions"],["chain","Chains"],["export","Export"]].map(([k, label]) => (
             <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
               {label}
               {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
               {k === "inputs" && (doc.inputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.inputs.length}</span>}
               {k === "outputs" && (doc.outputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.outputs.length}</span>}
               {k === "actions" && (doc.actions?.length ?? 0) > 0 && <span className="tab-badge">{doc.actions.length}</span>}
+              {k === "chain" && (doc.chains?.length ?? 0) > 0 && <span className="tab-badge">{doc.chains.length}</span>}
             </button>
           ))}
         </nav>
