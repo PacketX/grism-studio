@@ -288,8 +288,15 @@ function serializeChain(chain) {
 function chainProblems(tree, out) {
   (function walk(n) {
     if (!n) return;
-    if (n.t === "branch" && isUnset(n.match) && isUnset(n.notmatch))
-      out.push({ id: n.id, fids: n.fids, msg: `${n.fids} routes neither side` });
+    if (n.t === "branch") {
+      if (!String(n.fids || "").trim())
+        out.push({ id: n.id, fids: n.fids, msg: `filter test has no filter selected` });
+      else if (isUnset(n.match) && isUnset(n.notmatch))
+        out.push({ id: n.id, fids: n.fids, msg: `${n.fids} routes neither side` });
+    }
+    // an explicit out node must send somewhere ("0" = drop is valid, blank is not)
+    if (n.t === "out" && !String(n.ports ?? "").trim())
+      out.push({ id: n.id, msg: `output has no port set` });
     ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
   })(tree);
   return out;
@@ -862,8 +869,11 @@ function formatXml(xml, indentUnit = "  ") {
 export default function GrismStudio() {
   const [doc, setDoc] = useState(() => normalizeDoc(TEMPLATES.find((t) => t.id === "geo-recursive").make())); // seed with recursive example
   const [tab, setTab] = useState("filters");
-  const [theme, setTheme] = useState("light"); // "light" | "dark" — default light, not persisted
+  const [theme, setTheme] = useState("dark"); // "light" | "dark" — default dark, not persisted
   const [showTemplates, setShowTemplates] = useState(false);
+  const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
+  const DEFAULT_PORTS = ["P0","P1","P2","P3","P4","P5","P6","P7","P8"];
+  const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
   const [activeFilter, setActiveFilter] = useState(1);
   const [activeOutput, setActiveOutput] = useState(1);
   const [activeAction, setActiveAction] = useState(1);
@@ -904,7 +914,11 @@ export default function GrismStudio() {
     const op = (doc.outputs ?? []).flatMap((o) => outputProblems(o, []).map((p) => ({ ...p, scope: `O${o.id}` })));
     const ap = (doc.actions ?? []).flatMap((a) => actionProblems(a, []).map((p) => ({ ...p, scope: `A${a.id}` })));
     const ip = (doc.inputs ?? []).flatMap((inp) => inputProblems(inp, []).map((p) => ({ ...p, scope: `I${inp.id}` })));
-    const cp = (doc.chains ?? []).flatMap((c, i) => chainProblems(c.tree, []).map((p) => ({ ...p, scope: `chain:${c.cid}` })));
+    const cp = (doc.chains ?? []).flatMap((c, i) => {
+      const probs = chainProblems(c.tree, []);
+      if (!String(c.ports ?? "").trim()) probs.push({ id: "in-" + c.cid, msg: "ingress has no port set" });
+      return probs.map((p) => ({ ...p, scope: `chain:${c.cid}` }));
+    });
     const conflictP = [...inPortConflicts].map((p) => ({ id: "conflict-" + p, scope: "chain", msg: `two chains both ingress on ${p}`, label: "in port" }));
     return [...fp, ...ip, ...op, ...ap, ...cp, ...conflictP];
   }, [doc, inPortConflicts]);
@@ -930,6 +944,53 @@ export default function GrismStudio() {
     } catch (e) {
       setLoad({ state: "error", msg: e.message || "load failed" });
     }
+  }, []);
+
+  // fetch the device's interface/port list; flatten every interface's ports to
+  // their names. Falls back to the default list on any failure.
+  const loadDevicePorts = useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_config", { credentials: "include" });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const cfg = await res.json();
+      const names = (cfg.interfaces ?? [])
+        .flatMap((i) => i.ports ?? [])
+        .map((p) => p.name)
+        .filter(Boolean);
+      setDevicePorts(names.length ? [...new Set(names)] : null);
+    } catch { setDevicePorts(null); } // keep defaults
+  }, []);
+
+  // --- device login ---
+  const doLogin = useCallback(async (username, password) => {
+    setLogin((l) => ({ ...l, busy: true, err: "" }));
+    try {
+      // hash the password with the browser's built-in SHA-256
+      const bytes = new TextEncoder().encode(password);
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+      const res = await fetch("/direct_login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Username: username, Password: password, PasswordHash: hash }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`login failed (${res.status})`);
+      setLogin((l) => ({ ...l, busy: false, ok: true, pass: "", open: false, who: username }));
+      setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
+      loadRunning();       // now authenticated — pull the device's running config
+      loadDevicePorts();   // and the interface/port list for pickers
+    } catch (e) {
+      setLogin((l) => ({ ...l, busy: false, err: e.message || "login failed" }));
+    }
+  }, [loadRunning, loadDevicePorts]);
+
+  const doLogout = useCallback(async () => {
+    try {
+      await fetch("/logout", { method: "POST", credentials: "include" });
+    } catch { /* clear local session regardless of network result */ }
+    setDevicePorts(null); // fall back to default port list
+    setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
   }, []);
 
   // auto-load once on mount. On failure we keep the seed template AND surface a
@@ -1001,6 +1062,13 @@ export default function GrismStudio() {
           title="Fetch and load the config currently running on the device">
           {load.state === "loading" ? "loading…" : load.state === "error" ? "load failed — retry" : "load running config"}
         </button>
+        {login.who
+          ? <div className="user-box">
+              <span className="user-name" title="Signed in">{login.who}</span>
+              <button className="load-btn" onClick={doLogout} title="Sign out of the device">logout</button>
+            </div>
+          : <button className={"load-btn" + (login.ok ? " ok" : "")} onClick={() => setLogin((l) => ({ ...l, open: true, err: "" }))}
+              title="Sign in to the device">login</button>}
         <button className="theme-btn" onClick={() => setTheme((t) => t === "light" ? "dark" : "light")}
           title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}>
           {theme === "light" ? "🌙" : "☀️"}
@@ -1012,6 +1080,30 @@ export default function GrismStudio() {
       {load.state === "error" && <div className="load-banner err">Couldn't load running config: {load.msg}. Check you're signed in to the device.</div>}
       {load.state === "autofail" && <div className="load-banner warn">Couldn't load the device's running config ({load.msg}) — showing a starter template instead. Use "load running config" above to retry.</div>}
       {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — some elements weren't recognised and may need review.</div>}
+
+      {login.open && (
+        <div className="tmpl-scrim" onClick={() => setLogin((l) => ({ ...l, open: false }))}>
+          <div className="login-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tmpl-modal-head">
+              <span className="tmpl-modal-title">Sign in to the device</span>
+              <button className="tmpl-close" onClick={() => setLogin((l) => ({ ...l, open: false }))}>✕</button>
+            </div>
+            <div className="login-body">
+              <label className="login-field"><span>Username</span>
+                <input value={login.user} autoFocus
+                  onChange={(e) => setLogin((l) => ({ ...l, user: e.target.value }))} /></label>
+              <label className="login-field"><span>Password</span>
+                <input type="password" value={login.pass}
+                  onChange={(e) => setLogin((l) => ({ ...l, pass: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !login.busy) doLogin(login.user, login.pass); }} /></label>
+              {login.err && <p className="login-err">{login.err}</p>}
+              <button className="primary login-submit" disabled={login.busy || !login.user}
+                onClick={() => doLogin(login.user, login.pass)}>
+                {login.busy ? "signing in…" : "Sign in"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTemplates && (
         <div className="tmpl-scrim" onClick={() => setShowTemplates(false)}>
@@ -1042,19 +1134,20 @@ export default function GrismStudio() {
           />
         )}
         {tab === "inputs" && (
-          <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} />
+          <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} portOptions={devicePorts ?? DEFAULT_PORTS} />
         )}
         {tab === "outputs" && (
-          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} />
+          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={devicePorts ?? DEFAULT_PORTS} />
         )}
         {tab === "actions" && (
-          <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} />
+          <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} portOptions={devicePorts ?? DEFAULT_PORTS} />
         )}
         {tab === "chain" && (
           <ChainTab doc={doc} definedIds={definedIds} outputIds={outputIds}
             setChainTreeFor={setChainTreeFor} setDoc={setDoc}
             activeChain={activeChain} setActiveChain={setActiveChain}
-            inPortConflicts={inPortConflicts} />
+            inPortConflicts={inPortConflicts}
+            portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null} />
         )}
         {tab === "export" && (
           <ExportTab runXml={runXml} problems={allProblems}
@@ -1284,7 +1377,20 @@ function FindRow({ node, onChange, onRemove, canRemove }) {
 /* ============================================================
    Inputs tab — <input> pcap replay / traffic generator
    ============================================================ */
-function InputsTab({ doc, setDoc, activeInput, setActiveInput }) {
+/* Single-port dropdown built from the device's port list. If the current value
+   isn't in the list (e.g. loaded from an older config), it's shown anyway so it
+   never silently disappears. */
+function PortSelect({ value, options, onChange, invalid }) {
+  const opts = options.includes(value) || !value ? options : [value, ...options];
+  return (
+    <select className={"m-port" + (invalid ? " invalid" : "")} value={value} onChange={(e) => onChange(e.target.value)}>
+      {!value && <option value="">— select —</option>}
+      {opts.map((p) => <option key={p} value={p}>{p}{!options.includes(p) ? " (custom)" : ""}</option>)}
+    </select>
+  );
+}
+
+function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
   const inputs = doc.inputs ?? [];
   const inp = inputs.find((x) => x.id === activeInput) || inputs[0];
   const problems = useMemo(() => inp ? inputProblems(inp, []) : [], [inp]);
@@ -1370,8 +1476,8 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput }) {
         <div className="tree-scroll">
           <div className="mod-row">
             <span className="mod-key">Output port *</span>
-            <input className={"mod-val" + (/^[A-Z][0-9]+$/.test(inp.port) ? "" : " invalid")} value={inp.port}
-              onChange={(e) => patch({ port: e.target.value })} placeholder="P0" />
+            <PortSelect value={inp.port} options={portOptions} onChange={(v) => patch({ port: v })}
+              invalid={!/^[A-Z][0-9]+$/.test(inp.port)} />
             <code className="mod-tag">&lt;port&gt;</code>
           </div>
           <p className="out-empty">
@@ -1391,7 +1497,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput }) {
   );
 }
 
-function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput }) {
+function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions }) {
   const outputs = doc.outputs ?? [];
   const o = outputs.find((x) => x.id === activeOutput) || outputs[0];
   const problems = useMemo(() => o ? outputProblems(o, []) : [], [o]);
@@ -1441,8 +1547,8 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput }) {
           <label className="ml grow"><span>alt (shown on chain)</span>
             <input value={o.alt || ""} onChange={(e) => patch({ alt: e.target.value })} placeholder="e.g. mirror to tap" /></label>
           <label className="ml"><span>port *</span>
-            <input className={"m-port" + (/^[A-Z][0-9]+$/.test(o.port) ? "" : " invalid")} value={o.port}
-              onChange={(e) => patch({ port: e.target.value })} placeholder="P1" /></label>
+            <PortSelect value={o.port} options={portOptions} onChange={(v) => patch({ port: v })}
+              invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
           <button className="del" onClick={() => delOutput(o.id)}>Delete</button>
         </div>
 
@@ -1517,7 +1623,7 @@ function OutputModRow({ mod, onChange, onOp, onRemove }) {
 /* ============================================================
    Actions tab — <action> input-packet-process / linkpairs
    ============================================================ */
-function ActionsTab({ doc, setDoc, activeAction, setActiveAction }) {
+function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions }) {
   const actions = doc.actions ?? [];
   const a = actions.find((x) => x.id === activeAction) || actions[0];
   const problems = useMemo(() => a ? actionProblems(a, []) : [], [a]);
@@ -1578,14 +1684,14 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction }) {
               <p className="out-empty">If one link goes down, the other is forced down too. Enter the two ports to bind.</p>
               <div className="mod-row">
                 <span className="mod-key">Port A</span>
-                <input className={"mod-val" + (/^[A-Z][0-9]+$/.test(a.portA) ? "" : " invalid")} value={a.portA}
-                  onChange={(e) => patch({ portA: e.target.value })} placeholder="P1" />
+                <PortSelect value={a.portA} options={portOptions} onChange={(v) => patch({ portA: v })}
+                  invalid={!/^[A-Z][0-9]+$/.test(a.portA)} />
                 <code className="mod-tag">&lt;portA&gt;</code>
               </div>
               <div className="mod-row">
                 <span className="mod-key">Port B</span>
-                <input className={"mod-val" + (/^[A-Z][0-9]+$/.test(a.portB) ? "" : " invalid")} value={a.portB}
-                  onChange={(e) => patch({ portB: e.target.value })} placeholder="P2" />
+                <PortSelect value={a.portB} options={portOptions} onChange={(v) => patch({ portB: v })}
+                  invalid={!/^[A-Z][0-9]+$/.test(a.portB)} />
                 <code className="mod-tag">&lt;portB&gt;</code>
               </div>
             </div>
@@ -1593,8 +1699,8 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction }) {
             <>
               <div className="mod-row">
                 <span className="mod-key">Input port *</span>
-                <input className={"mod-val" + (/^[A-Z][0-9]+$/.test(a.port) ? "" : " invalid")} value={a.port}
-                  onChange={(e) => patch({ port: e.target.value })} placeholder="P0" />
+                <PortSelect value={a.port} options={portOptions} onChange={(v) => patch({ port: v })}
+                  invalid={!/^[A-Z][0-9]+$/.test(a.port)} />
                 <code className="mod-tag">&lt;port&gt;</code>
               </div>
               {(a.mods ?? []).length === 0 && (
@@ -1693,16 +1799,69 @@ function layoutChain(root) {
   return { placed, edges, totalW, totalH: maxY };
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, inPortConflicts }) {
+/* Collapsible multi-select: a header (click to expand) showing the picked
+   count, a select/clear-all row, and the checkbox list. Used for filter and
+   port pickers, which can get long. */
+/* Collapsible optional section for the inspector — defaults collapsed. Shows a
+   small "set" hint on the header when it contains a configured value, so a
+   collapsed section with an active setting is still discoverable. */
+function CollapseSection({ label, active, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="coll">
+      <button className={"coll-head" + (open ? " open" : "")} onClick={() => setOpen((o) => !o)}>
+        <span>{label}</span>
+        {active && !open && <span className="coll-dot" title="A value is set" />}
+      </button>
+      {open && <div className="coll-body">{children}</div>}
+    </div>
+  );
+}
+
+function CheckAccordion({ label, items, onToggle, onAll, emptyNote }) {
+  const [open, setOpen] = useState(false);
+  const picked = items.filter((it) => it.on).length;
+  const allOn = items.length > 0 && picked === items.length;
+  return (
+    <div className="known acc">
+      <button className={"acc-head" + (open ? " open" : "")} onClick={() => setOpen((o) => !o)}>
+        <span className="known-label">{label}</span>
+        {picked > 0 && <span className="acc-count">{picked}</span>}
+      </button>
+      {open && <div className="acc-body">
+        {items.length > 0 && <button className="acc-all" onClick={() => onAll(!allOn)}>
+          {allOn ? "Clear all" : "Select all"}
+        </button>}
+        <div className="fid-checks">
+          {items.map((it) => (
+            <label key={it.id} className={"fid-check" + (it.on ? " on" : "")}>
+              <input type="checkbox" checked={it.on} onChange={() => onToggle(it.id)} />
+              <b>{it.b}</b>{it.sub && <span>{it.sub}</span>}
+            </label>
+          ))}
+        </div>
+        {items.length === 0 && emptyNote && <p className="fid-empty">{emptyNote}</p>}
+      </div>}
+    </div>
+  );
+}
+
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, inPortConflicts, portOptions, portsFromDevice }) {
   const [selId, setSelId] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [chipConfirm, setChipConfirm] = useState(null); // { field: "fids"|"ports", from, to, nodeId }
   const chains = doc.chains ?? [];
   // resolve active chain (fall back to first)
   const chain = chains.find((c) => c.cid === activeChain) || chains[0];
   const cid = chain?.cid;
 
   const { placed, edges, totalW, totalH } = useMemo(() => chain ? layoutChain(chain) : { placed: [], edges: [], totalW: 0, totalH: 0 }, [chain]);
-  const problems = useMemo(() => chain ? chainProblems(chain.tree, []) : [], [chain]);
+  const problems = useMemo(() => {
+    if (!chain) return [];
+    const probs = chainProblems(chain.tree, []);
+    if (!String(chain.ports ?? "").trim()) probs.push({ id: "__in__", msg: "ingress has no port set" });
+    return probs;
+  }, [chain]);
   const problemIds = useMemo(() => new Set(problems.map((p) => p.id)), [problems]);
   const refs = useMemo(() => chain ? collectRefs(chain.tree, definedIds) : [], [chain, definedIds]);
   const knownNames = useMemo(() => Object.fromEntries(doc.filters.map((f) => ["F" + f.id, f.name])), [doc.filters]);
@@ -1719,6 +1878,56 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
 
   const sel = placed.find((n) => n.id === selId) || null;
   const mutate = (id, fn) => setChainTreeFor(cid, (tree) => cUpdate(tree, id, fn));
+  // Apply a chip (defined filter/output) to the selected node. If the field
+  // already has a value that differs from the chip, confirm before overwriting.
+  const applyChip = (nodeId, field, to, current) => {
+    const cur = (current ?? "").trim();
+    if (cur && cur !== to) { setChipConfirm({ nodeId, field, from: cur, to }); return; }
+    mutate(nodeId, (n) => ({ ...n, [field]: to }));
+  };
+  const resolveChip = () => {
+    if (!chipConfirm) return;
+    const { nodeId, field, to } = chipConfirm;
+    mutate(nodeId, (n) => ({ ...n, [field]: to }));
+    setChipConfirm(null);
+  };
+  // fids is a comma list like "F1,!F3". These helpers let the checkbox list
+  // reflect and edit it without disturbing negation or the text field.
+  const fidsTokens = (fids) => String(fids || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const fidsHas = (fids, fid) => fidsTokens(fids).some((t) => t.replace(/^!/, "") === fid);
+  const toggleFid = (nodeId, fids, fid) => {
+    const toks = fidsTokens(fids);
+    const idx = toks.findIndex((t) => t.replace(/^!/, "") === fid);
+    const next = idx >= 0 ? toks.filter((_, i) => i !== idx) : [...toks, fid];
+    mutate(nodeId, (n) => ({ ...n, fids: next.join(",") }));
+  };
+  // generic comma-list toggle for port fields (ingress ports, output ports)
+  const listTokens = (v) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const listHas = (v, item) => listTokens(v).includes(item);
+  const toggleInPort = (item) => {
+    const toks = listTokens(chain.ports);
+    const next = toks.includes(item) ? toks.filter((t) => t !== item) : [...toks, item];
+    setPorts(next.join(","));
+  };
+  const toggleOutPort = (nodeId, ports, item) => {
+    const toks = listTokens(ports);
+    const next = toks.includes(item) ? toks.filter((t) => t !== item) : [...toks, item];
+    mutate(nodeId, (n) => ({ ...n, ports: next.join(",") }));
+  };
+  // bulk select/clear, preserving any tokens not in `all` (e.g. hand-typed !F3,
+  // special port values like 0/S) — we only add/remove the offered options.
+  const setAllFids = (nodeId, fids, all, on) => {
+    const keep = fidsTokens(fids).filter((t) => !all.includes(t.replace(/^!/, "")));
+    mutate(nodeId, (n) => ({ ...n, fids: (on ? [...keep, ...all] : keep).join(",") }));
+  };
+  const setAllInPorts = (all, on) => {
+    const keep = listTokens(chain.ports).filter((t) => !all.includes(t));
+    setPorts((on ? [...keep, ...all] : keep).join(","));
+  };
+  const setAllOutPorts = (nodeId, ports, all, on) => {
+    const keep = listTokens(ports).filter((t) => !all.includes(t));
+    mutate(nodeId, (n) => ({ ...n, ports: (on ? [...keep, ...all] : keep).join(",") }));
+  };
   const setPorts = (v) => setDoc((d) => ({ ...d, chains: d.chains.map((c) => c.cid === cid ? { ...c, ports: v } : c) }));
   const setInVlan = (patch) => setDoc((d) => ({ ...d, chains: d.chains.map((c) => c.cid === cid ? { ...c, inVlan: { ...(c.inVlan ?? {}), ...patch } } : c) }));
 
@@ -1848,7 +2057,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
 
       <aside className="chain-rail">
         <div className="inspector">
-          <div className="insp-head">{sel ? (isUnset(sel) ? "Unspecified" : sel.t === "in" ? "Ingress" : sel.t === "branch" ? "Filter test" : isDrop(sel) ? "Discard" : "Output") : "Inspector"}</div>
+          <div className="insp-head">{sel ? (isUnset(sel) ? "Unspecified" : sel.t === "in" ? "Ingress" : sel.t === "branch" ? "FILTER" : isDrop(sel) ? "Discard" : "Output") : "Inspector"}</div>
           {!sel && <p className="insp-empty">Select a node to edit.</p>}
           {sel && sel.t === "in" && <>
             {inPortConflicts.has(chainInFirst(chain)) && (
@@ -1856,12 +2065,20 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             )}
             <label className="fld2"><span>Ingress ports</span>
               <input value={chain.ports} onChange={(e) => setPorts(e.target.value)} /><em>e.g. P0,P1</em></label>
-            <label className="fld2"><span>VLAN operation</span>
-              <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
-                <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
-              </select><em>optional — tag or strip VLAN at ingress</em></label>
-            {chain.inVlan?.vlantype === "tagging" && <label className="fld2"><span>VLAN id</span>
-              <input value={chain.inVlan?.vlanid ?? ""} onChange={(e) => setInVlan({ vlanid: e.target.value })} placeholder="100" /></label>}
+            <CheckAccordion
+              label={portsFromDevice ? "device ports" : "ports (default list)"}
+              items={portOptions.map((p) => ({ id: p, b: p, on: listHas(chain.ports, p) }))}
+              onToggle={(p) => toggleInPort(p)}
+              onAll={(on) => setAllInPorts(portOptions, on)}
+              emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
+            <CollapseSection label="VLAN operation" active={!!chain.inVlan?.vlantype}>
+              <label className="fld2"><span>VLAN operation</span>
+                <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
+                  <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
+                </select><em>optional — tag or strip VLAN at ingress</em></label>
+              {chain.inVlan?.vlantype === "tagging" && <label className="fld2"><span>VLAN id</span>
+                <input value={chain.inVlan?.vlanid ?? ""} onChange={(e) => setInVlan({ vlanid: e.target.value })} placeholder="100" /></label>}
+            </CollapseSection>
           </>}
           {sel && isUnset(sel) && <><p className="insp-note">No branch here — device default applies. No <code>&lt;next&gt;</code> is written.</p>
             <button className="primary" onClick={() => restoreSide(sel.id)}>Route explicitly</button></>}
@@ -1870,23 +2087,38 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               <input value={sel.fids} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fids: e.target.value }))} /><em>e.g. F1 or F1,!F3</em></label>
             <label className="fld2"><span>Combine</span>
               <select value={sel.fidOp} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fidOp: e.target.value }))}><option value="or">or</option><option value="and">and</option></select></label>
-            <div className="known"><span className="known-label">defined filters</span>
-              {doc.filters.map((f) => <button key={f.id} className="chip" onClick={() => mutate(sel.id, (n) => ({ ...n, fids: "F" + f.id }))}><b>F{f.id}</b> {f.name || "unnamed"}</button>)}</div>
+            <CheckAccordion
+              label="defined filters"
+              items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || "unnamed", on: fidsHas(sel.fids, "F" + f.id) }))}
+              onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
+              onAll={(on) => setAllFids(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), on)}
+              emptyNote="No filters defined yet." />
             <button className="danger" onClick={() => removeTest(sel.id)}>Remove test → output</button>
           </>}
           {sel && sel.t === "out" && <>
             {isDrop(sel) ? <p className="insp-note">Discarded (<code>&lt;out&gt;0&lt;/out&gt;</code>). Explicit, distinct from unspecified.</p> : <>
               <label className="fld2"><span>Output ports</span><input value={sel.ports} onChange={(e) => mutate(sel.id, (n) => ({ ...n, ports: e.target.value }))} /><em>P1,P2 · 0 drop · S switch · O1 = output def</em></label>
-              {(doc.outputs?.length ?? 0) > 0 && <div className="known"><span className="known-label">defined outputs</span>
-                {doc.outputs.map((o) => <button key={o.id} className="chip" onClick={() => mutate(sel.id, (n) => ({ ...n, ports: "O" + o.id }))}><b>O{o.id}</b> {o.name || o.port}</button>)}</div>}
+              <CheckAccordion
+                label={portsFromDevice ? "device ports" : "ports (default list)"}
+                items={portOptions.map((p) => ({ id: p, b: p, on: listHas(sel.ports, p) }))}
+                onToggle={(p) => toggleOutPort(sel.id, sel.ports, p)}
+                onAll={(on) => setAllOutPorts(sel.id, sel.ports, portOptions, on)}
+                emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
+              {(doc.outputs?.length ?? 0) > 0 && <CheckAccordion
+                label="defined outputs"
+                items={doc.outputs.map((o) => ({ id: "O" + o.id, b: "O" + o.id, sub: o.name || o.port, on: listHas(sel.ports, "O" + o.id) }))}
+                onToggle={(oid) => toggleOutPort(sel.id, sel.ports, oid)}
+                onAll={(on) => setAllOutPorts(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), on)} />}
               <label className="fld2"><span>Mode</span><select value={sel.mode} onChange={(e) => mutate(sel.id, (n) => ({ ...n, mode: e.target.value }))}><option value="duplicate">duplicate</option><option value="loadBalance">load balance</option></select></label>
               {sel.mode === "loadBalance" && <label className="fld2"><span>Balance by</span><select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>{["session","5thash","rr","sip","dip"].map((o) => <option key={o} value={o}>{o}</option>)}</select></label>}
-              <label className="fld2"><span>VLAN operation</span>
-                <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
-                  <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
-                </select><em>optional — tag or strip VLAN on egress</em></label>
-              {sel.vlantype === "tagging" && <label className="fld2"><span>VLAN id</span>
-                <input value={sel.vlanid ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlanid: e.target.value }))} placeholder="100" /></label>}
+              <CollapseSection label="VLAN operation" active={!!sel.vlantype}>
+                <label className="fld2"><span>VLAN operation</span>
+                  <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
+                    <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
+                  </select><em>optional — tag or strip VLAN on egress</em></label>
+                {sel.vlantype === "tagging" && <label className="fld2"><span>VLAN id</span>
+                  <input value={sel.vlanid ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlanid: e.target.value }))} placeholder="100" /></label>}
+              </CollapseSection>
               <button className="primary" onClick={() => addTest(sel.id)}>+ Add filter test</button>
             </>}
             {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>Remove {selOwner.side} branch…</button>}
@@ -1912,6 +2144,17 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             : <button className="opt" onClick={() => resolveRemove("unset")}><span className="opt-name">Leave unspecified</span><span className="opt-desc">No <code>&lt;next&gt;</code> written; device default applies.</span></button>}
           <button className="opt drop" onClick={() => resolveRemove("drop")}><span className="opt-name">Discard explicitly</span><span className="opt-desc">Emits <code>&lt;out&gt;0&lt;/out&gt;</code>; intent visible.</span></button>
           <button className="opt-cancel" onClick={() => setConfirm(null)}>Cancel</button>
+        </div>
+      </div>}
+
+      {chipConfirm && <div className="modal-scrim" onClick={() => setChipConfirm(null)}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-title">Replace {chipConfirm.field === "fids" ? "filter" : "output"} reference?</div>
+          <p className="modal-body">
+            This node is currently set to <code>{chipConfirm.from}</code>. Applying this will change it to <code>{chipConfirm.to}</code>, replacing what's there.
+          </p>
+          <button className="opt" onClick={resolveChip}><span className="opt-name">Replace with {chipConfirm.to}</span><span className="opt-desc">Overwrites the current value.</span></button>
+          <button className="opt-cancel" onClick={() => setChipConfirm(null)}>Cancel</button>
         </div>
       </div>}
     </div>
