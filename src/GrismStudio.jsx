@@ -863,6 +863,7 @@ export default function GrismStudio() {
   const [doc, setDoc] = useState(() => normalizeDoc(TEMPLATES.find((t) => t.id === "geo-recursive").make())); // seed with recursive example
   const [tab, setTab] = useState("filters");
   const [theme, setTheme] = useState("light"); // "light" | "dark" — default light, not persisted
+  const [showTemplates, setShowTemplates] = useState(false);
   const [activeFilter, setActiveFilter] = useState(1);
   const [activeOutput, setActiveOutput] = useState(1);
   const [activeAction, setActiveAction] = useState(1);
@@ -880,6 +881,11 @@ export default function GrismStudio() {
   }, []);
 
   const runXml = useMemo(() => serializeRun(doc), [doc]);
+
+  // "dirty" tracking: baseline is the XML as last loaded from / applied to the
+  // device. When the current runXml differs, there are unapplied changes.
+  const [baseline, setBaseline] = useState(null); // null until first load/apply
+  const dirty = baseline !== null && runXml !== baseline;
 
   // in-port conflict: two chains sharing the same first ingress port
   const inPortConflicts = useMemo(() => {
@@ -912,7 +918,9 @@ export default function GrismStudio() {
       if (!res.ok) throw new Error(`device responded ${res.status}`);
       const text = await res.text();
       const { doc: parsed, warnings } = parseRun(text);
-      setDoc(normalizeDoc(parsed));
+      const normalized = normalizeDoc(parsed);
+      setDoc(normalized);
+      setBaseline(serializeRun(normalized)); // this is now in sync with the device
       setActiveFilter(parsed.filters[0]?.id ?? 1);
       setActiveOutput(parsed.outputs[0]?.id ?? 1);
       setActiveAction(parsed.actions[0]?.id ?? 1);
@@ -924,21 +932,29 @@ export default function GrismStudio() {
     }
   }, []);
 
-  // auto-load once on mount (falls back silently to the seed template on failure)
+  // auto-load once on mount. On failure we keep the seed template AND surface a
+  // gentle notice, so a genuine load problem is visible without alarming a fresh
+  // device that simply has no run.xml yet.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/grism/task/get_running_file?filename=run.xml", { credentials: "include" });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) throw new Error(`device responded ${res.status}`);
         const text = await res.text();
         const { doc: parsed } = parseRun(text);
         if (cancelled) return;
-        setDoc(normalizeDoc(parsed));
+        const normalized = normalizeDoc(parsed);
+        setDoc(normalized);
+        setBaseline(serializeRun(normalized));
         setActiveFilter(parsed.filters[0]?.id ?? 1);
         setActiveChain(parsed.chains[0]?.cid ?? null);
         setLoad({ state: "ok", msg: "loaded running config" });
-      } catch { /* keep the seed template; manual button remains available */ }
+      } catch (e) {
+        if (cancelled) return;
+        setLoad({ state: "autofail", msg: e.message || "couldn't reach the device" });
+      }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -953,17 +969,34 @@ export default function GrismStudio() {
           <span className="brand-sub">studio</span>
         </div>
         <nav className="tabs">
-          {[["templates","Templates"],["filters","Filters"],["inputs","Inputs"],["outputs","Outputs"],["actions","Actions"],["chain","Chains"],["export","Export"]].map(([k, label]) => (
-            <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
-              {label}
-              {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
-              {k === "inputs" && (doc.inputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.inputs.length}</span>}
-              {k === "outputs" && (doc.outputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.outputs.length}</span>}
-              {k === "actions" && (doc.actions?.length ?? 0) > 0 && <span className="tab-badge">{doc.actions.length}</span>}
-              {k === "chain" && (doc.chains?.length ?? 0) > 0 && <span className="tab-badge">{doc.chains.length}</span>}
-            </button>
-          ))}
+          {[["filters","Filters","core"],["inputs","Inputs","adv"],["outputs","Outputs","adv"],["actions","Actions","adv"],["chain","Chains","core"],["export","Export","core"]].map(([k, label, grp], i, arr) => {
+            const prevGrp = i > 0 ? arr[i-1][2] : null;
+            const showDivider = grp === "adv" && prevGrp !== "adv";     // before the advanced block
+            const showDividerAfter = grp === "adv" && (i === arr.length-1 || arr[i+1][2] !== "adv"); // after it
+            return (
+              <React.Fragment key={k}>
+                {showDivider && <span className="tab-sep" title="Advanced — most setups don't need these"><span className="tab-sep-label">advanced</span></span>}
+                <button className={"tab" + (tab === k ? " on" : "") + (grp === "adv" ? " adv" : "")} onClick={() => setTab(k)}>
+                  {label}
+                  {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
+                  {k === "inputs" && (doc.inputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.inputs.length}</span>}
+                  {k === "outputs" && (doc.outputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.outputs.length}</span>}
+                  {k === "actions" && (doc.actions?.length ?? 0) > 0 && <span className="tab-badge">{doc.actions.length}</span>}
+                  {k === "chain" && (doc.chains?.length ?? 0) > 0 && <span className="tab-badge">{doc.chains.length}</span>}
+                </button>
+                {showDividerAfter && <span className="tab-sep" />}
+              </React.Fragment>
+            );
+          })}
         </nav>
+        <button className="tmpl-btn" onClick={() => setShowTemplates(true)}
+          title="Start from a ready-made configuration">Templates</button>
+        {baseline !== null && (
+          <div className={"sync-state " + (dirty ? "dirty" : "synced")}
+            title={dirty ? "The current config differs from what's running on the device" : "In sync with the device"}>
+            <span className="sync-dot" />{dirty ? "unapplied changes" : "in sync"}
+          </div>
+        )}
         <button className={"load-btn " + load.state} onClick={loadRunning} disabled={load.state === "loading"}
           title="Fetch and load the config currently running on the device">
           {load.state === "loading" ? "loading…" : load.state === "error" ? "load failed — retry" : "load running config"}
@@ -977,11 +1010,29 @@ export default function GrismStudio() {
         </div>
       </header>
       {load.state === "error" && <div className="load-banner err">Couldn't load running config: {load.msg}. Check you're signed in to the device.</div>}
+      {load.state === "autofail" && <div className="load-banner warn">Couldn't load the device's running config ({load.msg}) — showing a starter template instead. Use "load running config" above to retry.</div>}
       {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — some elements weren't recognised and may need review.</div>}
 
+      {showTemplates && (
+        <div className="tmpl-scrim" onClick={() => setShowTemplates(false)}>
+          <div className="tmpl-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tmpl-modal-head">
+              <span className="tmpl-modal-title">Start from a template</span>
+              <button className="tmpl-close" onClick={() => setShowTemplates(false)}>✕</button>
+            </div>
+            <TemplatesTab onApply={(t) => { setDoc(normalizeDoc(t.make())); setActiveFilter(1); setShowTemplates(false); setTab("filters"); }} />
+          </div>
+        </div>
+      )}
+
       <div className="body">
-        {tab === "templates" && (
-          <TemplatesTab onApply={(t) => { setDoc(normalizeDoc(t.make())); setActiveFilter(1); setTab("filters"); }} />
+        {(tab === "inputs" || tab === "outputs" || tab === "actions") && (
+          <div className="adv-note">
+            <span className="adv-note-badge">Advanced</span>
+            {tab === "inputs" && <span>Inputs replay pcap files or generate synthetic traffic. Most setups feed traffic from physical ports and won't need this.</span>}
+            {tab === "outputs" && <span>Outputs define reusable egress port rewrites and encapsulation (VXLAN/NVGRE). Basic forwarding is handled directly in Chains — you only need Outputs for packet modification.</span>}
+            {tab === "actions" && <span>Actions apply ingress packet processing or link-pair failover. Most setups don't need these.</span>}
+          </div>
         )}
         {tab === "filters" && (
           <FiltersTab
@@ -1007,6 +1058,7 @@ export default function GrismStudio() {
         )}
         {tab === "export" && (
           <ExportTab runXml={runXml} problems={allProblems}
+            onApplied={() => setBaseline(runXml)}
             onApplyXml={(xmlText) => {
               const { doc: parsed, warnings } = parseRun(xmlText); // throws on malformed → caught in ExportTab
               setDoc(normalizeDoc(parsed));
@@ -1913,7 +1965,7 @@ function XmlView({ xml }) {
   );
 }
 
-function ExportTab({ runXml, problems, onGoto, onApplyXml }) {
+function ExportTab({ runXml, problems, onGoto, onApplyXml, onApplied }) {
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
   const [apply, setApply] = useState({ active: false, msg: "", warn: "" }); // device-side apply polling
@@ -1985,6 +2037,7 @@ function ExportTab({ runXml, problems, onGoto, onApplyXml }) {
         if (!data.loading) { // done
           setApply({ active: false, msg: "", warn: "" });
           setSubmit({ state: "ok", msg: "applied" });
+          onApplied?.(); // config is now live on the device → clear dirty state
           setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
           return;
         }
