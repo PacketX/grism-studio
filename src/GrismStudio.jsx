@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffect } from "react";
 import "./GrismStudio.css";
 
 /* ============================================================
@@ -18,6 +18,21 @@ const nid = () => `n${++_id}`;
 const esc = (s) => String(s).replace(/[<>&"]/g, (c) =>
   ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
 const splitList = (s) => s.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean);
+// Deep-clone a model object for duplication, regenerating any internal node
+// "id" fields (the n… keys used for tree/mod identity) so the copy shares no
+// references with the original. The top-level element id/cid is set separately.
+function cloneForDup(obj) {
+  if (Array.isArray(obj)) return obj.map(cloneForDup);
+  if (obj && typeof obj === "object") {
+    const out = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (key === "id" && typeof val === "string" && /^n\d+$/.test(val)) out[key] = nid();
+      else out[key] = cloneForDup(val);
+    }
+    return out;
+  }
+  return obj;
+}
 
 /* ===================== field catalogue =====================
    Complete GRISM <find> name list, transcribed from the official
@@ -966,7 +981,7 @@ export default function GrismStudio() {
   const [theme, setTheme] = useState("dark"); // "light" | "dark" — default dark, not persisted
   const [showTemplates, setShowTemplates] = useState(false);
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
-  const DEFAULT_PORTS = ["P0","P1","P2","P3","P4","P5","P6","P7","P8"];
+  const DEFAULT_PORTS = ["P0","P1","P2","P3","P4","P5","P6","P7"];
   const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
@@ -974,6 +989,13 @@ export default function GrismStudio() {
   const [activeOutput, setActiveOutput] = useState(1);
   const [activeAction, setActiveAction] = useState(1);
   const [activeInput, setActiveInput] = useState(1);
+  // Simulate-tab state lifted here so it persists across tab switches (the tab
+  // component unmounts when you navigate away).
+  const simState = useState({});                 // filter match/not-match switches
+  const simInPort = useState("");                // chosen ingress port
+  const simInlines = useState([]);               // inline devices (session only)
+  const simInlineDraft = useState({ open: false, name: "IPS", portA: "", portB: "" });
+  const simFlipped = useState(false);            // device panel row flip
   const [activeChain, setActiveChain] = useState(null); // cid of selected chain
 
   const definedIds = useMemo(() => new Set(doc.filters.map((f) => "F" + f.id)), [doc.filters]);
@@ -1020,8 +1042,30 @@ export default function GrismStudio() {
 
   // non-blocking warnings — surfaced to the user but they don't prevent submit/copy
   const allWarnings = useMemo(() => {
-    return [...inPortConflicts].map((p) => ({ id: "conflict-" + p, scope: "chain", msg: `two chains both ingress on ${p}`, label: "in port" }));
-  }, [inPortConflicts]);
+    const w = [...inPortConflicts].map((p) => ({ id: "conflict-" + p, scope: "chain", msg: `two chains both ingress on ${p}`, label: "in port" }));
+    // chain references to filter (F) / output (O) ids that aren't defined in this config
+    (doc.chains ?? []).forEach((c) => {
+      const missingF = new Set(), missingO = new Set();
+      (function walk(n) {
+        if (!n) return;
+        if (n.t === "branch" && n.fids) {
+          n.fids.split(",").map((s) => s.trim()).filter(Boolean).forEach((tok) => {
+            const id = tok.replace(/^!/, "");
+            if (/^F\d+$/.test(id) && !definedIds.has(id)) missingF.add(id);
+          });
+        }
+        if (n.t === "out" && n.ports) {
+          n.ports.split(",").map((s) => s.trim()).filter(Boolean).forEach((tok) => {
+            if (/^O\d+$/.test(tok) && !outputIds.has(tok)) missingO.add(tok);
+          });
+        }
+        ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
+      })(c.tree);
+      missingF.forEach((id) => w.push({ id: `missingF-${c.cid}-${id}`, scope: `chain:${c.cid}`, label: id, msg: `filter ${id} isn't defined in this config` }));
+      missingO.forEach((id) => w.push({ id: `missingO-${c.cid}-${id}`, scope: `chain:${c.cid}`, label: id, msg: `output ${id} isn't defined in this config` }));
+    });
+    return w;
+  }, [inPortConflicts, doc.chains, definedIds, outputIds]);
 
   // --- load the device's running config ---
   const [load, setLoad] = useState({ state: "idle", msg: "" }); // idle | loading | ok | error
@@ -1151,7 +1195,7 @@ export default function GrismStudio() {
           <span className="brand-sub">studio</span>
         </div>
         <nav className="tabs">
-          {[["filters","Filters","core"],["inputs","Inputs","adv"],["outputs","Outputs","adv"],["actions","Actions","adv"],["chain","Chains","core"],["export","Export","core"]].map(([k, label, grp], i, arr) => {
+          {[["filters","Filters","core"],["inputs","Inputs","adv"],["outputs","Outputs","adv"],["actions","Actions","adv"],["chain","Chains","core"],["simulate","Simulate","core"],["export","Export","core"]].map(([k, label, grp], i, arr) => {
             const prevGrp = i > 0 ? arr[i-1][2] : null;
             const showDivider = grp === "adv" && prevGrp !== "adv";     // before the advanced block
             const showDividerAfter = grp === "adv" && (i === arr.length-1 || arr[i+1][2] !== "adv"); // after it
@@ -1270,6 +1314,10 @@ export default function GrismStudio() {
             inPortConflicts={inPortConflicts}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null} />
         )}
+        {tab === "simulate" && (
+          <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS}
+            simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped} />
+        )}
         {tab === "export" && (
           <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings}
             onApplied={() => setBaseline(runXml)}
@@ -1357,6 +1405,46 @@ function IdField({ prefix, id, siblingIds, onCommit }) {
   );
 }
 
+/* Left-hand list with drag-to-reorder and a per-item duplicate button. Reorder
+   changes the underlying array order (and therefore XML output order). */
+function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReorder, onDuplicate, addLabel, dupLabel, onAdd }) {
+  const [dragKey, setDragKey] = useState(null);
+  const [overKey, setOverKey] = useState(null);
+  const move = (fromKey, toKey) => {
+    if (fromKey === toKey) return;
+    const from = items.findIndex((it) => getKey(it) === fromKey);
+    const to = items.findIndex((it) => getKey(it) === toKey);
+    if (from < 0 || to < 0) return;
+    const next = items.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onReorder(next);
+  };
+  const active = items.find((it) => getKey(it) === activeKey);
+  return (
+    <aside className="filter-list">
+      {items.map((it) => {
+        const k = getKey(it);
+        return (
+          <div key={k}
+            className={"filter-item sortable" + (k === activeKey ? " on" : "") + (k === overKey && dragKey !== k ? " drop-target" : "") + (k === dragKey ? " dragging" : "")}
+            draggable
+            onDragStart={(e) => { setDragKey(k); e.dataTransfer.effectAllowed = "move"; }}
+            onDragOver={(e) => { e.preventDefault(); if (overKey !== k) setOverKey(k); }}
+            onDragEnd={() => { setDragKey(null); setOverKey(null); }}
+            onDrop={(e) => { e.preventDefault(); if (dragKey != null) move(dragKey, k); setDragKey(null); setOverKey(null); }}
+            onClick={() => onSelect(it)}>
+            <span className="drag-handle" title="Drag to reorder">⠿</span>
+            {renderLabel(it)}
+          </div>
+        );
+      })}
+      <button className="filter-add" onClick={onAdd}>{addLabel}</button>
+      {active && <button className="filter-dup" onClick={() => onDuplicate(active)}>{dupLabel}</button>}
+    </aside>
+  );
+}
+
 function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets }) {
   const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
   const problems = useMemo(() => f ? filterProblems(f.root, []) : [], [f]);
@@ -1399,15 +1487,13 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
 
   return (
     <div className="filters-layout">
-      <aside className="filter-list">
-        {doc.filters.map((x) => (
-          <button key={x.id} className={"filter-item" + (x.id === f.id ? " on" : "")} onClick={() => setActiveFilter(x.id)}>
-            <b>F{x.id}</b>
-            <span>{x.name || <em>unnamed</em>}</span>
-          </button>
-        ))}
-        <button className="filter-add" onClick={addFilter}>+ Add filter</button>
-      </aside>
+      <SortableList
+        items={doc.filters} activeKey={f.id} getKey={(x) => x.id}
+        renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>unnamed</em>}</span></>}
+        onSelect={(x) => setActiveFilter(x.id)}
+        onReorder={(next) => setDoc((d) => ({ ...d, filters: next }))}
+        onDuplicate={(x) => { const nextId = Math.max(0, ...doc.filters.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, filters: [...d.filters, copy] })); setActiveFilter(nextId); }}
+        addLabel="+ Add filter" dupLabel="⧉ Duplicate filter" onAdd={addFilter} />
 
       <div className="filter-editor">
         <div className="filter-meta">
@@ -1666,14 +1752,13 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
 
   return (
     <div className="filters-layout">
-      <aside className="filter-list">
-        {inputs.map((x) => (
-          <button key={x.id} className={"filter-item" + (x.id === inp.id ? " on" : "")} onClick={() => setActiveInput(x.id)}>
-            <b>I{x.id}</b><span>{x.name || <em>{x.type === "traffic-gen" ? "traffic-gen" : x.port}</em>}</span>
-          </button>
-        ))}
-        <button className="filter-add" onClick={addInput}>+ Add input</button>
-      </aside>
+      <SortableList
+        items={inputs} activeKey={inp.id} getKey={(x) => x.id}
+        renderLabel={(x) => <><b>I{x.id}</b><span>{x.name || <em>{x.type === "traffic-gen" ? "traffic-gen" : x.port}</em>}</span></>}
+        onSelect={(x) => setActiveInput(x.id)}
+        onReorder={(next) => setDoc((d) => ({ ...d, inputs: next }))}
+        onDuplicate={(x) => { const nextId = Math.max(0, ...inputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, inputs: [...d.inputs, copy] })); setActiveInput(nextId); }}
+        addLabel="+ Add input" dupLabel="⧉ Duplicate input" onAdd={addInput} />
 
       <div className="filter-editor">
         <div className="filter-meta">
@@ -1769,14 +1854,13 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
 
   return (
     <div className="filters-layout">
-      <aside className="filter-list">
-        {outputs.map((x) => (
-          <button key={x.id} className={"filter-item" + (x.id === o.id ? " on" : "")} onClick={() => setActiveOutput(x.id)}>
-            <b>O{x.id}</b><span>{x.name || <em>{x.port}</em>}</span>
-          </button>
-        ))}
-        <button className="filter-add" onClick={addOutput}>+ Add output</button>
-      </aside>
+      <SortableList
+        items={outputs} activeKey={o.id} getKey={(x) => x.id}
+        renderLabel={(x) => <><b>O{x.id}</b><span>{x.name || <em>{x.port}</em>}</span></>}
+        onSelect={(x) => setActiveOutput(x.id)}
+        onReorder={(next) => setDoc((d) => ({ ...d, outputs: next }))}
+        onDuplicate={(x) => { const nextId = Math.max(0, ...outputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, outputs: [...d.outputs, copy] })); setActiveOutput(nextId); }}
+        addLabel="+ Add output" dupLabel="⧉ Duplicate output" onAdd={addOutput} />
 
       <div className="filter-editor">
         <div className="filter-meta">
@@ -1939,14 +2023,13 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions })
 
   return (
     <div className="filters-layout">
-      <aside className="filter-list">
-        {actions.map((x) => (
-          <button key={x.id} className={"filter-item" + (x.id === a.id ? " on" : "")} onClick={() => setActiveAction(x.id)}>
-            <b>A{x.id}</b><span>{x.name || <em>{x.type === "linkpairs" ? "linkpairs" : x.port}</em>}</span>
-          </button>
-        ))}
-        <button className="filter-add" onClick={addAction}>+ Add action</button>
-      </aside>
+      <SortableList
+        items={actions} activeKey={a.id} getKey={(x) => x.id}
+        renderLabel={(x) => <><b>A{x.id}</b><span>{x.name || <em>{x.type === "linkpairs" ? "linkpairs" : x.port}</em>}</span></>}
+        onSelect={(x) => setActiveAction(x.id)}
+        onReorder={(next) => setDoc((d) => ({ ...d, actions: next }))}
+        onDuplicate={(x) => { const nextId = Math.max(0, ...actions.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, actions: [...d.actions, copy] })); setActiveAction(nextId); }}
+        addLabel="+ Add action" dupLabel="⧉ Duplicate action" onAdd={addAction} />
 
       <div className="filter-editor">
         <div className="filter-meta">
@@ -2267,6 +2350,25 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     setActiveChain(chains.find((c) => c.cid !== targetCid)?.cid ?? null);
     setSelId(null);
   };
+  const [chainDragCid, setChainDragCid] = useState(null);
+  const [chainOverCid, setChainOverCid] = useState(null);
+  const moveChain = (fromCid, toCid) => {
+    if (fromCid === toCid) return;
+    setDoc((d) => {
+      const arr = d.chains.slice();
+      const from = arr.findIndex((c) => c.cid === fromCid);
+      const to = arr.findIndex((c) => c.cid === toCid);
+      if (from < 0 || to < 0) return d;
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
+      return { ...d, chains: arr };
+    });
+  };
+  const dupChain = (c) => {
+    const copy = { ...cloneForDup(c), cid: nid() };
+    setDoc((d) => ({ ...d, chains: [...d.chains, copy] }));
+    setActiveChain(copy.cid); setSelId(null);
+  };
 
   // first out-port(s) a chain routes to, for the flow summary
   const chainDest = (c) => {
@@ -2329,13 +2431,22 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
           const inP = chainInFirst(c);
           const conflict = inPortConflicts.has(inP);
           return (
-            <button key={c.cid} className={"chain-item" + (c.cid === cid ? " on" : "")} onClick={() => { setActiveChain(c.cid); setSelId(null); }}>
+            <div key={c.cid}
+              className={"chain-item sortable" + (c.cid === cid ? " on" : "") + (c.cid === chainOverCid && chainDragCid !== c.cid ? " drop-target" : "") + (c.cid === chainDragCid ? " dragging" : "")}
+              draggable
+              onDragStart={(e) => { setChainDragCid(c.cid); e.dataTransfer.effectAllowed = "move"; }}
+              onDragOver={(e) => { e.preventDefault(); if (chainOverCid !== c.cid) setChainOverCid(c.cid); }}
+              onDragEnd={() => { setChainDragCid(null); setChainOverCid(null); }}
+              onDrop={(e) => { e.preventDefault(); if (chainDragCid != null) moveChain(chainDragCid, c.cid); setChainDragCid(null); setChainOverCid(null); }}
+              onClick={() => { setActiveChain(c.cid); setSelId(null); }}>
+              <span className="drag-handle" title="Drag to reorder">⠿</span>
               <span className="chain-flow"><b>{inP || "?"}</b> <span className="arr">→</span> <span className="dest">{chainDest(c)}</span></span>
               {conflict && <span className="chain-conflict" title="another chain uses this ingress port">⚠</span>}
-            </button>
+            </div>
           );
         })}
         <button className="filter-add" onClick={addChain}>+ Add chain</button>
+        {chain && <button className="filter-dup" onClick={() => dupChain(chain)}>⧉ Duplicate chain</button>}
         {chains.length > 1 && (
           <button className="chain-del" onClick={() => delChain(cid)}>Delete this chain</button>
         )}
@@ -2535,6 +2646,545 @@ function XmlView({ xml }) {
     <pre className="xml xml-hl"><code>{lines.map((ln, i) => (
       <span key={i} className="xt-line">{highlightXmlLine(ln, i)}{"\n"}</span>
     ))}</code></pre>
+  );
+}
+
+/* ============================================================
+   Simulate tab — trace a packet from an ingress port through the
+   matching chain(s), with each filter's match/not-match set by hand.
+   ============================================================ */
+// collect every filter id referenced anywhere in a chain tree (F-tokens, incl. negated)
+function chainFilterRefs(tree, into) {
+  (function walk(n) {
+    if (!n) return;
+    if (n.t === "branch" && n.fids) n.fids.split(",").map((s) => s.trim()).filter(Boolean).forEach((tok) => {
+      const id = tok.replace(/^!/, ""); if (/^F\d+$/.test(id)) into.add(id);
+    });
+    ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
+  })(tree);
+  return into;
+}
+// evaluate a branch's fids against the manual filter states
+function evalFids(fids, fidOp, states) {
+  const toks = String(fids || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!toks.length) return false;
+  const results = toks.map((tok) => {
+    const neg = tok.startsWith("!");
+    const id = tok.replace(/^!/, "");
+    const on = !!states[id]; // default false (not-match)
+    return neg ? !on : on;
+  });
+  return fidOp === "and" ? results.every(Boolean) : results.some(Boolean);
+}
+// walk a chain tree with the given filter states, producing an ordered path + outcome
+function simulateChain(chain, states, filterAlt) {
+  const steps = [];
+  let node = chain.tree;
+  let outcome = { kind: "default", text: "device default (no explicit route)" };
+  let guard = 0;
+  while (node && guard++ < 200) {
+    if (isUnset(node)) { outcome = { kind: "default", text: "unspecified — device default" }; break; }
+    if (node.t === "out") {
+      if (isDrop(node)) outcome = { kind: "drop", text: "dropped (out 0)" };
+      else outcome = { kind: "out", text: node.ports, mode: node.mode, lb: node.lb };
+      break;
+    }
+    if (node.t === "branch") {
+      const matched = evalFids(node.fids, node.fidOp, states);
+      const alt = node.fids.split(",").map((t) => { const id = t.trim().replace(/^!/, ""); const neg = t.trim().startsWith("!"); return (neg ? "!" : "") + (filterAlt[id] || id); }).join(node.fidOp === "and" ? " AND " : " OR ");
+      steps.push({ id: node.id, fids: node.fids, alt, matched });
+      const nextNode = matched ? node.match : node.notmatch;
+      if (!nextNode || isUnset(nextNode)) { outcome = { kind: "default", text: `${matched ? "match" : "not-match"} side unspecified — device default` }; break; }
+      node = nextNode;
+      continue;
+    }
+    break;
+  }
+  return { steps, outcome };
+}
+
+/* A stylised front panel of the GRISM device: a row of ports, with those used
+   as chain ingress / output highlighted. Clicking a port selects it as the
+   simulation ingress. Below, user-added inline devices (e.g. an external IPS)
+   are drawn bridging two ports. */
+function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState }) {
+  const portRole = (p) => { const i = inPortSet.has(p), o = outPortSet.has(p); return i && o ? "both" : i ? "in" : o ? "out" : "idle"; };
+  const inlinePorts = new Set(inlines.flatMap((x) => [x.portA, x.portB]));
+  const [flipped, setFlipped] = flipState; // lifted so row orientation persists across tab switches
+
+  // number extracted from a port name (P0 -> 0); ports without a number get their own column
+  const portNum = (p) => { const m = /(\d+)/.exec(p); return m ? +m[1] : null; };
+  // Build aligned columns: each column pairs an even port (bottom) with its +1 odd
+  // port (top). A lone port occupies only its natural row; the other cell stays empty.
+  // Ports with no number get a single-cell column on the bottom row.
+  const columns = useMemo(() => {
+    const byNum = new Map(); // evenBase -> { top, bottom }
+    const extras = [];
+    portOptions.forEach((p) => {
+      const n = portNum(p);
+      if (n == null) { extras.push(p); return; }
+      const base = n % 2 === 0 ? n : n - 1; // pair P(2k)/P(2k+1) under key 2k
+      const col = byNum.get(base) || { base, top: null, bottom: null };
+      if (n % 2 === 0) col.bottom = p; else col.top = p;
+      byNum.set(base, col);
+    });
+    let cols = [...byNum.values()].sort((a, b) => a.base - b.base);
+    if (flipped) cols = cols.map((c) => ({ ...c, top: c.bottom, bottom: c.top }));
+    extras.forEach((p, i) => cols.push({ base: 10000 + i, top: null, bottom: p }));
+    return cols;
+  }, [portOptions, flipped]);
+
+  const wrapRef = useRef(null);
+  const chassisRef = useRef(null);
+  const portRefs = useRef({});   // portName -> button el
+  const devRefs = useRef({});    // inline id -> element
+  const geomRef = useRef({ ports: {}, inlines: {}, center: null }); // measured points for animation
+  const [cables, setCables] = useState([]);
+  const [packet, setPacket] = useState(null); // { x, y } current packet position, or null
+  const [trail, setTrail] = useState([]);     // recent packet positions for a fading tail
+  const [activeDev, setActiveDev] = useState(null); // IPS id currently being traversed (for highlight)
+  const [nextPort, setNextPort] = useState(null);   // the port the packet is heading toward next
+  const [nextDev, setNextDev] = useState(null);     // the IPS the packet is heading toward next
+  const [prevPort, setPrevPort] = useState(null);   // the port the packet just came from (source)
+  const [prevDev, setPrevDev] = useState(null);     // the IPS the packet just came from (source)
+  const [playState, setPlayState] = useState("idle"); // 'idle' | 'playing' | 'paused'
+  const rafRef = useRef(0);
+  const animRef = useRef({ pts: null, segs: null, total: 0, dur: 0, elapsed: 0, last: 0, trailBuf: [] });
+
+  // measure port + inline-device anchor points relative to the wrapper, then
+  // build a cable path (port edge → device top) for each lead. Also snapshot
+  // geometry (port centres, chassis centre, inline centres) for the animation.
+  useLayoutEffect(() => {
+    const measure = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const wb = wrap.getBoundingClientRect();
+      const portPt = (name) => {
+        const el = portRefs.current[name];
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: b.left + b.width / 2 - wb.left, y: b.bottom - wb.top };
+      };
+      const portCenter = (name) => {
+        const el = portRefs.current[name];
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: b.left + b.width / 2 - wb.left, y: b.top + b.height / 2 - wb.top };
+      };
+      const next = [];
+      const geo = { ports: {}, inlines: {}, center: null };
+      portOptions.forEach((p) => { const c = portCenter(p); if (c) geo.ports[p] = c; });
+      const ch = chassisRef.current;
+      if (ch) { const cb = ch.getBoundingClientRect(); geo.center = { x: cb.left + cb.width / 2 - wb.left, y: cb.top + cb.height / 2 - wb.top }; }
+      inlines.forEach((d) => {
+        const dev = devRefs.current[d.id];
+        if (!dev) return;
+        const db = dev.getBoundingClientRect();
+        const ax = db.left + db.width * 0.32 - wb.left, bx = db.left + db.width * 0.68 - wb.left;
+        const ty = db.top - wb.top;
+        const jy = db.top - wb.top; // exact connection point on the device's top edge
+        const midInside = db.top + db.height * 0.5 - wb.top; // a point inside the body for the pass-through dip
+        // remember each side's jack point (top-edge connector) keyed by its port,
+        // plus a shared interior point so the packet visibly dips through the box
+        geo.inlines[d.id] = { [d.portA]: { x: ax, y: jy }, [d.portB]: { x: bx, y: jy }, mid: { x: (ax + bx) / 2, y: midInside }, top: ty };
+        [[d.portA, ax], [d.portB, bx]].forEach(([pname, dx], i) => {
+          const pp = portPt(pname);
+          if (!pp) return;
+          const midY = (pp.y + ty) / 2;
+          next.push({ key: d.id + "-" + i, devId: d.id, d: `M ${pp.x} ${pp.y} C ${pp.x} ${midY}, ${dx} ${midY}, ${dx} ${ty}`, x1: pp.x, y1: pp.y, x2: dx, y2: ty });
+        });
+      });
+      geomRef.current = geo;
+      setCables(next);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [inlines, portOptions, inPortSet, outPortSet, flipped]);
+
+  // stop any running animation on unmount
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+  // if the traced route changes (ingress / filters / inlines), reset playback
+  useEffect(() => {
+    cancelAnimationFrame(rafRef.current);
+    animRef.current = { pts: null, segs: null, total: 0, dur: 0, elapsed: 0, last: 0, trailBuf: [] };
+    setPlayState("idle"); setPacket(null); setTrail([]); setActiveDev(null); setNextPort(null); setNextDev(null); setPrevPort(null); setPrevDev(null);
+  }, [animPlan]);
+
+  // Map the semantic animation plan to concrete coordinates using measured
+  // geometry. "outside" points sit beyond the port, away from the chassis, so
+  // the packet visibly enters from and leaves to outside the device.
+  const buildWaypoints = () => {
+    const geo = geomRef.current;
+    if (!animPlan || !animPlan.nodes || !geo.center) return null;
+    const OUT = 46; // how far outside the port the packet starts/ends
+    const outsidePt = (port) => {
+      const p = geo.ports[port]; if (!p) return null;
+      const dir = p.y < geo.center.y ? -1 : 1; // top-row ports exit upward, bottom-row downward
+      return { x: p.x, y: p.y + dir * OUT };
+    };
+    const pts = [];
+    for (const n of animPlan.nodes) {
+      if (n.kind === "outside-in" || n.kind === "outside-out") { const o = outsidePt(n.port); if (o) { if (n.kind === "outside-in") { pts.push({ ...o }); if (geo.ports[n.port]) pts.push({ ...geo.ports[n.port], port: n.port }); } else { if (geo.ports[n.port]) pts.push({ ...geo.ports[n.port], port: n.port }); pts.push({ ...o }); } } }
+      else if (n.kind === "port") { const p = geo.ports[n.port]; if (p) pts.push({ ...p, port: n.port }); }
+      else if (n.kind === "ips-in") { const j = geo.inlines[n.devId]; if (j && j[n.port]) { pts.push({ ...j[n.port], dev: n.devId }); if (j.mid) pts.push({ ...j.mid, dev: n.devId }); } }
+      else if (n.kind === "ips-out") { const j = geo.inlines[n.devId]; if (j && j[n.port]) pts.push({ ...j[n.port], dev: n.devId }); }
+      else if (n.kind === "fizzle") { const p = geo.ports[n.port]; if (p) pts.push({ x: p.x, y: p.y }); }
+    }
+    // de-dup consecutive identical points (preserve tags if either has them)
+    const clean = pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
+    return clean.length >= 2 ? clean : null;
+  };
+
+  // animation control: elapsed accumulates play time so pause/resume can continue
+  const applyFrame = (elapsedMs) => {
+    const A = animRef.current;
+    const { pts, segs, total, dur } = A;
+    if (!pts) return true;
+    const t = Math.min(1, elapsedMs / dur);
+    let dist = t * total, i = 0;
+    while (i < segs.length && dist > segs[i]) { dist -= segs[i]; i++; }
+    let pos;
+    if (i >= segs.length) pos = pts[pts.length - 1];
+    else { const f = segs[i] ? dist / segs[i] : 0; pos = { x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f }; }
+    setPacket(pos);
+    A.trailBuf.push(pos); while (A.trailBuf.length > 14) A.trailBuf.shift(); setTrail(A.trailBuf.slice());
+    const a = pts[i], b = pts[Math.min(i + 1, pts.length - 1)];
+    setActiveDev(a && b && a.dev && a.dev === b.dev ? a.dev : null);
+    // next destination = the single nearest upcoming waypoint that is a real
+    // stop — either a port or an IPS jack. Whichever comes first is the only one
+    // highlighted, so the port beyond an IPS doesn't light up until the packet
+    // has passed through the IPS.
+    let np = null, nd = null;
+    for (let k = i + 1; k < pts.length; k++) {
+      if (pts[k].dev) { nd = pts[k].dev; break; }
+      if (pts[k].port) { np = pts[k].port; break; }
+    }
+    setNextPort(np); setNextDev(nd);
+    // source = the single nearest stop BEHIND the packet (where it just came
+    // from) — the port or IPS at or before the current segment start.
+    let pp = null, pd = null;
+    for (let k = i; k >= 0; k--) {
+      if (pts[k].dev) { pd = pts[k].dev; break; }
+      if (pts[k].port) { pp = pts[k].port; break; }
+    }
+    setPrevPort(pp); setPrevDev(pd);
+    return t >= 1;
+  };
+
+  const runLoop = () => {
+    const A = animRef.current;
+    A.last = performance.now();
+    const tick = (now) => {
+      const A2 = animRef.current;
+      A2.elapsed += now - A2.last; A2.last = now;
+      const done = applyFrame(A2.elapsed);
+      if (done) { setPlayState("idle"); setTimeout(() => { setPacket(null); setTrail([]); setActiveDev(null); setNextPort(null); setNextDev(null); setPrevPort(null); setPrevDev(null); }, 550); return; }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  };
+
+  const play = () => {
+    cancelAnimationFrame(rafRef.current);
+    const pts = buildWaypoints();
+    if (!pts || pts.length < 2) return;
+    const segs = []; let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) { const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y; const len = Math.hypot(dx, dy); segs.push(len); total += len; }
+    const SPEED = 220; // px/sec
+    const dur = Math.max(700, (total / SPEED) * 1000);
+    animRef.current = { pts, segs, total, dur, elapsed: 0, last: 0, trailBuf: [] };
+    setPlayState("playing");
+    runLoop();
+  };
+
+  const pause = () => {
+    cancelAnimationFrame(rafRef.current);
+    setPlayState("paused");
+  };
+  const resume = () => {
+    if (!animRef.current.pts) { play(); return; }
+    setPlayState("playing");
+    runLoop();
+  };
+  const stop = () => {
+    cancelAnimationFrame(rafRef.current);
+    animRef.current = { pts: null, segs: null, total: 0, dur: 0, elapsed: 0, last: 0, trailBuf: [] };
+    setPlayState("idle");
+    setPacket(null); setTrail([]); setActiveDev(null); setNextPort(null); setNextDev(null); setPrevPort(null); setPrevDev(null);
+  };
+
+  const renderPort = (p) => {
+    const role = portRole(p);
+    const wired = inlinePorts.has(p);
+    return (
+      <button key={p} ref={(el) => { portRefs.current[p] = el; }}
+        className={"dev-port " + role + (selected === p ? " selected" : "") + (wired ? " wired" : "") + (nextPort === p ? " next" : prevPort === p ? " from" : "")}
+        onClick={() => onPick(p)} title={role === "both" ? "ingress + output" : role === "in" ? "ingress" : role === "out" ? "output" : "unused"}>
+        <span className="dev-port-led" />
+        <span className="dev-port-name">{p}</span>
+        {role !== "idle" && <span className="dev-port-role">{role === "both" ? "IN/OUT" : role.toUpperCase()}</span>}
+        {wired && <span className="dev-port-jack" title="wired to an inline device" />}
+      </button>
+    );
+  };
+
+  return (
+    <div className="dev-panel">
+      <div className="dev-wrap" ref={wrapRef}>
+        <svg className="dev-cables" width="100%" height="100%">
+          {cables.map((c) => {
+            const on = activeDev && c.devId === activeDev;
+            const next = !on && nextDev && c.devId === nextDev;
+            return (
+              <g key={c.key}>
+                <path d={c.d} className={"dev-cable" + (on ? " active" : next ? " next" : "")} />
+                <circle cx={c.x1} cy={c.y1} r="3" className={"dev-cable-end" + (on || next ? " active" : "")} />
+                <circle cx={c.x2} cy={c.y2} r="3" className={"dev-cable-end" + (on || next ? " active" : "")} />
+              </g>
+            );
+          })}
+        </svg>
+
+        <div className="dev-chassis" ref={chassisRef}>
+          <div className="dev-chassis-head">
+            <div className="dev-brand"><span className="dev-logo">◇</span> GRISM<span className="dev-model"> · packet broker</span></div>
+            <div className="dev-head-btns">
+              {playState === "idle" && <button className="dev-play" onClick={play} disabled={!animPlan} title={animPlan ? "Animate a packet along the traced path" : "Select an ingress port first"}>▶ play</button>}
+              {playState === "playing" && <button className="dev-play" onClick={pause} title="Pause">⏸ pause</button>}
+              {playState === "paused" && <button className="dev-play" onClick={resume} title="Resume">▶ resume</button>}
+              {playState !== "idle" && <button className="dev-stop" onClick={stop} title="Stop">⏹ stop</button>}
+              <button className="dev-flip" onClick={() => setFlipped((v) => !v)} title="Swap which ports sit on the top / bottom row">⇅ flip rows</button>
+            </div>
+          </div>
+          <div className="dev-port-cols">
+            {columns.map((col) => (
+              <div key={col.base} className="dev-port-col">
+                <div className="dev-port-slot">{col.top ? renderPort(col.top) : <span className="dev-port-empty" />}</div>
+                <div className="dev-port-slot">{col.bottom ? renderPort(col.bottom) : <span className="dev-port-empty" />}</div>
+              </div>
+            ))}
+          </div>
+          <div className="dev-legend">
+            <span className="dev-leg in"><span className="dev-leg-dot" />ingress</span>
+            <span className="dev-leg out"><span className="dev-leg-dot" />output</span>
+            <span className="dev-leg both"><span className="dev-leg-dot" />both</span>
+            <span className="dev-leg idle"><span className="dev-leg-dot" />unused</span>
+          </div>
+        </div>
+
+        <div className="dev-inlines">
+          {inlines.map((d) => (
+            <div key={d.id} className={"inline-dev" + (activeDev === d.id ? " active" : nextDev === d.id ? " next" : prevDev === d.id ? " from" : "")} ref={(el) => { devRefs.current[d.id] = el; }}>
+              <div className="inline-dev-jacks"><span className="inline-jack" /><span className="inline-jack" /></div>
+              <div className="inline-dev-body">
+                <span className="inline-dev-name">{d.name}</span>
+                <span className="inline-dev-sub">inline · {d.portA} ⇄ {d.portB}</span>
+              </div>
+              <button className="inline-dev-del" onClick={() => onRemoveInline(d.id)} title="Remove">✕</button>
+            </div>
+          ))}
+        </div>
+
+        {(packet || trail.length > 0) && (
+          <svg className="dev-packet-layer" width="100%" height="100%">
+            {trail.map((p, i) => {
+              const a = (i + 1) / (trail.length + 1);
+              return <circle key={i} cx={p.x} cy={p.y} r={2 + a * 3} className="dev-trail" style={{ opacity: a * 0.5 }} />;
+            })}
+            {packet && <>
+              <circle cx={packet.x} cy={packet.y} r="10" className="dev-packet-glow" />
+              <circle cx={packet.x} cy={packet.y} r="5" className="dev-packet-core" />
+            </>}
+          </svg>
+        )}
+      </div>
+
+      <div className="dev-inline-controls">
+        {inlineDraft.open ? (
+          <div className="inline-add-form">
+            <input className="inline-name-in" value={inlineDraft.name} placeholder="name (e.g. IPS)"
+              onChange={(e) => setInlineDraft((s) => ({ ...s, name: e.target.value }))} />
+            <select value={inlineDraft.portA} onChange={(e) => setInlineDraft((s) => ({ ...s, portA: e.target.value }))}>
+              <option value="">port A</option>
+              {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <span className="inline-lead-bridge">⇄</span>
+            <select value={inlineDraft.portB} onChange={(e) => setInlineDraft((s) => ({ ...s, portB: e.target.value }))}>
+              <option value="">port B</option>
+              {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button className="inline-add-ok" disabled={!inlineDraft.portA || !inlineDraft.portB || inlineDraft.portA === inlineDraft.portB} onClick={onAddInline}>add</button>
+            <button className="inline-add-cancel" onClick={() => setInlineDraft((s) => ({ ...s, open: false }))}>cancel</button>
+          </div>
+        ) : (
+          <button className="inline-add-btn" onClick={() => setInlineDraft((s) => ({ ...s, open: true }))}>+ inline device (IPS, etc.)</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SimulateTab({ doc, definedIds, portOptions, simState, simInPort, simInlines, simInlineDraft, simFlipped }) {
+  // all filter ids to offer as switches: defined here + referenced-but-undefined
+  const filterIds = useMemo(() => {
+    const s = new Set(doc.filters.map((f) => "F" + f.id));
+    (doc.chains ?? []).forEach((c) => chainFilterRefs(c.tree, s));
+    return [...s].sort((a, b) => (+a.slice(1)) - (+b.slice(1)));
+  }, [doc.filters, doc.chains]);
+  const filterAlt = useMemo(() => Object.fromEntries(doc.filters.map((f) => ["F" + f.id, f.alt || f.name || ""])), [doc.filters]);
+  const definedSet = useMemo(() => new Set(doc.filters.map((f) => "F" + f.id)), [doc.filters]);
+
+  const [states, setStates] = simState;      // { F1: true(match)/false(not-match) }
+  const [inPort, setInPort] = simInPort;      // chosen ingress port
+  const [inlines, setInlines] = simInlines;   // [{ id, name, portA, portB }] — session only, not persisted
+  const [inlineDraft, setInlineDraft] = simInlineDraft;
+
+  // ingress ports available: union of chains' ingress ports and the device list
+  const chainInPorts = useMemo(() => {
+    const s = new Set();
+    (doc.chains ?? []).forEach((c) => (c.ports || "").split(",").map((p) => p.trim()).filter(Boolean).forEach((p) => s.add(p)));
+    return [...s];
+  }, [doc.chains]);
+
+  // output ports any chain routes to (physical P-ports only; O-refs and 0/drop excluded)
+  const chainOutPorts = useMemo(() => {
+    const s = new Set();
+    (doc.chains ?? []).forEach((c) => (function walk(n) {
+      if (!n) return;
+      if (n.t === "out" && n.ports) n.ports.split(",").map((p) => p.trim()).filter(Boolean).forEach((p) => { if (/^[A-Z]\d+$/.test(p) && !/^O\d+$/.test(p)) s.add(p); });
+      ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
+    })(c.tree));
+    return s;
+  }, [doc.chains]);
+  const inPortSet = useMemo(() => new Set(chainInPorts), [chainInPorts]);
+
+  // chains that ingress on the selected port
+  const matchingChains = useMemo(() => {
+    if (!inPort) return [];
+    return (doc.chains ?? []).filter((c) => (c.ports || "").split(",").map((p) => p.trim()).includes(inPort));
+  }, [doc.chains, inPort]);
+
+  const results = useMemo(() => matchingChains.map((c) => ({ chain: c, ...simulateChain(c, states, filterAlt) })), [matchingChains, states, filterAlt]);
+
+  const setFilter = (fid, on) => setStates((s) => ({ ...s, [fid]: on }));
+  const allNotMatch = () => setStates({});
+  const allMatch = () => setStates(Object.fromEntries(filterIds.map((id) => [id, true])));
+
+  const addInline = () => {
+    const { name, portA, portB } = inlineDraft;
+    if (!portA || !portB || portA === portB) return;
+    setInlines((xs) => [...xs, { id: nid(), name: name || "inline", portA, portB }]);
+    setInlineDraft({ open: false, name: "IPS", portA: "", portB: "" });
+  };
+  const removeInline = (id) => setInlines((xs) => xs.filter((x) => x.id !== id));
+
+  // Build a full animation plan: the packet enters from outside the ingress
+  // port, runs the chain to an out port, and if that port is wired to an inline
+  // device it loops A-in/B-out and re-enters via the paired port — if THAT port
+  // has a chain, it runs again (using the same filter switches), continuing until
+  // it reaches a port with no chain (exits to the outside) or hits the hop cap.
+  const chainForPort = (p) => (doc.chains ?? []).find((c) => (c.ports || "").split(",").map((x) => x.trim()).includes(p));
+  const animPlan = useMemo(() => {
+    if (!inPort) return null;
+    const nodes = [{ kind: "outside-in", port: inPort }];
+    let curIngress = inPort;
+    let guard = 0;
+    while (guard++ < 8) {
+      const chain = chainForPort(curIngress);
+      if (!chain) { nodes.push({ kind: "outside-out", port: curIngress }); break; } // no chain: leaves the device
+      const { outcome } = simulateChain(chain, states, filterAlt);
+      if (outcome.kind !== "out") { nodes.push({ kind: "fizzle", port: curIngress, label: outcome.kind }); break; }
+      const outPort = outcome.text.split(",")[0].trim();
+      const wire = inlines.find((d) => d.portA === outPort || d.portB === outPort);
+      if (!wire) { nodes.push({ kind: "port", port: outPort }, { kind: "outside-out", port: outPort }); break; } // exits out
+      const paired = wire.portA === outPort ? wire.portB : wire.portA;
+      nodes.push({ kind: "port", port: outPort }, { kind: "ips-in", devId: wire.id, port: outPort }, { kind: "ips-out", devId: wire.id, port: paired }, { kind: "port", port: paired });
+      curIngress = paired; // continue as if it re-entered on the paired port
+    }
+    return { nodes };
+  }, [inPort, results, states, filterAlt, inlines, doc.chains]);
+
+  return (
+    <div className="sim-page">
+      <DevicePanel portOptions={portOptions} inPortSet={inPortSet} outPortSet={chainOutPorts}
+        selected={inPort} onPick={(p) => setInPort(p)}
+        inlines={inlines} onRemoveInline={removeInline}
+        inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
+        animPlan={animPlan} flipState={simFlipped} />
+      <div className="sim-layout">
+      <aside className="sim-controls">
+        <div className="sim-section">
+          <div className="sim-label">Ingress port</div>
+          <select className="sim-inport" value={inPort} onChange={(e) => setInPort(e.target.value)}>
+            <option value="">— select ingress —</option>
+            {[...new Set([...chainInPorts, ...portOptions])].map((p) => <option key={p} value={p}>{p}{chainInPorts.includes(p) ? "" : " (no chain)"}</option>)}
+          </select>
+        </div>
+
+        <div className="sim-section">
+          <div className="sim-filters-head">
+            <span className="sim-label">Filter results</span>
+            <div className="sim-bulk">
+              <button onClick={allNotMatch}>all not-match</button>
+              <button onClick={allMatch}>all match</button>
+            </div>
+          </div>
+          {filterIds.length === 0 && <p className="sim-empty">No filters referenced.</p>}
+          <div className="sim-switch-list">
+            {filterIds.map((fid) => {
+              const on = !!states[fid];
+              const undef = !definedSet.has(fid);
+              return (
+                <div key={fid} className="sim-switch-row">
+                  <span className="sim-fid">{fid}{undef && <span className="sim-undef" title="not defined in this config"> ·dev</span>}</span>
+                  <span className="sim-falt">{filterAlt[fid]}</span>
+                  <button className={"sim-toggle" + (on ? " match" : " notmatch")} onClick={() => setFilter(fid, !on)}>
+                    {on ? "match" : "not-match"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </aside>
+
+      <section className="sim-results">
+        {!inPort && <div className="sim-hint">Select an ingress port to trace the packet path.</div>}
+        {inPort && matchingChains.length === 0 && <div className="sim-hint">No chain ingresses on <code>{inPort}</code>. The packet wouldn't be processed by any chain.</div>}
+        {results.map(({ chain, steps, outcome }, i) => (
+          <div key={chain.cid} className="sim-trace">
+            <div className="sim-trace-head">
+              <span className="sim-chip in">IN {inPort}</span>
+              {matchingChains.length > 1 && <span className="sim-trace-n">chain {i + 1}</span>}
+            </div>
+            <div className="sim-flow">
+              <div className="sim-node in"><span className="sim-node-k">ingress</span><span className="sim-node-v">{inPort}</span></div>
+              {steps.map((s) => (
+                <React.Fragment key={s.id}>
+                  <div className="sim-arrow">↓</div>
+                  <div className={"sim-node branch " + (s.matched ? "matched" : "notmatched")}>
+                    <span className="sim-node-k">{s.fids}{s.alt && s.alt !== s.fids ? ` · ${s.alt}` : ""}</span>
+                    <span className={"sim-node-badge " + (s.matched ? "match" : "notmatch")}>{s.matched ? "match →" : "not-match →"}</span>
+                  </div>
+                </React.Fragment>
+              ))}
+              <div className="sim-arrow">↓</div>
+              <div className={"sim-node out " + outcome.kind}>
+                <span className="sim-node-k">{outcome.kind === "out" ? (outcome.mode === "loadBalance" ? "load balance" : "output") : outcome.kind === "drop" ? "discard" : "default"}</span>
+                <span className="sim-node-v">{outcome.text}{outcome.kind === "out" && outcome.mode === "loadBalance" ? ` (${outcome.lb})` : ""}</span>
+              </div>
+            </div>
+            <div className="sim-summary">
+              Packet on <code>{inPort}</code>
+              {steps.length > 0 && <> → {steps.map((s, j) => <span key={j}>{j > 0 ? ", " : ""}<code>{s.fids}</code> {s.matched ? "match" : "not-match"}</span>)}</>}
+              {" → "}<b className={"sim-out-" + outcome.kind}>{outcome.kind === "out" ? outcome.text : outcome.text}</b>
+            </div>
+          </div>
+        ))}
+      </section>
+      </div>
+    </div>
   );
 }
 
