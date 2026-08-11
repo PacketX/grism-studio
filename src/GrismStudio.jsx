@@ -131,18 +131,18 @@ const FIELDS = [
     { v: "grism.srcport", label: "Ingress port", kind: "grismport" },
     { v: "grism.port.linkdown", label: "Port link down", kind: "grismport" },
     { v: "session.packet.nth", label: "Nth packet in flow", kind: "num" },
-    { v: "heartbeat.target.miss.nth", label: "Heartbeat miss (nth)", kind: "num" },
     { v: "heartbeat.target.miss.id", label: "Heartbeat miss (target id)", kind: "num" },
     { v: "flowtable.matched.fid", label: "Flow matched filter id", kind: "fidref" },
     { v: "flowtable.inport", label: "Flow ingress port", kind: "grismport" },
     { v: "dstmac.in.l2gre.mapping.table", label: "dstMAC in l2gre table", kind: "exists" },
     { v: "dstmac.in.vxlan.mapping.table", label: "dstMAC in vxlan table", kind: "exists" },
+    { v: "dstip.in.dns.response.ip.table", label: "dstIP in DNS response table", kind: "exists" },
   ]},
 ];
 const FIELD_INDEX = Object.fromEntries(FIELDS.flatMap((g) => g.items.map((i) => [i.v, i])));
 
 const RELS = {
-  exists: [], num: ["==","!=",">=","<="], uint8: ["==","!=",">=","<="],
+  exists: ["==","!="], num: ["==","!=",">=","<="], uint8: ["==","!=",">=","<="],
   uint16: ["==","!=",">=","<="], uint24: ["==","!=",">=","<="], port: ["==","!=",">=","<="],
   vlan: ["==","!=",">=","<="], bit: ["==","!="],
   default: ["==","!="],
@@ -160,6 +160,7 @@ const VAL = {
   uint24: (s) => /^\d+$/.test(s) && +s <= 16777215 ? null : "0–16777215",
   bit: (s) => s === "0" || s === "1" ? null : "0 or 1",
   num: (s) => /^\d+$/.test(s) ? null : "Number",
+  int: (s) => /^-?\d+$/.test(s) ? null : "Integer",
   country: (s) => /^[A-Za-z]{2}$/.test(s) ? null : "ISO code, e.g. TW",
   grismport: (s) => /^[A-Z]\d+$/.test(s) ? null : "Port, e.g. P0",
   fidref: (s) => /^F\d+$/.test(s) ? null : "Filter id, e.g. F1",
@@ -192,18 +193,29 @@ function tRemove(node, id) {
 function serializeCriterion(node, depth) {
   const pad = "  ".repeat(depth);
   if (node.t === "find") {
+    // every find emits relation + content; exists-type fields carry an empty
+    // content ("") since they have no value.
     const kind = FIELD_INDEX[node.field]?.kind ?? "str";
-    const rel = kind === "exists" ? "" : node.rel;
-    const content = kind === "exists" ? "" : ` content="${esc(node.val)}"`;
-    return `${pad}<find name="${node.field}" relation="${rel}"${content} />`;
+    const rel = node.rel || "==";
+    const val = kind === "exists" ? "" : node.val;
+    return `${pad}<find name="${node.field}" relation="${rel}" content="${esc(val)}" />`;
   }
   const inner = (node.children ?? []).map((c) => serializeCriterion(c, depth + 1)).join("\n");
   return `${pad}<${node.t}>\n${inner}\n${pad}</${node.t}>`;
 }
 function serializeFilter(f) {
+  const fa = f.fattrs ?? {};
   const attrs = [`id="${f.id}"`, f.name ? `name="${esc(f.name)}"` : null,
     f.alt ? `alt="${esc(f.alt)}"` : null,
     `sessionBase="${f.sessionBase}"`,
+    f.matchedlog === "yes" ? `matchedlog="yes"` : null,
+    (fa.masking && fa.masking !== "no") ? `masking="${esc(fa.masking)}"` : null,
+    fa.maxPackets ? `maxPackets="${esc(fa.maxPackets)}"` : null,
+    fa.tuple5_live_hashtable_size ? `tuple5_live_hashtable_size="${esc(fa.tuple5_live_hashtable_size)}"` : null,
+    fa.start ? `start="${esc(fa.start)}"` : null,
+    fa.position ? `position="${esc(fa.position)}"` : null,
+    fa.within ? `within="${esc(fa.within)}"` : null,
+    fa.mpslog ? `mpslog="${esc(fa.mpslog)}"` : null,
     f.blockifempty === "yes" ? `blockifempty="yes"` : null].filter(Boolean).join(" ");
   return `<filter ${attrs}>\n${serializeCriterion(f.root, 1)}\n</filter>`;
 }
@@ -426,19 +438,47 @@ const TEMPLATES = [
 const STRIP_TYPES = ["payload","payload2","vlan","mpls","gre","vxlan","gre-erspan","gtp","grism","mpls-in-udp","mpls-in-gre","udpencap"];
 const TAG_TYPES = ["timestamp","gtp","gtp2","l2gre","vxlan","grism"];
 const NVGRE_TYPES = ["eth","ip"];
+const DIR_CATEGORY = ["month","day","hour","minute"];
+const DIR_TYPE = ["pcap","payload"];
+const YN = ["no","yes"];
 const OUT_MODS = [
-  { k: "modify_srcip", label: "Modify source IP", kind: "ip", ph: "10.1.1.1", grp: "rewrite" },
-  { k: "modify_dstip", label: "Modify dest IP", kind: "ip", ph: "10.1.1.2", grp: "rewrite" },
+  { k: "modify_srcip", label: "Modify source IP", kind: "ip", ph: "10.1.1.1", grp: "rewrite",
+    attrs: [{ name: "sessionDir", opts: YN, def: "no" }, { name: "nat", opts: YN, def: "no" }] },
+  { k: "modify_dstip", label: "Modify dest IP", kind: "ip", ph: "10.1.1.2", grp: "rewrite",
+    attrs: [{ name: "sessionDir", opts: YN, def: "no" }] },
   { k: "modify_srcport", label: "Modify source port", kind: "port", ph: "8080", grp: "rewrite" },
   { k: "modify_dstport", label: "Modify dest port", kind: "port", ph: "80", grp: "rewrite" },
   { k: "modify_srcmac", label: "Modify source MAC", kind: "mac", ph: "d8:fe:e3:a4:d3:78", grp: "rewrite" },
   { k: "modify_dstmac", label: "Modify dest MAC", kind: "mac", ph: "d8:fe:e3:a4:d3:78", grp: "rewrite" },
+  { k: "modify_swapmac", label: "Swap src/dst MAC", kind: "flag", grp: "rewrite" },
+  { k: "modify_src_default_mac", label: "Src = device MAC", kind: "flag", grp: "rewrite" },
+  { k: "modify_dstip2nat", label: "Dst IP → NAT", kind: "flag", grp: "rewrite" },
+  { k: "modify_tcp_syn_mss", label: "TCP SYN MSS", kind: "int", ph: "1400", grp: "rewrite" },
   { k: "Q", label: "VLAN tag (Q)", kind: "vlanop", ph: "10", grp: "rewrite", defOp: "add" },
   { k: "QinQ", label: "VLAN tag (QinQ)", kind: "vlanop", ph: "20", grp: "rewrite", defOp: "add" },
   { k: "gateway", label: "Gateway (ARP for MAC)", kind: "ip", ph: "192.168.1.1", grp: "rewrite" },
   { k: "stripping", label: "Strip header", kind: "enum", opts: STRIP_TYPES, grp: "rewrite" },
   { k: "tagging", label: "Add tag", kind: "enum", opts: TAG_TYPES, grp: "rewrite" },
   { k: "maxlen", label: "Max packet length", kind: "num", ph: "64", grp: "rewrite" },
+  // ARP / ICMP replies
+  { k: "arp_reply_target_mac", label: "ARP reply target MAC", kind: "mac", ph: "00:0c:bd:0b:fd:36", grp: "reply" },
+  { k: "arp_reply_default_mac", label: "ARP reply (device MAC)", kind: "flag", grp: "reply" },
+  { k: "icmp_reply", label: "ICMP reply", kind: "flag", grp: "reply" },
+  { k: "icmp_reply_fragment_need", label: "ICMP frag-needed", kind: "flag", grp: "reply",
+    attrs: [{ name: "mtu", kind: "num", def: "1400", required: true }] },
+  // DNS response / redirect
+  { k: "dns_response_ipv4", label: "DNS response IPv4", kind: "ip", ph: "1.2.3.4", grp: "redirect",
+    attrs: [{ name: "noswapmac", opts: YN, def: "no" }] },
+  { k: "dns_response_ipv6", label: "DNS response IPv6", kind: "ipv6", ph: "2001:db8::1", grp: "redirect" },
+  { k: "redirect2safeweb", label: "Redirect to safe web", kind: "str", ph: "http://safe.example", grp: "redirect",
+    attrs: [{ name: "noswapmac", opts: YN, def: "no" }, { name: "redirectPort", kind: "str", def: "" }] },
+  // Mirror-to-file (dir) group
+  { k: "dir", label: "Write to dir", kind: "str", ph: "/data/capture", grp: "mirror",
+    attrs: [{ name: "timeout", kind: "num", def: "0" }, { name: "max_split_size", kind: "num", def: "104857600" },
+            { name: "category", opts: DIR_CATEGORY, def: "" }, { name: "type", opts: DIR_TYPE, def: "pcap" }] },
+  { k: "dip", label: "Mirror dest IP", kind: "str", ph: "10.0.0.9", grp: "mirror" },
+  { k: "sport", label: "Mirror source port", kind: "port", ph: "0", grp: "mirror" },
+  { k: "dport", label: "Mirror dest port", kind: "port", ph: "0", grp: "mirror" },
   // VXLAN encapsulation
   { k: "vxlan_sip", label: "VXLAN source IP", kind: "ip", ph: "192.168.1.10", grp: "vxlan" },
   { k: "vxlan_dip", label: "VXLAN dest IP", kind: "ip", ph: "192.168.1.201", grp: "vxlan" },
@@ -455,23 +495,42 @@ const OUT_MOD_INDEX = Object.fromEntries(OUT_MODS.map((m) => [m.k, m]));
 const VLAN_OPS = ["add","replace","remove"];
 const mkOutputMod = (k) => {
   const meta = OUT_MOD_INDEX[k];
-  return { id: nid(), k, val: meta?.opts?.[0] ?? "", op: meta?.kind === "vlanop" ? meta.defOp : undefined };
+  const mod = { id: nid(), k, val: meta?.opts?.[0] ?? "", op: meta?.kind === "vlanop" ? meta.defOp : undefined };
+  if (meta?.attrs) { mod.attrs = {}; meta.attrs.forEach((a) => { mod.attrs[a.name] = a.def ?? ""; }); }
+  return mod;
 };
-const mkOutput = (id) => ({ id, name: "", port: "P1", mods: [] });
+const mkOutput = (id) => ({ id, name: "", port: "P1", mods: [], oattrs: {} });
 
 function serializeOutput(o) {
+  const oa = o.oattrs ?? {};
   const attrs = [`id="${o.id}"`, o.name ? `name="${esc(o.name)}"` : null,
+    oa.type ? `type="${esc(oa.type)}"` : null,
+    oa.mtu ? `mtu="${esc(oa.mtu)}"` : null,
+    oa.stl ? `stl="${esc(oa.stl)}"` : null,
+    oa.arp_srcip ? `arp_srcip="${esc(oa.arp_srcip)}"` : null,
+    (oa.arp_dstip_mac && oa.arp_dstip_mac !== "no") ? `arp_dstip_mac="${esc(oa.arp_dstip_mac)}"` : null,
+    oa["data-tag"] ? `data-tag="${esc(oa["data-tag"])}"` : null,
+    oa["data-index"] ? `data-index="${esc(oa["data-index"])}"` : null,
+    oa.minbps ? `minbps="${esc(oa.minbps)}"` : null,
+    oa.maxbps ? `maxbps="${esc(oa.maxbps)}"` : null,
     o.alt ? `alt="${esc(o.alt)}"` : null].filter(Boolean).join(" ");
   const lines = [`<output ${attrs}>`, `  <port>${esc(o.port)}</port>`];
   (o.mods ?? []).forEach((m) => {
     const meta = OUT_MOD_INDEX[m.k];
-    if (meta?.kind === "flag") lines.push(`  <${m.k}/>`);
-    else if (meta?.kind === "vlanop") {
+    if (!meta) { lines.push(`  <${m.k}>${esc(m.val ?? "")}</${m.k}>`); return; }
+    const attrStr = (meta.attrs ?? []).map((a) => {
+      const v = m.attrs?.[a.name] ?? a.def ?? "";
+      if (!a.required && (v === "" || v === a.def)) return null; // omit empties and defaults
+      return `${a.name}="${esc(v)}"`;
+    }).filter(Boolean).join(" ");
+    const sp = attrStr ? " " + attrStr : "";
+    if (meta.kind === "flag") lines.push(`  <${m.k}${sp}/>`);
+    else if (meta.kind === "vlanop") {
       const op = m.op || meta.defOp;
       if (op === "remove") lines.push(`  <${m.k} type="remove"></${m.k}>`);
       else lines.push(`  <${m.k} type="${op}">${esc(m.val)}</${m.k}>`);
     }
-    else lines.push(`  <${m.k}>${esc(m.val)}</${m.k}>`);
+    else lines.push(`  <${m.k}${sp}>${esc(m.val)}</${m.k}>`);
   });
   lines.push(`</output>`);
   return lines.join("\n");
@@ -651,11 +710,20 @@ function inputProblems(inp, out) {
 /* ===================== whole-document serialiser ===================== */
 function serializeRun(doc) {
   const parts = [];
-  doc.filters.forEach((f) => parts.push(serializeFilter(f).split("\n").map((l) => "  " + l).join("\n")));
-  (doc.inputs ?? []).forEach((inp) => parts.push(serializeInput(inp).split("\n").map((l) => "  " + l).join("\n")));
-  (doc.outputs ?? []).forEach((o) => parts.push(serializeOutput(o).split("\n").map((l) => "  " + l).join("\n")));
-  (doc.actions ?? []).forEach((a) => parts.push(serializeAction(a).split("\n").map((l) => "  " + l).join("\n")));
-  (doc.chains ?? []).forEach((c) => parts.push(serializeChain(c).split("\n").map((l) => "  " + l).join("\n")));
+  // re-emit an element's attached comment (if any) on its own line before it
+  const withComment = (item, xml) => {
+    const indented = xml.split("\n").map((l) => "  " + l).join("\n");
+    if (item && item._comment != null) {
+      const c = `  <!--${item._comment}-->`;
+      return c + "\n" + indented;
+    }
+    return indented;
+  };
+  doc.filters.forEach((f) => parts.push(withComment(f, serializeFilter(f))));
+  (doc.inputs ?? []).forEach((inp) => parts.push(withComment(inp, serializeInput(inp))));
+  (doc.outputs ?? []).forEach((o) => parts.push(withComment(o, serializeOutput(o))));
+  (doc.actions ?? []).forEach((a) => parts.push(withComment(a, serializeAction(a))));
+  (doc.chains ?? []).forEach((c) => parts.push(withComment(c, serializeChain(c))));
   return `<run>\n${parts.join("\n")}\n</run>`;
 }
 
@@ -676,13 +744,14 @@ function parseRun(xmlText) {
   // --- filter criterion (recursive) ---
   function parseCriterion(el) {
     const tag = el.tagName;
-    if (tag === "find") {
-      const field = el.getAttribute("name") || "ip.addr";
-      const rel = el.getAttribute("relation") || "==";
-      const val = el.getAttribute("content") ?? "";
+    if (tag === "find" || tag === "f") {
+      // <f n=… r=… c=…/> is shorthand for <find name=… relation=… content=…/>
+      const field = el.getAttribute("name") ?? el.getAttribute("n") ?? "ip.addr";
+      const rel = el.getAttribute("relation") ?? el.getAttribute("r") ?? "==";
+      const val = el.getAttribute("content") ?? el.getAttribute("c") ?? "";
       if (!FIELD_INDEX[field]) warnings.push(`unknown find field "${field}"`);
       const kind = FIELD_INDEX[field]?.kind ?? "str";
-      return { id: nid(), t: "find", field, rel: kind === "exists" ? "==" : rel, val };
+      return { id: nid(), t: "find", field, rel: rel || "==", val: kind === "exists" ? "" : val };
     }
     if (tag === "or" || tag === "and" || tag === "not") {
       return { id: nid(), t: tag, children: elemChildren(el).map(parseCriterion) };
@@ -695,10 +764,15 @@ function parseRun(xmlText) {
     const name = el.getAttribute("name") || "";
     const alt = el.getAttribute("alt") || "";
     const sessionBase = el.getAttribute("sessionBase") || "no";
+    const matchedlog = el.getAttribute("matchedlog") === "yes" ? "yes" : "no";
     const blockifempty = el.getAttribute("blockifempty") === "yes" ? "yes" : "no";
+    const fattrs = {};
+    ["masking","maxPackets","tuple5_live_hashtable_size","start","position","within","mpslog"].forEach((a) => {
+      const v = el.getAttribute(a); if (v != null) fattrs[a] = v;
+    });
     const first = elemChildren(el)[0];
     const root = first ? parseCriterion(first) : { id: nid(), t: "or", children: [] };
-    return { id, name, alt, sessionBase, blockifempty, root };
+    return { id, name, alt, sessionBase, matchedlog, blockifempty, fattrs, root };
   }
 
   // --- output ---
@@ -706,6 +780,11 @@ function parseRun(xmlText) {
     const id = +(el.getAttribute("id") || 0);
     const name = el.getAttribute("name") || "";
     const alt = el.getAttribute("alt") || "";
+    // output-level attributes
+    const oattrs = {};
+    ["type","mtu","stl","arp_srcip","arp_dstip_mac","data-tag","data-index","minbps","maxbps"].forEach((a) => {
+      const v = el.getAttribute(a); if (v != null) oattrs[a] = v;
+    });
     let port = "P1";
     const mods = [];
     elemChildren(el).forEach((c) => {
@@ -716,10 +795,12 @@ function parseRun(xmlText) {
       if (meta.kind === "vlanop") {
         mods.push({ id: nid(), k, val: c.textContent.trim(), op: c.getAttribute("type") || meta.defOp });
       } else {
-        mods.push({ id: nid(), k, val: c.textContent.trim() });
+        const mod = { id: nid(), k, val: c.textContent.trim() };
+        if (meta.attrs) { mod.attrs = {}; meta.attrs.forEach((a) => { const v = c.getAttribute(a.name); mod.attrs[a.name] = v != null ? v : (a.def ?? ""); }); }
+        mods.push(mod);
       }
     });
-    return { id, name, alt, port, mods };
+    return { id, name, alt, port, mods, oattrs };
   }
 
   // --- input ---
@@ -817,15 +898,28 @@ function parseRun(xmlText) {
   }
 
   const filters = [], outputs = [], actions = [], chains = [], inputs = [];
-  elemChildren(run).forEach((el) => {
+  // Walk raw child nodes so we can capture comments that precede a top-level
+  // element and attach them to that element as `_comment` (round-tripped on output).
+  let pendingComment = [];
+  [...run.childNodes].forEach((node) => {
+    if (node.nodeType === 8) { // Comment node
+      pendingComment.push(node.nodeValue);
+      return;
+    }
+    if (node.nodeType !== 1) return; // ignore text/whitespace
+    const el = node;
+    const comment = pendingComment.length ? pendingComment.join("\n") : null;
+    pendingComment = [];
+    let parsed = null;
     switch (el.tagName) {
-      case "filter": filters.push(parseFilter(el)); break;
-      case "input": inputs.push(parseInput(el)); break;
-      case "output": outputs.push(parseOutput(el)); break;
-      case "action": actions.push(parseAction(el)); break;
-      case "chain": chains.push(parseChain(el)); break;
+      case "filter": parsed = parseFilter(el); filters.push(parsed); break;
+      case "input": parsed = parseInput(el); inputs.push(parsed); break;
+      case "output": parsed = parseOutput(el); outputs.push(parsed); break;
+      case "action": parsed = parseAction(el); actions.push(parsed); break;
+      case "chain": parsed = parseChain(el); chains.push(parsed); break;
       default: warnings.push(`unexpected top-level <${el.tagName}>`);
     }
+    if (parsed && comment != null) parsed._comment = comment;
   });
   if (!chains.length) chains.push(mkChain("P0"));
   if (!filters.length) filters.push({ id: 1, name: "", sessionBase: "no", blockifempty: "no", root: { id: nid(), t: "or", children: [mkFind()] } });
@@ -874,6 +968,8 @@ export default function GrismStudio() {
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
   const DEFAULT_PORTS = ["P0","P1","P2","P3","P4","P5","P6","P7","P8"];
   const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
+  const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
+  const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
   const [activeFilter, setActiveFilter] = useState(1);
   const [activeOutput, setActiveOutput] = useState(1);
   const [activeAction, setActiveAction] = useState(1);
@@ -919,9 +1015,13 @@ export default function GrismStudio() {
       if (!String(c.ports ?? "").trim()) probs.push({ id: "in-" + c.cid, msg: "ingress has no port set" });
       return probs.map((p) => ({ ...p, scope: `chain:${c.cid}` }));
     });
-    const conflictP = [...inPortConflicts].map((p) => ({ id: "conflict-" + p, scope: "chain", msg: `two chains both ingress on ${p}`, label: "in port" }));
-    return [...fp, ...ip, ...op, ...ap, ...cp, ...conflictP];
-  }, [doc, inPortConflicts]);
+    return [...fp, ...ip, ...op, ...ap, ...cp];
+  }, [doc]);
+
+  // non-blocking warnings — surfaced to the user but they don't prevent submit/copy
+  const allWarnings = useMemo(() => {
+    return [...inPortConflicts].map((p) => ({ id: "conflict-" + p, scope: "chain", msg: `two chains both ingress on ${p}`, label: "in port" }));
+  }, [inPortConflicts]);
 
   // --- load the device's running config ---
   const [load, setLoad] = useState({ state: "idle", msg: "" }); // idle | loading | ok | error
@@ -958,7 +1058,26 @@ export default function GrismStudio() {
         .map((p) => p.name)
         .filter(Boolean);
       setDevicePorts(names.length ? [...new Set(names)] : null);
-    } catch { setDevicePorts(null); } // keep defaults
+      const targets = (cfg.heartbeat?.target ?? [])
+        .map((t) => ({ id: t.id, sendPort: t.sendPort, receivePort: t.receivePort }))
+        .filter((t) => t.id != null);
+      setHbTargets(targets);
+      const storages = (cfg.storages ?? []).filter((s) => s.enable).map((s) => s.name).filter(Boolean);
+      setDeviceStorages([...new Set(storages)]);
+    } catch { setDevicePorts(null); setHbTargets([]); setDeviceStorages([]); } // keep defaults
+  }, []);
+
+  // set the sync baseline from the device's running config WITHOUT replacing the
+  // current edits — so the "unapplied changes" indicator reflects the real device
+  // state after login, but the user's work is left intact.
+  const loadBaseline = useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_running_file?filename=run.xml", { credentials: "include" });
+      if (!res.ok) return;
+      const text = await res.text();
+      const { doc: parsed } = parseRun(text);
+      setBaseline(serializeRun(normalizeDoc(parsed)));
+    } catch { /* no baseline change on failure */ }
   }, []);
 
   // --- device login ---
@@ -978,18 +1097,20 @@ export default function GrismStudio() {
       if (!res.ok) throw new Error(`login failed (${res.status})`);
       setLogin((l) => ({ ...l, busy: false, ok: true, pass: "", open: false, who: username }));
       setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
-      loadRunning();       // now authenticated — pull the device's running config
+      loadBaseline();      // now authenticated — set the sync baseline (doesn't touch the current edits)
       loadDevicePorts();   // and the interface/port list for pickers
     } catch (e) {
       setLogin((l) => ({ ...l, busy: false, err: e.message || "login failed" }));
     }
-  }, [loadRunning, loadDevicePorts]);
+  }, [loadBaseline, loadDevicePorts]);
 
   const doLogout = useCallback(async () => {
     try {
       await fetch("/logout", { method: "POST", credentials: "include" });
     } catch { /* clear local session regardless of network result */ }
     setDevicePorts(null); // fall back to default port list
+    setHbTargets([]);
+    setDeviceStorages([]);
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
   }, []);
 
@@ -1073,8 +1194,8 @@ export default function GrismStudio() {
           title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}>
           {theme === "light" ? "🌙" : "☀️"}
         </button>
-        <div className={"health " + (allProblems.length ? "bad" : "ok")}>
-          <span className="dot" />{allProblems.length ? `${allProblems.length} issue${allProblems.length>1?"s":""}` : "valid"}
+        <div className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}>
+          <span className="dot" />{allProblems.length ? `${allProblems.length} issue${allProblems.length>1?"s":""}` : allWarnings.length ? `${allWarnings.length} warning${allWarnings.length>1?"s":""}` : "valid"}
         </div>
       </header>
       {load.state === "error" && <div className="load-banner err">Couldn't load running config: {load.msg}. Check you're signed in to the device.</div>}
@@ -1130,14 +1251,14 @@ export default function GrismStudio() {
           <FiltersTab
             doc={doc} setDoc={setDoc}
             activeFilter={activeFilter} setActiveFilter={setActiveFilter}
-            setFilterRoot={setFilterRoot}
+            setFilterRoot={setFilterRoot} hbTargets={hbTargets}
           />
         )}
         {tab === "inputs" && (
           <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} portOptions={devicePorts ?? DEFAULT_PORTS} />
         )}
         {tab === "outputs" && (
-          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={devicePorts ?? DEFAULT_PORTS} />
+          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={[...(devicePorts ?? DEFAULT_PORTS), ...deviceStorages]} />
         )}
         {tab === "actions" && (
           <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} portOptions={devicePorts ?? DEFAULT_PORTS} />
@@ -1150,7 +1271,7 @@ export default function GrismStudio() {
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null} />
         )}
         {tab === "export" && (
-          <ExportTab runXml={runXml} problems={allProblems}
+          <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings}
             onApplied={() => setBaseline(runXml)}
             onApplyXml={(xmlText) => {
               const { doc: parsed, warnings } = parseRun(xmlText); // throws on malformed → caught in ExportTab
@@ -1205,13 +1326,44 @@ function TemplatesTab({ onApply }) {
 /* ============================================================
    Filters tab — recursive boolean tree editor
    ============================================================ */
-function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot }) {
+/* Editable ID field for top-level elements. Shows the letter prefix (F/I/O/A),
+   lets the user edit the numeric id, and blocks invalid or duplicate values —
+   an id must be a positive integer unique within its own collection. Commits
+   only a valid, non-duplicate change; otherwise shows the typed value as invalid
+   until corrected. */
+function IdField({ prefix, id, siblingIds, onCommit }) {
+  const [draft, setDraft] = useState(String(id));
+  useEffect(() => { setDraft(String(id)); }, [id]);
+  const others = siblingIds.filter((x) => x !== id);
+  const n = parseInt(draft, 10);
+  const valid = /^\d+$/.test(draft) && n >= 1;
+  const dup = valid && others.includes(n);
+  const err = !valid ? "positive integer" : dup ? "id already in use" : null;
+  const commit = () => {
+    if (valid && !dup && n !== id) onCommit(n);
+    else if (err || n === id) setDraft(String(id)); // revert invalid/duplicate/unchanged on blur
+  };
+  return (
+    <label className="ml"><span>id</span>
+      <div className="id-edit">
+        <span className="id-prefix">{prefix}</span>
+        <input className={"m-id editable" + (err ? " invalid" : "")} value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />
+      </div>
+      {err && <span className="id-err">{err}</span>}
+    </label>
+  );
+}
+
+function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets }) {
   const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
   const problems = useMemo(() => f ? filterProblems(f.root, []) : [], [f]);
 
   const addFilter = () => {
     const nextId = Math.max(0, ...doc.filters.map((x) => x.id)) + 1;
-    setDoc((d) => ({ ...d, filters: [...d.filters, { id: nextId, name: "", sessionBase: "no", root: mkGroup("or") }] }));
+    setDoc((d) => ({ ...d, filters: [...d.filters, { id: nextId, name: "", sessionBase: "no", matchedlog: "no", root: mkGroup("or") }] }));
     setActiveFilter(nextId);
   };
   const delFilter = (id) => {
@@ -1219,6 +1371,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot 
     setActiveFilter(doc.filters.find((x) => x.id !== id)?.id ?? null);
   };
   const patchMeta = (patch) => setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, ...patch } : x) }));
+  const patchFattr = (name, v) => patchMeta({ fattrs: { ...(f.fattrs ?? {}), [name]: v } });
 
   const mutate = (id, fn) => setFilterRoot(f.id, (root) => tUpdate(root, id, fn));
   const onChangeOp = (id, op) => mutate(id, (n) => {
@@ -1258,7 +1411,8 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot 
 
       <div className="filter-editor">
         <div className="filter-meta">
-          <label className="ml"><span>id</span><input className="m-id" value={"F" + f.id} readOnly /></label>
+          <IdField prefix="F" id={f.id} siblingIds={doc.filters.map((x) => x.id)}
+            onCommit={(newId) => { setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, id: newId } : x) })); setActiveFilter(newId); }} />
           <label className="ml grow"><span>name</span>
             <input value={f.name} onChange={(e) => patchMeta({ name: e.target.value })} /></label>
           <label className="ml grow"><span>alt (shown on chain)</span>
@@ -1271,11 +1425,60 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot 
             <select value={f.blockifempty || "no"} onChange={(e) => patchMeta({ blockifempty: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
             </select></label>
+          <label className="ml"><span>matchedlog</span>
+            <select value={f.matchedlog || "no"} onChange={(e) => patchMeta({ matchedlog: e.target.value })}>
+              <option value="no">no</option><option value="yes">yes</option>
+            </select></label>
           <button className="del" onClick={() => delFilter(f.id)}>Delete</button>
         </div>
 
+        <div className="oattr-bar">
+          <CollapseSection label="Advanced attributes" active={Object.values(f.fattrs ?? {}).some((v) => v && v !== "no")}>
+            <div className="oattr-grid">
+              {[{ name: "maxPackets", kind: "num" }].map((a) => (
+                <label key={a.name} className="oattr-field">
+                  <span>{a.name}</span>
+                  <input value={(f.fattrs ?? {})[a.name] ?? ""} placeholder={a.name}
+                    onChange={(e) => patchFattr(a.name, e.target.value)} />
+                </label>
+              ))}
+            </div>
+            <div className="oattr-subhead">regular expression</div>
+            <div className="oattr-grid">
+              {[
+                { name: "masking", opts: ["no","yes"] },
+                { name: "start", opts: ["","l2","l3","l4","l7","http_body"] },
+                { name: "position", kind: "num" },
+                { name: "within", kind: "num" },
+              ].map((a) => (
+                <label key={a.name} className="oattr-field">
+                  <span>{a.name}</span>
+                  {a.opts
+                    ? <select value={(f.fattrs ?? {})[a.name] ?? ""} onChange={(e) => patchFattr(a.name, e.target.value)}>
+                        {a.opts.map((op) => <option key={op} value={op}>{op || "—"}</option>)}
+                      </select>
+                    : <input value={(f.fattrs ?? {})[a.name] ?? ""} placeholder={a.name}
+                        onChange={(e) => patchFattr(a.name, e.target.value)} />}
+                </label>
+              ))}
+            </div>
+            <div className="oattr-grid">
+              {[
+                { name: "tuple5_live_hashtable_size", kind: "num" },
+                { name: "mpslog", kind: "num" },
+              ].map((a) => (
+                <label key={a.name} className="oattr-field">
+                  <span>{a.name}</span>
+                  <input value={(f.fattrs ?? {})[a.name] ?? ""} placeholder={a.name}
+                    onChange={(e) => patchFattr(a.name, e.target.value)} />
+                </label>
+              ))}
+            </div>
+          </CollapseSection>
+        </div>
+
         <div className="tree-scroll">
-          <CritNode node={f.root} depth={0} canRemove={false} isRoot={true}
+          <CritNode node={f.root} depth={0} canRemove={false} isRoot={true} hbTargets={hbTargets}
             onChangeOp={onChangeOp} onChangeFind={onChangeFind}
             onAddCond={onAddCond} onAddGroup={onAddGroup} onAddNot={onAddNot} onRemove={onRemove} />
         </div>
@@ -1307,7 +1510,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot 
 const RAILS = ["#5eead4", "#7dd3fc", "#c4b5fd", "#fda4af", "#fcd34d"];
 function CritNode(props) {
   const { node, depth, isRoot } = props;
-  if (node.t === "find") return <FindRow node={node} onChange={props.onChangeFind} onRemove={props.onRemove} canRemove={props.canRemove} />;
+  if (node.t === "find") return <FindRow node={node} onChange={props.onChangeFind} onRemove={props.onRemove} canRemove={props.canRemove} hbTargets={props.hbTargets} />;
   const isNot = node.t === "not";
   const rail = RAILS[depth % RAILS.length];
   return (
@@ -1346,10 +1549,14 @@ function CritNode(props) {
     </div>
   );
 }
-function FindRow({ node, onChange, onRemove, canRemove }) {
+function FindRow({ node, onChange, onRemove, canRemove, hbTargets }) {
   const f = FIELD_INDEX[node.field]; const kind = f?.kind ?? "str";
   const rels = relationsFor(kind); const isEx = kind === "exists";
   const err = isEx ? null : validate(kind, node.val);
+  const isHbId = node.field === "heartbeat.target.miss.id";
+  const targets = hbTargets ?? [];
+  // when the current value isn't among fetched targets, still show it so it's not lost
+  const hbHasVal = !node.val || targets.some((t) => String(t.id) === String(node.val));
   return (
     <div className="find-row">
       <select className="fld" value={node.field} onChange={(e) => {
@@ -1358,11 +1565,21 @@ function FindRow({ node, onChange, onRemove, canRemove }) {
       }}>
         {FIELDS.map((g) => <optgroup key={g.g} label={g.g}>{g.items.map((i) => <option key={i.v} value={i.v}>{i.label}</option>)}</optgroup>)}
       </select>
-      {!isEx && <select className="rel" value={node.rel} onChange={(e) => onChange(node.id, { rel: e.target.value })}>
+      {rels.length > 0 && <select className="rel" value={node.rel} onChange={(e) => onChange(node.id, { rel: e.target.value })}>
         {rels.map((r) => <option key={r} value={r}>{r}</option>)}</select>}
-      {isEx ? <span className="exists-note">exists — no value</span>
-        : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder={ph(kind)}
-            onChange={(e) => onChange(node.id, { val: e.target.value })} />}
+      {isEx ? <span className="exists-note">{node.rel === "!=" ? "does not exist — no value" : "exists — no value"}</span>
+        : isHbId
+          ? (targets.length > 0 || node.val
+              ? <select className={"val" + (err ? " invalid" : "")} value={node.val}
+                  onChange={(e) => onChange(node.id, { val: e.target.value })}>
+                  {!node.val && <option value="">— select target —</option>}
+                  {!hbHasVal && node.val && <option value={node.val}>id {node.val} (not in config)</option>}
+                  {targets.map((t) => <option key={t.id} value={t.id}>id {t.id} · {t.sendPort}→{t.receivePort}</option>)}
+                </select>
+              : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder="sign in to list targets"
+                  onChange={(e) => onChange(node.id, { val: e.target.value })} />)
+          : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder={ph(kind)}
+              onChange={(e) => onChange(node.id, { val: e.target.value })} />}
       <div className="spacer" />
       <span className="fld-code">{node.field}</span>
       {canRemove && <button className="icon-btn" onClick={() => onRemove(node.id)}>✕</button>}
@@ -1460,7 +1677,8 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
 
       <div className="filter-editor">
         <div className="filter-meta">
-          <label className="ml"><span>id</span><input className="m-id" value={"I" + inp.id} readOnly /></label>
+          <IdField prefix="I" id={inp.id} siblingIds={doc.inputs.map((x) => x.id)}
+            onCommit={(newId) => { setDoc((d) => ({ ...d, inputs: d.inputs.map((x) => x.id === inp.id ? { ...x, id: newId } : x) })); setActiveInput(newId); }} />
           <label className="ml grow"><span>name</span>
             <input value={inp.name} onChange={(e) => patch({ name: e.target.value })} placeholder="optional" /></label>
           <label className="ml grow"><span>alt</span>
@@ -1511,10 +1729,31 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
     setDoc((d) => ({ ...d, outputs: (d.outputs ?? []).filter((x) => x.id !== id) }));
     setActiveOutput(outputs.find((x) => x.id !== id)?.id ?? null);
   };
+  // Which modifiers are offered for a given output type.
+  //   httprequesthijack → only redirect2safeweb
+  //   tcpreset          → none
+  //   udpencap          → only dip/sport/dport
+  //   (no type)         → everything EXCEPT redirect2safeweb/dip/sport/dport
+  const TYPE_ONLY = { httprequesthijack: ["redirect2safeweb"], tcpreset: [], udpencap: ["dip","sport","dport"] };
+  const TYPE_SCOPED_KEYS = ["redirect2safeweb","dip","sport","dport"]; // only shown under a specific type
+  const modAllowed = (k, type) => {
+    if (type && TYPE_ONLY[type] !== undefined) return TYPE_ONLY[type].includes(k);
+    return !TYPE_SCOPED_KEYS.includes(k); // no type: all except the scoped ones
+  };
   const patch = (patchObj) => setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, ...patchObj } : x) }));
+  const patchAttr = (name, v) => {
+    if (name === "type") {
+      // prune any modifiers not allowed under the new type
+      const keptMods = (o.mods ?? []).filter((m) => modAllowed(m.k, v));
+      patch({ oattrs: { ...(o.oattrs ?? {}), type: v }, mods: keptMods });
+    } else {
+      patch({ oattrs: { ...(o.oattrs ?? {}), [name]: v } });
+    }
+  };
   const addMod = (k) => patch({ mods: [...(o.mods ?? []), mkOutputMod(k)] });
   const setMod = (mid, val) => patch({ mods: o.mods.map((m) => m.id === mid ? { ...m, val } : m) });
   const setModOp = (mid, op) => patch({ mods: o.mods.map((m) => m.id === mid ? { ...m, op } : m) });
+  const setModAttr = (mid, name, v) => patch({ mods: o.mods.map((m) => m.id === mid ? { ...m, attrs: { ...(m.attrs ?? {}), [name]: v } } : m) });
   const delMod = (mid) => patch({ mods: o.mods.filter((m) => m.id !== mid) });
 
   if (!o) return (
@@ -1541,7 +1780,8 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
 
       <div className="filter-editor">
         <div className="filter-meta">
-          <label className="ml"><span>id</span><input className="m-id" value={"O" + o.id} readOnly /></label>
+          <IdField prefix="O" id={o.id} siblingIds={doc.outputs.map((x) => x.id)}
+            onCommit={(newId) => { setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, id: newId } : x) })); setActiveOutput(newId); }} />
           <label className="ml grow"><span>name</span>
             <input value={o.name} onChange={(e) => patch({ name: e.target.value })} placeholder="optional" /></label>
           <label className="ml grow"><span>alt (shown on chain)</span>
@@ -1552,18 +1792,45 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
           <button className="del" onClick={() => delOutput(o.id)}>Delete</button>
         </div>
 
+        <div className="oattr-bar">
+          <CollapseSection label="Output attributes (advanced)" active={Object.values(o.oattrs ?? {}).some((v) => v && v !== "no")}>
+            <div className="oattr-grid">
+              {[
+                { name: "type", opts: ["","httprequesthijack","tcpreset","udpencap"] },
+                { name: "mtu", kind: "num" }, { name: "stl", kind: "num" },
+                { name: "arp_srcip", kind: "ip" }, { name: "arp_dstip_mac", opts: ["no","yes"] },
+                { name: "minbps", kind: "num" }, { name: "maxbps", kind: "num" },
+              ].map((a) => (
+                <label key={a.name} className="oattr-field">
+                  <span>{a.name}</span>
+                  {a.opts
+                    ? <select value={(o.oattrs ?? {})[a.name] ?? "" } onChange={(e) => patchAttr(a.name, e.target.value)}>
+                        {a.opts.map((op) => <option key={op} value={op}>{op || "—"}</option>)}
+                      </select>
+                    : <input value={(o.oattrs ?? {})[a.name] ?? ""} placeholder={a.name}
+                        onChange={(e) => patchAttr(a.name, e.target.value)} />}
+                </label>
+              ))}
+            </div>
+          </CollapseSection>
+        </div>
+
         <div className="tree-scroll">
           {(o.mods ?? []).length === 0 && (
             <p className="out-empty">This output just forwards to <code>{o.port}</code> unchanged. Add a modifier below to rewrite or tag packets.</p>
           )}
-          {(o.mods ?? []).map((m) => <OutputModRow key={m.id} mod={m} onChange={setMod} onOp={setModOp} onRemove={delMod} />)}
+          {(o.mods ?? []).map((m) => <OutputModRow key={m.id} mod={m} onChange={setMod} onOp={setModOp} onAttr={setModAttr} onRemove={delMod} />)}
 
           <div className="mod-palette">
-            {[["rewrite","add modifier"],["vxlan","VXLAN encapsulation"],["nvgre","NVGRE encapsulation"]].map(([grp, label]) => (
+            {[["rewrite","add modifier"],["reply","ARP / ICMP reply"],["redirect","DNS response / redirect"],["mirror","mirror to file"],["vxlan","VXLAN encapsulation"],["nvgre","NVGRE encapsulation"]].map(([grp, label]) => {
+              const curType = (o.oattrs ?? {}).type || "";
+              const items = OUT_MODS.filter((meta) => meta.grp === grp && modAllowed(meta.k, curType));
+              if (items.length === 0) return null; // hide groups with nothing to offer under this type
+              return (
               <div key={grp} className="mod-palette-group">
                 <span className="mod-palette-label">{label}</span>
                 <div className="mod-palette-grid">
-                  {OUT_MODS.filter((meta) => meta.grp === grp).map((meta) => (
+                  {items.map((meta) => (
                     <button key={meta.k} className="mod-add"
                       onClick={() => addMod(meta.k)}
                       disabled={usedKeys.has(meta.k) && (meta.k === "stripping" || meta.k === "tagging" ? false : true)}
@@ -1573,7 +1840,9 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
                   ))}
                 </div>
               </div>
-            ))}
+              );
+            })}
+            {((o.oattrs ?? {}).type === "tcpreset") && <p className="out-empty">Type <code>tcpreset</code> takes no modifiers.</p>}
           </div>
         </div>
 
@@ -1586,17 +1855,19 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
   );
 }
 
-function OutputModRow({ mod, onChange, onOp, onRemove }) {
+function OutputModRow({ mod, onChange, onOp, onAttr, onRemove }) {
   const meta = OUT_MOD_INDEX[mod.k]; if (!meta) return null;
   const isVlanOp = meta.kind === "vlanop";
+  const isFlag = meta.kind === "flag";
   const op = mod.op || meta.defOp;
-  const err = (meta.kind === "enum" || meta.kind === "flag") ? null
+  const err = (meta.kind === "enum" || isFlag) ? null
     : isVlanOp ? (op === "remove" ? null : validate("vlan", mod.val))
     : validate(meta.kind, mod.val);
   return (
     <div className="mod-row">
       <span className="mod-key">{meta.label}</span>
-      {meta.kind === "enum"
+      {isFlag ? <span className="exists-note">no value</span>
+        : meta.kind === "enum"
         ? <select className="mod-val" value={mod.val} onChange={(e) => onChange(mod.id, e.target.value)}>
             {meta.opts.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
@@ -1612,6 +1883,18 @@ function OutputModRow({ mod, onChange, onOp, onRemove }) {
             </>
           : <input className={"mod-val" + (err ? " invalid" : "")} value={mod.val} placeholder={meta.ph || ""}
               onChange={(e) => onChange(mod.id, e.target.value)} />}
+      {(meta.attrs ?? []).map((a) => (
+        <label key={a.name} className="mod-attr">
+          <span>{a.name}</span>
+          {a.opts
+            ? <select value={mod.attrs?.[a.name] ?? a.def ?? ""} onChange={(e) => onAttr(mod.id, a.name, e.target.value)}>
+                {a.def === "" && <option value="">—</option>}
+                {a.opts.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            : <input value={mod.attrs?.[a.name] ?? ""} placeholder={String(a.def ?? "")}
+                onChange={(e) => onAttr(mod.id, a.name, e.target.value)} />}
+        </label>
+      ))}
       <code className="mod-tag">&lt;{mod.k}{isVlanOp ? ` type=${op}` : ""}&gt;</code>
       <div className="spacer" />
       <button className="icon-btn" onClick={() => onRemove(mod.id)}>✕</button>
@@ -1667,7 +1950,8 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions })
 
       <div className="filter-editor">
         <div className="filter-meta">
-          <label className="ml"><span>id</span><input className="m-id" value={"A" + a.id} readOnly /></label>
+          <IdField prefix="A" id={a.id} siblingIds={doc.actions.map((x) => x.id)}
+            onCommit={(newId) => { setDoc((d) => ({ ...d, actions: d.actions.map((x) => x.id === a.id ? { ...x, id: newId } : x) })); setActiveAction(newId); }} />
           <label className="ml grow"><span>name</span>
             <input value={a.name} onChange={(e) => patch({ name: e.target.value })} placeholder="optional" /></label>
           <label className="ml"><span>type</span>
@@ -1818,10 +2102,20 @@ function CollapseSection({ label, active, children }) {
   );
 }
 
-function CheckAccordion({ label, items, onToggle, onAll, emptyNote }) {
+function CheckAccordion({ label, items, onToggle, onAll, onSetOne, emptyNote }) {
   const [open, setOpen] = useState(false);
   const picked = items.filter((it) => it.on).length;
+  const [multi, setMulti] = useState(picked > 1); // default single, unless already multiple
+  // if the current value becomes multiple (e.g. selecting a different node that
+  // already has several), reflect that by switching the picker to multi mode.
+  useEffect(() => { if (picked > 1) setMulti(true); }, [picked]);
   const allOn = items.length > 0 && picked === items.length;
+  const switchToSingle = () => {
+    // keep only the first selected when leaving multi mode
+    const first = items.find((it) => it.on);
+    if (picked > 1 && onSetOne) onSetOne(first ? first.id : null);
+    setMulti(false);
+  };
   return (
     <div className="known acc">
       <button className={"acc-head" + (open ? " open" : "")} onClick={() => setOpen((o) => !o)}>
@@ -1829,13 +2123,20 @@ function CheckAccordion({ label, items, onToggle, onAll, emptyNote }) {
         {picked > 0 && <span className="acc-count">{picked}</span>}
       </button>
       {open && <div className="acc-body">
-        {items.length > 0 && <button className="acc-all" onClick={() => onAll(!allOn)}>
-          {allOn ? "Clear all" : "Select all"}
-        </button>}
+        <div className="acc-toolbar">
+          <label className="acc-multi">
+            <input type="checkbox" checked={multi} onChange={(e) => e.target.checked ? setMulti(true) : switchToSingle()} />
+            multi-select
+          </label>
+          {multi && items.length > 0 && <button className="acc-all" onClick={() => onAll(!allOn)}>
+            {allOn ? "Clear all" : "Select all"}
+          </button>}
+        </div>
         <div className="fid-checks">
           {items.map((it) => (
             <label key={it.id} className={"fid-check" + (it.on ? " on" : "")}>
-              <input type="checkbox" checked={it.on} onChange={() => onToggle(it.id)} />
+              <input type={multi ? "checkbox" : "radio"} checked={it.on}
+                onChange={() => multi ? onToggle(it.id) : onSetOne(it.id)} />
               <b>{it.b}</b>{it.sub && <span>{it.sub}</span>}
             </label>
           ))}
@@ -1868,13 +2169,24 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   // alt labels keyed by reference id, for the chain node captions
   const filterAlt = useMemo(() => Object.fromEntries(doc.filters.filter((f) => f.alt).map((f) => ["F" + f.id, f.alt])), [doc.filters]);
   const outputAlt = useMemo(() => Object.fromEntries((doc.outputs ?? []).filter((o) => o.alt).map((o) => ["O" + o.id, o.alt])), [doc.outputs]);
-  // resolve the alt caption for a branch's fids ("F1" or "F1,!F3" → first defined alt) or an out's ports ("O1")
-  const branchAlt = (fids) => {
-    for (const tok of String(fids).split(",")) { const id = tok.trim().replace(/^!/, ""); if (filterAlt[id]) return filterAlt[id]; }
-    return "";
+  // build a caption from all referenced filters, joined by the node's and/or:
+  //   "F1,!F3" (op=and) → "is https AND NOT blocked geo"
+  //   a filter with no alt shows its id (e.g. "is https AND F2")
+  const branchAlt = (fids, fidOp) => {
+    const toks = String(fids || "").split(",").map((t) => t.trim()).filter(Boolean);
+    if (!toks.length) return "";
+    const joiner = (fidOp === "and" ? " AND " : " OR ");
+    const parts = toks.map((tok) => {
+      const neg = tok.startsWith("!");
+      const id = tok.replace(/^!/, "");
+      const label = filterAlt[id] || id;              // alt, else the id itself
+      return (neg ? "NOT " : "") + label;
+    });
+    // only worth showing as a caption if at least one filter actually has an alt
+    return parts.some((_, i) => filterAlt[toks[i].replace(/^!/, "")]) ? parts.join(joiner) : "";
   };
   const outAlt = (ports) => { for (const tok of String(ports).split(",")) { const t = tok.trim(); if (outputAlt[t]) return outputAlt[t]; } return ""; };
-  const capAlt = (s) => s && s.length > 22 ? s.slice(0, 21) + "…" : s; // keep captions inside the node
+  const capAlt = (s) => s && s.length > 30 ? s.slice(0, 29) + "…" : s; // visible cap; full text in a hover tooltip
 
   const sel = placed.find((n) => n.id === selId) || null;
   const mutate = (id, fn) => setChainTreeFor(cid, (tree) => cUpdate(tree, id, fn));
@@ -1927,6 +2239,20 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const setAllOutPorts = (nodeId, ports, all, on) => {
     const keep = listTokens(ports).filter((t) => !all.includes(t));
     mutate(nodeId, (n) => ({ ...n, ports: (on ? [...keep, ...all] : keep).join(",") }));
+  };
+  // single-select: replace the offered options with just `one` (preserve tokens
+  // outside the offered set, e.g. hand-typed !F3 or special port values).
+  const setOneFid = (nodeId, fids, all, one) => {
+    const keep = fidsTokens(fids).filter((t) => !all.includes(t.replace(/^!/, "")));
+    mutate(nodeId, (n) => ({ ...n, fids: [...keep, ...(one ? [one] : [])].join(",") }));
+  };
+  const setOneInPort = (all, one) => {
+    const keep = listTokens(chain.ports).filter((t) => !all.includes(t));
+    setPorts([...keep, ...(one ? [one] : [])].join(","));
+  };
+  const setOneOutPort = (nodeId, ports, all, one) => {
+    const keep = listTokens(ports).filter((t) => !all.includes(t));
+    mutate(nodeId, (n) => ({ ...n, ports: [...keep, ...(one ? [one] : [])].join(",") }));
   };
   const setPorts = (v) => setDoc((d) => ({ ...d, chains: d.chains.map((c) => c.cid === cid ? { ...c, ports: v } : c) }));
   const setInVlan = (patch) => setDoc((d) => ({ ...d, chains: d.chains.map((c) => c.cid === cid ? { ...c, inVlan: { ...(c.inVlan ?? {}), ...patch } } : c) }));
@@ -2048,7 +2374,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               <rect x={x} y={y} width={NODE_W} height={NODE_H} rx="9" />
               {bad && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
               {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">INGRESS</text><text x={c.x} y={c.y + 12} className="n-main">{n.ports}</text></>}
-              {n.t === "branch" && <><text x={c.x} y={c.y - 5} className={branchAlt(n.fids) ? "n-alt" : "n-kind"}>{capAlt(branchAlt(n.fids)) || "FILTER"}</text><text x={c.x} y={c.y + 12} className="n-main">{n.fids}</text></>}
+              {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || "FILTER"}</text><text x={c.x} y={c.y + 12} className="n-main">{n.fids}</text></>; })()}
               {n.t === "out" && <><text x={c.x} y={c.y - 5} className={!drop && outAlt(n.ports) ? "n-alt" : "n-kind"}>{drop ? "DISCARD" : capAlt(outAlt(n.ports)) || (n.mode === "loadBalance" ? "LOAD BALANCE" : "OUTPUT")}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : n.ports}</text></>}
             </g>;
           })}
@@ -2070,8 +2396,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               items={portOptions.map((p) => ({ id: p, b: p, on: listHas(chain.ports, p) }))}
               onToggle={(p) => toggleInPort(p)}
               onAll={(on) => setAllInPorts(portOptions, on)}
+              onSetOne={(p) => setOneInPort(portOptions, p)}
               emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
-            <CollapseSection label="VLAN operation" active={!!chain.inVlan?.vlantype}>
+            <CollapseSection label="Advanced operation" active={!!chain.inVlan?.vlantype}>
               <label className="fld2"><span>VLAN operation</span>
                 <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
                   <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
@@ -2092,6 +2419,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || "unnamed", on: fidsHas(sel.fids, "F" + f.id) }))}
               onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
               onAll={(on) => setAllFids(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), on)}
+              onSetOne={(fid) => setOneFid(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), fid)}
               emptyNote="No filters defined yet." />
             <button className="danger" onClick={() => removeTest(sel.id)}>Remove test → output</button>
           </>}
@@ -2103,15 +2431,17 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 items={portOptions.map((p) => ({ id: p, b: p, on: listHas(sel.ports, p) }))}
                 onToggle={(p) => toggleOutPort(sel.id, sel.ports, p)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, portOptions, on)}
+                onSetOne={(p) => setOneOutPort(sel.id, sel.ports, portOptions, p)}
                 emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
               {(doc.outputs?.length ?? 0) > 0 && <CheckAccordion
                 label="defined outputs"
                 items={doc.outputs.map((o) => ({ id: "O" + o.id, b: "O" + o.id, sub: o.name || o.port, on: listHas(sel.ports, "O" + o.id) }))}
                 onToggle={(oid) => toggleOutPort(sel.id, sel.ports, oid)}
-                onAll={(on) => setAllOutPorts(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), on)} />}
+                onAll={(on) => setAllOutPorts(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), on)}
+                onSetOne={(oid) => setOneOutPort(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), oid)} />}
               <label className="fld2"><span>Mode</span><select value={sel.mode} onChange={(e) => mutate(sel.id, (n) => ({ ...n, mode: e.target.value }))}><option value="duplicate">duplicate</option><option value="loadBalance">load balance</option></select></label>
               {sel.mode === "loadBalance" && <label className="fld2"><span>Balance by</span><select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>{["session","5thash","rr","sip","dip"].map((o) => <option key={o} value={o}>{o}</option>)}</select></label>}
-              <CollapseSection label="VLAN operation" active={!!sel.vlantype}>
+              <CollapseSection label="Advanced operation" active={!!sel.vlantype}>
                 <label className="fld2"><span>VLAN operation</span>
                   <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
                     <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
@@ -2208,7 +2538,7 @@ function XmlView({ xml }) {
   );
 }
 
-function ExportTab({ runXml, problems, onGoto, onApplyXml, onApplied }) {
+function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied }) {
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
   const [apply, setApply] = useState({ active: false, msg: "", warn: "" }); // device-side apply polling
@@ -2339,8 +2669,8 @@ function ExportTab({ runXml, problems, onGoto, onApplyXml, onApplied }) {
           : <XmlView xml={runXml} />}
       </div>
       <aside className="export-side">
-        {!editing && <div className={"pane-validity " + (problems.length ? "bad" : "ok")}>
-          <span className="dot" />{problems.length ? `${problems.length} issue${problems.length>1?"s":""}` : "ready to export"}
+        {!editing && <div className={"pane-validity " + (problems.length ? "bad" : warnings.length ? "warn" : "ok")}>
+          <span className="dot" />{problems.length ? `${problems.length} issue${problems.length>1?"s":""}` : warnings.length ? `${warnings.length} warning${warnings.length>1?"s":""} — can still submit` : "ready to export"}
         </div>}
         {editing && <div className="edit-help">
           <p>Edit the XML directly. <b>Format</b> tidies the indentation without changing anything. <b>Apply changes</b> parses it back into the editor — every tab updates to match. <b>Cancel</b> discards your edits.</p>
@@ -2352,6 +2682,9 @@ function ExportTab({ runXml, problems, onGoto, onApplyXml, onApplied }) {
         {!editing && submit.state === "ok" && <p className="submit-note ok">Configuration applied — the device is now running <code>run.xml</code>.</p>}
         {!editing && problems.length > 0 && <ul className="problem-list">
           {problems.map((p, i) => <li key={i} onClick={() => onGoto(p.scope)}><code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}</li>)}
+        </ul>}
+        {!editing && warnings.length > 0 && <ul className="problem-list warn-list">
+          {warnings.map((p, i) => <li key={i} onClick={() => onGoto(p.scope)}><code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}</li>)}
         </ul>}
         {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">All filters and the chain validate. Edit the XML, copy it, or submit straight to the device.</p>}
       </aside>
