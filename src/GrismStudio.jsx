@@ -985,6 +985,7 @@ export default function GrismStudio() {
   const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
+  const [loopPorts, setLoopPorts] = useState([]); // ports on a LOOP-type interface (out returns in on the same port)
   const [activeFilter, setActiveFilter] = useState(1);
   const [activeOutput, setActiveOutput] = useState(1);
   const [activeAction, setActiveAction] = useState(1);
@@ -1097,18 +1098,21 @@ export default function GrismStudio() {
       const res = await fetch("/grism/task/get_config", { credentials: "include" });
       if (!res.ok) throw new Error(`status ${res.status}`);
       const cfg = await res.json();
-      const names = (cfg.interfaces ?? [])
-        .flatMap((i) => i.ports ?? [])
-        .map((p) => p.name)
-        .filter(Boolean);
+      const ifaces = cfg.interfaces ?? [];
+      const names = ifaces.flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
       setDevicePorts(names.length ? [...new Set(names)] : null);
+      // ports belonging to a LOOP-type interface: traffic sent out returns on the
+      // same port. Tracked separately so the panel can list & animate them.
+      const loops = ifaces.filter((i) => (i.type || "").toUpperCase() === "LOOP")
+        .flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
+      setLoopPorts([...new Set(loops)]);
       const targets = (cfg.heartbeat?.target ?? [])
         .map((t) => ({ id: t.id, sendPort: t.sendPort, receivePort: t.receivePort }))
         .filter((t) => t.id != null);
       setHbTargets(targets);
       const storages = (cfg.storages ?? []).filter((s) => s.enable).map((s) => s.name).filter(Boolean);
       setDeviceStorages([...new Set(storages)]);
-    } catch { setDevicePorts(null); setHbTargets([]); setDeviceStorages([]); } // keep defaults
+    } catch { setDevicePorts(null); setHbTargets([]); setDeviceStorages([]); setLoopPorts([]); } // keep defaults
   }, []);
 
   // set the sync baseline from the device's running config WITHOUT replacing the
@@ -1155,6 +1159,7 @@ export default function GrismStudio() {
     setDevicePorts(null); // fall back to default port list
     setHbTargets([]);
     setDeviceStorages([]);
+    setLoopPorts([]);
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
   }, []);
 
@@ -1315,7 +1320,7 @@ export default function GrismStudio() {
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null} />
         )}
         {tab === "simulate" && (
-          <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS}
+          <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} loopPorts={loopPorts}
             simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped} />
         )}
         {tab === "export" && (
@@ -2707,23 +2712,23 @@ function simulateChain(chain, states, filterAlt) {
    as chain ingress / output highlighted. Clicking a port selects it as the
    simulation ingress. Below, user-added inline devices (e.g. an external IPS)
    are drawn bridging two ports. */
-function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState }) {
+function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [] }) {
   const portRole = (p) => { const i = inPortSet.has(p), o = outPortSet.has(p); return i && o ? "both" : i ? "in" : o ? "out" : "idle"; };
   const inlinePorts = new Set(inlines.flatMap((x) => [x.portA, x.portB]));
   const [flipped, setFlipped] = flipState; // lifted so row orientation persists across tab switches
+  const loopSet = new Set(loopPorts);
 
   // number extracted from a port name (P0 -> 0); ports without a number get their own column
   const portNum = (p) => { const m = /(\d+)/.exec(p); return m ? +m[1] : null; };
   // Build aligned columns: each column pairs an even port (bottom) with its +1 odd
   // port (top). A lone port occupies only its natural row; the other cell stays empty.
-  // Ports with no number get a single-cell column on the bottom row.
-  const columns = useMemo(() => {
-    const byNum = new Map(); // evenBase -> { top, bottom }
+  const buildColumns = (ports) => {
+    const byNum = new Map();
     const extras = [];
-    portOptions.forEach((p) => {
+    ports.forEach((p) => {
       const n = portNum(p);
       if (n == null) { extras.push(p); return; }
-      const base = n % 2 === 0 ? n : n - 1; // pair P(2k)/P(2k+1) under key 2k
+      const base = n % 2 === 0 ? n : n - 1;
       const col = byNum.get(base) || { base, top: null, bottom: null };
       if (n % 2 === 0) col.bottom = p; else col.top = p;
       byNum.set(base, col);
@@ -2732,7 +2737,10 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
     if (flipped) cols = cols.map((c) => ({ ...c, top: c.bottom, bottom: c.top }));
     extras.forEach((p, i) => cols.push({ base: 10000 + i, top: null, bottom: p }));
     return cols;
-  }, [portOptions, flipped]);
+  };
+  // normal ports on the left, LOOP-interface ports grouped on the right
+  const columns = useMemo(() => buildColumns(portOptions.filter((p) => !loopSet.has(p))), [portOptions, flipped, loopPorts]);
+  const loopColumns = useMemo(() => buildColumns(portOptions.filter((p) => loopSet.has(p))), [portOptions, flipped, loopPorts]);
 
   const wrapRef = useRef(null);
   const chassisRef = useRef(null);
@@ -2829,6 +2837,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
       else if (n.kind === "port") { const p = geo.ports[n.port]; if (p) pts.push({ ...p, port: n.port }); }
       else if (n.kind === "ips-in") { const j = geo.inlines[n.devId]; if (j && j[n.port]) { pts.push({ ...j[n.port], dev: n.devId }); if (j.mid) pts.push({ ...j.mid, dev: n.devId }); } }
       else if (n.kind === "ips-out") { const j = geo.inlines[n.devId]; if (j && j[n.port]) pts.push({ ...j[n.port], dev: n.devId }); }
+      else if (n.kind === "loop") { const o = outsidePt(n.port); if (o) { pts.push({ ...o, loop: true }); if (geo.ports[n.port]) pts.push({ ...geo.ports[n.port], port: n.port }); } }
       else if (n.kind === "fizzle") { const p = geo.ports[n.port]; if (p) pts.push({ x: p.x, y: p.y }); }
     }
     // de-dup consecutive identical points (preserve tags if either has them)
@@ -2917,13 +2926,14 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   const renderPort = (p) => {
     const role = portRole(p);
     const wired = inlinePorts.has(p);
+    const isLoop = loopSet.has(p);
     return (
       <button key={p} ref={(el) => { portRefs.current[p] = el; }}
-        className={"dev-port " + role + (selected === p ? " selected" : "") + (wired ? " wired" : "") + (nextPort === p ? " next" : prevPort === p ? " from" : "")}
-        onClick={() => onPick(p)} title={role === "both" ? "ingress + output" : role === "in" ? "ingress" : role === "out" ? "output" : "unused"}>
+        className={"dev-port " + role + (selected === p ? " selected" : "") + (wired ? " wired" : "") + (isLoop ? " loop" : "") + (nextPort === p ? " next" : prevPort === p ? " from" : "")}
+        onClick={() => onPick(p)} title={isLoop ? "LOOP interface — traffic returns on the same port" : role === "both" ? "ingress + output" : role === "in" ? "ingress" : role === "out" ? "output" : "unused"}>
         <span className="dev-port-led" />
         <span className="dev-port-name">{p}</span>
-        {role !== "idle" && <span className="dev-port-role">{role === "both" ? "IN/OUT" : role.toUpperCase()}</span>}
+        {isLoop ? <span className="dev-port-role loop">LOOP ↻</span> : role !== "idle" && <span className="dev-port-role">{role === "both" ? "IN/OUT" : role.toUpperCase()}</span>}
         {wired && <span className="dev-port-jack" title="wired to an inline device" />}
       </button>
     );
@@ -2957,13 +2967,28 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
               <button className="dev-flip" onClick={() => setFlipped((v) => !v)} title="Swap which ports sit on the top / bottom row">⇅ flip rows</button>
             </div>
           </div>
-          <div className="dev-port-cols">
-            {columns.map((col) => (
-              <div key={col.base} className="dev-port-col">
-                <div className="dev-port-slot">{col.top ? renderPort(col.top) : <span className="dev-port-empty" />}</div>
-                <div className="dev-port-slot">{col.bottom ? renderPort(col.bottom) : <span className="dev-port-empty" />}</div>
+          <div className="dev-port-area">
+            <div className="dev-port-cols">
+              {columns.map((col) => (
+                <div key={col.base} className="dev-port-col">
+                  <div className="dev-port-slot">{col.top ? renderPort(col.top) : <span className="dev-port-empty" />}</div>
+                  <div className="dev-port-slot">{col.bottom ? renderPort(col.bottom) : <span className="dev-port-empty" />}</div>
+                </div>
+              ))}
+            </div>
+            {loopColumns.length > 0 && (
+              <div className="dev-loop-group">
+                <div className="dev-loop-label">LOOP</div>
+                <div className="dev-port-cols">
+                  {loopColumns.map((col) => (
+                    <div key={col.base} className="dev-port-col">
+                      <div className="dev-port-slot">{col.top ? renderPort(col.top) : <span className="dev-port-empty" />}</div>
+                      <div className="dev-port-slot">{col.bottom ? renderPort(col.bottom) : <span className="dev-port-empty" />}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
           </div>
           <div className="dev-legend">
             <span className="dev-leg in"><span className="dev-leg-dot" />ingress</span>
@@ -3025,7 +3050,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   );
 }
 
-function SimulateTab({ doc, definedIds, portOptions, simState, simInPort, simInlines, simInlineDraft, simFlipped }) {
+function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped }) {
   // all filter ids to offer as switches: defined here + referenced-but-undefined
   const filterIds = useMemo(() => {
     const s = new Set(doc.filters.map((f) => "F" + f.id));
@@ -3095,7 +3120,23 @@ function SimulateTab({ doc, definedIds, portOptions, simState, simInPort, simInl
       if (!chain) { nodes.push({ kind: "outside-out", port: curIngress }); break; } // no chain: leaves the device
       const { outcome } = simulateChain(chain, states, filterAlt);
       if (outcome.kind !== "out") { nodes.push({ kind: "fizzle", port: curIngress, label: outcome.kind }); break; }
-      const outPort = outcome.text.split(",")[0].trim();
+      let outPort = outcome.text.split(",")[0].trim();
+      // if the chain routes to a defined output (O1), the packet actually goes to
+      // the physical port that output defines — resolve it before animating.
+      const oMatch = /^O(\d+)$/.exec(outPort);
+      if (oMatch) {
+        const outDef = (doc.outputs ?? []).find((o) => o.id === +oMatch[1]);
+        if (outDef && outDef.port) { nodes.push({ kind: "output-ref", ref: outPort, port: outDef.port }); outPort = outDef.port; }
+        else { nodes.push({ kind: "port", port: outPort }, { kind: "outside-out", port: outPort }); break; } // undefined output: nowhere to send
+      }
+      const loopSet = new Set(loopPorts);
+      if (loopSet.has(outPort)) {
+        // LOOP interface: packet exits and returns on the SAME port, then continues
+        nodes.push({ kind: "port", port: outPort }, { kind: "loop", port: outPort }, { kind: "port", port: outPort });
+        if (curIngress === outPort) break; // safety: would re-run the same chain forever
+        curIngress = outPort;
+        continue;
+      }
       const wire = inlines.find((d) => d.portA === outPort || d.portB === outPort);
       if (!wire) { nodes.push({ kind: "port", port: outPort }, { kind: "outside-out", port: outPort }); break; } // exits out
       const paired = wire.portA === outPort ? wire.portB : wire.portA;
@@ -3103,7 +3144,7 @@ function SimulateTab({ doc, definedIds, portOptions, simState, simInPort, simInl
       curIngress = paired; // continue as if it re-entered on the paired port
     }
     return { nodes };
-  }, [inPort, results, states, filterAlt, inlines, doc.chains]);
+  }, [inPort, results, states, filterAlt, inlines, doc.chains, doc.outputs, loopPorts]);
 
   return (
     <div className="sim-page">
@@ -3111,7 +3152,7 @@ function SimulateTab({ doc, definedIds, portOptions, simState, simInPort, simInl
         selected={inPort} onPick={(p) => setInPort(p)}
         inlines={inlines} onRemoveInline={removeInline}
         inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
-        animPlan={animPlan} flipState={simFlipped} />
+        animPlan={animPlan} flipState={simFlipped} loopPorts={loopPorts} />
       <div className="sim-layout">
       <aside className="sim-controls">
         <div className="sim-section">
