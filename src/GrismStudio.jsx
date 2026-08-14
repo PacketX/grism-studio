@@ -139,6 +139,11 @@ const FIELDS = [
     { v: "arp.request.sender.ip", label: "ARP sender IP", kind: "ip" },
     { v: "ftp", label: "is FTP", kind: "exists" },
   ]},
+  { g: "ICMP", items: [
+    { v: "icmp", label: "is ICMP", kind: "exists" },
+    { v: "icmp.type", label: "ICMP type", kind: "num" },
+    { v: "icmp.code", label: "ICMP code", kind: "num" },
+  ]},
   { g: "Meta / flow / system", items: [
     { v: "regex", label: "Regular expression", kind: "regex" },
     { v: "country.iso_code", label: "Country ISO code", kind: "country" },
@@ -300,7 +305,9 @@ function serializeChain(chain) {
     const pad = "  ".repeat(depth);
     if (!node || isUnset(node)) return null;
     if (node.t === "out") return emitOut(node, pad);
-    const lines = [`${pad}<fid type="${node.fidOp}">${node.fids}</fid>`];
+    const fidType = node.fidOp && node.fidOp !== "or" ? ` type="${node.fidOp}"` : "";
+    const fidAlt = node.fidAlt ? ` alt="${esc(node.fidAlt)}"` : "";
+    const lines = [`${pad}<fid${fidType}${fidAlt}>${node.fids}</fid>`];
     if (node.match && !isUnset(node.match)) {
       if (node.match.t === "out") lines.push(emitOut(node.match, pad));
       else { lines.push(`${pad}<next>`); const i = body(node.match, depth+1); if (i) lines.push(i); lines.push(`${pad}</next>`); }
@@ -543,6 +550,7 @@ function serializeOutput(o) {
     else if (meta.kind === "vlanop") {
       const op = m.op || meta.defOp;
       if (op === "remove") lines.push(`  <${m.k} type="remove"></${m.k}>`);
+      else if (op === "add") lines.push(`  <${m.k}>${esc(m.val)}</${m.k}>`); // add is default → omit type
       else lines.push(`  <${m.k} type="${op}">${esc(m.val)}</${m.k}>`);
     }
     else lines.push(`  <${m.k}${sp}>${esc(m.val)}</${m.k}>`);
@@ -889,6 +897,7 @@ function parseRun(xmlText) {
       return outEl ? parseOutNode(outEl) : mkUnset();
     }
     const node = { id: nid(), t: "branch", fids: fidEl.textContent.trim(), fidOp: fidEl.getAttribute("type") || "or",
+      fidAlt: fidEl.getAttribute("alt") || "",
       match: mkUnset(), notmatch: mkUnset() };
     // walk siblings after the fid: first <out> or plain <next> = match; <next type="notmatch"> = notmatch
     const after = els.slice(els.indexOf(fidEl) + 1);
@@ -986,6 +995,7 @@ export default function GrismStudio() {
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
   const [loopPorts, setLoopPorts] = useState([]); // ports on a LOOP-type interface (out returns in on the same port)
+  const [deviceFilterIds, setDeviceFilterIds] = useState(null); // filter ids that exist on the device (from get_filter_counter); null = unknown/not logged in
   const [activeFilter, setActiveFilter] = useState(1);
   const [activeOutput, setActiveOutput] = useState(1);
   const [activeAction, setActiveAction] = useState(1);
@@ -1052,7 +1062,11 @@ export default function GrismStudio() {
         if (n.t === "branch" && n.fids) {
           n.fids.split(",").map((s) => s.trim()).filter(Boolean).forEach((tok) => {
             const id = tok.replace(/^!/, "");
-            if (/^F\d+$/.test(id) && !definedIds.has(id)) missingF.add(id);
+            if (!/^F\d+$/.test(id) || definedIds.has(id)) return;
+            // defined here? no. On the device (from get_filter_counter)? then it's fine.
+            const num = +id.slice(1);
+            if (deviceFilterIds && deviceFilterIds.has(num)) return;
+            missingF.add(id);
           });
         }
         if (n.t === "out" && n.ports) {
@@ -1066,7 +1080,7 @@ export default function GrismStudio() {
       missingO.forEach((id) => w.push({ id: `missingO-${c.cid}-${id}`, scope: `chain:${c.cid}`, label: id, msg: `output ${id} isn't defined in this config` }));
     });
     return w;
-  }, [inPortConflicts, doc.chains, definedIds, outputIds]);
+  }, [inPortConflicts, doc.chains, definedIds, outputIds, deviceFilterIds]);
 
   // --- load the device's running config ---
   const [load, setLoad] = useState({ state: "idle", msg: "" }); // idle | loading | ok | error
@@ -1099,7 +1113,11 @@ export default function GrismStudio() {
       if (!res.ok) throw new Error(`status ${res.status}`);
       const cfg = await res.json();
       const ifaces = cfg.interfaces ?? [];
-      const names = ifaces.flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
+      // list VPORT-type interfaces' ports first, then everything else (preserving
+      // each group's own order), so the panel shows VPORTs before other types.
+      const isVport = (i) => (i.type || "").toUpperCase() === "VPORT";
+      const ordered = [...ifaces.filter(isVport), ...ifaces.filter((i) => !isVport(i))];
+      const names = ordered.flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
       setDevicePorts(names.length ? [...new Set(names)] : null);
       // ports belonging to a LOOP-type interface: traffic sent out returns on the
       // same port. Tracked separately so the panel can list & animate them.
@@ -1128,6 +1146,19 @@ export default function GrismStudio() {
     } catch { /* no baseline change on failure */ }
   }, []);
 
+  // fetch the set of filter ids that actually exist on the device. Used to
+  // suppress "filter Fn isn't defined" warnings when a chain references a filter
+  // that lives on the device even though it isn't defined in this XML.
+  const loadFilterCounter = useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_filter_counter", { credentials: "include" });
+      if (!res.ok) { setDeviceFilterIds(null); return; }
+      const data = await res.json();
+      const ids = (data.filter_counter ?? []).map((f) => f.id).filter((n) => n != null);
+      setDeviceFilterIds(new Set(ids));
+    } catch { setDeviceFilterIds(null); }
+  }, []);
+
   // --- device login ---
   const doLogin = useCallback(async (username, password) => {
     setLogin((l) => ({ ...l, busy: true, err: "" }));
@@ -1147,10 +1178,11 @@ export default function GrismStudio() {
       setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
       loadBaseline();      // now authenticated — set the sync baseline (doesn't touch the current edits)
       loadDevicePorts();   // and the interface/port list for pickers
+      loadFilterCounter(); // and the device's filter ids (to suppress false "undefined" warnings)
     } catch (e) {
       setLogin((l) => ({ ...l, busy: false, err: e.message || "login failed" }));
     }
-  }, [loadBaseline, loadDevicePorts]);
+  }, [loadBaseline, loadDevicePorts, loadFilterCounter]);
 
   const doLogout = useCallback(async () => {
     try {
@@ -1160,6 +1192,7 @@ export default function GrismStudio() {
     setHbTargets([]);
     setDeviceStorages([]);
     setLoopPorts([]);
+    setDeviceFilterIds(null);
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
   }, []);
 
@@ -2720,23 +2753,35 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 
   // number extracted from a port name (P0 -> 0); ports without a number get their own column
   const portNum = (p) => { const m = /(\d+)/.exec(p); return m ? +m[1] : null; };
-  // Build aligned columns: each column pairs an even port (bottom) with its +1 odd
-  // port (top). A lone port occupies only its natural row; the other cell stays empty.
+  // Build columns two ports at a time. Ports are grouped by prefix (P, V, …) so
+  // different families don't mix; each group is sorted low→high and chunked into
+  // pairs — 1st+2nd share a column, 3rd+4th the next, and so on, regardless of
+  // odd/even. Within a column the smaller sits on the bottom, larger on top.
+  // Prefix groups keep first-appearance order so an upstream ordering (VPORT
+  // first) is preserved; numberless ports fall to the end.
   const buildColumns = (ports) => {
-    const byNum = new Map();
+    const groups = new Map(); // prefix -> [names]
+    const groupOrder = [];
     const extras = [];
     ports.forEach((p) => {
       const n = portNum(p);
       if (n == null) { extras.push(p); return; }
-      const base = n % 2 === 0 ? n : n - 1;
-      const col = byNum.get(base) || { base, top: null, bottom: null };
-      if (n % 2 === 0) col.bottom = p; else col.top = p;
-      byNum.set(base, col);
+      const prefix = p.slice(0, p.length - String(n).length); // "P", "V", etc.
+      if (!groups.has(prefix)) { groups.set(prefix, []); groupOrder.push(prefix); }
+      groups.get(prefix).push(p);
     });
-    let cols = [...byNum.values()].sort((a, b) => a.base - b.base);
-    if (flipped) cols = cols.map((c) => ({ ...c, top: c.bottom, bottom: c.top }));
-    extras.forEach((p, i) => cols.push({ base: 10000 + i, top: null, bottom: p }));
-    return cols;
+    const cols = [];
+    groupOrder.forEach((prefix) => {
+      const sorted = groups.get(prefix).slice().sort((a, b) => portNum(a) - portNum(b));
+      for (let i = 0; i < sorted.length; i += 2) {
+        const lo = sorted[i], hi = sorted[i + 1] ?? null; // lo is smaller (bottom), hi larger (top)
+        cols.push({ key: prefix + ":" + i, bottom: lo, top: hi });
+      }
+    });
+    let out = cols;
+    if (flipped) out = out.map((c) => ({ ...c, top: c.bottom, bottom: c.top }));
+    extras.forEach((p, i) => out.push({ key: "x" + i, top: null, bottom: p }));
+    return out;
   };
   // normal ports on the left, LOOP-interface ports grouped on the right
   const columns = useMemo(() => buildColumns(portOptions.filter((p) => !loopSet.has(p))), [portOptions, flipped, loopPorts]);
@@ -2748,6 +2793,8 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   const devRefs = useRef({});    // inline id -> element
   const geomRef = useRef({ ports: {}, inlines: {}, center: null }); // measured points for animation
   const [cables, setCables] = useState([]);
+  const [devPos, setDevPos] = useState({});   // devId -> {x,y} floating position within the panel (session only)
+  const dragRef = useRef(null);               // active drag: { id, offx, offy }
   const [packet, setPacket] = useState(null); // { x, y } current packet position, or null
   const [trail, setTrail] = useState([]);     // recent packet positions for a fading tail
   const [activeDev, setActiveDev] = useState(null); // IPS id currently being traversed (for highlight)
@@ -2781,7 +2828,21 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
       };
       const next = [];
       const geo = { ports: {}, inlines: {}, center: null };
-      portOptions.forEach((p) => { const c = portCenter(p); if (c) geo.ports[p] = c; });
+      // which ports sit on the top row vs bottom row of their column (across all
+      // wrapped rows), so the packet can enter/exit from the correct side.
+      const topRow = new Set(), bottomRow = new Set();
+      [...columns, ...loopColumns].forEach((c) => { if (c.top) topRow.add(c.top); if (c.bottom) bottomRow.add(c.bottom); });
+      portOptions.forEach((p) => {
+        const el = portRefs.current[p]; if (!el) return;
+        const b = el.getBoundingClientRect();
+        geo.ports[p] = {
+          x: b.left + b.width / 2 - wb.left,
+          y: b.top + b.height / 2 - wb.top,
+          topEdge: b.top - wb.top,
+          bottomEdge: b.bottom - wb.top,
+          row: topRow.has(p) ? "top" : bottomRow.has(p) ? "bottom" : "bottom",
+        };
+      });
       const ch = chassisRef.current;
       if (ch) { const cb = ch.getBoundingClientRect(); geo.center = { x: cb.left + cb.width / 2 - wb.left, y: cb.top + cb.height / 2 - wb.top }; }
       inlines.forEach((d) => {
@@ -2804,11 +2865,50 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
       });
       geomRef.current = geo;
       setCables(next);
+      // seed a floating position for any inline that doesn't have one yet:
+      // just above its port A (so it starts near where it connects).
+      setDevPos((prev) => {
+        let changed = false; const nextPos = { ...prev };
+        inlines.forEach((d) => {
+          if (nextPos[d.id]) return;
+          const pa = geo.ports[d.portA];
+          if (pa) { nextPos[d.id] = { x: pa.x - 60, y: Math.max(4, (pa.topEdge ?? pa.y) - 96) }; changed = true; }
+        });
+        // drop positions for removed inlines
+        Object.keys(nextPos).forEach((id) => { if (!inlines.some((d) => d.id === id)) { delete nextPos[id]; changed = true; } });
+        return changed ? nextPos : prev;
+      });
     };
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [inlines, portOptions, inPortSet, outPortSet, flipped]);
+  }, [inlines, portOptions, inPortSet, outPortSet, flipped, loopPorts, devPos]);
+
+  // --- dragging floating inline devices ---
+  const onDevMouseDown = (e, id) => {
+    const wrap = wrapRef.current; if (!wrap) return;
+    const wb = wrap.getBoundingClientRect();
+    const pos = devPos[id] || { x: 0, y: 0 };
+    dragRef.current = { id, offx: e.clientX - wb.left - pos.x, offy: e.clientY - wb.top - pos.y };
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const onMove = (e) => {
+      const drag = dragRef.current; if (!drag) return;
+      const wrap = wrapRef.current; if (!wrap) return;
+      const wb = wrap.getBoundingClientRect();
+      let x = e.clientX - wb.left - drag.offx;
+      let y = e.clientY - wb.top - drag.offy;
+      // keep the box within the panel
+      x = Math.max(0, Math.min(x, wb.width - 60));
+      y = Math.max(0, Math.min(y, wb.height - 40));
+      setDevPos((prev) => ({ ...prev, [drag.id]: { x, y } }));
+    };
+    const onUp = () => { if (dragRef.current) { dragRef.current = null; setCables((c) => c.slice()); } };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
 
   // stop any running animation on unmount
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
@@ -2828,8 +2928,10 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
     const OUT = 46; // how far outside the port the packet starts/ends
     const outsidePt = (port) => {
       const p = geo.ports[port]; if (!p) return null;
-      const dir = p.y < geo.center.y ? -1 : 1; // top-row ports exit upward, bottom-row downward
-      return { x: p.x, y: p.y + dir * OUT };
+      // top-row ports enter/exit from above their own edge, bottom-row from below —
+      // computed per row (works for wrapped rows too), not relative to chassis centre.
+      if (p.row === "top") return { x: p.x, y: (p.topEdge ?? p.y) - OUT };
+      return { x: p.x, y: (p.bottomEdge ?? p.y) + OUT };
     };
     const pts = [];
     for (const n of animPlan.nodes) {
@@ -2970,7 +3072,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
           <div className="dev-port-area">
             <div className="dev-port-cols">
               {columns.map((col) => (
-                <div key={col.base} className="dev-port-col">
+                <div key={col.key} className="dev-port-col">
                   <div className="dev-port-slot">{col.top ? renderPort(col.top) : <span className="dev-port-empty" />}</div>
                   <div className="dev-port-slot">{col.bottom ? renderPort(col.bottom) : <span className="dev-port-empty" />}</div>
                 </div>
@@ -2981,7 +3083,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
                 <div className="dev-loop-label">LOOP</div>
                 <div className="dev-port-cols">
                   {loopColumns.map((col) => (
-                    <div key={col.base} className="dev-port-col">
+                    <div key={col.key} className="dev-port-col">
                       <div className="dev-port-slot">{col.top ? renderPort(col.top) : <span className="dev-port-empty" />}</div>
                       <div className="dev-port-slot">{col.bottom ? renderPort(col.bottom) : <span className="dev-port-empty" />}</div>
                     </div>
@@ -2999,16 +3101,23 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
         </div>
 
         <div className="dev-inlines">
-          {inlines.map((d) => (
-            <div key={d.id} className={"inline-dev" + (activeDev === d.id ? " active" : nextDev === d.id ? " next" : prevDev === d.id ? " from" : "")} ref={(el) => { devRefs.current[d.id] = el; }}>
-              <div className="inline-dev-jacks"><span className="inline-jack" /><span className="inline-jack" /></div>
-              <div className="inline-dev-body">
-                <span className="inline-dev-name">{d.name}</span>
-                <span className="inline-dev-sub">inline · {d.portA} ⇄ {d.portB}</span>
+          {inlines.map((d) => {
+            const pos = devPos[d.id];
+            const cls = "inline-dev floating" + (activeDev === d.id ? " active" : nextDev === d.id ? " next" : prevDev === d.id ? " from" : "") + (dragRef.current?.id === d.id ? " dragging" : "");
+            return (
+              <div key={d.id} className={cls} ref={(el) => { devRefs.current[d.id] = el; }}
+                style={pos ? { left: pos.x, top: pos.y } : { visibility: "hidden" }}
+                onMouseDown={(e) => onDevMouseDown(e, d.id)}>
+                <div className="inline-dev-jacks"><span className="inline-jack" /><span className="inline-jack" /></div>
+                <div className="inline-dev-body">
+                  <span className="inline-dev-name">{d.name}</span>
+                  <span className="inline-dev-sub">inline · {d.portA} ⇄ {d.portB}</span>
+                </div>
+                <span className="inline-dev-grip" title="Drag to reposition">⠿</span>
+                <button className="inline-dev-del" onMouseDown={(e) => e.stopPropagation()} onClick={() => onRemoveInline(d.id)} title="Remove">✕</button>
               </div>
-              <button className="inline-dev-del" onClick={() => onRemoveInline(d.id)} title="Remove">✕</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {(packet || trail.length > 0) && (
