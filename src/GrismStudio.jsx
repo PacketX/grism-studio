@@ -239,6 +239,136 @@ function serializeFilter(f) {
     f.blockifempty === "yes" ? `blockifempty="yes"` : null].filter(Boolean).join(" ");
   return `<filter ${attrs}>\n${serializeCriterion(f.root, 1)}\n</filter>`;
 }
+
+/* ===================== human-readable summary (Overview page) ===================== */
+// A short readable description of a filter's boolean tree, e.g.
+// "TCP port == 443 OR UDP port == 443" or "country == CN,RU AND NOT (ip == …)".
+function describeCriterion(node) {
+  if (!node) return "";
+  if (node.t === "find") {
+    const f = FIELD_INDEX[node.field]; const kind = f?.kind ?? "str";
+    const label = f?.label ?? node.field;
+    if (kind === "exists") return label;
+    return `${label} ${node.rel || "=="} ${node.val || "?"}`;
+  }
+  const kids = (node.children ?? []).map(describeCriterion).filter(Boolean);
+  if (node.t === "not") return `NOT (${kids.join(", ")})`;
+  if (!kids.length) return node.t === "and" ? "(matches all)" : "(matches any)";
+  const joiner = node.t === "and" ? " AND " : " OR ";
+  return kids.length > 1 ? kids.map((k) => (k.includes(" AND ") || k.includes(" OR ") ? `(${k})` : k)).join(joiner) : kids[0];
+}
+// Flatten a chain's decision tree into readable routing rules, e.g.
+// [{ test: "F1", match: "P1", notmatch: "(next)" }, …] plus a terminal.
+// Turn a chain's decision tree into a structure the Overview can lay out. Returns
+// { root } where each test node is { id, test, op, match, notmatch } and each side
+// is one of: { kind:"ports", ports, mode }, { kind:"drop" }, { kind:"default" },
+// or { kind:"test", node } (the side continues into another filter test).
+let _cfid = 0;
+function summarizeChain(tree) {
+  const build = (node) => {
+    if (!node || node.t === "__unset__") return { kind: "default" };
+    if (node.t === "out") return node.ports === "0" ? { kind: "drop" } : { kind: "ports", ports: node.ports, mode: node.mode };
+    if (node.t === "branch") {
+      return { kind: "test", node: {
+        id: "t" + (++_cfid),
+        test: node.fids || "?", op: node.fidOp || "or",
+        match: build(node.match), notmatch: build(node.notmatch),
+      } };
+    }
+    return { kind: "default" };
+  };
+  const top = build(tree);
+  // a chain whose root is a plain output (pure forward) → no tests
+  if (top.kind !== "test") return { root: null, terminal: top };
+  return { root: top.node, terminal: null };
+}
+// Flat list kept for the text summary / port collection (order of tests).
+function summarizeChainTree(tree) {
+  const rules = [];
+  (function walk(node) {
+    if (!node || node.t === "__unset__") return;
+    if (node.t === "out") { rules.push({ terminal: node.ports === "0" ? "drop" : node.ports, terminalMode: node.mode }); return; }
+    if (node.t === "branch") {
+      const m = node.match, n = node.notmatch;
+      const sideText = (s) => !s || s.t === "__unset__" ? "device default" : s.t === "out" ? (s.ports === "0" ? "drop" : s.ports) : "→ next test";
+      const sideMode = (s) => s && s.t === "out" ? s.mode : null;
+      rules.push({ test: node.fids || "?", op: node.fidOp || "or", match: sideText(m), matchMode: sideMode(m), notmatch: sideText(n), notmatchMode: sideMode(n) });
+      if (m && m.t === "branch") walk(m);
+      if (n && n.t === "branch") walk(n);
+    }
+  })(tree);
+  return rules;
+}
+// Whole-document overview: counts, per-filter conditions, per-chain routing, ports used.
+function describeDoc(doc) {
+  const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: describeCriterion(f.root) }));
+  const filterNames = Object.fromEntries(filters.map((f) => [f.id, f.name]));
+  const chains = (doc.chains ?? []).map((c) => ({ ingress: c.ports || "P0", rules: summarizeChainTree(c.tree), flow: summarizeChain(c.tree) }));
+  const portSet = new Set();
+  chains.forEach((c) => {
+    (c.ingress || "").split(",").map((s) => s.trim()).filter(Boolean).forEach((p) => portSet.add(p));
+    c.rules.forEach((r) => { [r.match, r.notmatch, r.terminal].filter(Boolean).forEach((v) => { if (/^[PVLO]?\d/.test(v)) v.split(",").map((s) => s.trim()).forEach((p) => portSet.add(p)); }); });
+  });
+  const ports = [...portSet].filter((p) => /^[A-Za-z]*\d+$/.test(p)).sort();
+  return {
+    counts: { filters: filters.length, chains: chains.length, ports: ports.length },
+    ports, filters, filterNames, chains,
+  };
+}
+// Resolve a fids expression (e.g. "F1", "F1,!F3") to a readable name string
+// using the filter-name map, for chain-flow labels. Falls back to the raw id.
+function fidsLabel(fids, names) {
+  const toks = String(fids || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!toks.length) return fids || "?";
+  const parts = toks.map((tok) => {
+    const neg = tok.startsWith("!"); const id = tok.replace(/^!/, "");
+    const nm = names[id];
+    return (neg ? "!" : "") + id + (nm ? ` ${nm}` : "");
+  });
+  return parts.join(", ");
+}
+// Just the filter name(s) for a fids expression (no ids), for the flow-diagram
+// name line. Returns "" when none of the referenced filters have a name.
+function namesOnly(fids, names) {
+  const toks = String(fids || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const nm = toks.map((tok) => { const neg = tok.startsWith("!"); const id = tok.replace(/^!/, ""); const n = names[id]; return n ? (neg ? "not " : "") + n : ""; }).filter(Boolean);
+  return nm.join(", ");
+}
+// Used for running configs and pasted XML where there's no authored description.
+// Returns an array of short observation strings.
+function inferIntent(doc) {
+  const out = [];
+  const chains = doc.chains ?? [];
+  const filters = doc.filters ?? [];
+  if (!chains.length) return out;
+  // map ingress -> set of destination ports (terminal + branch outs)
+  const dests = (tree) => { const s = new Set(); (function w(n){ if(!n||n.t==="__unset__")return; if(n.t==="out"){ if(n.ports&&n.ports!=="0") n.ports.split(",").forEach((p)=>s.add(p.trim())); return; } if(n.t==="branch"){ w(n.match); w(n.notmatch); } })(tree); return s; };
+  const ingressOf = (c) => (c.ports||"").split(",").map((s)=>s.trim()).filter(Boolean);
+  // detect bidirectional pairs: chain A: X->…->Y and chain B: Y->…->X
+  const pairs = [];
+  for (let i = 0; i < chains.length; i++) for (let j = i + 1; j < chains.length; j++) {
+    const ai = ingressOf(chains[i]), aj = ingressOf(chains[j]);
+    const di = dests(chains[i].tree), dj = dests(chains[j].tree);
+    if (ai.some((p) => dj.has(p)) && aj.some((p) => di.has(p))) pairs.push([ai[0], aj[0]]);
+  }
+  if (pairs.length) out.push(`Bidirectional forwarding between ${pairs.map(([a, b]) => `${a}↔${b}`).join(", ")} — traffic passes through in both directions.`);
+  // detect load balancing
+  let lb = false;
+  chains.forEach((c) => (function w(n){ if(!n)return; if(n.t==="out"&&n.mode==="loadBalance")lb=true; ["match","notmatch"].forEach((k)=>n&&n[k]&&w(n[k])); })(c.tree));
+  if (lb) out.push("Uses load balancing — matched traffic is spread across multiple ports, keeping each session on one port.");
+  // detect drops
+  let drops = false;
+  chains.forEach((c) => (function w(n){ if(!n)return; if(n.t==="out"&&n.ports==="0")drops=true; ["match","notmatch"].forEach((k)=>n&&n[k]&&w(n[k])); })(c.tree));
+  if (drops) out.push("Some traffic is explicitly discarded (dropped).");
+  // filter themes
+  const allConds = filters.map((f) => serializeCriterion(f.root, 0)).join(" ").toLowerCase();
+  if (allConds.includes("heartbeat")) out.push("Watches a heartbeat target — when the heartbeat is missed, matching traffic is steered differently (a bypass/failover pattern).");
+  if (allConds.includes("443") || allConds.includes("ssl.server_name") || allConds.includes("http.host")) out.push("Inspects web traffic (HTTP/HTTPS) — likely steering or filtering by web service.");
+  if (allConds.includes("country")) out.push("Filters by country (GeoIP).");
+  if (allConds.includes("ip.addr") || allConds.includes("ip.src") || allConds.includes("ip.dst")) out.push("Matches specific IP addresses — an allow/block list pattern.");
+  return out;
+}
+
 // An empty <or>/<and> is legal: by default it matches unconditionally
 // (everything). blockifempty="yes" flips that to match nothing. So an
 // empty group is NOT an error — only invalid find values are.
@@ -351,6 +481,27 @@ function collectRefs(tree, definedIds) {
 /* ===================== templates ===================== */
 const finds = (field, rel, items) => items.map((c) => ({ id: nid(), t: "find", field, rel, val: c }));
 const TEMPLATES = [
+  { id: "starter", title: "Starter (heartbeat + HTTPS)", tag: "Starter",
+    blurb: "Two-way forwarding with heartbeat-miss and HTTPS steering, plus return-path chains for P2/P3.",
+    detail: "A protective inline setup. P0 and P1 are the two sides of a link the device sits in the middle of. Normally traffic flows P0→P1 and P1→P0. Two conditions change that: F1 fires when the device stops seeing its heartbeat target (a link-health signal) — this is the bypass/failover trigger; F2 matches encrypted web traffic on port 443. When either matches, traffic is steered to P1/P0 as configured. Anything that matches neither falls through to P2 (from P0) or P3 (from P1) — typically a monitoring or tap port. P2 and P3 then return traffic back into P0/P1 so the link stays intact.",
+    make: () => ({
+      filters: [
+        { id: 1, name: "heartbeat miss", sessionBase: "no",
+          root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "heartbeat.target.miss.id", rel: "==", val: "1" }] } },
+        { id: 2, name: "https(encrypted)", sessionBase: "no",
+          root: { id: nid(), t: "or", children: [
+            { id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" },
+            { id: nid(), t: "find", field: "udp.port", rel: "==", val: "443" } ] } },
+      ],
+      chains: [
+        { cid: nid(), ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"),
+          notmatch: { id: nid(), t: "branch", fids: "F2", fidOp: "or", match: mkOut("P1"), notmatch: mkOut("P2") } } },
+        { cid: nid(), ports: "P1", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P0"),
+          notmatch: { id: nid(), t: "branch", fids: "F2", fidOp: "or", match: mkOut("P0"), notmatch: mkOut("P3") } } },
+        { cid: nid(), ports: "P2", tree: { id: nid(), t: "out", ports: "P0", mode: "duplicate", lb: "5thash" } },
+        { cid: nid(), ports: "P3", tree: { id: nid(), t: "out", ports: "P1", mode: "duplicate", lb: "5thash" } },
+      ],
+    }) },
   { id: "minimal", title: "Minimal forward", tag: "Basic",
     blurb: "The smallest useful chain: packets from P0 that match F1 go to P1.",
     make: () => ({
@@ -795,7 +946,10 @@ function parseRun(xmlText) {
     });
     const first = elemChildren(el)[0];
     const root = first ? parseCriterion(first) : { id: nid(), t: "or", children: [] };
-    return { id, name, alt, sessionBase, matchedlog, blockifempty, fattrs, root };
+    // name and alt are both free-text labels; we surface one "name" field but
+    // remember which attribute the label came from so we write it back the same way.
+    const labelAttr = name ? "name" : alt ? "alt" : "name";
+    return { id, name, alt, labelAttr, sessionBase, matchedlog, blockifempty, fattrs, root };
   }
 
   // --- output ---
@@ -823,7 +977,8 @@ function parseRun(xmlText) {
         mods.push(mod);
       }
     });
-    return { id, name, alt, port, mods, oattrs };
+    const labelAttr = name ? "name" : alt ? "alt" : "name";
+    return { id, name, alt, labelAttr, port, mods, oattrs };
   }
 
   // --- input ---
@@ -832,7 +987,7 @@ function parseRun(xmlText) {
     const type = el.getAttribute("type") || "replayPcap";
     const name = el.getAttribute("name") || "";
     const alt = el.getAttribute("alt") || "";
-    const inp = { id, name, alt, type, port: "P0", fields: {}, scanAttrs: {} };
+    const inp = { id, name, alt, labelAttr: name ? "name" : alt ? "alt" : "name", type, port: "P0", fields: {}, scanAttrs: {} };
     elemChildren(el).forEach((c) => {
       const k = c.tagName;
       if (k === "port") { inp.port = c.textContent.trim(); return; }
@@ -985,8 +1140,81 @@ function formatXml(xml, indentUnit = "  ") {
    Component tree
    ============================================================ */
 export default function GrismStudio() {
-  const [doc, setDoc] = useState(() => normalizeDoc(TEMPLATES.find((t) => t.id === "geo-recursive").make())); // seed with recursive example
-  const [tab, setTab] = useState("filters");
+  const [doc, setDoc] = useState(() => normalizeDoc(TEMPLATES.find((t) => t.id === "starter").make())); // seed with the starter example
+
+  const [tab, setTab] = useState("overview");
+
+  // --- per-section undo/redo history (filters / inputs / outputs / actions / chains) ---
+  // Each section keeps its own past/future stacks of JSON snapshots. We snapshot a
+  // section whenever it changes (unless the change is itself an undo/redo). Undo/redo
+  // act on the section matching the current tab. A tick state forces button re-render.
+  const HIST_KEYS = ["filters", "inputs", "outputs", "actions", "chains"];
+  const TAB_TO_KEY = { filters: "filters", inputs: "inputs", outputs: "outputs", actions: "actions", chain: "chains" };
+  const histRef = useRef(Object.fromEntries(HIST_KEYS.map((k) => [k, { past: [], future: [], last: null, applying: false }])));
+  const [histTick, setHistTick] = useState(0);
+  const recordSection = (key, value) => {
+    const h = histRef.current[key];
+    const snap = JSON.stringify(value ?? []);
+    if (h.last === null) { h.last = snap; return; }        // baseline
+    if (snap === h.last) return;                            // no change
+    if (h.applying) { h.applying = false; h.last = snap; return; } // from undo/redo
+    h.past.push(h.last); if (h.past.length > 100) h.past.shift();
+    h.future = [];
+    h.last = snap;
+    setHistTick((t) => t + 1);
+  };
+  useEffect(() => { recordSection("filters", doc.filters); }, [doc.filters]);
+  useEffect(() => { recordSection("inputs", doc.inputs); }, [doc.inputs]);
+  useEffect(() => { recordSection("outputs", doc.outputs); }, [doc.outputs]);
+  useEffect(() => { recordSection("actions", doc.actions); }, [doc.actions]);
+  useEffect(() => { recordSection("chains", doc.chains); }, [doc.chains]);
+  const undoSection = useCallback((key) => {
+    const h = histRef.current[key];
+    if (!h.past.length) return;
+    const prev = h.past.pop();
+    h.future.push(h.last);
+    h.applying = true;
+    setDoc((d) => ({ ...d, [key]: JSON.parse(prev) }));
+    setHistTick((t) => t + 1);
+  }, []);
+  const redoSection = useCallback((key) => {
+    const h = histRef.current[key];
+    if (!h.future.length) return;
+    const nextSnap = h.future.pop();
+    h.past.push(h.last);
+    h.applying = true;
+    setDoc((d) => ({ ...d, [key]: JSON.parse(nextSnap) }));
+    setHistTick((t) => t + 1);
+  }, []);
+  const histKey = TAB_TO_KEY[tab] || null;
+  // clear all undo/redo history — used after loading a template or running config,
+  // so the load itself can't be undone back into the previous document.
+  const resetHistory = useCallback(() => {
+    HIST_KEYS.forEach((k) => { histRef.current[k] = { past: [], future: [], last: null, applying: false }; });
+    setHistTick((t) => t + 1);
+  }, []);
+  // pending "replace the whole document" action, awaiting user confirmation.
+  // Loading a template or running config discards current edits, so we confirm first.
+  const [pendingLoad, setPendingLoad] = useState(null); // { run: () => void, kind: "template" | "running" }
+  const canUndo = histKey ? histRef.current[histKey].past.length > 0 : false;
+  const canRedo = histKey ? histRef.current[histKey].future.length > 0 : false;
+  const doUndo = useCallback(() => { if (histKey) undoSection(histKey); }, [histKey, undoSection]);
+  const doRedo = useCallback(() => { if (histKey) redoSection(histKey); }, [histKey, redoSection]);
+  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo — on any section tab, and
+  // not while typing in a field.
+  useEffect(() => {
+    if (!histKey) return;
+    const onKey = (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); doUndo(); }
+      else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); doRedo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [histKey, doUndo, doRedo]);
   const [theme, setTheme] = useState("dark"); // "light" | "dark" — default dark, not persisted
   const [showTemplates, setShowTemplates] = useState(false);
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
@@ -1024,6 +1252,8 @@ export default function GrismStudio() {
   // "dirty" tracking: baseline is the XML as last loaded from / applied to the
   // device. When the current runXml differs, there are unapplied changes.
   const [baseline, setBaseline] = useState(null); // null until first load/apply
+  const [docSource, setDocSource] = useState("template"); // "template" | "running" | "new" — drives which top-bar button is highlighted
+  const [templateName, setTemplateName] = useState(() => TEMPLATES.find((t) => t.id === "starter")?.title ?? "Starter"); // title of the template the doc came from (for the Templates button label)
   const dirty = baseline !== null && runXml !== baseline;
 
   // in-port conflict: two chains sharing the same first ingress port
@@ -1084,7 +1314,7 @@ export default function GrismStudio() {
 
   // --- load the device's running config ---
   const [load, setLoad] = useState({ state: "idle", msg: "" }); // idle | loading | ok | error
-  const loadRunning = useCallback(async () => {
+  const doLoadRunning = useCallback(async () => {
     setLoad({ state: "loading", msg: "" });
     try {
       const res = await fetch("/grism/task/get_running_file?filename=run.xml", { credentials: "include" });
@@ -1093,17 +1323,21 @@ export default function GrismStudio() {
       const { doc: parsed, warnings } = parseRun(text);
       const normalized = normalizeDoc(parsed);
       setDoc(normalized);
+      resetHistory();                          // the load itself is not undoable
+      setDocSource("running");
       setBaseline(serializeRun(normalized)); // this is now in sync with the device
       setActiveFilter(parsed.filters[0]?.id ?? 1);
       setActiveOutput(parsed.outputs[0]?.id ?? 1);
       setActiveAction(parsed.actions[0]?.id ?? 1);
       setActiveChain(parsed.chains[0]?.cid ?? null);
       setLoad({ state: "ok", msg: warnings.length ? `loaded with ${warnings.length} warning${warnings.length>1?"s":""}` : "loaded running config", warnings });
-      setTab("filters");
     } catch (e) {
       setLoad({ state: "error", msg: e.message || "load failed" });
     }
-  }, []);
+  }, [resetHistory]);
+  const loadRunning = useCallback(() => {
+    setPendingLoad({ kind: "running", run: doLoadRunning });
+  }, [doLoadRunning]);
 
   // fetch the device's interface/port list; flatten every interface's ports to
   // their names. Falls back to the default list on any failure.
@@ -1179,10 +1413,32 @@ export default function GrismStudio() {
       loadBaseline();      // now authenticated — set the sync baseline (doesn't touch the current edits)
       loadDevicePorts();   // and the interface/port list for pickers
       loadFilterCounter(); // and the device's filter ids (to suppress false "undefined" warnings)
+      loadRunning();       // prompt to confirm before replacing edits on manual login
     } catch (e) {
       setLogin((l) => ({ ...l, busy: false, err: e.message || "login failed" }));
     }
-  }, [loadBaseline, loadDevicePorts, loadFilterCounter]);
+  }, [loadBaseline, loadDevicePorts, loadFilterCounter, loadRunning]);
+
+  // On mount, detect an existing device session (the session cookie survives a
+  // page refresh even though React state resets). We probe an authed endpoint;
+  // if it succeeds we're still logged in, so restore the signed-in UI and run the
+  // usual post-login loads. The username cookie is HttpOnly (not readable from JS),
+  // so on a restored session we show a generic "signed in" marker.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/grism/task/get_config", { credentials: "include" });
+        if (!res.ok || cancelled) return;                 // not authenticated → stay logged out
+        setLogin((l) => ({ ...l, who: "signed in" }));
+        loadBaseline();
+        loadDevicePorts();
+        loadFilterCounter();
+        doLoadRunning();                                     // auto-load the running config on session restore
+      } catch { /* offline or not authed — stay logged out */ }
+    })();
+    return () => { cancelled = true; };
+  }, [loadBaseline, loadDevicePorts, loadFilterCounter, doLoadRunning]);
 
   const doLogout = useCallback(async () => {
     try {
@@ -1196,42 +1452,15 @@ export default function GrismStudio() {
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
   }, []);
 
-  // auto-load once on mount. On failure we keep the seed template AND surface a
-  // gentle notice, so a genuine load problem is visible without alarming a fresh
-  // device that simply has no run.xml yet.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/grism/task/get_running_file?filename=run.xml", { credentials: "include" });
-        if (cancelled) return;
-        if (!res.ok) throw new Error(`device responded ${res.status}`);
-        const text = await res.text();
-        const { doc: parsed } = parseRun(text);
-        if (cancelled) return;
-        const normalized = normalizeDoc(parsed);
-        setDoc(normalized);
-        setBaseline(serializeRun(normalized));
-        setActiveFilter(parsed.filters[0]?.id ?? 1);
-        setActiveChain(parsed.chains[0]?.cid ?? null);
-        setLoad({ state: "ok", msg: "loaded running config" });
-      } catch (e) {
-        if (cancelled) return;
-        setLoad({ state: "autofail", msg: e.message || "couldn't reach the device" });
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
   return (
     <div className={"gs-root" + (theme === "light" ? " light" : "")}>
 
       <header className="topbar">
-        <div className="brand">
+        <button className="brand" onClick={() => setTab("overview")} title="Overview — what this configuration does">
           <span className="logo">◇</span>
           <span className="brand-name">GRISM</span>
           <span className="brand-sub">studio</span>
-        </div>
+        </button>
         <nav className="tabs">
           {[["filters","Filters","core"],["inputs","Inputs","adv"],["outputs","Outputs","adv"],["actions","Actions","adv"],["chain","Chains","core"],["simulate","Simulate","core"],["export","Export","core"]].map(([k, label, grp], i, arr) => {
             const prevGrp = i > 0 ? arr[i-1][2] : null;
@@ -1253,18 +1482,28 @@ export default function GrismStudio() {
             );
           })}
         </nav>
-        <button className="tmpl-btn" onClick={() => setShowTemplates(true)}
-          title="Start from a ready-made configuration">Templates</button>
+        {histKey && (
+          <div className="topbar-undo" title="Undo / redo edits on this tab">
+            <button className="undo-btn" onClick={doUndo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">↶</button>
+            <button className="undo-btn" onClick={doRedo} disabled={!canRedo} title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
+          </div>
+        )}
+        <button className={"tmpl-btn" + (docSource === "template" ? " src-active" : "")} onClick={() => setShowTemplates(true)}
+          title={docSource === "template" ? `Current template: ${templateName}` : "Start from a ready-made configuration"}>
+          {docSource === "template" ? `Template · ${templateName}` : "Templates"}
+        </button>
         {baseline !== null && (
           <div className={"sync-state " + (dirty ? "dirty" : "synced")}
             title={dirty ? "The current config differs from what's running on the device" : "In sync with the device"}>
             <span className="sync-dot" />{dirty ? "unapplied changes" : "in sync"}
           </div>
         )}
-        <button className={"load-btn " + load.state} onClick={loadRunning} disabled={load.state === "loading"}
-          title="Fetch and load the config currently running on the device">
-          {load.state === "loading" ? "loading…" : load.state === "error" ? "load failed — retry" : "load running config"}
-        </button>
+        {login.who && (
+          <button className={"load-btn " + load.state + (docSource === "running" ? " src-active" : "")} onClick={loadRunning} disabled={load.state === "loading"}
+            title="Fetch and load the config currently running on the device">
+            {load.state === "loading" ? "loading…" : load.state === "error" ? "load failed — retry" : "load running config"}
+          </button>
+        )}
         {login.who
           ? <div className="user-box">
               <span className="user-name" title="Signed in">{login.who}</span>
@@ -1281,7 +1520,6 @@ export default function GrismStudio() {
         </div>
       </header>
       {load.state === "error" && <div className="load-banner err">Couldn't load running config: {load.msg}. Check you're signed in to the device.</div>}
-      {load.state === "autofail" && <div className="load-banner warn">Couldn't load the device's running config ({load.msg}) — showing a starter template instead. Use "load running config" above to retry.</div>}
       {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — some elements weren't recognised and may need review.</div>}
 
       {login.open && (
@@ -1315,7 +1553,23 @@ export default function GrismStudio() {
               <span className="tmpl-modal-title">Start from a template</span>
               <button className="tmpl-close" onClick={() => setShowTemplates(false)}>✕</button>
             </div>
-            <TemplatesTab onApply={(t) => { setDoc(normalizeDoc(t.make())); setActiveFilter(1); setShowTemplates(false); setTab("filters"); }} />
+            <TemplatesTab onApply={(t) => setPendingLoad({ kind: "template", run: () => { const nd = normalizeDoc(t.make()); setDoc(nd); setBaseline(null); setDocSource("template"); setTemplateName(t.title); setLoad({ state: "idle", msg: "" }); resetHistory(); setActiveFilter(1); setShowTemplates(false); } })} />
+          </div>
+        </div>
+      )}
+      {pendingLoad && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setPendingLoad(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">Discard current edits?</div>
+            <p className="modal-body">
+              Loading {pendingLoad.kind === "running" ? "the running config" : "a template"} replaces the whole document.
+              Your current edits will be lost and undo history will be cleared.
+            </p>
+            <button className="opt drop" onClick={() => { const run = pendingLoad.run; setPendingLoad(null); run(); }}>
+              <span className="opt-name">Discard and load</span>
+              <span className="opt-desc">Replace everything with {pendingLoad.kind === "running" ? "the device's running config" : "the template"}.</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setPendingLoad(null)}>Cancel</button>
           </div>
         </div>
       )}
@@ -1328,6 +1582,10 @@ export default function GrismStudio() {
             {tab === "outputs" && <span>Outputs define reusable egress port rewrites and encapsulation (VXLAN/NVGRE). Basic forwarding is handled directly in Chains — you only need Outputs for packet modification.</span>}
             {tab === "actions" && <span>Actions apply ingress packet processing or link-pair failover. Most setups don't need these.</span>}
           </div>
+        )}
+        {tab === "overview" && (
+          <OverviewTab doc={doc} docSource={docSource} templateName={templateName}
+            onGoto={(t) => setTab(t)} />
         )}
         {tab === "filters" && (
           <FiltersTab
@@ -1357,11 +1615,14 @@ export default function GrismStudio() {
             simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped} />
         )}
         {tab === "export" && (
-          <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings}
+          <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who}
             onApplied={() => setBaseline(runXml)}
             onApplyXml={(xmlText) => {
               const { doc: parsed, warnings } = parseRun(xmlText); // throws on malformed → caught in ExportTab
               setDoc(normalizeDoc(parsed));
+              resetHistory();
+              setDocSource("new");
+              setLoad({ state: "idle", msg: "" });
               setActiveFilter(parsed.filters[0]?.id ?? 1);
               setActiveInput(parsed.inputs[0]?.id ?? 1);
               setActiveOutput(parsed.outputs[0]?.id ?? 1);
@@ -1385,6 +1646,218 @@ export default function GrismStudio() {
   );
 }
 
+/* ============================================================
+   Overview tab — auto-generated explanation of the current doc
+   ============================================================ */
+function OverviewTab({ doc, docSource, templateName, onGoto }) {
+  const info = useMemo(() => describeDoc(doc), [doc]);
+  const sourceLabel = docSource === "running" ? "the device's running config"
+    : docSource === "template" ? `the "${templateName}" template` : "a manually entered config";
+
+  // one-line plain summary
+  const summary = (() => {
+    const { filters, chains, ports } = info.counts;
+    const parts = [];
+    parts.push(`${filters} filter${filters !== 1 ? "s" : ""}`);
+    parts.push(`${chains} chain${chains !== 1 ? "s" : ""}`);
+    if (ports) parts.push(`${ports} port${ports !== 1 ? "s" : ""} (${info.ports.join(", ")})`);
+    return parts.join(" · ");
+  })();
+
+  // detailed explanation: an authored description for known templates, or a
+  // best-effort inferred read for running configs / pasted XML.
+  const template = docSource === "template" ? TEMPLATES.find((t) => t.title === templateName) : null;
+  const authored = template?.detail || template?.blurb || null;
+  const inferred = useMemo(() => (docSource === "template" ? [] : inferIntent(doc)), [doc, docSource]);
+
+  return (
+    <div className="ov-wrap">
+      <div className="ov-head">
+        <div>
+          <h2 className="ov-title">What this configuration does</h2>
+          <p className="ov-sub">Currently loaded from {sourceLabel}. <span className="ov-summary">{summary}</span></p>
+        </div>
+      </div>
+
+      {authored && (
+        <div className="ov-explain">
+          <p>{authored}</p>
+        </div>
+      )}
+      {!authored && inferred.length > 0 && (
+        <div className="ov-explain inferred">
+          <div className="ov-explain-head">What this looks like <span className="ov-explain-tag">inferred</span></div>
+          <ul>{inferred.map((s, i) => <li key={i}>{s}</li>)}</ul>
+          <p className="ov-explain-note">This is a best-effort reading of the structure — the details below are exact.</p>
+        </div>
+      )}
+
+      {info.filters.length > 0 && (
+        <section className="ov-section">
+          <h3 className="ov-h3">Filters <span className="ov-count">{info.filters.length}</span></h3>
+          <div className="ov-filters">
+            {info.filters.map((f) => (
+              <div className="ov-filter" key={f.id}>
+                <code className="ov-fid">{f.id}</code>
+                <div className="ov-fbody">
+                  {f.name && <span className="ov-fname">{f.name}</span>}
+                  <span className="ov-fcond">{f.cond || "(no condition)"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button className="ov-jump" onClick={() => onGoto("filters")}>edit filters →</button>
+        </section>
+      )}
+
+      {info.chains.length > 0 && (
+        <section className="ov-section">
+          <h3 className="ov-h3">Chains <span className="ov-count">{info.chains.length}</span></h3>
+          <div className="ov-chains">
+            {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} />)}
+          </div>
+          <button className="ov-jump" onClick={() => onGoto("chain")}>edit chains →</button>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// Flow diagram for one chain. Renders the decision TREE: each filter test sits at
+// a column by its depth; its match and notmatch each point either to another test
+// (deeper column) or to an output port (shared right column). Every arrow is
+// labelled by its real side, so match/no-match are never confused — even when the
+// match side is the one that continues to the next test.
+function ChainFlow({ chain, filterNames = {} }) {
+  const flow = chain.flow || { root: null, terminal: null };
+  const root = flow.root;
+  const terminal = flow.terminal;
+
+  const ingressW = 62, testW = 190, outW = 76, colGap = 70, rowH = 74;
+  const inX = 30;
+  const colX = (depth) => inX + ingressW + colGap + depth * (testW + colGap);
+
+  // assign each test node a row (top-to-bottom in traversal order) and depth.
+  const nodes = [];               // { node, depth, row }
+  let rowCounter = 0;
+  (function place(n, depth) {
+    const row = rowCounter++;
+    nodes.push({ node: n, depth, row });
+    ["match", "notmatch"].forEach((side) => { const s = n[side]; if (s.kind === "test") place(s.node, depth + 1); });
+  })(root || { match: { kind: "default" }, notmatch: { kind: "default" }, _empty: true }, 0);
+  const realNodes = root ? nodes : [];
+  const maxDepth = realNodes.reduce((m, x) => Math.max(m, x.depth), 0);
+  const rowY = (row) => 44 + row * rowH;
+  const nodeById = {};
+  realNodes.forEach((x) => { nodeById[x.node.id] = x; });
+
+  // collect distinct destination ports (+drop) across every side, first-seen order.
+  const destOrder = [];
+  const addPorts = (side) => { if (side.kind === "ports") side.ports.split(",").map((s) => s.trim()).filter(Boolean).forEach((p) => { if (!destOrder.includes(p)) destOrder.push(p); }); if (side.kind === "drop" && !destOrder.includes("drop")) destOrder.push("drop"); };
+  realNodes.forEach((x) => { addPorts(x.node.match); addPorts(x.node.notmatch); });
+  if (!root && terminal) addPorts(terminal);
+
+  const outX = colX(maxDepth + 1);
+  const rowCount = Math.max(realNodes.length, 1);
+  const destCount = Math.max(destOrder.length, 1);
+  const destY = {};
+  destOrder.forEach((d, i) => { destY[d] = rowY(i * (rowCount / destCount)) + (destCount < rowCount ? rowH / 2 : 0); });
+  const height = Math.max(rowY(rowCount - 1) + 50, rowY(destCount - 1) + 50, 110);
+  const width = outX + outW + 40;
+
+  const rootMidY = root ? rowY(nodeById[root.id].row) : 44;
+
+  // an arrow from (x1,y1) to (x2,y2) with a label of the given kind at the target.
+  const arrow = (x1, y1, x2, y2, kind, key, labelText) => {
+    const mx = (x1 + x2) / 2;
+    return (
+      <g key={key}>
+        <path d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`} className={"ovf-edge " + kind}
+          markerEnd={`url(#ovfAr${kind === "match" ? "M" : kind === "notmatch" ? "N" : ""})`} />
+        {labelText && <text x={x2 - 8} y={y2 - 6} textAnchor="end" className={"ovf-lbl " + kind}>{labelText}</text>}
+      </g>
+    );
+  };
+
+  // draw one side (match or notmatch) of a test node.
+  const drawSide = (nx, side, kind) => {
+    const from = nx.node;
+    const x1 = colX(nx.depth) + testW, y1 = rowY(nx.row) + (kind === "match" ? -8 : 8);
+    const label = kind === "match" ? "match" : "no match";
+    const s = from[kind === "match" ? "match" : "notmatch"];
+    if (s.kind === "default") return null;                       // unspecified → draw nothing
+    if (s.kind === "test") {
+      const child = nodeById[s.node.id];
+      return arrow(x1, y1, colX(child.depth), rowY(child.row), kind, kind + from.id, label);
+    }
+    if (s.kind === "drop") return arrow(x1, y1, outX, destY["drop"], kind, kind + from.id, label);
+    if (s.kind === "ports") {
+      const ports = s.ports.split(",").map((p) => p.trim()).filter(Boolean);
+      const multi = ports.length > 1;
+      const typeLabel = multi ? (s.mode === "loadBalance" ? "load balance" : "duplicate") : null;
+      return (
+        <g key={kind + from.id}>
+          {ports.map((p, k) => arrow(x1, y1, outX, destY[p], kind, kind + from.id + k, k === 0 ? label : null))}
+          {typeLabel && <text x={(x1 + outX) / 2} y={y1 - 6} textAnchor="middle" className="ovf-type">{typeLabel}</text>}
+        </g>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="ov-chain">
+      <svg viewBox={`0 0 ${width} ${height}`} className="ov-flow" style={{ maxWidth: width }}>
+        {/* ingress */}
+        <rect x={inX} y={rootMidY - 16} width={ingressW} height="32" rx="7" className="ovf-in" />
+        <text x={inX + ingressW / 2} y={rootMidY + 5} className="ovf-in-lbl">{chain.ingress}</text>
+
+        {/* pure forward chain (no tests): ingress → output(s) */}
+        {!root && terminal && (() => {
+          const ports = terminal.kind === "ports" ? terminal.ports.split(",").map((p) => p.trim()).filter(Boolean) : terminal.kind === "drop" ? ["drop"] : [];
+          const multi = ports.length > 1;
+          const typeLabel = multi ? (terminal.mode === "loadBalance" ? "load balance" : "duplicate") : null;
+          const mx = (inX + ingressW + outX) / 2;
+          return <g>{ports.map((p, k) => <path key={k} d={`M ${inX + ingressW} ${rootMidY} C ${mx} ${rootMidY}, ${mx} ${destY[p]}, ${outX} ${destY[p]}`} className="ovf-edge flow" markerEnd="url(#ovfAr)" />)}<text x={mx} y={rootMidY - 8} className="ovf-lbl flow" textAnchor="middle">{typeLabel || "forward"}</text></g>;
+        })()}
+
+        {/* ingress → root test */}
+        {root && arrow(inX + ingressW, rootMidY, colX(0), rowY(nodeById[root.id].row), "flow", "in", "traffic in")}
+
+        {/* output port nodes (each drawn once) */}
+        {destOrder.map((d) => (
+          <g key={"d" + d}>
+            <rect x={outX} y={destY[d] - 15} width={outW} height="30" rx="7" className={d === "drop" ? "ovf-out drop" : "ovf-out"} />
+            <text x={outX + outW / 2} y={destY[d] + 5} className="ovf-out-lbl">{d}</text>
+          </g>
+        ))}
+
+        {/* test nodes + their two sides */}
+        {realNodes.map((nx) => {
+          const x = colX(nx.depth), y = rowY(nx.row);
+          const nameOnly = namesOnly(nx.node.test, filterNames);
+          const shortName = nameOnly.length > 26 ? nameOnly.slice(0, 25) + "…" : nameOnly;
+          return (
+            <g key={nx.node.id}>
+              {drawSide(nx, "match", "match")}
+              {drawSide(nx, "notmatch", "notmatch")}
+              <rect x={x} y={y - 18} width={testW} height="36" rx="7" className="ovf-test" />
+              <text x={x + testW / 2} y={shortName ? y - 2 : y + 4} className="ovf-test-id">{nx.node.test}{nx.node.op === "and" ? " (all)" : toks(nx.node.test) > 1 ? " (any)" : ""}</text>
+              {shortName && <text x={x + testW / 2} y={y + 12} className="ovf-test-name">{shortName}</text>}
+            </g>
+          );
+        })}
+        <defs>
+          <marker id="ovfAr" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" className="ovf-ar flow" /></marker>
+          <marker id="ovfArM" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" className="ovf-ar match" /></marker>
+          <marker id="ovfArN" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" className="ovf-ar notmatch" /></marker>
+        </defs>
+      </svg>
+    </div>
+  );
+}
+// count comma-separated fid tokens (for "any"/"all" hint)
+function toks(fids) { return String(fids || "").split(",").map((s) => s.trim()).filter(Boolean).length; }
 /* ============================================================
    Templates tab
    ============================================================ */
@@ -1538,9 +2011,9 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
           <IdField prefix="F" id={f.id} siblingIds={doc.filters.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, id: newId } : x) })); setActiveFilter(newId); }} />
           <label className="ml grow"><span>name</span>
-            <input value={f.name} onChange={(e) => patchMeta({ name: e.target.value })} /></label>
-          <label className="ml grow"><span>alt (shown on chain)</span>
-            <input value={f.alt || ""} onChange={(e) => patchMeta({ alt: e.target.value })} placeholder="e.g. is https" /></label>
+            <input value={f[f.labelAttr ?? "name"] ?? f.name ?? ""}
+              onChange={(e) => { const k = f.labelAttr ?? "name"; patchMeta(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
+              placeholder="e.g. block list" /></label>
           <label className="ml"><span>sessionBase</span>
             <select value={f.sessionBase} onChange={(e) => patchMeta({ sessionBase: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
@@ -1803,9 +2276,9 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
           <IdField prefix="I" id={inp.id} siblingIds={doc.inputs.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, inputs: d.inputs.map((x) => x.id === inp.id ? { ...x, id: newId } : x) })); setActiveInput(newId); }} />
           <label className="ml grow"><span>name</span>
-            <input value={inp.name} onChange={(e) => patch({ name: e.target.value })} placeholder="optional" /></label>
-          <label className="ml grow"><span>alt</span>
-            <input value={inp.alt || ""} onChange={(e) => patch({ alt: e.target.value })} placeholder="optional" /></label>
+            <input value={inp[inp.labelAttr ?? "name"] ?? inp.name ?? ""}
+              onChange={(e) => { const k = inp.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
+              placeholder="optional" /></label>
           <label className="ml"><span>type</span>
             <select value={inp.type} onChange={(e) => patch({ type: e.target.value })}>
               <option value="replayPcap">replayPcap</option>
@@ -1905,9 +2378,9 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
           <IdField prefix="O" id={o.id} siblingIds={doc.outputs.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, id: newId } : x) })); setActiveOutput(newId); }} />
           <label className="ml grow"><span>name</span>
-            <input value={o.name} onChange={(e) => patch({ name: e.target.value })} placeholder="optional" /></label>
-          <label className="ml grow"><span>alt (shown on chain)</span>
-            <input value={o.alt || ""} onChange={(e) => patch({ alt: e.target.value })} placeholder="e.g. mirror to tap" /></label>
+            <input value={o[o.labelAttr ?? "name"] ?? o.name ?? ""}
+              onChange={(e) => { const k = o.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
+              placeholder="optional" /></label>
           <label className="ml"><span>port *</span>
             <PortSelect value={o.port} options={portOptions} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
@@ -2288,8 +2761,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const refs = useMemo(() => chain ? collectRefs(chain.tree, definedIds) : [], [chain, definedIds]);
   const knownNames = useMemo(() => Object.fromEntries(doc.filters.map((f) => ["F" + f.id, f.name])), [doc.filters]);
   // alt labels keyed by reference id, for the chain node captions
-  const filterAlt = useMemo(() => Object.fromEntries(doc.filters.filter((f) => f.alt).map((f) => ["F" + f.id, f.alt])), [doc.filters]);
-  const outputAlt = useMemo(() => Object.fromEntries((doc.outputs ?? []).filter((o) => o.alt).map((o) => ["O" + o.id, o.alt])), [doc.outputs]);
+  const filterAlt = useMemo(() => Object.fromEntries(doc.filters.map((f) => { const lbl = f.name || f.alt || ""; return lbl ? ["F" + f.id, lbl] : null; }).filter(Boolean)), [doc.filters]);
+  const outputAlt = useMemo(() => Object.fromEntries((doc.outputs ?? []).map((o) => { const lbl = o.name || o.alt || ""; return lbl ? ["O" + o.id, lbl] : null; }).filter(Boolean)), [doc.outputs]);
   // build a caption from all referenced filters, joined by the node's and/or:
   //   "F1,!F3" (op=and) → "is https AND NOT blocked geo"
   //   a filter with no alt shows its id (e.g. "is https AND F2")
@@ -2434,7 +2907,19 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   };
   const selOwner = sel && sel.t !== "in" ? ownerOf(sel.id) : null;
 
-  const addTest = (id) => mutate(id, () => mkBranch("F" + (doc.filters[0]?.id ?? 1)));
+  // Insert a new (empty) filter test directly above the clicked node: the new
+  // branch becomes the parent, the original node goes on `keepSide` (match or
+  // notmatch), and the other side gets a fresh empty output. Both the new fids
+  // and the new output start blank for the user to fill in. The new branch is
+  // then selected so its filter can be set right away.
+  const insertFilterAbove = (id, keepSide) => {
+    const otherSide = keepSide === "match" ? "notmatch" : "match";
+    const newId = nid();
+    const wrap = (node) => ({ id: newId, t: "branch", fids: "", fidOp: "or",
+      [keepSide]: node, [otherSide]: mkOut("") });
+    setChainTreeFor(cid, (tree) => tree.id === id ? wrap(tree) : cUpdate(tree, id, wrap));
+    setSelId(newId);
+  };
   const removeTest = (id) => mutate(id, (n) => mkOut(n.match?.ports || "P1"));
   const requestRemove = (nid2) => {
     const o = ownerOf(nid2); if (!o) return;
@@ -2570,6 +3055,13 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               onAll={(on) => setAllFids(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), on)}
               onSetOne={(fid) => setOneFid(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), fid)}
               emptyNote="No filters defined yet." />
+            <div className="add-filter-group">
+              <span className="add-filter-label">Insert filter above — keep this test on:</span>
+              <div className="add-filter-btns">
+                <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>+ filter (this → match)</button>
+                <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>+ filter (this → notmatch)</button>
+              </div>
+            </div>
             <button className="danger" onClick={() => removeTest(sel.id)}>Remove test → output</button>
           </>}
           {sel && sel.t === "out" && <>
@@ -2598,7 +3090,13 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 {sel.vlantype === "tagging" && <label className="fld2"><span>VLAN id</span>
                   <input value={sel.vlanid ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlanid: e.target.value }))} placeholder="100" /></label>}
               </CollapseSection>
-              <button className="primary" onClick={() => addTest(sel.id)}>+ Add filter test</button>
+              <div className="add-filter-group">
+                <span className="add-filter-label">Insert filter above — keep this output on:</span>
+                <div className="add-filter-btns">
+                  <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>+ filter (this → match)</button>
+                  <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>+ filter (this → notmatch)</button>
+                </div>
+              </div>
             </>}
             {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>Remove {selOwner.side} branch…</button>}
           </>}
@@ -2795,16 +3293,16 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   const [cables, setCables] = useState([]);
   const [devPos, setDevPos] = useState({});   // devId -> {x,y} floating position within the panel (session only)
   const dragRef = useRef(null);               // active drag: { id, offx, offy }
-  const [packet, setPacket] = useState(null); // { x, y } current packet position, or null
-  const [trail, setTrail] = useState([]);     // recent packet positions for a fading tail
+  const [packets, setPackets] = useState([]);  // [{x,y}] current positions (one per active path)
+  const [trails, setTrails] = useState([]);     // [[{x,y}...]] fading tails, one per packet
   const [activeDev, setActiveDev] = useState(null); // IPS id currently being traversed (for highlight)
-  const [nextPort, setNextPort] = useState(null);   // the port the packet is heading toward next
-  const [nextDev, setNextDev] = useState(null);     // the IPS the packet is heading toward next
-  const [prevPort, setPrevPort] = useState(null);   // the port the packet just came from (source)
-  const [prevDev, setPrevDev] = useState(null);     // the IPS the packet just came from (source)
+  const [nextPortSet, setNextPortSet] = useState(() => new Set());   // ports any packet is heading toward
+  const [nextDevSet, setNextDevSet] = useState(() => new Set());     // IPSs any packet is heading toward
+  const [prevPortSet, setPrevPortSet] = useState(() => new Set());   // source ports (just left)
+  const [prevDevSet, setPrevDevSet] = useState(() => new Set());     // source IPSs
   const [playState, setPlayState] = useState("idle"); // 'idle' | 'playing' | 'paused'
   const rafRef = useRef(0);
-  const animRef = useRef({ pts: null, segs: null, total: 0, dur: 0, elapsed: 0, last: 0, trailBuf: [] });
+  const animRef = useRef({ paths: null, dur: 0, elapsed: 0, last: 0, trailBufs: [] });
 
   // measure port + inline-device anchor points relative to the wrapper, then
   // build a cable path (port edge → device top) for each lead. Also snapshot
@@ -2845,22 +3343,40 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
       });
       const ch = chassisRef.current;
       if (ch) { const cb = ch.getBoundingClientRect(); geo.center = { x: cb.left + cb.width / 2 - wb.left, y: cb.top + cb.height / 2 - wb.top }; }
+      const portEdges = (name) => {
+        const el = portRefs.current[name];
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: b.left + b.width / 2 - wb.left, top: b.top - wb.top, bottom: b.bottom - wb.top, midY: b.top + b.height / 2 - wb.top };
+      };
       inlines.forEach((d) => {
         const dev = devRefs.current[d.id];
         if (!dev) return;
         const db = dev.getBoundingClientRect();
         const ax = db.left + db.width * 0.32 - wb.left, bx = db.left + db.width * 0.68 - wb.left;
-        const ty = db.top - wb.top;
-        const jy = db.top - wb.top; // exact connection point on the device's top edge
-        const midInside = db.top + db.height * 0.5 - wb.top; // a point inside the body for the pass-through dip
-        // remember each side's jack point (top-edge connector) keyed by its port,
-        // plus a shared interior point so the packet visibly dips through the box
-        geo.inlines[d.id] = { [d.portA]: { x: ax, y: jy }, [d.portB]: { x: bx, y: jy }, mid: { x: (ax + bx) / 2, y: midInside }, top: ty };
-        [[d.portA, ax], [d.portB, bx]].forEach(([pname, dx], i) => {
-          const pp = portPt(pname);
-          if (!pp) return;
-          const midY = (pp.y + ty) / 2;
-          next.push({ key: d.id + "-" + i, devId: d.id, d: `M ${pp.x} ${pp.y} C ${pp.x} ${midY}, ${dx} ${midY}, ${dx} ${ty}`, x1: pp.x, y1: pp.y, x2: dx, y2: ty });
+        const devTop = db.top - wb.top, devBottom = db.bottom - wb.top, devMidY = db.top + db.height / 2 - wb.top;
+        // jack points used by the packet path: connect on whichever device edge
+        // faces the ports (so the line is visible whether the IPS floats above or
+        // below). We pick per side based on the port's position.
+        const jackFor = (pname, dx) => {
+          const pe = portEdges(pname);
+          if (!pe) return null;
+          const above = devMidY < pe.midY;                 // IPS sits above this port?
+          const devY = above ? devBottom : devTop;          // connect on the facing device edge
+          const portY = above ? pe.top : pe.bottom;         // and the facing port edge
+          return { dx, devY, portX: pe.x, portY };
+        };
+        // remember jack points (facing edge) keyed by port, plus interior mid point
+        const jA = jackFor(d.portA, ax), jB = jackFor(d.portB, bx);
+        geo.inlines[d.id] = {
+          [d.portA]: jA ? { x: ax, y: jA.devY } : { x: ax, y: devTop },
+          [d.portB]: jB ? { x: bx, y: jB.devY } : { x: bx, y: devTop },
+          mid: { x: (ax + bx) / 2, y: devMidY }, top: devTop,
+        };
+        [jA, jB].forEach((j, i) => {
+          if (!j) return;
+          const midY = (j.portY + j.devY) / 2;
+          next.push({ key: d.id + "-" + i, devId: d.id, d: `M ${j.portX} ${j.portY} C ${j.portX} ${midY}, ${j.dx} ${midY}, ${j.dx} ${j.devY}`, x1: j.portX, y1: j.portY, x2: j.dx, y2: j.devY });
         });
       });
       geomRef.current = geo;
@@ -2915,26 +3431,16 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   // if the traced route changes (ingress / filters / inlines), reset playback
   useEffect(() => {
     cancelAnimationFrame(rafRef.current);
-    animRef.current = { pts: null, segs: null, total: 0, dur: 0, elapsed: 0, last: 0, trailBuf: [] };
-    setPlayState("idle"); setPacket(null); setTrail([]); setActiveDev(null); setNextPort(null); setNextDev(null); setPrevPort(null); setPrevDev(null);
+    animRef.current = { paths: null, dur: 0, elapsed: 0, last: 0, trailBufs: [] };
+    setPlayState("idle"); setPackets([]); setTrails([]); setActiveDev(null); setNextPortSet(new Set()); setNextDevSet(new Set()); setPrevPortSet(new Set()); setPrevDevSet(new Set());
   }, [animPlan]);
 
   // Map the semantic animation plan to concrete coordinates using measured
   // geometry. "outside" points sit beyond the port, away from the chassis, so
   // the packet visibly enters from and leaves to outside the device.
-  const buildWaypoints = () => {
-    const geo = geomRef.current;
-    if (!animPlan || !animPlan.nodes || !geo.center) return null;
-    const OUT = 46; // how far outside the port the packet starts/ends
-    const outsidePt = (port) => {
-      const p = geo.ports[port]; if (!p) return null;
-      // top-row ports enter/exit from above their own edge, bottom-row from below —
-      // computed per row (works for wrapped rows too), not relative to chassis centre.
-      if (p.row === "top") return { x: p.x, y: (p.topEdge ?? p.y) - OUT };
-      return { x: p.x, y: (p.bottomEdge ?? p.y) + OUT };
-    };
+  const nodesToPts = (nodes, outsidePt, geo) => {
     const pts = [];
-    for (const n of animPlan.nodes) {
+    for (const n of nodes) {
       if (n.kind === "outside-in" || n.kind === "outside-out") { const o = outsidePt(n.port); if (o) { if (n.kind === "outside-in") { pts.push({ ...o }); if (geo.ports[n.port]) pts.push({ ...geo.ports[n.port], port: n.port }); } else { if (geo.ports[n.port]) pts.push({ ...geo.ports[n.port], port: n.port }); pts.push({ ...o }); } } }
       else if (n.kind === "port") { const p = geo.ports[n.port]; if (p) pts.push({ ...p, port: n.port }); }
       else if (n.kind === "ips-in") { const j = geo.inlines[n.devId]; if (j && j[n.port]) { pts.push({ ...j[n.port], dev: n.devId }); if (j.mid) pts.push({ ...j.mid, dev: n.devId }); } }
@@ -2942,46 +3448,58 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
       else if (n.kind === "loop") { const o = outsidePt(n.port); if (o) { pts.push({ ...o, loop: true }); if (geo.ports[n.port]) pts.push({ ...geo.ports[n.port], port: n.port }); } }
       else if (n.kind === "fizzle") { const p = geo.ports[n.port]; if (p) pts.push({ x: p.x, y: p.y }); }
     }
-    // de-dup consecutive identical points (preserve tags if either has them)
     const clean = pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
     return clean.length >= 2 ? clean : null;
   };
+  // one waypoint list per path in the plan (multiple when a chain fans out to
+  // several ports); each animates its own packet simultaneously.
+  const buildAllWaypoints = () => {
+    const geo = geomRef.current;
+    if (!animPlan || !animPlan.paths || !geo.center) return null;
+    const OUT = 46;
+    const outsidePt = (port) => {
+      const p = geo.ports[port]; if (!p) return null;
+      if (p.row === "top") return { x: p.x, y: (p.topEdge ?? p.y) - OUT };
+      return { x: p.x, y: (p.bottomEdge ?? p.y) + OUT };
+    };
+    const lists = animPlan.paths.map((nodes) => nodesToPts(nodes, outsidePt, geo)).filter(Boolean);
+    return lists.length ? lists : null;
+  };
 
-  // animation control: elapsed accumulates play time so pause/resume can continue
+  // advance every path's packet by the shared elapsed time; aggregate highlights
+  // (active IPS, next/prev ports & IPSs) across all packets. Returns true when all
+  // packets have reached the end.
   const applyFrame = (elapsedMs) => {
     const A = animRef.current;
-    const { pts, segs, total, dur } = A;
-    if (!pts) return true;
-    const t = Math.min(1, elapsedMs / dur);
-    let dist = t * total, i = 0;
-    while (i < segs.length && dist > segs[i]) { dist -= segs[i]; i++; }
-    let pos;
-    if (i >= segs.length) pos = pts[pts.length - 1];
-    else { const f = segs[i] ? dist / segs[i] : 0; pos = { x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f }; }
-    setPacket(pos);
-    A.trailBuf.push(pos); while (A.trailBuf.length > 14) A.trailBuf.shift(); setTrail(A.trailBuf.slice());
-    const a = pts[i], b = pts[Math.min(i + 1, pts.length - 1)];
-    setActiveDev(a && b && a.dev && a.dev === b.dev ? a.dev : null);
-    // next destination = the single nearest upcoming waypoint that is a real
-    // stop — either a port or an IPS jack. Whichever comes first is the only one
-    // highlighted, so the port beyond an IPS doesn't light up until the packet
-    // has passed through the IPS.
-    let np = null, nd = null;
-    for (let k = i + 1; k < pts.length; k++) {
-      if (pts[k].dev) { nd = pts[k].dev; break; }
-      if (pts[k].port) { np = pts[k].port; break; }
-    }
-    setNextPort(np); setNextDev(nd);
-    // source = the single nearest stop BEHIND the packet (where it just came
-    // from) — the port or IPS at or before the current segment start.
-    let pp = null, pd = null;
-    for (let k = i; k >= 0; k--) {
-      if (pts[k].dev) { pd = pts[k].dev; break; }
-      if (pts[k].port) { pp = pts[k].port; break; }
-    }
-    setPrevPort(pp); setPrevDev(pd);
-    return t >= 1;
+    if (!A.paths) return true;
+    const positions = [];
+    const activeDevs = new Set(), nextP = new Set(), nextD = new Set(), prevP = new Set(), prevD = new Set();
+    let allDone = true;
+    A.paths.forEach((path, idx) => {
+      const { pts, segs, total, dur } = path;
+      const t = Math.min(1, elapsedMs / dur);
+      if (t < 1) allDone = false;
+      let dist = t * total, i = 0;
+      while (i < segs.length && dist > segs[i]) { dist -= segs[i]; i++; }
+      let pos;
+      if (i >= segs.length) pos = pts[pts.length - 1];
+      else { const f = segs[i] ? dist / segs[i] : 0; pos = { x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f }; }
+      positions.push(pos);
+      const buf = A.trailBufs[idx] || (A.trailBufs[idx] = []);
+      buf.push(pos); while (buf.length > 14) buf.shift();
+      const a = pts[i], b = pts[Math.min(i + 1, pts.length - 1)];
+      if (a && b && a.dev && a.dev === b.dev) activeDevs.add(a.dev);
+      for (let k = i + 1; k < pts.length; k++) { if (pts[k].dev) { nextD.add(pts[k].dev); break; } if (pts[k].port) { nextP.add(pts[k].port); break; } }
+      for (let k = i; k >= 0; k--) { if (pts[k].dev) { prevD.add(pts[k].dev); break; } if (pts[k].port) { prevP.add(pts[k].port); break; } }
+    });
+    setPackets(positions);
+    setTrails(A.trailBufs.map((b) => b.slice()));
+    setActiveDev(activeDevs.size ? [...activeDevs][0] : null);
+    setNextPortSet(nextP); setNextDevSet(nextD); setPrevPortSet(prevP); setPrevDevSet(prevD);
+    return allDone;
   };
+
+  const clearAnim = () => { setPackets([]); setTrails([]); setActiveDev(null); setNextPortSet(new Set()); setNextDevSet(new Set()); setPrevPortSet(new Set()); setPrevDevSet(new Set()); };
 
   const runLoop = () => {
     const A = animRef.current;
@@ -2990,7 +3508,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
       const A2 = animRef.current;
       A2.elapsed += now - A2.last; A2.last = now;
       const done = applyFrame(A2.elapsed);
-      if (done) { setPlayState("idle"); setTimeout(() => { setPacket(null); setTrail([]); setActiveDev(null); setNextPort(null); setNextDev(null); setPrevPort(null); setPrevDev(null); }, 550); return; }
+      if (done) { setPlayState("idle"); setTimeout(clearAnim, 550); return; }
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -2998,31 +3516,33 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 
   const play = () => {
     cancelAnimationFrame(rafRef.current);
-    const pts = buildWaypoints();
-    if (!pts || pts.length < 2) return;
-    const segs = []; let total = 0;
-    for (let i = 0; i < pts.length - 1; i++) { const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y; const len = Math.hypot(dx, dy); segs.push(len); total += len; }
+    const lists = buildAllWaypoints();
+    if (!lists || !lists.length) return;
     const SPEED = 220; // px/sec
-    const dur = Math.max(700, (total / SPEED) * 1000);
-    animRef.current = { pts, segs, total, dur, elapsed: 0, last: 0, trailBuf: [] };
+    let maxDur = 0;
+    const paths = lists.map((pts) => {
+      const segs = []; let total = 0;
+      for (let i = 0; i < pts.length - 1; i++) { const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y; const len = Math.hypot(dx, dy); segs.push(len); total += len; }
+      const dur = Math.max(700, (total / SPEED) * 1000);
+      maxDur = Math.max(maxDur, dur);
+      return { pts, segs, total, dur };
+    });
+    animRef.current = { paths, dur: maxDur, elapsed: 0, last: 0, trailBufs: paths.map(() => []) };
     setPlayState("playing");
     runLoop();
   };
 
-  const pause = () => {
-    cancelAnimationFrame(rafRef.current);
-    setPlayState("paused");
-  };
+  const pause = () => { cancelAnimationFrame(rafRef.current); setPlayState("paused"); };
   const resume = () => {
-    if (!animRef.current.pts) { play(); return; }
+    if (!animRef.current.paths) { play(); return; }
     setPlayState("playing");
     runLoop();
   };
   const stop = () => {
     cancelAnimationFrame(rafRef.current);
-    animRef.current = { pts: null, segs: null, total: 0, dur: 0, elapsed: 0, last: 0, trailBuf: [] };
+    animRef.current = { paths: null, dur: 0, elapsed: 0, last: 0, trailBufs: [] };
     setPlayState("idle");
-    setPacket(null); setTrail([]); setActiveDev(null); setNextPort(null); setNextDev(null); setPrevPort(null); setPrevDev(null);
+    clearAnim();
   };
 
   const renderPort = (p) => {
@@ -3031,7 +3551,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
     const isLoop = loopSet.has(p);
     return (
       <button key={p} ref={(el) => { portRefs.current[p] = el; }}
-        className={"dev-port " + role + (selected === p ? " selected" : "") + (wired ? " wired" : "") + (isLoop ? " loop" : "") + (nextPort === p ? " next" : prevPort === p ? " from" : "")}
+        className={"dev-port " + role + (selected === p ? " selected" : "") + (wired ? " wired" : "") + (isLoop ? " loop" : "") + (nextPortSet.has(p) ? " next" : prevPortSet.has(p) ? " from" : "")}
         onClick={() => onPick(p)} title={isLoop ? "LOOP interface — traffic returns on the same port" : role === "both" ? "ingress + output" : role === "in" ? "ingress" : role === "out" ? "output" : "unused"}>
         <span className="dev-port-led" />
         <span className="dev-port-name">{p}</span>
@@ -3047,7 +3567,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
         <svg className="dev-cables" width="100%" height="100%">
           {cables.map((c) => {
             const on = activeDev && c.devId === activeDev;
-            const next = !on && nextDev && c.devId === nextDev;
+            const next = !on && nextDevSet.has(c.devId);
             return (
               <g key={c.key}>
                 <path d={c.d} className={"dev-cable" + (on ? " active" : next ? " next" : "")} />
@@ -3066,6 +3586,30 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
               {playState === "playing" && <button className="dev-play" onClick={pause} title="Pause">⏸ pause</button>}
               {playState === "paused" && <button className="dev-play" onClick={resume} title="Resume">▶ resume</button>}
               {playState !== "idle" && <button className="dev-stop" onClick={stop} title="Stop">⏹ stop</button>}
+              <div className="inline-add-wrap">
+                <button className={"inline-add-btn" + (inlineDraft.open ? " on" : "")} onClick={() => setInlineDraft((s) => ({ ...s, open: !s.open }))}>+ inline device (IPS, etc.)</button>
+                {inlineDraft.open && (
+                  <div className="inline-add-pop">
+                    <input className="inline-name-in" value={inlineDraft.name} placeholder="name (e.g. IPS)"
+                      onChange={(e) => setInlineDraft((s) => ({ ...s, name: e.target.value }))} />
+                    <div className="inline-pop-ports">
+                      <select value={inlineDraft.portA} onChange={(e) => setInlineDraft((s) => ({ ...s, portA: e.target.value }))}>
+                        <option value="">port A</option>
+                        {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      <span className="inline-lead-bridge">⇄</span>
+                      <select value={inlineDraft.portB} onChange={(e) => setInlineDraft((s) => ({ ...s, portB: e.target.value }))}>
+                        <option value="">port B</option>
+                        {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    <div className="inline-pop-actions">
+                      <button className="inline-add-ok" disabled={!inlineDraft.portA || !inlineDraft.portB || inlineDraft.portA === inlineDraft.portB} onClick={onAddInline}>add</button>
+                      <button className="inline-add-cancel" onClick={() => setInlineDraft((s) => ({ ...s, open: false }))}>cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <button className="dev-flip" onClick={() => setFlipped((v) => !v)} title="Swap which ports sit on the top / bottom row">⇅ flip rows</button>
             </div>
           </div>
@@ -3103,7 +3647,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
         <div className="dev-inlines">
           {inlines.map((d) => {
             const pos = devPos[d.id];
-            const cls = "inline-dev floating" + (activeDev === d.id ? " active" : nextDev === d.id ? " next" : prevDev === d.id ? " from" : "") + (dragRef.current?.id === d.id ? " dragging" : "");
+            const cls = "inline-dev floating" + (activeDev === d.id ? " active" : nextDevSet.has(d.id) ? " next" : prevDevSet.has(d.id) ? " from" : "") + (dragRef.current?.id === d.id ? " dragging" : "");
             return (
               <div key={d.id} className={cls} ref={(el) => { devRefs.current[d.id] = el; }}
                 style={pos ? { left: pos.x, top: pos.y } : { visibility: "hidden" }}
@@ -3120,41 +3664,24 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
           })}
         </div>
 
-        {(packet || trail.length > 0) && (
+        {(packets.length > 0 || trails.some((t) => t.length)) && (
           <svg className="dev-packet-layer" width="100%" height="100%">
-            {trail.map((p, i) => {
+            {trails.map((trail, ti) => trail.map((p, i) => {
               const a = (i + 1) / (trail.length + 1);
-              return <circle key={i} cx={p.x} cy={p.y} r={2 + a * 3} className="dev-trail" style={{ opacity: a * 0.5 }} />;
-            })}
-            {packet && <>
-              <circle cx={packet.x} cy={packet.y} r="10" className="dev-packet-glow" />
-              <circle cx={packet.x} cy={packet.y} r="5" className="dev-packet-core" />
-            </>}
+              return <circle key={ti + "-" + i} cx={p.x} cy={p.y} r={2 + a * 3} className="dev-trail" style={{ opacity: a * 0.5 }} />;
+            }))}
+            {packets.map((pk, i) => (
+              <g key={i}>
+                <circle cx={pk.x} cy={pk.y} r="10" className="dev-packet-glow" />
+                <circle cx={pk.x} cy={pk.y} r="5" className="dev-packet-core" />
+              </g>
+            ))}
           </svg>
         )}
       </div>
 
-      <div className="dev-inline-controls">
-        {inlineDraft.open ? (
-          <div className="inline-add-form">
-            <input className="inline-name-in" value={inlineDraft.name} placeholder="name (e.g. IPS)"
-              onChange={(e) => setInlineDraft((s) => ({ ...s, name: e.target.value }))} />
-            <select value={inlineDraft.portA} onChange={(e) => setInlineDraft((s) => ({ ...s, portA: e.target.value }))}>
-              <option value="">port A</option>
-              {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <span className="inline-lead-bridge">⇄</span>
-            <select value={inlineDraft.portB} onChange={(e) => setInlineDraft((s) => ({ ...s, portB: e.target.value }))}>
-              <option value="">port B</option>
-              {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <button className="inline-add-ok" disabled={!inlineDraft.portA || !inlineDraft.portB || inlineDraft.portA === inlineDraft.portB} onClick={onAddInline}>add</button>
-            <button className="inline-add-cancel" onClick={() => setInlineDraft((s) => ({ ...s, open: false }))}>cancel</button>
-          </div>
-        ) : (
-          <button className="inline-add-btn" onClick={() => setInlineDraft((s) => ({ ...s, open: true }))}>+ inline device (IPS, etc.)</button>
-        )}
-      </div>
+      <div className="dev-inline-controls" />
+
     </div>
   );
 }
@@ -3166,13 +3693,33 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
     (doc.chains ?? []).forEach((c) => chainFilterRefs(c.tree, s));
     return [...s].sort((a, b) => (+a.slice(1)) - (+b.slice(1)));
   }, [doc.filters, doc.chains]);
-  const filterAlt = useMemo(() => Object.fromEntries(doc.filters.map((f) => ["F" + f.id, f.alt || f.name || ""])), [doc.filters]);
+  const filterAlt = useMemo(() => Object.fromEntries(doc.filters.map((f) => ["F" + f.id, f.name || f.alt || ""])), [doc.filters]);
   const definedSet = useMemo(() => new Set(doc.filters.map((f) => "F" + f.id)), [doc.filters]);
 
   const [states, setStates] = simState;      // { F1: true(match)/false(not-match) }
   const [inPort, setInPort] = simInPort;      // chosen ingress port
   const [inlines, setInlines] = simInlines;   // [{ id, name, portA, portB }] — session only, not persisted
   const [inlineDraft, setInlineDraft] = simInlineDraft;
+  // resizable device-panel height (session only; null = auto/natural height)
+  const [panelHeight, setPanelHeight] = useState(null);
+  const resizeRef = useRef(null);
+  const onResizeStart = (e) => {
+    const startY = e.clientY;
+    const startH = panelHeight ?? e.currentTarget.parentElement.querySelector(".dev-panel-outer")?.getBoundingClientRect().height ?? 300;
+    resizeRef.current = { startY, startH };
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const onMove = (e) => {
+      const r = resizeRef.current; if (!r) return;
+      const h = Math.max(140, Math.min(r.startH + (e.clientY - r.startY), window.innerHeight - 160));
+      setPanelHeight(h);
+    };
+    const onUp = () => { resizeRef.current = null; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
 
   // ingress ports available: union of chains' ingress ports and the device list
   const chainInPorts = useMemo(() => {
@@ -3221,47 +3768,67 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   const chainForPort = (p) => (doc.chains ?? []).find((c) => (c.ports || "").split(",").map((x) => x.trim()).includes(p));
   const animPlan = useMemo(() => {
     if (!inPort) return null;
-    const nodes = [{ kind: "outside-in", port: inPort }];
-    let curIngress = inPort;
-    let guard = 0;
-    while (guard++ < 8) {
-      const chain = chainForPort(curIngress);
-      if (!chain) { nodes.push({ kind: "outside-out", port: curIngress }); break; } // no chain: leaves the device
+    const loopSet = new Set(loopPorts);
+    // Resolve an out token (physical port, or O-ref → its physical port). Returns
+    // { port } or { exitAt } when the output is undefined (nowhere to send).
+    const resolveOut = (tok) => {
+      const t = tok.trim();
+      const oMatch = /^O(\d+)$/.exec(t);
+      if (!oMatch) return { port: t };
+      const outDef = (doc.outputs ?? []).find((o) => o.id === +oMatch[1]);
+      if (outDef && outDef.port) return { port: outDef.port, ref: t };
+      return { exitAt: t };
+    };
+    // Build all paths from an ingress port. Returns an array of node-lists. A chain
+    // that outputs to several ports fans out: the common prefix (ingress → out
+    // point) is shared, then each port continues as its own path.
+    const buildFrom = (ingress, guard) => {
+      const prefix = [{ kind: "outside-in", port: ingress }];
+      const chain = chainForPort(ingress);
+      if (!chain) return [[...prefix, { kind: "outside-out", port: ingress }]];
       const { outcome } = simulateChain(chain, states, filterAlt);
-      if (outcome.kind !== "out") { nodes.push({ kind: "fizzle", port: curIngress, label: outcome.kind }); break; }
-      let outPort = outcome.text.split(",")[0].trim();
-      // if the chain routes to a defined output (O1), the packet actually goes to
-      // the physical port that output defines — resolve it before animating.
-      const oMatch = /^O(\d+)$/.exec(outPort);
-      if (oMatch) {
-        const outDef = (doc.outputs ?? []).find((o) => o.id === +oMatch[1]);
-        if (outDef && outDef.port) { nodes.push({ kind: "output-ref", ref: outPort, port: outDef.port }); outPort = outDef.port; }
-        else { nodes.push({ kind: "port", port: outPort }, { kind: "outside-out", port: outPort }); break; } // undefined output: nowhere to send
-      }
-      const loopSet = new Set(loopPorts);
-      if (loopSet.has(outPort)) {
-        // LOOP interface: packet exits and returns on the SAME port, then continues
-        nodes.push({ kind: "port", port: outPort }, { kind: "loop", port: outPort }, { kind: "port", port: outPort });
-        if (curIngress === outPort) break; // safety: would re-run the same chain forever
-        curIngress = outPort;
-        continue;
-      }
-      const wire = inlines.find((d) => d.portA === outPort || d.portB === outPort);
-      if (!wire) { nodes.push({ kind: "port", port: outPort }, { kind: "outside-out", port: outPort }); break; } // exits out
-      const paired = wire.portA === outPort ? wire.portB : wire.portA;
-      nodes.push({ kind: "port", port: outPort }, { kind: "ips-in", devId: wire.id, port: outPort }, { kind: "ips-out", devId: wire.id, port: paired }, { kind: "port", port: paired });
-      curIngress = paired; // continue as if it re-entered on the paired port
-    }
-    return { nodes };
+      if (outcome.kind !== "out") return [[...prefix, { kind: "fizzle", port: ingress, label: outcome.kind }]];
+      const tokens = outcome.text.split(",").map((s) => s.trim()).filter(Boolean);
+      // continue a single out token from the point it leaves the chain
+      const continuePort = (tok) => {
+        const r = resolveOut(tok);
+        const lead = [];
+        if (r.ref) lead.push({ kind: "output-ref", ref: r.ref, port: r.port });
+        if (r.exitAt) return [[{ kind: "port", port: r.exitAt }, { kind: "outside-out", port: r.exitAt }]];
+        const outPort = r.port;
+        if (loopSet.has(outPort)) {
+          const head = [...lead, { kind: "port", port: outPort }, { kind: "loop", port: outPort }, { kind: "port", port: outPort }];
+          if (ingress === outPort || guard >= 8) return [head];               // safety
+          return buildFrom(outPort, guard + 1).map((tail) => [...head, ...tail.slice(1)]); // drop tail's outside-in
+        }
+        const wire = inlines.find((d) => d.portA === outPort || d.portB === outPort);
+        if (!wire) return [[...lead, { kind: "port", port: outPort }, { kind: "outside-out", port: outPort }]];
+        const paired = wire.portA === outPort ? wire.portB : wire.portA;
+        const head = [...lead, { kind: "port", port: outPort }, { kind: "ips-in", devId: wire.id, port: outPort }, { kind: "ips-out", devId: wire.id, port: paired }, { kind: "port", port: paired }];
+        if (guard >= 8) return [head];
+        return buildFrom(paired, guard + 1).map((tail) => [...head, ...tail.slice(1)]);
+      };
+      // each token becomes one or more paths; prepend the shared ingress prefix
+      const paths = [];
+      tokens.forEach((tok) => { continuePort(tok).forEach((rest) => paths.push([...prefix, ...rest])); });
+      return paths.length ? paths : [[...prefix, { kind: "outside-out", port: ingress }]];
+    };
+    const paths = buildFrom(inPort, 0);
+    return { paths, split: paths.length > 1 };
   }, [inPort, results, states, filterAlt, inlines, doc.chains, doc.outputs, loopPorts]);
 
   return (
     <div className="sim-page">
-      <DevicePanel portOptions={portOptions} inPortSet={inPortSet} outPortSet={chainOutPorts}
-        selected={inPort} onPick={(p) => setInPort(p)}
-        inlines={inlines} onRemoveInline={removeInline}
-        inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
-        animPlan={animPlan} flipState={simFlipped} loopPorts={loopPorts} />
+      <div className="dev-panel-outer" style={panelHeight ? { height: panelHeight, flex: "0 0 auto" } : undefined}>
+        <DevicePanel portOptions={portOptions} inPortSet={inPortSet} outPortSet={chainOutPorts}
+          selected={inPort} onPick={(p) => setInPort(p)}
+          inlines={inlines} onRemoveInline={removeInline}
+          inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
+          animPlan={animPlan} flipState={simFlipped} loopPorts={loopPorts} />
+      </div>
+      <div className="sim-resizer" onMouseDown={onResizeStart} title="Drag to resize the device panel">
+        <span className="sim-resizer-grip" />
+      </div>
       <div className="sim-layout">
       <aside className="sim-controls">
         <div className="sim-section">
@@ -3338,9 +3905,10 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   );
 }
 
-function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied }) {
+function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn }) {
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
+  const [confirmSubmit, setConfirmSubmit] = useState(false); // show the "submit to device?" confirmation
   const [apply, setApply] = useState({ active: false, msg: "", warn: "" }); // device-side apply polling
   const [edit, setEdit] = useState(null); // null = read-only; string = editing draft
   const [applyErr, setApplyErr] = useState("");
@@ -3446,6 +4014,23 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
           </div>
         </div>
       )}
+      {confirmSubmit && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirmSubmit(false)}>
+          <div className={"modal" + (docSource === "template" ? " modal-warn" : "")} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{docSource === "template" ? "⚠ Submit a template to the device?" : "Submit to device?"}</div>
+            <p className="modal-body">
+              {docSource === "template"
+                ? "This configuration came straight from a template and may not be tuned for this device. Submitting will overwrite the device's running config and apply it live."
+                : "This will overwrite the device's running config and apply it live."}
+            </p>
+            <button className={"opt" + (docSource === "template" ? " drop" : "")} onClick={() => { setConfirmSubmit(false); submitToDevice(); }}>
+              <span className="opt-name">{docSource === "template" ? "I understand — submit anyway" : "Submit and apply"}</span>
+              <span className="opt-desc">Overwrite and apply the running config on the device.</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setConfirmSubmit(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
       <div className="export-main">
         <div className="xb-head">
           <span className="xb-title">Complete &lt;run&gt;{editing && <span className="xb-editing"> · editing</span>}</span>
@@ -3453,8 +4038,10 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
             {!editing && <>
               <button className="copy-btn" onClick={startEdit}>edit</button>
               <button className="copy-btn" disabled={problems.length > 0} onClick={copy}>{copied ? "copied ✓" : problems.length ? "fix issues to copy" : "copy"}</button>
-              <button className={"submit-btn" + (submit.state === "error" ? " err" : submit.state === "ok" ? " ok" : "")}
-                disabled={problems.length > 0 || submit.state === "sending" || apply.active} onClick={submitToDevice}>{submitLabel}</button>
+              {loggedIn && (
+                <button className={"submit-btn" + (submit.state === "error" ? " err" : submit.state === "ok" ? " ok" : "")}
+                  disabled={problems.length > 0 || submit.state === "sending" || apply.active} onClick={() => setConfirmSubmit(true)}>{submitLabel}</button>
+              )}
             </>}
             {editing && <>
               <button className="copy-btn" onClick={formatEdit}>format</button>
