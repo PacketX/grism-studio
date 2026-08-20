@@ -198,6 +198,12 @@
 .m-port.invalid{border-color:var(--notmatch); background:rgba(251,113,133,.06);}
 .out-empty{color:var(--txt-faint); font-size:13.5px; line-height:1.6; padding:8px 4px; margin:0 0 8px;}
 .scan-attrs{display:inline-flex; gap:5px; margin-left:8px;}
+.filepath-list{display:flex; flex-direction:column;}
+.fp-del{background:transparent; border:none; color:var(--txt-dim); cursor:pointer; padding:0 6px; font-size:13px;}
+.fp-del:hover{color:var(--notmatch);}
+.fp-add{background:transparent; border:1px dashed var(--line-2); color:var(--txt-dim); border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;}
+.fp-add:hover:not(:disabled){border-color:var(--accent); color:var(--accent);}
+.fp-add:disabled{opacity:.5; cursor:default;}
 .scan-attr{width:80px; background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:5px; padding:4px 7px; font-size:11.5px; font-family:var(--mono);}
 .scan-attr:focus{outline:none; border-color:var(--accent-2);}
 .mod-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 10px; border-radius:7px;
@@ -443,8 +449,8 @@
 .ov-jump{margin-top:12px; background:transparent; border:1px solid var(--line-2); color:var(--txt-dim); border-radius:7px; padding:6px 13px; font-size:12px;}
 .ov-jump:hover{border-color:var(--accent); color:var(--accent);}
 .ov-chains{display:flex; flex-direction:column; gap:16px;}
-.ov-chain{overflow-x:auto; padding:8px 4px;}
-.ov-flow{height:auto; display:block;}
+.ov-chain{overflow-x:auto; padding:8px 4px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.01);}
+.ov-flow{display:block; flex:0 0 auto;}
 .ovf-in{fill:#0f2028; stroke:var(--accent-2); stroke-width:1.4;}
 .ovf-in-lbl{fill:#bfe0f0; font-family:var(--mono); font-size:12px; font-weight:600; text-anchor:middle;}
 .ovf-test{fill:#141d13; stroke:#3f6b4a; stroke-width:1.4;}
@@ -466,7 +472,7 @@
 .ovf-ar.flow{fill:var(--txt-dim);} .ovf-ar.match{fill:var(--match);} .ovf-ar.notmatch{fill:var(--notmatch);}
 .brand{background:transparent; border:none; cursor:pointer; padding:0; color:var(--txt); font-family:inherit;}
 .brand:hover .brand-name{color:var(--accent);}
-.dev-panel-outer{flex:0 0 auto; overflow:auto; min-height:0;}
+.dev-panel-outer{flex:0 0 auto; overflow:auto; min-height:0; max-height:60vh;}
 .sim-resizer{flex:0 0 auto; height:10px; background:var(--panel-2); border-bottom:1px solid var(--line); border-top:1px solid var(--line); cursor:row-resize; display:flex; align-items:center; justify-content:center;}
 .sim-resizer:hover{background:var(--panel);}
 .sim-resizer-grip{width:36px; height:3px; border-radius:99px; background:var(--line-2);}

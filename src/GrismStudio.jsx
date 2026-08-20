@@ -554,7 +554,7 @@ const TEMPLATES = [
       filters: [{ id: 1, name: "match", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "ip", rel: "==", val: "" }] } }],
       inputs: [{ id: 1, name: "replay", alt: "test pcap", type: "replayPcap", port: "P0",
-        fields: { filepath: "H1/in/sample.pcap", time: "1", msinterval: "1" }, scanAttrs: {} }],
+        pcapMode: "files", filepaths: ["H1/in/sample.pcap"], fields: { time: "1", msinterval: "1" }, scanAttrs: {} }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } },
     }) },
   { id: "ingress-strip", title: "Strip VLAN at ingress", tag: "Action",
@@ -806,9 +806,6 @@ const INPUT_PCAP_FIELDS = [
   { k: "time", label: "Play count", kind: "num", ph: "1" },
   { k: "speed", label: "Speed", kind: "num", ph: "10000" },
   { k: "msinterval", label: "Interval (ms)", kind: "num", ph: "1" },
-  { k: "sessionCompleteness", label: "Session completeness", kind: "t1f0", ph: "1" },
-  { k: "sorting", label: "Sorting", kind: "t1f0", ph: "0" },
-  { k: "reverseSessionResult", label: "Reverse session", kind: "t1f0", ph: "0" },
   { k: "playedFilesHandle", label: "After replay", kind: "enum", opts: ["", "delete", "move"] },
   { k: "playedFilesMoveTo", label: "Move played to", kind: "str", ph: "H1/in/played" },
 ];
@@ -845,32 +842,56 @@ const INPUT_GEN_FIELDS = [
 const INPUT_FIELD_INDEX = Object.fromEntries([...INPUT_PCAP_FIELDS, ...INPUT_GEN_FIELDS].map((f) => [f.k, f]));
 const inputFieldsFor = (type) => type === "traffic-gen" ? INPUT_GEN_FIELDS : INPUT_PCAP_FIELDS;
 const mkInput = (id) => ({ id, name: "", alt: "", type: "replayPcap", port: "P0",
-  fields: { time: "1" }, scanAttrs: {} });
+  pcapMode: "files", filepaths: [""], fields: { time: "1" }, scanAttrs: {} });
 
 function serializeInput(inp) {
   const attrs = [`id="${inp.id}"`, `type="${inp.type}"`,
     inp.name ? `name="${esc(inp.name)}"` : null,
     inp.alt ? `alt="${esc(inp.alt)}"` : null].filter(Boolean).join(" ");
   const lines = [`<input ${attrs}>`, `  <port>${esc(inp.port)}</port>`];
+  if (inp.type === "replayPcap") {
+    const mode = inp.pcapMode || "files";
+    if (mode === "files") {
+      (inp.filepaths || []).map((p) => p.trim()).filter(Boolean).forEach((p) => lines.push(`  <filepath>${esc(p)}</filepath>`));
+    } else {
+      const dir = (inp.fields?.scandir || "").trim();
+      if (dir) {
+        const a = inp.scanAttrs || {};
+        const at = ["interval", "minbytes", "timeout"].filter((k) => a[k] != null && a[k] !== "").map((k) => ` ${k}="${esc(a[k])}"`).join("");
+        lines.push(`  <scandir${at}>${esc(dir)}</scandir>`);
+      }
+    }
+    // shared playback fields
+    ["time", "speed", "msinterval"].forEach((k) => { const v = inp.fields?.[k]; if (v != null && v !== "") lines.push(`  <${k}>${esc(v)}</${k}>`); });
+    // played-files handling is only meaningful in scandir mode
+    if (mode === "scandir") {
+      const h = inp.fields?.playedFilesHandle;
+      if (h) lines.push(`  <playedFilesHandle>${esc(h)}</playedFilesHandle>`);
+      if (h === "move") { const mv = inp.fields?.playedFilesMoveTo; if (mv) lines.push(`  <playedFilesMoveTo>${esc(mv)}</playedFilesMoveTo>`); }
+    }
+    lines.push(`</input>`);
+    return lines.join("\n");
+  }
   inputFieldsFor(inp.type).forEach((f) => {
     const v = inp.fields?.[f.k];
     if (v == null || v === "") return;
-    if (f.k === "scandir") {
-      const a = inp.scanAttrs || {};
-      const at = ["interval", "minbytes", "timeout"].filter((k) => a[k] != null && a[k] !== "")
-        .map((k) => ` ${k}="${esc(a[k])}"`).join("");
-      lines.push(`  <scandir${at}>${esc(v)}</scandir>`);
-    } else {
-      lines.push(`  <${f.k}>${esc(v)}</${f.k}>`);
-    }
+    lines.push(`  <${f.k}>${esc(v)}</${f.k}>`);
   });
   lines.push(`</input>`);
   return lines.join("\n");
 }
 function inputProblems(inp, out) {
   if (!/^[A-Z][0-9]+$/.test(inp.port || "")) out.push({ id: inp.id, msg: `port must look like P0`, label: "port" });
-  if (inp.type === "replayPcap" && !(inp.fields?.filepath || inp.fields?.scandir))
-    out.push({ id: inp.id + ":src", msg: "needs a file path or scan directory", label: "source" });
+  if (inp.type === "replayPcap") {
+    const mode = inp.pcapMode || "files";
+    if (mode === "files") {
+      const paths = (inp.filepaths || []).map((p) => p.trim()).filter(Boolean);
+      if (!paths.length) out.push({ id: inp.id + ":src", msg: "add at least one file path", label: "source" });
+      if ((inp.filepaths || []).length > 100) out.push({ id: inp.id + ":src", msg: "at most 100 file paths", label: "source" });
+    } else if (!(inp.fields?.scandir || "").trim()) {
+      out.push({ id: inp.id + ":src", msg: "needs a scan directory", label: "source" });
+    }
+  }
   inputFieldsFor(inp.type).forEach((f) => {
     const v = inp.fields?.[f.k]; if (v == null || v === "") return;
     if (f.kind === "enum" || f.kind === "str") return;
@@ -987,18 +1008,23 @@ function parseRun(xmlText) {
     const type = el.getAttribute("type") || "replayPcap";
     const name = el.getAttribute("name") || "";
     const alt = el.getAttribute("alt") || "";
-    const inp = { id, name, alt, labelAttr: name ? "name" : alt ? "alt" : "name", type, port: "P0", fields: {}, scanAttrs: {} };
+    const inp = { id, name, alt, labelAttr: name ? "name" : alt ? "alt" : "name", type, port: "P0", pcapMode: "files", filepaths: [], fields: {}, scanAttrs: {} };
     elemChildren(el).forEach((c) => {
       const k = c.tagName;
       if (k === "port") { inp.port = c.textContent.trim(); return; }
+      if (k === "filepath") { inp.filepaths.push(c.textContent.trim()); return; }
+      if (k === "scandir") {
+        inp.pcapMode = "scandir";
+        inp.fields.scandir = c.textContent.trim();
+        ["interval", "minbytes", "timeout"].forEach((a) => { const av = c.getAttribute(a); if (av != null) inp.scanAttrs[a] = av; });
+        return;
+      }
       if (!INPUT_FIELD_INDEX[k]) { warnings.push(`unknown input element <${k}>`); return; }
       inp.fields[k] = c.textContent.trim();
-      if (k === "scandir") {
-        ["interval", "minbytes", "timeout"].forEach((a) => {
-          const av = c.getAttribute(a); if (av != null) inp.scanAttrs[a] = av;
-        });
-      }
     });
+    // decide the pcap mode: scandir present → scandir; else files
+    if (inp.fields.scandir) inp.pcapMode = "scandir";
+    else { inp.pcapMode = "files"; if (!inp.filepaths.length) inp.filepaths = [""]; }
     return inp;
   }
 
@@ -1733,11 +1759,13 @@ function ChainFlow({ chain, filterNames = {} }) {
   const root = flow.root;
   const terminal = flow.terminal;
 
-  const ingressW = 62, testW = 190, outW = 76, colGap = 70, rowH = 74;
+  const ingressW = 62, testW = 200, outW = 78, colGap = 76, rowH = 76;
   const inX = 30;
   const colX = (depth) => inX + ingressW + colGap + depth * (testW + colGap);
 
-  // assign each test node a row (top-to-bottom in traversal order) and depth.
+  // assign each test node a row (traversal order) and a depth (how many tests deep
+  // it sits). Depth drives the x column, so match/notmatch fan out to the RIGHT and
+  // never tangle in a single column.
   const nodes = [];               // { node, depth, row }
   let rowCounter = 0;
   (function place(n, depth) {
@@ -1787,6 +1815,7 @@ function ChainFlow({ chain, filterNames = {} }) {
     const s = from[kind === "match" ? "match" : "notmatch"];
     if (s.kind === "default") return null;                       // unspecified → draw nothing
     if (s.kind === "test") {
+      // continuation to another test in the next column to the right.
       const child = nodeById[s.node.id];
       return arrow(x1, y1, colX(child.depth), rowY(child.row), kind, kind + from.id, label);
     }
@@ -1807,7 +1836,7 @@ function ChainFlow({ chain, filterNames = {} }) {
 
   return (
     <div className="ov-chain">
-      <svg viewBox={`0 0 ${width} ${height}`} className="ov-flow" style={{ maxWidth: width }}>
+      <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="ov-flow">
         {/* ingress */}
         <rect x={inX} y={rootMidY - 16} width={ingressW} height="32" rx="7" className="ovf-in" />
         <text x={inX + ingressW / 2} y={rootMidY + 5} className="ovf-in-lbl">{chain.ingress}</text>
@@ -2221,6 +2250,9 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
   const patch = (p) => setDoc((d) => ({ ...d, inputs: d.inputs.map((x) => x.id === inp.id ? { ...x, ...p } : x) }));
   const setField = (k, v) => patch({ fields: { ...(inp.fields ?? {}), [k]: v } });
   const setScanAttr = (k, v) => patch({ scanAttrs: { ...(inp.scanAttrs ?? {}), [k]: v } });
+  const setFilepath = (i, v) => { const arr = [...(inp.filepaths ?? [])]; arr[i] = v; patch({ filepaths: arr }); };
+  const addFilepath = () => { const arr = [...(inp.filepaths ?? [])]; if (arr.length >= 100) return; arr.push(""); patch({ filepaths: arr }); };
+  const removeFilepath = (i) => { const arr = (inp.filepaths ?? []).filter((_, k) => k !== i); patch({ filepaths: arr.length ? arr : [""] }); };
 
   if (!inp) return (
     <div className="empty-pane">
@@ -2299,7 +2331,61 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
               ? "Synthesise packets onto the port. Fill only the fields you need — empty ones aren't emitted."
               : "Replay pcap files. A file path or a scan directory is required; other fields are optional."}
           </p>
-          {fields.map(renderField)}
+          {inp.type === "traffic-gen" && fields.map(renderField)}
+
+          {inp.type === "replayPcap" && <>
+            <div className="mod-row">
+              <span className="mod-key">Source</span>
+              <select className="mod-val" value={inp.pcapMode || "files"} onChange={(e) => patch({ pcapMode: e.target.value })}>
+                <option value="files">file list</option>
+                <option value="scandir">scan directory</option>
+              </select>
+            </div>
+
+            {(inp.pcapMode || "files") === "files" && <div className="filepath-list">
+              {(inp.filepaths ?? [""]).map((fp, i) => (
+                <div className="mod-row" key={i}>
+                  <span className="mod-key">{i === 0 ? "File paths" : ""}</span>
+                  <input className="mod-val" value={fp} placeholder="H1/in/sample.pcap" onChange={(e) => setFilepath(i, e.target.value)} />
+                  <button className="fp-del" title="remove" onClick={() => removeFilepath(i)}>✕</button>
+                </div>
+              ))}
+              <div className="mod-row">
+                <span className="mod-key" />
+                <button className="fp-add" disabled={(inp.filepaths ?? []).length >= 100} onClick={addFilepath}>
+                  + file path {(inp.filepaths ?? []).length >= 100 ? "(max 100)" : `(${(inp.filepaths ?? []).length}/100)`}
+                </button>
+              </div>
+            </div>}
+
+            {(inp.pcapMode || "files") === "scandir" && <>
+              <div className="mod-row">
+                <span className="mod-key">Scan directory</span>
+                <input className="mod-val" value={inp.fields?.scandir ?? ""} placeholder="H1/in" onChange={(e) => setField("scandir", e.target.value)} />
+                <code className="mod-tag">&lt;scandir&gt;</code>
+                {(inp.fields?.scandir) && <span className="scan-attrs">
+                  {["interval", "minbytes", "timeout"].map((a) => (
+                    <input key={a} className="scan-attr" placeholder={a} value={inp.scanAttrs?.[a] ?? ""} onChange={(e) => setScanAttr(a, e.target.value)} />
+                  ))}
+                </span>}
+              </div>
+              <div className="mod-row">
+                <span className="mod-key">After replay</span>
+                <select className="mod-val" value={inp.fields?.playedFilesHandle ?? ""} onChange={(e) => setField("playedFilesHandle", e.target.value)}>
+                  <option value="">—</option><option value="delete">delete</option><option value="move">move</option>
+                </select>
+                <code className="mod-tag">&lt;playedFilesHandle&gt;</code>
+              </div>
+              {inp.fields?.playedFilesHandle === "move" && <div className="mod-row">
+                <span className="mod-key">Move played to</span>
+                <input className="mod-val" value={inp.fields?.playedFilesMoveTo ?? ""} placeholder="H1/in/played" onChange={(e) => setField("playedFilesMoveTo", e.target.value)} />
+                <code className="mod-tag">&lt;playedFilesMoveTo&gt;</code>
+              </div>}
+            </>}
+
+            {/* shared playback fields */}
+            {["time", "speed", "msinterval"].map((k) => renderField(INPUT_FIELD_INDEX[k]))}
+          </>}
         </div>
 
         <div className={"pane-validity " + (problems.length ? "bad" : "ok")}>
@@ -3712,7 +3798,7 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   useEffect(() => {
     const onMove = (e) => {
       const r = resizeRef.current; if (!r) return;
-      const h = Math.max(140, Math.min(r.startH + (e.clientY - r.startY), window.innerHeight - 160));
+      const h = Math.max(140, Math.min(r.startH + (e.clientY - r.startY), window.innerHeight * 0.62));
       setPanelHeight(h);
     };
     const onUp = () => { resizeRef.current = null; };
@@ -3785,7 +3871,7 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
     const buildFrom = (ingress, guard) => {
       const prefix = [{ kind: "outside-in", port: ingress }];
       const chain = chainForPort(ingress);
-      if (!chain) return [[...prefix, { kind: "outside-out", port: ingress }]];
+      if (!chain) return [[...prefix, { kind: "port", port: ingress }, { kind: "fizzle", port: ingress, label: "no chain" }]];
       const { outcome } = simulateChain(chain, states, filterAlt);
       if (outcome.kind !== "out") return [[...prefix, { kind: "fizzle", port: ingress, label: outcome.kind }]];
       const tokens = outcome.text.split(",").map((s) => s.trim()).filter(Boolean);
@@ -3811,7 +3897,7 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
       // each token becomes one or more paths; prepend the shared ingress prefix
       const paths = [];
       tokens.forEach((tok) => { continuePort(tok).forEach((rest) => paths.push([...prefix, ...rest])); });
-      return paths.length ? paths : [[...prefix, { kind: "outside-out", port: ingress }]];
+      return paths.length ? paths : [[...prefix, { kind: "port", port: ingress }, { kind: "fizzle", port: ingress, label: "no output" }]];
     };
     const paths = buildFrom(inPort, 0);
     return { paths, split: paths.length > 1 };
