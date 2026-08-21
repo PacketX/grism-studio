@@ -1,6 +1,351 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffect } from "react";
 import "./GrismStudio.css";
 
+/* ===================== i18n (English / Traditional Chinese) =====================
+   Lightweight dictionary. Covers the main navigation and common controls; add
+   keys here to extend coverage. Missing keys fall back to English, then the key. */
+const I18N = {
+  en: {
+    "tab.filters": "Filters", "tab.inputs": "Inputs", "tab.outputs": "Outputs",
+    "tab.actions": "Actions", "tab.chain": "Chains", "tab.simulate": "Simulate",
+    "tab.export": "Export", "tab.overview": "Overview",
+    "nav.advanced": "advanced",
+    "brand.tip": "Overview — what this configuration does",
+    "btn.templates": "Templates", "btn.template_current": "Template",
+    "btn.loadRunning": "load running config", "btn.loading": "loading…",
+    "btn.loadFailed": "load failed — retry",
+    "btn.login": "login", "btn.logout": "logout",
+    "sync.dirty": "unapplied changes", "sync.synced": "in sync",
+    "sync.dirtyTip": "The current config differs from what's running on the device",
+    "sync.syncedTip": "In sync with the device",
+    "health.issues": "issues", "health.issue": "issue",
+    "health.warnings": "warnings", "health.warning": "warning", "health.valid": "valid",
+    "theme.toDark": "Switch to dark mode", "theme.toLight": "Switch to light mode",
+    "lang.toggle": "切換中文", "lang.name": "EN",
+    "undo.tip": "Undo / redo edits on this tab", "undo.undo": "Undo (Ctrl/Cmd+Z)", "undo.redo": "Redo (Ctrl/Cmd+Shift+Z)",
+    "user.signedIn": "Signed in", "btn.loadRunningTip": "Fetch and load the config currently running on the device",
+    "btn.loginTip": "Sign in to the device", "btn.logoutTip": "Sign out of the device",
+    "tmpl.tip": "Start from a ready-made configuration",
+    "tmpl.lead": "Start from a working pattern. Applying a template loads its filters and chain into the document — then refine them in the other tabs.",
+    "tmpl.apply": "Apply →",
+    // Overview page
+    "ov.title": "What this configuration does",
+    "ov.loadedFrom": "Currently loaded from",
+    "ov.src.running": "the device's running config",
+    "ov.src.template": "the \"{name}\" template",
+    "ov.src.manual": "a manually entered config",
+    "ov.unit.filter": "filter", "ov.unit.filters": "filters",
+    "ov.unit.chain": "chain", "ov.unit.chains": "chains",
+    "ov.unit.port": "port", "ov.unit.ports": "ports",
+    "ov.looksLike": "What this looks like", "ov.inferred": "inferred",
+    "ov.inferNote": "This is a best-effort reading of the structure — the details below are exact.",
+    "ov.filters": "Filters", "ov.chains": "Chains",
+    "ov.noCondition": "(no condition)",
+    "ov.editFilters": "edit filters →", "ov.editChains": "edit chains →",
+    // chain flow labels
+    "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match",
+    "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate",
+    "flow.drop": "drop", "flow.all": "all", "flow.any": "any",
+    // criterion connectors
+    "crit.and": "AND", "crit.or": "OR", "crit.not": "NOT",
+    "crit.matchAll": "(matches all)", "crit.matchAny": "(matches any)",
+    // inferred intent
+    "intent.bidir": "Bidirectional forwarding between {pairs} — traffic passes through in both directions.",
+    "intent.lb": "Uses load balancing — matched traffic is spread across multiple ports, keeping each session on one port.",
+    "intent.drop": "Some traffic is explicitly discarded (dropped).",
+    "intent.heartbeat": "Watches a heartbeat target — when the heartbeat is missed, matching traffic is steered differently (a bypass/failover pattern).",
+    "intent.web": "Inspects web traffic (HTTP/HTTPS) — likely steering or filtering by web service.",
+    "intent.geo": "Filters by country (GeoIP).",
+    "intent.ip": "Matches specific IP addresses — an allow/block list pattern.",
+    // Export tab
+    "ex.completeRun": "Complete <run>", "ex.editing": "editing",
+    "ex.edit": "edit", "ex.copy": "copy", "ex.copied": "copied ✓",
+    "ex.fixToCopy": "fix issues to copy", "ex.format": "format", "ex.cancel": "cancel",
+    "ex.applyChanges": "apply changes",
+    "ex.submit": "submit to device", "ex.fixToSubmit": "fix issues to submit",
+    "ex.applying": "applying…", "ex.submitting": "submitting…", "ex.applied": "applied ✓", "ex.retrySubmit": "retry submit",
+    "ex.applyingToDevice": "Applying to the device — please wait.",
+    "ex.confirmTitle": "Submit to device?", "ex.confirmTitleTmpl": "⚠ Submit a template to the device?",
+    "ex.confirmBody": "This will overwrite the device's running config and apply it live.",
+    "ex.confirmBodyTmpl": "This configuration came straight from a template and may not be tuned for this device. Submitting will overwrite the device's running config and apply it live.",
+    "ex.submitApply": "Submit and apply", "ex.submitAnyway": "I understand — submit anyway",
+    "ex.overwriteDesc": "Overwrite and apply the running config on the device.",
+    "ex.readyExport": "ready to export", "ex.canSubmit": "— can still submit",
+    "ex.editHelp": "Edit the XML directly. Format tidies the indentation without changing anything. Apply changes parses it back in — every tab updates to match. Cancel discards your edits.",
+    "ex.cantApply": "Couldn't apply", "ex.fixTryAgain": "Fix the XML and try again.",
+    "ex.appliedWith": "Applied with", "ex.warningWord": "warning", "ex.warningsWord": "warnings",
+    "ex.submitFailed": "Submit failed", "ex.checkSignedIn": "Check that you're signed in to the device and try again.",
+    "ex.appliedLive": "Configuration applied — the device is now running",
+    "ex.allValidate": "All filters and the chain validate. Edit the XML, copy it, or submit straight to the device.",
+    "ex.issue": "issue", "ex.issues": "issues",
+    // Simulate tab
+    "sim.ingressPort": "Ingress port",
+    "sim.filterResults": "Filter results",
+    "sim.allNotMatch": "all not-match", "sim.allMatch": "all match",
+    "sim.noFilters": "No filters referenced.",
+    "sim.notDefined": "not defined in this config",
+    "sim.play": "▶ play", "sim.pause": "⏸ pause", "sim.resume": "▶ resume", "sim.stop": "⏹ stop",
+    "sim.playTip": "Animate a packet along the traced path", "sim.selectIngress": "Select an ingress port first",
+    "sim.pauseTip": "Pause", "sim.resumeTip": "Resume", "sim.stopTip": "Stop",
+    "sim.addInline": "+ inline device (IPS, etc.)",
+    "sim.namePh": "name (e.g. IPS)", "sim.portA": "port A", "sim.portB": "port B",
+    "sim.add": "add", "sim.cancel": "cancel",
+    "sim.flipRows": "⇅ flip rows", "sim.flipTip": "Swap which ports sit on the top / bottom row",
+    "sim.resizeTip": "Drag to resize the device panel",
+    "sim.dragReposition": "Drag to reposition", "sim.remove": "Remove",
+    "sim.loopTip": "LOOP interface — traffic returns on the same port",
+    "sim.wiredTip": "wired to an inline device",
+    "sim.roleBoth": "ingress + output", "sim.roleIn": "ingress", "sim.roleOut": "output", "sim.roleIdle": "unused",
+    "sim.selectIngressOpt": "select ingress", "sim.noChain": "no chain",
+    // shared / common
+    "adv.badge": "Advanced",
+    "adv.inputs": "Inputs replay pcap files or generate synthetic traffic. Most setups feed traffic from physical ports and won't need this.",
+    "adv.outputs": "Outputs define reusable egress port rewrites and encapsulation (VXLAN/NVGRE). Basic forwarding is handled directly in Chains — you only need Outputs for packet modification.",
+    "adv.actions": "Actions apply ingress packet processing or link-pair failover. Most setups don't need these.",
+    "login.title": "Sign in to the device", "login.username": "Username", "login.password": "Password",
+    "login.signingIn": "signing in…", "login.signIn": "Sign in",
+    "confirm.discardTitle": "Discard current edits?",
+    "common.delete": "Delete", "common.cancel": "Cancel", "common.optional": "optional",
+    "common.name": "name", "common.type": "type", "common.id": "id",
+    "common.addFilter": "+ Add filter", "common.newFilter": "+ New filter",
+    "common.addInput": "+ Add input", "common.dupInput": "⧉ Duplicate input",
+    "common.addOutput": "+ Add output", "common.dupOutput": "⧉ Duplicate output",
+    "common.addAction": "+ Add action", "common.dupAction": "⧉ Duplicate action",
+    "common.issuesIn": "issues in", "common.issueIn": "issue in", "common.valid": "valid",
+    "confirm.discardBodyRunning": "Loading the running config replaces the whole document. Your current edits will be lost and undo history will be cleared.",
+    "confirm.discardBodyTemplate": "Loading a template replaces the whole document. Your current edits will be lost and undo history will be cleared.",
+    "confirm.discardLoad": "Discard and load",
+    "confirm.replaceRunning": "Replace everything with the device's running config.",
+    "confirm.replaceTemplate": "Replace everything with the template.",
+    "banner.loadFailed": "Couldn't load running config",
+    "banner.checkSignedIn": "Check you're signed in to the device.",
+    "banner.someUnrecognised": "some elements weren't recognised and may need review.",
+    "tmpl.modalTitle": "Start from a template",
+    // filter editor
+    "flt.unnamed": "unnamed", "flt.namePh": "e.g. block list",
+    "flt.opAllMatch": "all must match", "flt.opAnyMatch": "any must match", "flt.opNotMatch": "must NOT match the item below",
+    "flt.addCondition": "+ Condition", "flt.addGroup": "+ Group", "flt.addNot": "+ NOT",
+    "flt.dupFilter": "⧉ Duplicate filter",
+    "flt.existsNote": "exists — no value", "flt.signInList": "sign in to list targets",
+    "flt.notExistsNote": "does not exist — no value",
+    // inputs editor
+    "in.outputPort": "Output port *", "in.source": "Source",
+    "in.fileList": "file list", "in.scanDir": "scan directory",
+    "in.filePaths": "File paths", "in.filePath": "file path",
+    "in.maxFiles": "(max 100)", "in.remove": "remove",
+    "in.scanDirLabel": "Scan directory", "in.afterReplay": "After replay", "in.moveTo": "Move played to",
+    "in.helpGen": "Synthesise packets onto the port. Fill only the fields you need — empty ones aren't emitted.",
+    "in.helpPcap": "Replay pcap files. A file path or a scan directory is required; other fields are optional.",
+    "in.emptyMsg": "No inputs yet. An <input> replays pcap files or generates traffic onto a port.",
+    "in.newInput": "+ New input",
+    // outputs editor
+    "out.emptyMsg": "No outputs yet. An <output> lets a chain rewrite or tag packets — reference it from a chain <out> as O1.",
+    "out.newOutput": "+ New output", "out.port": "port *",
+    "out.forwardNote": "This output just forwards unchanged. Add a modifier below to rewrite or tag packets.",
+    "out.pAdd": "add modifier", "out.pReply": "ARP / ICMP reply", "out.pRedirect": "DNS response / redirect",
+    "out.pMirror": "mirror to file", "out.pVxlan": "VXLAN encapsulation", "out.pNvgre": "NVGRE encapsulation",
+    // actions editor
+    "act.emptyMsg": "No actions yet. An <action> processes packets at ingress, or links two ports so one going down takes the other with it.",
+    "act.newAction": "+ New action",
+    "act.linkNote": "If one link goes down, the other is forced down too. Enter the two ports to bind.",
+    "act.portA": "Port A", "act.portB": "Port B", "act.inputPort": "Input port *",
+    "act.modNote": "Add a modifier below to strip, tag, re-VLAN, or answer ARP/ICMP for packets arriving on this port.",
+    "act.addModifier": "add modifier",
+    // chain editor
+    "ch.inspector": "Inspector", "ch.selectNode": "Select a node to edit.",
+    "ch.unspecified": "Unspecified", "ch.ingress": "Ingress", "ch.filter": "FILTER", "ch.discard": "Discard", "ch.output": "Output",
+    "ch.ingressPorts": "Ingress ports", "ch.routeExplicitly": "Route explicitly",
+    "ch.unsetNote": "No branch here — device default applies. No <next> is written.",
+    "ch.filters": "Filter(s)", "ch.combine": "Combine",
+    "ch.definedFilters": "defined filters", "ch.noFiltersDefined": "No filters defined yet.",
+    "ch.insertKeepTest": "Insert filter above — keep this test on:",
+    "ch.insertKeepOutput": "Insert filter above — keep this output on:",
+    "ch.filterToMatch": "+ filter (this → match)", "ch.filterToNotmatch": "+ filter (this → notmatch)",
+    "ch.removeTest": "Remove test → output",
+    "ch.outputPorts": "Output ports", "ch.mode": "Mode", "ch.balanceBy": "Balance by",
+    "ch.devicePorts": "device ports", "ch.portsDefault": "ports (default list)",
+    "ch.definedOutputs": "defined outputs", "ch.deleteChain": "Delete this chain",
+    "ch.filtersReferenced": "Filters referenced",
+    "ch.vlanOp": "VLAN operation", "ch.vlanId": "VLAN id",
+    "ch.advancedOp": "Advanced operation",
+    "ch.dragReorder": "Drag to reorder", "ch.portConflict": "another chain uses this ingress port",
+    "ch.removeBranch": "Remove {side} branch…",
+    "ch.definedHere": "defined here", "ch.onDevice": "on device",
+    "ch.addChain": "+ Add chain", "ch.dupChain": "⧉ Duplicate chain",
+    "flt.validIn": "valid", "flt.issuesIn": "issues in", "flt.issueIn": "issue in",
+  },
+  "zh-TW": {
+    "tab.filters": "篩選器", "tab.inputs": "輸入", "tab.outputs": "輸出",
+    "tab.actions": "動作", "tab.chain": "鏈結", "tab.simulate": "模擬",
+    "tab.export": "匯出", "tab.overview": "總覽",
+    "nav.advanced": "進階",
+    "brand.tip": "總覽 — 這份設定在做什麼",
+    "btn.templates": "範本", "btn.template_current": "範本",
+    "btn.loadRunning": "載入執行中設定", "btn.loading": "載入中…",
+    "btn.loadFailed": "載入失敗 — 重試",
+    "btn.login": "登入", "btn.logout": "登出",
+    "sync.dirty": "尚未套用的變更", "sync.synced": "已同步",
+    "sync.dirtyTip": "目前設定與裝置執行中的設定不同",
+    "sync.syncedTip": "與裝置同步中",
+    "health.issues": "個問題", "health.issue": "個問題",
+    "health.warnings": "個警告", "health.warning": "個警告", "health.valid": "有效",
+    "theme.toDark": "切換到夜間模式", "theme.toLight": "切換到日間模式",
+    "lang.toggle": "Switch to English", "lang.name": "繁",
+    "undo.tip": "復原 / 重做此分頁的編輯", "undo.undo": "復原 (Ctrl/Cmd+Z)", "undo.redo": "重做 (Ctrl/Cmd+Shift+Z)",
+    "user.signedIn": "已登入", "btn.loadRunningTip": "抓取並載入裝置目前執行中的設定",
+    "btn.loginTip": "登入裝置", "btn.logoutTip": "登出裝置",
+    "tmpl.tip": "從現成的設定範本開始",
+    "tmpl.lead": "從一個可用的範例開始。套用範本會把它的篩選器和鏈結載入到文件中,再到其他分頁調整。",
+    "tmpl.apply": "套用 →",
+    // Overview page
+    "ov.title": "這份設定在做什麼",
+    "ov.loadedFrom": "目前載入自",
+    "ov.src.running": "裝置執行中的設定",
+    "ov.src.template": "「{name}」範本",
+    "ov.src.manual": "手動輸入的設定",
+    "ov.unit.filter": "個篩選器", "ov.unit.filters": "個篩選器",
+    "ov.unit.chain": "條鏈結", "ov.unit.chains": "條鏈結",
+    "ov.unit.port": "個埠", "ov.unit.ports": "個埠",
+    "ov.looksLike": "推測用途", "ov.inferred": "推測",
+    "ov.inferNote": "這是根據結構的推測 — 下方的明細才是精確的。",
+    "ov.filters": "篩選器", "ov.chains": "鏈結",
+    "ov.noCondition": "(無條件)",
+    "ov.editFilters": "編輯篩選器 →", "ov.editChains": "編輯鏈結 →",
+    // chain flow labels
+    "flow.in": "流量進入", "flow.match": "符合", "flow.nomatch": "不符合",
+    "flow.forward": "轉發", "flow.loadBalance": "負載平衡", "flow.duplicate": "複製",
+    "flow.drop": "丟棄", "flow.all": "全部", "flow.any": "任一",
+    // criterion connectors
+    "crit.and": "且", "crit.or": "或", "crit.not": "非",
+    "crit.matchAll": "(全部符合)", "crit.matchAny": "(任一符合)",
+    // inferred intent
+    "intent.bidir": "在 {pairs} 之間雙向轉發 — 流量雙向通過。",
+    "intent.lb": "使用負載平衡 — 符合的流量分散到多個埠,同一連線維持在同一埠。",
+    "intent.drop": "部分流量被明確丟棄。",
+    "intent.heartbeat": "監看 heartbeat 目標 — 當 heartbeat 中斷時,符合的流量會改走不同路徑(bypass/failover 模式)。",
+    "intent.web": "檢查網頁流量(HTTP/HTTPS)— 可能依網頁服務分流或過濾。",
+    "intent.geo": "依國家過濾(GeoIP)。",
+    "intent.ip": "比對特定 IP 位址 — allow/block 清單模式。",
+    // Export tab
+    "ex.completeRun": "完整 <run>", "ex.editing": "編輯中",
+    "ex.edit": "編輯", "ex.copy": "複製", "ex.copied": "已複製 ✓",
+    "ex.fixToCopy": "修正問題才能複製", "ex.format": "格式化", "ex.cancel": "取消",
+    "ex.applyChanges": "套用變更",
+    "ex.submit": "提交到裝置", "ex.fixToSubmit": "修正問題才能提交",
+    "ex.applying": "套用中…", "ex.submitting": "提交中…", "ex.applied": "已套用 ✓", "ex.retrySubmit": "重試提交",
+    "ex.applyingToDevice": "正在套用到裝置 — 請稍候。",
+    "ex.confirmTitle": "提交到裝置?", "ex.confirmTitleTmpl": "⚠ 要把範本提交到裝置?",
+    "ex.confirmBody": "這會覆蓋裝置執行中的設定並即時套用。",
+    "ex.confirmBodyTmpl": "這份設定直接來自範本,可能未針對此裝置調整。提交將覆蓋裝置執行中的設定並即時套用。",
+    "ex.submitApply": "提交並套用", "ex.submitAnyway": "我了解 — 仍要提交",
+    "ex.overwriteDesc": "覆蓋並套用裝置上執行中的設定。",
+    "ex.readyExport": "可以匯出", "ex.canSubmit": "— 仍可提交",
+    "ex.editHelp": "直接編輯 XML。格式化會整理縮排但不改內容。套用變更會把它解析回來 — 每個分頁都會同步更新。取消則放棄編輯。",
+    "ex.cantApply": "無法套用", "ex.fixTryAgain": "修正 XML 後再試。",
+    "ex.appliedWith": "套用完成,含", "ex.warningWord": "個警告", "ex.warningsWord": "個警告",
+    "ex.submitFailed": "提交失敗", "ex.checkSignedIn": "確認已登入裝置後再試。",
+    "ex.appliedLive": "設定已套用 — 裝置現在執行的是",
+    "ex.allValidate": "所有篩選器與鏈結都通過驗證。可編輯 XML、複製它,或直接提交到裝置。",
+    "ex.issue": "個問題", "ex.issues": "個問題",
+    // Simulate tab
+    "sim.ingressPort": "入口埠",
+    "sim.filterResults": "篩選結果",
+    "sim.allNotMatch": "全部不符合", "sim.allMatch": "全部符合",
+    "sim.noFilters": "沒有引用任何篩選器。",
+    "sim.notDefined": "此設定中未定義",
+    "sim.play": "▶ 播放", "sim.pause": "⏸ 暫停", "sim.resume": "▶ 繼續", "sim.stop": "⏹ 停止",
+    "sim.playTip": "沿追蹤路徑動畫呈現封包", "sim.selectIngress": "請先選擇入口埠",
+    "sim.pauseTip": "暫停", "sim.resumeTip": "繼續", "sim.stopTip": "停止",
+    "sim.addInline": "+ inline 裝置(IPS 等)",
+    "sim.namePh": "名稱(例如 IPS)", "sim.portA": "埠 A", "sim.portB": "埠 B",
+    "sim.add": "新增", "sim.cancel": "取消",
+    "sim.flipRows": "⇅ 翻轉列", "sim.flipTip": "交換上/下排的埠",
+    "sim.resizeTip": "拖曳以調整裝置面板大小",
+    "sim.dragReposition": "拖曳以移動位置", "sim.remove": "移除",
+    "sim.loopTip": "LOOP 介面 — 流量從同一埠返回",
+    "sim.wiredTip": "已接到 inline 裝置",
+    "sim.roleBoth": "入口 + 輸出", "sim.roleIn": "入口", "sim.roleOut": "輸出", "sim.roleIdle": "未使用",
+    "sim.selectIngressOpt": "選擇入口埠", "sim.noChain": "無 chain",
+    // shared / common
+    "adv.badge": "進階",
+    "adv.inputs": "Inputs 重播 pcap 檔或產生合成流量。大多數設定從實體埠餵入流量,不需要用到這個。",
+    "adv.outputs": "Outputs 定義可重複使用的出口埠改寫與封裝(VXLAN/NVGRE)。基本轉發直接在 Chains 處理 — 只有需要改封包時才用 Outputs。",
+    "adv.actions": "Actions 套用入口封包處理或 link-pair failover。大多數設定不需要這些。",
+    "login.title": "登入裝置", "login.username": "帳號", "login.password": "密碼",
+    "login.signingIn": "登入中…", "login.signIn": "登入",
+    "confirm.discardTitle": "放棄目前的編輯?",
+    "common.delete": "刪除", "common.cancel": "取消", "common.optional": "選填",
+    "common.name": "名稱", "common.type": "類型", "common.id": "id",
+    "common.addFilter": "+ 新增篩選器", "common.newFilter": "+ 新篩選器",
+    "common.addInput": "+ 新增 input", "common.dupInput": "⧉ 複製 input",
+    "common.addOutput": "+ 新增 output", "common.dupOutput": "⧉ 複製 output",
+    "common.addAction": "+ 新增 action", "common.dupAction": "⧉ 複製 action",
+    "common.issuesIn": "個問題於", "common.issueIn": "個問題於", "common.valid": "有效",
+    "confirm.discardBodyRunning": "載入執行中設定會取代整份文件。目前的編輯會遺失,復原紀錄也會清除。",
+    "confirm.discardBodyTemplate": "載入範本會取代整份文件。目前的編輯會遺失,復原紀錄也會清除。",
+    "confirm.discardLoad": "放棄並載入",
+    "confirm.replaceRunning": "以裝置執行中的設定取代全部。",
+    "confirm.replaceTemplate": "以範本取代全部。",
+    "banner.loadFailed": "無法載入執行中設定",
+    "banner.checkSignedIn": "請確認已登入裝置。",
+    "banner.someUnrecognised": "部分元素無法辨識,可能需要檢查。",
+    "tmpl.modalTitle": "從範本開始",
+    // filter editor
+    "flt.unnamed": "未命名", "flt.namePh": "例如 block list",
+    "flt.opAllMatch": "全部都要符合", "flt.opAnyMatch": "任一符合即可", "flt.opNotMatch": "下方項目必須「不」符合",
+    "flt.addCondition": "+ 條件", "flt.addGroup": "+ 群組", "flt.addNot": "+ NOT",
+    "flt.dupFilter": "⧉ 複製篩選器",
+    "flt.existsNote": "存在即符合 — 不需值", "flt.signInList": "登入以列出目標",
+    "flt.notExistsNote": "不存在即符合 — 不需值",
+    // inputs editor
+    "in.outputPort": "輸出埠 *", "in.source": "來源",
+    "in.fileList": "檔案清單", "in.scanDir": "掃描目錄",
+    "in.filePaths": "檔案路徑", "in.filePath": "檔案路徑",
+    "in.maxFiles": "(上限 100)", "in.remove": "移除",
+    "in.scanDirLabel": "掃描目錄", "in.afterReplay": "重播後", "in.moveTo": "已播檔移至",
+    "in.helpGen": "在埠上合成封包。只需填你要的欄位 — 空的不會輸出。",
+    "in.helpPcap": "重播 pcap 檔。需要檔案路徑或掃描目錄;其他欄位選填。",
+    "in.emptyMsg": "尚無 input。<input> 會重播 pcap 檔或在埠上產生流量。",
+    "in.newInput": "+ 新 input",
+    // outputs editor
+    "out.emptyMsg": "尚無 output。<output> 讓鏈結改寫或標記封包 — 在鏈結的 <out> 以 O1 引用。",
+    "out.newOutput": "+ 新 output", "out.port": "埠 *",
+    "out.forwardNote": "此 output 只是原樣轉發。在下方新增 modifier 以改寫或標記封包。",
+    "out.pAdd": "新增 modifier", "out.pReply": "ARP / ICMP 回應", "out.pRedirect": "DNS 回應 / 重導向",
+    "out.pMirror": "鏡像到檔案", "out.pVxlan": "VXLAN 封裝", "out.pNvgre": "NVGRE 封裝",
+    // actions editor
+    "act.emptyMsg": "尚無 action。<action> 在入口處理封包,或連結兩個埠使其一斷線時另一個也強制斷線。",
+    "act.newAction": "+ 新 action",
+    "act.linkNote": "一條連線斷線時,另一條也會被強制斷線。輸入要綁定的兩個埠。",
+    "act.portA": "埠 A", "act.portB": "埠 B", "act.inputPort": "輸入埠 *",
+    "act.modNote": "在下方新增 modifier,對此埠進來的封包進行移除、標記、重設 VLAN,或回應 ARP/ICMP。",
+    "act.addModifier": "新增 modifier",
+    // chain editor
+    "ch.inspector": "檢視器", "ch.selectNode": "選擇一個節點來編輯。",
+    "ch.unspecified": "未指定", "ch.ingress": "入口", "ch.filter": "篩選", "ch.discard": "丟棄", "ch.output": "輸出",
+    "ch.ingressPorts": "入口埠", "ch.routeExplicitly": "明確指定路由",
+    "ch.unsetNote": "此處沒有分支 — 套用裝置預設。不會寫出 <next>。",
+    "ch.filters": "篩選器", "ch.combine": "組合方式",
+    "ch.definedFilters": "已定義的篩選器", "ch.noFiltersDefined": "尚未定義任何篩選器。",
+    "ch.insertKeepTest": "在上方插入篩選器 — 將此測試保留在:",
+    "ch.insertKeepOutput": "在上方插入篩選器 — 將此輸出保留在:",
+    "ch.filterToMatch": "+ 篩選器(此 → 符合)", "ch.filterToNotmatch": "+ 篩選器(此 → 不符合)",
+    "ch.removeTest": "移除測試 → 輸出",
+    "ch.outputPorts": "輸出埠", "ch.mode": "模式", "ch.balanceBy": "分流依據",
+    "ch.devicePorts": "裝置埠", "ch.portsDefault": "埠(預設清單)",
+    "ch.definedOutputs": "已定義的 output", "ch.deleteChain": "刪除此鏈結",
+    "ch.filtersReferenced": "引用的篩選器",
+    "ch.vlanOp": "VLAN 操作", "ch.vlanId": "VLAN id",
+    "ch.advancedOp": "進階操作",
+    "ch.dragReorder": "拖曳以重新排序", "ch.portConflict": "另一條鏈結使用了此入口埠",
+    "ch.removeBranch": "移除{side}分支…",
+    "ch.definedHere": "在此定義", "ch.onDevice": "在裝置上",
+    "ch.addChain": "+ 新增鏈結", "ch.dupChain": "⧉ 複製鏈結",
+    "flt.validIn": "有效", "flt.issuesIn": "個問題於", "flt.issueIn": "個問題於",
+  },
+};
+const makeT = (lang) => (key) => (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+
 /* ============================================================
    GRISM XML Studio (integrated prototype)
    One app, one document model, three workspaces:
@@ -243,7 +588,8 @@ function serializeFilter(f) {
 /* ===================== human-readable summary (Overview page) ===================== */
 // A short readable description of a filter's boolean tree, e.g.
 // "TCP port == 443 OR UDP port == 443" or "country == CN,RU AND NOT (ip == …)".
-function describeCriterion(node) {
+function describeCriterion(node, t) {
+  const tr = t || ((k) => ({ "crit.and": "AND", "crit.or": "OR", "crit.not": "NOT", "crit.matchAll": "(matches all)", "crit.matchAny": "(matches any)" }[k] || k));
   if (!node) return "";
   if (node.t === "find") {
     const f = FIELD_INDEX[node.field]; const kind = f?.kind ?? "str";
@@ -251,11 +597,12 @@ function describeCriterion(node) {
     if (kind === "exists") return label;
     return `${label} ${node.rel || "=="} ${node.val || "?"}`;
   }
-  const kids = (node.children ?? []).map(describeCriterion).filter(Boolean);
-  if (node.t === "not") return `NOT (${kids.join(", ")})`;
-  if (!kids.length) return node.t === "and" ? "(matches all)" : "(matches any)";
-  const joiner = node.t === "and" ? " AND " : " OR ";
-  return kids.length > 1 ? kids.map((k) => (k.includes(" AND ") || k.includes(" OR ") ? `(${k})` : k)).join(joiner) : kids[0];
+  const AND = tr("crit.and"), OR = tr("crit.or");
+  const kids = (node.children ?? []).map((c) => describeCriterion(c, t)).filter(Boolean);
+  if (node.t === "not") return `${tr("crit.not")} (${kids.join(", ")})`;
+  if (!kids.length) return node.t === "and" ? tr("crit.matchAll") : tr("crit.matchAny");
+  const joiner = node.t === "and" ? ` ${AND} ` : ` ${OR} `;
+  return kids.length > 1 ? kids.map((k) => (k.includes(` ${AND} `) || k.includes(` ${OR} `) ? `(${k})` : k)).join(joiner) : kids[0];
 }
 // Flatten a chain's decision tree into readable routing rules, e.g.
 // [{ test: "F1", match: "P1", notmatch: "(next)" }, …] plus a terminal.
@@ -300,8 +647,8 @@ function summarizeChainTree(tree) {
   return rules;
 }
 // Whole-document overview: counts, per-filter conditions, per-chain routing, ports used.
-function describeDoc(doc) {
-  const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: describeCriterion(f.root) }));
+function describeDoc(doc, t) {
+  const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: describeCriterion(f.root, t) }));
   const filterNames = Object.fromEntries(filters.map((f) => [f.id, f.name]));
   const chains = (doc.chains ?? []).map((c) => ({ ingress: c.ports || "P0", rules: summarizeChainTree(c.tree), flow: summarizeChain(c.tree) }));
   const portSet = new Set();
@@ -336,7 +683,8 @@ function namesOnly(fids, names) {
 }
 // Used for running configs and pasted XML where there's no authored description.
 // Returns an array of short observation strings.
-function inferIntent(doc) {
+function inferIntent(doc, t) {
+  const tr = t || ((k) => k);
   const out = [];
   const chains = doc.chains ?? [];
   const filters = doc.filters ?? [];
@@ -351,21 +699,21 @@ function inferIntent(doc) {
     const di = dests(chains[i].tree), dj = dests(chains[j].tree);
     if (ai.some((p) => dj.has(p)) && aj.some((p) => di.has(p))) pairs.push([ai[0], aj[0]]);
   }
-  if (pairs.length) out.push(`Bidirectional forwarding between ${pairs.map(([a, b]) => `${a}↔${b}`).join(", ")} — traffic passes through in both directions.`);
+  if (pairs.length) out.push(tr("intent.bidir").replace("{pairs}", pairs.map(([a, b]) => `${a}↔${b}`).join(", ")));
   // detect load balancing
   let lb = false;
   chains.forEach((c) => (function w(n){ if(!n)return; if(n.t==="out"&&n.mode==="loadBalance")lb=true; ["match","notmatch"].forEach((k)=>n&&n[k]&&w(n[k])); })(c.tree));
-  if (lb) out.push("Uses load balancing — matched traffic is spread across multiple ports, keeping each session on one port.");
+  if (lb) out.push(tr("intent.lb"));
   // detect drops
   let drops = false;
   chains.forEach((c) => (function w(n){ if(!n)return; if(n.t==="out"&&n.ports==="0")drops=true; ["match","notmatch"].forEach((k)=>n&&n[k]&&w(n[k])); })(c.tree));
-  if (drops) out.push("Some traffic is explicitly discarded (dropped).");
+  if (drops) out.push(tr("intent.drop"));
   // filter themes
   const allConds = filters.map((f) => serializeCriterion(f.root, 0)).join(" ").toLowerCase();
-  if (allConds.includes("heartbeat")) out.push("Watches a heartbeat target — when the heartbeat is missed, matching traffic is steered differently (a bypass/failover pattern).");
-  if (allConds.includes("443") || allConds.includes("ssl.server_name") || allConds.includes("http.host")) out.push("Inspects web traffic (HTTP/HTTPS) — likely steering or filtering by web service.");
-  if (allConds.includes("country")) out.push("Filters by country (GeoIP).");
-  if (allConds.includes("ip.addr") || allConds.includes("ip.src") || allConds.includes("ip.dst")) out.push("Matches specific IP addresses — an allow/block list pattern.");
+  if (allConds.includes("heartbeat")) out.push(tr("intent.heartbeat"));
+  if (allConds.includes("443") || allConds.includes("ssl.server_name") || allConds.includes("http.host")) out.push(tr("intent.web"));
+  if (allConds.includes("country")) out.push(tr("intent.geo"));
+  if (allConds.includes("ip.addr") || allConds.includes("ip.src") || allConds.includes("ip.dst")) out.push(tr("intent.ip"));
   return out;
 }
 
@@ -482,8 +830,11 @@ function collectRefs(tree, definedIds) {
 const finds = (field, rel, items) => items.map((c) => ({ id: nid(), t: "find", field, rel, val: c }));
 const TEMPLATES = [
   { id: "starter", title: "Starter (heartbeat + HTTPS)", tag: "Starter",
+    title_zh: "入門(heartbeat + HTTPS)", tag_zh: "入門",
     blurb: "Two-way forwarding with heartbeat-miss and HTTPS steering, plus return-path chains for P2/P3.",
+    blurb_zh: "雙向轉發,含 heartbeat 中斷與 HTTPS 分流,並有 P2/P3 的回程鏈結。",
     detail: "A protective inline setup. P0 and P1 are the two sides of a link the device sits in the middle of. Normally traffic flows P0→P1 and P1→P0. Two conditions change that: F1 fires when the device stops seeing its heartbeat target (a link-health signal) — this is the bypass/failover trigger; F2 matches encrypted web traffic on port 443. When either matches, traffic is steered to P1/P0 as configured. Anything that matches neither falls through to P2 (from P0) or P3 (from P1) — typically a monitoring or tap port. P2 and P3 then return traffic back into P0/P1 so the link stays intact.",
+    detail_zh: "一個保護性的 inline 設定。P0 和 P1 是裝置所夾在中間的鏈路兩側,正常情況下流量 P0→P1、P1→P0。兩個條件會改變路徑:F1 在裝置偵測不到 heartbeat 目標(鏈路健康訊號)時觸發 — 這是 bypass/failover 的觸發條件;F2 比對 port 443 上的加密網頁流量。任一符合時,流量會依設定導向 P1/P0。兩者都不符合的流量會落到 P2(來自 P0)或 P3(來自 P1)— 通常是監控或 tap 埠。P2 和 P3 再把流量送回 P0/P1,讓鏈路維持完整。",
     make: () => ({
       filters: [
         { id: 1, name: "heartbeat miss", sessionBase: "no",
@@ -503,14 +854,18 @@ const TEMPLATES = [
       ],
     }) },
   { id: "minimal", title: "Minimal forward", tag: "Basic",
+    title_zh: "最小轉發", tag_zh: "基本",
     blurb: "The smallest useful chain: packets from P0 that match F1 go to P1.",
+    blurb_zh: "最精簡的實用鏈結:P0 進來、符合 F1 的封包送到 P1。",
     make: () => ({
       filters: [{ id: 1, name: "match", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } },
     }) },
   { id: "loadbalance", title: "Load balance", tag: "Basic",
+    title_zh: "負載平衡", tag_zh: "基本",
     blurb: "Matched traffic from P0 is spread across P1 and P2 by 5-tuple hash, keeping each session on one port.",
+    blurb_zh: "P0 進來、符合的流量以 5-tuple hash 分散到 P1 和 P2,同一連線維持在同一埠。",
     make: () => ({
       filters: [{ id: 1, name: "match", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
@@ -518,28 +873,36 @@ const TEMPLATES = [
         match: { id: nid(), t: "out", ports: "P1,P2", mode: "loadBalance", lb: "5thash" }, notmatch: mkUnset() } },
     }) },
   { id: "ip-blacklist", title: "Block IP blacklist", tag: "L3",
+    title_zh: "封鎖 IP 黑名單", tag_zh: "L3",
     blurb: "Divert packets whose IP is on a blacklist.",
+    blurb_zh: "把 IP 在黑名單上的封包導向他處。",
     make: () => ({
       filters: [{ id: 1, name: "ip blacklist", sessionBase: "no",
         root: { id: nid(), t: "or", children: finds("ip.addr", "==", ["92.53.120.155","67.229.164.135"]) } }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkOut("P2") } },
     }) },
   { id: "block-country", title: "Block by country", tag: "GeoIP",
+    title_zh: "依國家封鎖", tag_zh: "GeoIP",
     blurb: "Divert traffic from specific countries. Needs dbip.",
+    blurb_zh: "把來自特定國家的流量導向他處。需要 dbip。",
     make: () => ({
       filters: [{ id: 1, name: "blocked countries", sessionBase: "no",
         root: { id: nid(), t: "or", children: finds("country.iso_code", "==", ["CN","RU"]) } }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkOut("P2") } },
     }) },
   { id: "block-sni", title: "Block TLS by SNI", tag: "TLS",
+    title_zh: "依 SNI 封鎖 TLS", tag_zh: "TLS",
     blurb: "Match HTTPS by TLS server name and divert.",
+    blurb_zh: "以 TLS server name 比對 HTTPS 並導向他處。",
     make: () => ({
       filters: [{ id: 1, name: "blocked SNI", sessionBase: "yes",
         root: { id: nid(), t: "or", children: finds("ssl.server_name", "==", ["facebook.com"]) } }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkOut("P2") } },
     }) },
   { id: "rewrite-output", title: "Rewrite via output", tag: "Output",
+    title_zh: "透過 output 改寫", tag_zh: "Output",
     blurb: "Matched traffic goes to an output (O1) that rewrites source IP and adds a VLAN tag, then leaves on P1.",
+    blurb_zh: "符合的流量送到 output(O1),改寫來源 IP 並加上 VLAN tag,再從 P1 送出。",
     make: () => ({
       filters: [{ id: 1, name: "target", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "ip.dst", rel: "==", val: "10.0.0.0/24" }] } }],
@@ -549,7 +912,9 @@ const TEMPLATES = [
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("O1"), notmatch: mkOut("P2") } },
     }) },
   { id: "pcap-replay", title: "Replay pcap to a port", tag: "Input",
+    title_zh: "重播 pcap 到埠", tag_zh: "Input",
     blurb: "An input replays a pcap file onto P0 once, then the chain forwards matched traffic out P1.",
+    blurb_zh: "一個 input 把 pcap 檔重播到 P0 一次,鏈結再把符合的流量從 P1 轉發出去。",
     make: () => ({
       filters: [{ id: 1, name: "match", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "ip", rel: "==", val: "" }] } }],
@@ -558,7 +923,9 @@ const TEMPLATES = [
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } },
     }) },
   { id: "ingress-strip", title: "Strip VLAN at ingress", tag: "Action",
+    title_zh: "入口移除 VLAN", tag_zh: "Action",
     blurb: "An action strips the VLAN tag from packets arriving on P0 before the chain filters them.",
+    blurb_zh: "一個 action 在鏈結過濾前,先移除 P0 進來封包的 VLAN tag。",
     make: () => ({
       filters: [{ id: 1, name: "match", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
@@ -567,7 +934,9 @@ const TEMPLATES = [
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } },
     }) },
   { id: "inline-bidir", title: "Inline (bidirectional)", tag: "Multi-chain",
+    title_zh: "Inline(雙向)", tag_zh: "多鏈結",
     blurb: "Two chains form an inline pair: P6→P7 forwards matched traffic, and P7→P6 carries the return path.",
+    blurb_zh: "兩條鏈結組成 inline 配對:P6→P7 轉發符合的流量,P7→P6 負責回程。",
     make: () => ({
       filters: [{ id: 1, name: "match", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
@@ -577,7 +946,9 @@ const TEMPLATES = [
       ],
     }) },
   { id: "vxlan-encap", title: "VXLAN encapsulation", tag: "Output",
+    title_zh: "VXLAN 封裝", tag_zh: "Output",
     blurb: "Matched traffic is wrapped in VXLAN (to a remote VTEP with a VNI) via output O1, then sent out P7.",
+    blurb_zh: "符合的流量透過 output O1 封裝成 VXLAN(送到帶 VNI 的遠端 VTEP),再從 P7 送出。",
     make: () => ({
       filters: [{ id: 1, name: "to tunnel", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "ip.dst", rel: "==", val: "10.0.0.0/24" }] } }],
@@ -588,7 +959,9 @@ const TEMPLATES = [
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("O1"), notmatch: mkUnset() } },
     }) },
   { id: "geo-recursive", title: "Geo + protocol, whitelisted", tag: "Recursive",
+    title_zh: "地理 + 協定,含白名單", tag_zh: "遞迴",
     blurb: "Recursive filter: geo AND (443 or 53) AND NOT whitelist.",
+    blurb_zh: "遞迴篩選器:地理 且 (443 或 53) 且 非白名單。",
     make: () => ({
       filters: [{ id: 1, name: "suspicious geo traffic", sessionBase: "no",
         root: { id: nid(), t: "and", children: [
@@ -1242,6 +1615,8 @@ export default function GrismStudio() {
     return () => window.removeEventListener("keydown", onKey);
   }, [histKey, doUndo, doRedo]);
   const [theme, setTheme] = useState("dark"); // "light" | "dark" — default dark, not persisted
+  const [lang, setLang] = useState("en"); // "en" | "zh-TW" — UI language, not persisted
+  const t = useMemo(() => makeT(lang), [lang]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
   const DEFAULT_PORTS = ["P0","P1","P2","P3","P4","P5","P6","P7"];
@@ -1482,21 +1857,21 @@ export default function GrismStudio() {
     <div className={"gs-root" + (theme === "light" ? " light" : "")}>
 
       <header className="topbar">
-        <button className="brand" onClick={() => setTab("overview")} title="Overview — what this configuration does">
+        <button className="brand" onClick={() => setTab("overview")} title={t("brand.tip")}>
           <span className="logo">◇</span>
           <span className="brand-name">GRISM</span>
           <span className="brand-sub">studio</span>
         </button>
         <nav className="tabs">
-          {[["filters","Filters","core"],["inputs","Inputs","adv"],["outputs","Outputs","adv"],["actions","Actions","adv"],["chain","Chains","core"],["simulate","Simulate","core"],["export","Export","core"]].map(([k, label, grp], i, arr) => {
-            const prevGrp = i > 0 ? arr[i-1][2] : null;
+          {[["filters","core"],["inputs","adv"],["outputs","adv"],["actions","adv"],["chain","core"],["simulate","core"],["export","core"]].map(([k, grp], i, arr) => {
+            const prevGrp = i > 0 ? arr[i-1][1] : null;
             const showDivider = grp === "adv" && prevGrp !== "adv";     // before the advanced block
-            const showDividerAfter = grp === "adv" && (i === arr.length-1 || arr[i+1][2] !== "adv"); // after it
+            const showDividerAfter = grp === "adv" && (i === arr.length-1 || arr[i+1][1] !== "adv"); // after it
             return (
               <React.Fragment key={k}>
-                {showDivider && <span className="tab-sep" title="Advanced — most setups don't need these"><span className="tab-sep-label">advanced</span></span>}
+                {showDivider && <span className="tab-sep" title="Advanced — most setups don't need these"><span className="tab-sep-label">{t("nav.advanced")}</span></span>}
                 <button className={"tab" + (tab === k ? " on" : "") + (grp === "adv" ? " adv" : "")} onClick={() => setTab(k)}>
-                  {label}
+                  {t("tab." + k)}
                   {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
                   {k === "inputs" && (doc.inputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.inputs.length}</span>}
                   {k === "outputs" && (doc.outputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.outputs.length}</span>}
@@ -1509,64 +1884,66 @@ export default function GrismStudio() {
           })}
         </nav>
         {histKey && (
-          <div className="topbar-undo" title="Undo / redo edits on this tab">
-            <button className="undo-btn" onClick={doUndo} disabled={!canUndo} title="Undo (Ctrl/Cmd+Z)">↶</button>
-            <button className="undo-btn" onClick={doRedo} disabled={!canRedo} title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
+          <div className="topbar-undo" title={t("undo.tip")}>
+            <button className="undo-btn" onClick={doUndo} disabled={!canUndo} title={t("undo.undo")}>↶</button>
+            <button className="undo-btn" onClick={doRedo} disabled={!canRedo} title={t("undo.redo")}>↷</button>
           </div>
         )}
         <button className={"tmpl-btn" + (docSource === "template" ? " src-active" : "")} onClick={() => setShowTemplates(true)}
-          title={docSource === "template" ? `Current template: ${templateName}` : "Start from a ready-made configuration"}>
-          {docSource === "template" ? `Template · ${templateName}` : "Templates"}
+          title={docSource === "template" ? `${t("btn.template_current")}: ${templateName}` : t("tmpl.tip")}>
+          {docSource === "template" ? `${t("btn.template_current")} · ${templateName}` : t("btn.templates")}
         </button>
         {baseline !== null && (
           <div className={"sync-state " + (dirty ? "dirty" : "synced")}
-            title={dirty ? "The current config differs from what's running on the device" : "In sync with the device"}>
-            <span className="sync-dot" />{dirty ? "unapplied changes" : "in sync"}
+            title={dirty ? t("sync.dirtyTip") : t("sync.syncedTip")}>
+            <span className="sync-dot" />{dirty ? t("sync.dirty") : t("sync.synced")}
           </div>
         )}
         {login.who && (
           <button className={"load-btn " + load.state + (docSource === "running" ? " src-active" : "")} onClick={loadRunning} disabled={load.state === "loading"}
-            title="Fetch and load the config currently running on the device">
-            {load.state === "loading" ? "loading…" : load.state === "error" ? "load failed — retry" : "load running config"}
+            title={t("btn.loadRunningTip")}>
+            {load.state === "loading" ? t("btn.loading") : load.state === "error" ? t("btn.loadFailed") : t("btn.loadRunning")}
           </button>
         )}
         {login.who
           ? <div className="user-box">
-              <span className="user-name" title="Signed in">{login.who}</span>
-              <button className="load-btn" onClick={doLogout} title="Sign out of the device">logout</button>
+              <span className="user-name" title={t("user.signedIn")}>{login.who}</span>
+              <button className="load-btn" onClick={doLogout} title={t("btn.logoutTip")}>{t("btn.logout")}</button>
             </div>
           : <button className={"load-btn" + (login.ok ? " ok" : "")} onClick={() => setLogin((l) => ({ ...l, open: true, err: "" }))}
-              title="Sign in to the device">login</button>}
-        <button className="theme-btn" onClick={() => setTheme((t) => t === "light" ? "dark" : "light")}
-          title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}>
+              title={t("btn.loginTip")}>{t("btn.login")}</button>}
+        <button className="lang-btn" onClick={() => setLang((l) => l === "en" ? "zh-TW" : "en")}
+          title={t("lang.toggle")}>{t("lang.name")}</button>
+        <button className="theme-btn" onClick={() => setTheme((tm) => tm === "light" ? "dark" : "light")}
+          title={theme === "light" ? t("theme.toDark") : t("theme.toLight")}>
           {theme === "light" ? "🌙" : "☀️"}
         </button>
         <div className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}>
-          <span className="dot" />{allProblems.length ? `${allProblems.length} issue${allProblems.length>1?"s":""}` : allWarnings.length ? `${allWarnings.length} warning${allWarnings.length>1?"s":""}` : "valid"}
+          <span className="dot" />{allProblems.length ? `${allProblems.length} ${allProblems.length>1?t("health.issues"):t("health.issue")}` : allWarnings.length ? `${allWarnings.length} ${allWarnings.length>1?t("health.warnings"):t("health.warning")}` : t("health.valid")}
         </div>
       </header>
-      {load.state === "error" && <div className="load-banner err">Couldn't load running config: {load.msg}. Check you're signed in to the device.</div>}
-      {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — some elements weren't recognised and may need review.</div>}
+      {load.state === "error" && <div className="load-banner err">{t("banner.loadFailed")}: {load.msg}. {t("banner.checkSignedIn")}</div>}
+      {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — {t("banner.someUnrecognised")}</div>}
 
       {login.open && (
         <div className="tmpl-scrim" onClick={() => setLogin((l) => ({ ...l, open: false }))}>
           <div className="login-modal" onClick={(e) => e.stopPropagation()}>
             <div className="tmpl-modal-head">
-              <span className="tmpl-modal-title">Sign in to the device</span>
+              <span className="tmpl-modal-title">{t("login.title")}</span>
               <button className="tmpl-close" onClick={() => setLogin((l) => ({ ...l, open: false }))}>✕</button>
             </div>
             <div className="login-body">
-              <label className="login-field"><span>Username</span>
+              <label className="login-field"><span>{t("login.username")}</span>
                 <input value={login.user} autoFocus
                   onChange={(e) => setLogin((l) => ({ ...l, user: e.target.value }))} /></label>
-              <label className="login-field"><span>Password</span>
+              <label className="login-field"><span>{t("login.password")}</span>
                 <input type="password" value={login.pass}
                   onChange={(e) => setLogin((l) => ({ ...l, pass: e.target.value }))}
                   onKeyDown={(e) => { if (e.key === "Enter" && !login.busy) doLogin(login.user, login.pass); }} /></label>
               {login.err && <p className="login-err">{login.err}</p>}
               <button className="primary login-submit" disabled={login.busy || !login.user}
                 onClick={() => doLogin(login.user, login.pass)}>
-                {login.busy ? "signing in…" : "Sign in"}</button>
+                {login.busy ? t("login.signingIn") : t("login.signIn")}</button>
             </div>
           </div>
         </div>
@@ -1576,26 +1953,25 @@ export default function GrismStudio() {
         <div className="tmpl-scrim" onClick={() => setShowTemplates(false)}>
           <div className="tmpl-modal" onClick={(e) => e.stopPropagation()}>
             <div className="tmpl-modal-head">
-              <span className="tmpl-modal-title">Start from a template</span>
+              <span className="tmpl-modal-title">{t("tmpl.modalTitle")}</span>
               <button className="tmpl-close" onClick={() => setShowTemplates(false)}>✕</button>
             </div>
-            <TemplatesTab onApply={(t) => setPendingLoad({ kind: "template", run: () => { const nd = normalizeDoc(t.make()); setDoc(nd); setBaseline(null); setDocSource("template"); setTemplateName(t.title); setLoad({ state: "idle", msg: "" }); resetHistory(); setActiveFilter(1); setShowTemplates(false); } })} />
+            <TemplatesTab lang={lang} t={t} onApply={(tpl) => setPendingLoad({ kind: "template", run: () => { const nd = normalizeDoc(tpl.make()); setDoc(nd); setBaseline(null); setDocSource("template"); setTemplateName(tpl.title); setLoad({ state: "idle", msg: "" }); resetHistory(); setActiveFilter(1); setShowTemplates(false); } })} />
           </div>
         </div>
       )}
       {pendingLoad && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setPendingLoad(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">Discard current edits?</div>
+            <div className="modal-title">{t("confirm.discardTitle")}</div>
             <p className="modal-body">
-              Loading {pendingLoad.kind === "running" ? "the running config" : "a template"} replaces the whole document.
-              Your current edits will be lost and undo history will be cleared.
+              {pendingLoad.kind === "running" ? t("confirm.discardBodyRunning") : t("confirm.discardBodyTemplate")}
             </p>
             <button className="opt drop" onClick={() => { const run = pendingLoad.run; setPendingLoad(null); run(); }}>
-              <span className="opt-name">Discard and load</span>
-              <span className="opt-desc">Replace everything with {pendingLoad.kind === "running" ? "the device's running config" : "the template"}.</span>
+              <span className="opt-name">{t("confirm.discardLoad")}</span>
+              <span className="opt-desc">{pendingLoad.kind === "running" ? t("confirm.replaceRunning") : t("confirm.replaceTemplate")}</span>
             </button>
-            <button className="opt-cancel" onClick={() => setPendingLoad(null)}>Cancel</button>
+            <button className="opt-cancel" onClick={() => setPendingLoad(null)}>{t("common.cancel")}</button>
           </div>
         </div>
       )}
@@ -1603,45 +1979,45 @@ export default function GrismStudio() {
       <div className="body">
         {(tab === "inputs" || tab === "outputs" || tab === "actions") && (
           <div className="adv-note">
-            <span className="adv-note-badge">Advanced</span>
-            {tab === "inputs" && <span>Inputs replay pcap files or generate synthetic traffic. Most setups feed traffic from physical ports and won't need this.</span>}
-            {tab === "outputs" && <span>Outputs define reusable egress port rewrites and encapsulation (VXLAN/NVGRE). Basic forwarding is handled directly in Chains — you only need Outputs for packet modification.</span>}
-            {tab === "actions" && <span>Actions apply ingress packet processing or link-pair failover. Most setups don't need these.</span>}
+            <span className="adv-note-badge">{t("adv.badge")}</span>
+            {tab === "inputs" && <span>{t("adv.inputs")}</span>}
+            {tab === "outputs" && <span>{t("adv.outputs")}</span>}
+            {tab === "actions" && <span>{t("adv.actions")}</span>}
           </div>
         )}
         {tab === "overview" && (
-          <OverviewTab doc={doc} docSource={docSource} templateName={templateName}
-            onGoto={(t) => setTab(t)} />
+          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t}
+            onGoto={(dest) => setTab(dest)} />
         )}
         {tab === "filters" && (
           <FiltersTab
             doc={doc} setDoc={setDoc}
             activeFilter={activeFilter} setActiveFilter={setActiveFilter}
-            setFilterRoot={setFilterRoot} hbTargets={hbTargets}
+            setFilterRoot={setFilterRoot} hbTargets={hbTargets} t={t}
           />
         )}
         {tab === "inputs" && (
-          <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} portOptions={devicePorts ?? DEFAULT_PORTS} />
+          <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} portOptions={devicePorts ?? DEFAULT_PORTS} t={t} />
         )}
         {tab === "outputs" && (
-          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={[...(devicePorts ?? DEFAULT_PORTS), ...deviceStorages]} />
+          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={[...(devicePorts ?? DEFAULT_PORTS), ...deviceStorages]} t={t} />
         )}
         {tab === "actions" && (
-          <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} portOptions={devicePorts ?? DEFAULT_PORTS} />
+          <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} portOptions={devicePorts ?? DEFAULT_PORTS} t={t} />
         )}
         {tab === "chain" && (
           <ChainTab doc={doc} definedIds={definedIds} outputIds={outputIds}
             setChainTreeFor={setChainTreeFor} setDoc={setDoc}
             activeChain={activeChain} setActiveChain={setActiveChain}
-            inPortConflicts={inPortConflicts}
+            inPortConflicts={inPortConflicts} t={t}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null} />
         )}
         {tab === "simulate" && (
-          <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} loopPorts={loopPorts}
+          <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} loopPorts={loopPorts} t={t}
             simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped} />
         )}
         {tab === "export" && (
-          <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who}
+          <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} t={t}
             onApplied={() => setBaseline(runXml)}
             onApplyXml={(xmlText) => {
               const { doc: parsed, warnings } = parseRun(xmlText); // throws on malformed → caught in ExportTab
@@ -1675,33 +2051,34 @@ export default function GrismStudio() {
 /* ============================================================
    Overview tab — auto-generated explanation of the current doc
    ============================================================ */
-function OverviewTab({ doc, docSource, templateName, onGoto }) {
-  const info = useMemo(() => describeDoc(doc), [doc]);
-  const sourceLabel = docSource === "running" ? "the device's running config"
-    : docSource === "template" ? `the "${templateName}" template` : "a manually entered config";
+function OverviewTab({ doc, docSource, templateName, onGoto, lang, t }) {
+  const tr = t || ((k) => k);
+  const info = useMemo(() => describeDoc(doc, tr), [doc, lang]);
+  const sourceLabel = docSource === "running" ? tr("ov.src.running")
+    : docSource === "template" ? tr("ov.src.template").replace("{name}", templateName) : tr("ov.src.manual");
 
   // one-line plain summary
   const summary = (() => {
     const { filters, chains, ports } = info.counts;
     const parts = [];
-    parts.push(`${filters} filter${filters !== 1 ? "s" : ""}`);
-    parts.push(`${chains} chain${chains !== 1 ? "s" : ""}`);
-    if (ports) parts.push(`${ports} port${ports !== 1 ? "s" : ""} (${info.ports.join(", ")})`);
+    parts.push(`${filters} ${filters !== 1 ? tr("ov.unit.filters") : tr("ov.unit.filter")}`);
+    parts.push(`${chains} ${chains !== 1 ? tr("ov.unit.chains") : tr("ov.unit.chain")}`);
+    if (ports) parts.push(`${ports} ${ports !== 1 ? tr("ov.unit.ports") : tr("ov.unit.port")} (${info.ports.join(", ")})`);
     return parts.join(" · ");
   })();
 
   // detailed explanation: an authored description for known templates, or a
   // best-effort inferred read for running configs / pasted XML.
-  const template = docSource === "template" ? TEMPLATES.find((t) => t.title === templateName) : null;
-  const authored = template?.detail || template?.blurb || null;
-  const inferred = useMemo(() => (docSource === "template" ? [] : inferIntent(doc)), [doc, docSource]);
+  const template = docSource === "template" ? TEMPLATES.find((x) => x.title === templateName) : null;
+  const authored = template ? (tmplText(template, "detail", lang) || tmplText(template, "blurb", lang)) : null;
+  const inferred = useMemo(() => (docSource === "template" ? [] : inferIntent(doc, tr)), [doc, docSource, lang]);
 
   return (
     <div className="ov-wrap">
       <div className="ov-head">
         <div>
-          <h2 className="ov-title">What this configuration does</h2>
-          <p className="ov-sub">Currently loaded from {sourceLabel}. <span className="ov-summary">{summary}</span></p>
+          <h2 className="ov-title">{tr("ov.title")}</h2>
+          <p className="ov-sub">{tr("ov.loadedFrom")} {sourceLabel}. <span className="ov-summary">{summary}</span></p>
         </div>
       </div>
 
@@ -1712,41 +2089,47 @@ function OverviewTab({ doc, docSource, templateName, onGoto }) {
       )}
       {!authored && inferred.length > 0 && (
         <div className="ov-explain inferred">
-          <div className="ov-explain-head">What this looks like <span className="ov-explain-tag">inferred</span></div>
+          <div className="ov-explain-head">{tr("ov.looksLike")} <span className="ov-explain-tag">{tr("ov.inferred")}</span></div>
           <ul>{inferred.map((s, i) => <li key={i}>{s}</li>)}</ul>
-          <p className="ov-explain-note">This is a best-effort reading of the structure — the details below are exact.</p>
+          <p className="ov-explain-note">{tr("ov.inferNote")}</p>
         </div>
       )}
 
       {info.filters.length > 0 && (
         <section className="ov-section">
-          <h3 className="ov-h3">Filters <span className="ov-count">{info.filters.length}</span></h3>
+          <h3 className="ov-h3">{tr("ov.filters")} <span className="ov-count">{info.filters.length}</span></h3>
           <div className="ov-filters">
             {info.filters.map((f) => (
               <div className="ov-filter" key={f.id}>
                 <code className="ov-fid">{f.id}</code>
                 <div className="ov-fbody">
                   {f.name && <span className="ov-fname">{f.name}</span>}
-                  <span className="ov-fcond">{f.cond || "(no condition)"}</span>
+                  <span className="ov-fcond">{f.cond || tr("ov.noCondition")}</span>
                 </div>
               </div>
             ))}
           </div>
-          <button className="ov-jump" onClick={() => onGoto("filters")}>edit filters →</button>
+          <button className="ov-jump" onClick={() => onGoto("filters")}>{tr("ov.editFilters")}</button>
         </section>
       )}
 
       {info.chains.length > 0 && (
         <section className="ov-section">
-          <h3 className="ov-h3">Chains <span className="ov-count">{info.chains.length}</span></h3>
+          <h3 className="ov-h3">{tr("ov.chains")} <span className="ov-count">{info.chains.length}</span></h3>
           <div className="ov-chains">
-            {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} />)}
+            {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} t={tr} />)}
           </div>
-          <button className="ov-jump" onClick={() => onGoto("chain")}>edit chains →</button>
+          <button className="ov-jump" onClick={() => onGoto("chain")}>{tr("ov.editChains")}</button>
         </section>
       )}
     </div>
   );
+}
+// Pick a template field in the requested language, falling back to the base field.
+// e.g. tmplText(tpl, "detail", "zh-TW") → tpl.detail_zh || tpl.detail.
+function tmplText(tpl, field, lang) {
+  if (lang === "zh-TW" && tpl[field + "_zh"]) return tpl[field + "_zh"];
+  return tpl[field] || "";
 }
 
 // Flow diagram for one chain. Renders the decision TREE: each filter test sits at
@@ -1754,7 +2137,8 @@ function OverviewTab({ doc, docSource, templateName, onGoto }) {
 // (deeper column) or to an output port (shared right column). Every arrow is
 // labelled by its real side, so match/no-match are never confused — even when the
 // match side is the one that continues to the next test.
-function ChainFlow({ chain, filterNames = {} }) {
+function ChainFlow({ chain, filterNames = {}, t }) {
+  const tr = t || ((k) => ({ "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match", "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "all", "flow.any": "any" }[k] || k));
   const flow = chain.flow || { root: null, terminal: null };
   const root = flow.root;
   const terminal = flow.terminal;
@@ -1811,7 +2195,7 @@ function ChainFlow({ chain, filterNames = {} }) {
   const drawSide = (nx, side, kind) => {
     const from = nx.node;
     const x1 = colX(nx.depth) + testW, y1 = rowY(nx.row) + (kind === "match" ? -8 : 8);
-    const label = kind === "match" ? "match" : "no match";
+    const label = kind === "match" ? tr("flow.match") : tr("flow.nomatch");
     const s = from[kind === "match" ? "match" : "notmatch"];
     if (s.kind === "default") return null;                       // unspecified → draw nothing
     if (s.kind === "test") {
@@ -1823,7 +2207,7 @@ function ChainFlow({ chain, filterNames = {} }) {
     if (s.kind === "ports") {
       const ports = s.ports.split(",").map((p) => p.trim()).filter(Boolean);
       const multi = ports.length > 1;
-      const typeLabel = multi ? (s.mode === "loadBalance" ? "load balance" : "duplicate") : null;
+      const typeLabel = multi ? (s.mode === "loadBalance" ? tr("flow.loadBalance") : tr("flow.duplicate")) : null;
       return (
         <g key={kind + from.id}>
           {ports.map((p, k) => arrow(x1, y1, outX, destY[p], kind, kind + from.id + k, k === 0 ? label : null))}
@@ -1845,13 +2229,13 @@ function ChainFlow({ chain, filterNames = {} }) {
         {!root && terminal && (() => {
           const ports = terminal.kind === "ports" ? terminal.ports.split(",").map((p) => p.trim()).filter(Boolean) : terminal.kind === "drop" ? ["drop"] : [];
           const multi = ports.length > 1;
-          const typeLabel = multi ? (terminal.mode === "loadBalance" ? "load balance" : "duplicate") : null;
+          const typeLabel = multi ? (terminal.mode === "loadBalance" ? tr("flow.loadBalance") : tr("flow.duplicate")) : null;
           const mx = (inX + ingressW + outX) / 2;
-          return <g>{ports.map((p, k) => <path key={k} d={`M ${inX + ingressW} ${rootMidY} C ${mx} ${rootMidY}, ${mx} ${destY[p]}, ${outX} ${destY[p]}`} className="ovf-edge flow" markerEnd="url(#ovfAr)" />)}<text x={mx} y={rootMidY - 8} className="ovf-lbl flow" textAnchor="middle">{typeLabel || "forward"}</text></g>;
+          return <g>{ports.map((p, k) => <path key={k} d={`M ${inX + ingressW} ${rootMidY} C ${mx} ${rootMidY}, ${mx} ${destY[p]}, ${outX} ${destY[p]}`} className="ovf-edge flow" markerEnd="url(#ovfAr)" />)}<text x={mx} y={rootMidY - 8} className="ovf-lbl flow" textAnchor="middle">{typeLabel || tr("flow.forward")}</text></g>;
         })()}
 
         {/* ingress → root test */}
-        {root && arrow(inX + ingressW, rootMidY, colX(0), rowY(nodeById[root.id].row), "flow", "in", "traffic in")}
+        {root && arrow(inX + ingressW, rootMidY, colX(0), rowY(nodeById[root.id].row), "flow", "in", tr("flow.in"))}
 
         {/* output port nodes (each drawn once) */}
         {destOrder.map((d) => (
@@ -1871,7 +2255,7 @@ function ChainFlow({ chain, filterNames = {} }) {
               {drawSide(nx, "match", "match")}
               {drawSide(nx, "notmatch", "notmatch")}
               <rect x={x} y={y - 18} width={testW} height="36" rx="7" className="ovf-test" />
-              <text x={x + testW / 2} y={shortName ? y - 2 : y + 4} className="ovf-test-id">{nx.node.test}{nx.node.op === "and" ? " (all)" : toks(nx.node.test) > 1 ? " (any)" : ""}</text>
+              <text x={x + testW / 2} y={shortName ? y - 2 : y + 4} className="ovf-test-id">{nx.node.test}{nx.node.op === "and" ? ` (${tr("flow.all")})` : toks(nx.node.test) > 1 ? ` (${tr("flow.any")})` : ""}</text>
               {shortName && <text x={x + testW / 2} y={y + 12} className="ovf-test-name">{shortName}</text>}
             </g>
           );
@@ -1890,20 +2274,20 @@ function toks(fids) { return String(fids || "").split(",").map((s) => s.trim()).
 /* ============================================================
    Templates tab
    ============================================================ */
-function TemplatesTab({ onApply }) {
+function TemplatesTab({ onApply, lang, t }) {
+  const tr = t || ((k) => k);
   return (
     <div className="tmpl-wrap">
       <p className="tmpl-lead">
-        Start from a working pattern. Applying a template loads its filters and
-        chain into the document — then refine them in the other tabs.
+        {tr("tmpl.lead")}
       </p>
       <div className="tmpl-grid">
-        {TEMPLATES.map((t) => (
-          <button key={t.id} className="tmpl-card" onClick={() => onApply(t)}>
-            <span className="tmpl-tag">{t.tag}</span>
-            <span className="tmpl-title">{t.title}</span>
-            <span className="tmpl-blurb">{t.blurb}</span>
-            <span className="tmpl-cta">Apply →</span>
+        {TEMPLATES.map((tpl) => (
+          <button key={tpl.id} className="tmpl-card" onClick={() => onApply(tpl)}>
+            <span className="tmpl-tag">{tmplText(tpl, "tag", lang)}</span>
+            <span className="tmpl-title">{tmplText(tpl, "title", lang)}</span>
+            <span className="tmpl-blurb">{tmplText(tpl, "blurb", lang)}</span>
+            <span className="tmpl-cta">{tr("tmpl.apply")}</span>
           </button>
         ))}
       </div>
@@ -1985,7 +2369,8 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
   );
 }
 
-function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets }) {
+function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, t }) {
+  const tr = t || ((k) => k);
   const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
   const problems = useMemo(() => f ? filterProblems(f.root, []) : [], [f]);
 
@@ -2023,26 +2408,26 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
   const onAddNot = (id) => mutate(id, (n) => ({ ...n, children: [...(n.children ?? []), mkNot()] }));
   const onRemove = (id) => setFilterRoot(f.id, (root) => tRemove(root, id));
 
-  if (!f) return <div className="empty-pane"><button className="primary" onClick={addFilter}>+ New filter</button></div>;
+  if (!f) return <div className="empty-pane"><button className="primary" onClick={addFilter}>{tr("common.newFilter")}</button></div>;
 
   return (
     <div className="filters-layout">
       <SortableList
         items={doc.filters} activeKey={f.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>unnamed</em>}</span></>}
+        renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>{tr("flt.unnamed")}</em>}</span></>}
         onSelect={(x) => setActiveFilter(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, filters: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...doc.filters.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, filters: [...d.filters, copy] })); setActiveFilter(nextId); }}
-        addLabel="+ Add filter" dupLabel="⧉ Duplicate filter" onAdd={addFilter} />
+        addLabel={tr("common.addFilter")} dupLabel={tr("flt.dupFilter")} onAdd={addFilter} />
 
       <div className="filter-editor">
         <div className="filter-meta">
           <IdField prefix="F" id={f.id} siblingIds={doc.filters.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, id: newId } : x) })); setActiveFilter(newId); }} />
-          <label className="ml grow"><span>name</span>
+          <label className="ml grow"><span>{tr("common.name")}</span>
             <input value={f[f.labelAttr ?? "name"] ?? f.name ?? ""}
               onChange={(e) => { const k = f.labelAttr ?? "name"; patchMeta(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
-              placeholder="e.g. block list" /></label>
+              placeholder={tr("flt.namePh")} /></label>
           <label className="ml"><span>sessionBase</span>
             <select value={f.sessionBase} onChange={(e) => patchMeta({ sessionBase: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
@@ -2055,7 +2440,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
             <select value={f.matchedlog || "no"} onChange={(e) => patchMeta({ matchedlog: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
             </select></label>
-          <button className="del" onClick={() => delFilter(f.id)}>Delete</button>
+          <button className="del" onClick={() => delFilter(f.id)}>{tr("common.delete")}</button>
         </div>
 
         <div className="oattr-bar">
@@ -2104,7 +2489,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
         </div>
 
         <div className="tree-scroll">
-          <CritNode node={f.root} depth={0} canRemove={false} isRoot={true} hbTargets={hbTargets}
+          <CritNode node={f.root} depth={0} canRemove={false} isRoot={true} hbTargets={hbTargets} t={tr}
             onChangeOp={onChangeOp} onChangeFind={onChangeFind}
             onAddCond={onAddCond} onAddGroup={onAddGroup} onAddNot={onAddNot} onRemove={onRemove} />
         </div>
@@ -2126,7 +2511,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
 
         <div className={"pane-validity " + (problems.length ? "bad" : "ok")}>
           <span className="dot" />
-          {problems.length ? `${problems.length} issue${problems.length>1?"s":""} in F${f.id}` : `F${f.id} valid`}
+          {problems.length ? `F${f.id} ${problems.length} ${problems.length>1?tr("flt.issuesIn"):tr("flt.issueIn")}` : `F${f.id} ${tr("flt.validIn")}`}
         </div>
       </div>
     </div>
@@ -2136,7 +2521,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
 const RAILS = ["#5eead4", "#7dd3fc", "#c4b5fd", "#fda4af", "#fcd34d"];
 function CritNode(props) {
   const { node, depth, isRoot } = props;
-  if (node.t === "find") return <FindRow node={node} onChange={props.onChangeFind} onRemove={props.onRemove} canRemove={props.canRemove} hbTargets={props.hbTargets} />;
+  if (node.t === "find") return <FindRow node={node} onChange={props.onChangeFind} onRemove={props.onRemove} canRemove={props.canRemove} hbTargets={props.hbTargets} t={props.t} />;
   const isNot = node.t === "not";
   const rail = RAILS[depth % RAILS.length];
   return (
@@ -2154,7 +2539,7 @@ function CritNode(props) {
             <button className={node.t === "or" ? "on" : ""} onClick={() => props.onChangeOp(node.id, "or")}>OR</button>
           </div>
         )}
-        <span className="op-desc">{isNot ? "must NOT match the item below" : node.t === "and" ? "all must match" : "any must match"}</span>
+        <span className="op-desc">{isNot ? props.t("flt.opNotMatch") : node.t === "and" ? props.t("flt.opAllMatch") : props.t("flt.opAnyMatch")}</span>
         <div className="spacer" />
         {props.canRemove && <button className="icon-btn" onClick={() => props.onRemove(node.id)}>✕</button>}
       </div>
@@ -2163,19 +2548,20 @@ function CritNode(props) {
       </div>
       <div className="cnode-actions">
         {!isNot && <>
-          <button className="add-btn" onClick={() => props.onAddCond(node.id)}>+ Condition</button>
-          <button className="add-btn" onClick={() => props.onAddGroup(node.id)}>+ Group</button>
-          <button className="add-btn subtle" onClick={() => props.onAddNot(node.id)}>+ NOT</button>
+          <button className="add-btn" onClick={() => props.onAddCond(node.id)}>{props.t("flt.addCondition")}</button>
+          <button className="add-btn" onClick={() => props.onAddGroup(node.id)}>{props.t("flt.addGroup")}</button>
+          <button className="add-btn subtle" onClick={() => props.onAddNot(node.id)}>{props.t("flt.addNot")}</button>
         </>}
         {isNot && (!node.children || !node.children.length) && <>
-          <button className="add-btn" onClick={() => props.onAddCond(node.id)}>+ Condition</button>
-          <button className="add-btn" onClick={() => props.onAddGroup(node.id)}>+ Group</button>
+          <button className="add-btn" onClick={() => props.onAddCond(node.id)}>{props.t("flt.addCondition")}</button>
+          <button className="add-btn" onClick={() => props.onAddGroup(node.id)}>{props.t("flt.addGroup")}</button>
         </>}
       </div>
     </div>
   );
 }
-function FindRow({ node, onChange, onRemove, canRemove, hbTargets }) {
+function FindRow({ node, onChange, onRemove, canRemove, hbTargets, t }) {
+  const tr = t || ((k) => k);
   const f = FIELD_INDEX[node.field]; const kind = f?.kind ?? "str";
   const rels = relationsFor(kind); const isEx = kind === "exists";
   const err = isEx ? null : validate(kind, node.val);
@@ -2193,7 +2579,7 @@ function FindRow({ node, onChange, onRemove, canRemove, hbTargets }) {
       </select>
       {rels.length > 0 && <select className="rel" value={node.rel} onChange={(e) => onChange(node.id, { rel: e.target.value })}>
         {rels.map((r) => <option key={r} value={r}>{r}</option>)}</select>}
-      {isEx ? <span className="exists-note">{node.rel === "!=" ? "does not exist — no value" : "exists — no value"}</span>
+      {isEx ? <span className="exists-note">{node.rel === "!=" ? tr("flt.notExistsNote") : tr("flt.existsNote")}</span>
         : isHbId
           ? (targets.length > 0 || node.val
               ? <select className={"val" + (err ? " invalid" : "")} value={node.val}
@@ -2202,7 +2588,7 @@ function FindRow({ node, onChange, onRemove, canRemove, hbTargets }) {
                   {!hbHasVal && node.val && <option value={node.val}>id {node.val} (not in config)</option>}
                   {targets.map((t) => <option key={t.id} value={t.id}>id {t.id} · {t.sendPort}→{t.receivePort}</option>)}
                 </select>
-              : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder="sign in to list targets"
+              : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder={tr("flt.signInList")}
                   onChange={(e) => onChange(node.id, { val: e.target.value })} />)
           : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder={ph(kind)}
               onChange={(e) => onChange(node.id, { val: e.target.value })} />}
@@ -2233,7 +2619,8 @@ function PortSelect({ value, options, onChange, invalid }) {
   );
 }
 
-function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
+function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t }) {
+  const tr = t || ((k) => k);
   const inputs = doc.inputs ?? [];
   const inp = inputs.find((x) => x.id === activeInput) || inputs[0];
   const problems = useMemo(() => inp ? inputProblems(inp, []) : [], [inp]);
@@ -2257,8 +2644,8 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
   if (!inp) return (
     <div className="empty-pane">
       <div className="empty-cta">
-        <p>No inputs yet. An <code>&lt;input&gt;</code> replays pcap files or generates traffic onto a port.</p>
-        <button className="primary" onClick={addInput}>+ New input</button>
+        <p>{tr("in.emptyMsg")}</p>
+        <button className="primary" onClick={addInput}>{tr("in.newInput")}</button>
       </div>
     </div>
   );
@@ -2301,66 +2688,64 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
         onSelect={(x) => setActiveInput(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, inputs: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...inputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, inputs: [...d.inputs, copy] })); setActiveInput(nextId); }}
-        addLabel="+ Add input" dupLabel="⧉ Duplicate input" onAdd={addInput} />
+        addLabel={tr("common.addInput")} dupLabel={tr("common.dupInput")} onAdd={addInput} />
 
       <div className="filter-editor">
         <div className="filter-meta">
           <IdField prefix="I" id={inp.id} siblingIds={doc.inputs.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, inputs: d.inputs.map((x) => x.id === inp.id ? { ...x, id: newId } : x) })); setActiveInput(newId); }} />
-          <label className="ml grow"><span>name</span>
+          <label className="ml grow"><span>{tr("common.name")}</span>
             <input value={inp[inp.labelAttr ?? "name"] ?? inp.name ?? ""}
               onChange={(e) => { const k = inp.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
-              placeholder="optional" /></label>
-          <label className="ml"><span>type</span>
+              placeholder={tr("common.optional")} /></label>
+          <label className="ml"><span>{tr("common.type")}</span>
             <select value={inp.type} onChange={(e) => patch({ type: e.target.value })}>
               <option value="replayPcap">replayPcap</option>
               <option value="traffic-gen">traffic-gen</option>
             </select></label>
-          <button className="del" onClick={() => delInput(inp.id)}>Delete</button>
+          <button className="del" onClick={() => delInput(inp.id)}>{tr("common.delete")}</button>
         </div>
 
         <div className="tree-scroll">
           <div className="mod-row">
-            <span className="mod-key">Output port *</span>
+            <span className="mod-key">{tr("in.outputPort")}</span>
             <PortSelect value={inp.port} options={portOptions} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(inp.port)} />
             <code className="mod-tag">&lt;port&gt;</code>
           </div>
           <p className="out-empty">
-            {inp.type === "traffic-gen"
-              ? "Synthesise packets onto the port. Fill only the fields you need — empty ones aren't emitted."
-              : "Replay pcap files. A file path or a scan directory is required; other fields are optional."}
+            {inp.type === "traffic-gen" ? tr("in.helpGen") : tr("in.helpPcap")}
           </p>
           {inp.type === "traffic-gen" && fields.map(renderField)}
 
           {inp.type === "replayPcap" && <>
             <div className="mod-row">
-              <span className="mod-key">Source</span>
+              <span className="mod-key">{tr("in.source")}</span>
               <select className="mod-val" value={inp.pcapMode || "files"} onChange={(e) => patch({ pcapMode: e.target.value })}>
-                <option value="files">file list</option>
-                <option value="scandir">scan directory</option>
+                <option value="files">{tr("in.fileList")}</option>
+                <option value="scandir">{tr("in.scanDir")}</option>
               </select>
             </div>
 
             {(inp.pcapMode || "files") === "files" && <div className="filepath-list">
               {(inp.filepaths ?? [""]).map((fp, i) => (
                 <div className="mod-row" key={i}>
-                  <span className="mod-key">{i === 0 ? "File paths" : ""}</span>
+                  <span className="mod-key">{i === 0 ? tr("in.filePaths") : ""}</span>
                   <input className="mod-val" value={fp} placeholder="H1/in/sample.pcap" onChange={(e) => setFilepath(i, e.target.value)} />
-                  <button className="fp-del" title="remove" onClick={() => removeFilepath(i)}>✕</button>
+                  <button className="fp-del" title={tr("in.remove")} onClick={() => removeFilepath(i)}>✕</button>
                 </div>
               ))}
               <div className="mod-row">
                 <span className="mod-key" />
                 <button className="fp-add" disabled={(inp.filepaths ?? []).length >= 100} onClick={addFilepath}>
-                  + file path {(inp.filepaths ?? []).length >= 100 ? "(max 100)" : `(${(inp.filepaths ?? []).length}/100)`}
+                  + {tr("in.filePath")} {(inp.filepaths ?? []).length >= 100 ? tr("in.maxFiles") : `(${(inp.filepaths ?? []).length}/100)`}
                 </button>
               </div>
             </div>}
 
             {(inp.pcapMode || "files") === "scandir" && <>
               <div className="mod-row">
-                <span className="mod-key">Scan directory</span>
+                <span className="mod-key">{tr("in.scanDirLabel")}</span>
                 <input className="mod-val" value={inp.fields?.scandir ?? ""} placeholder="H1/in" onChange={(e) => setField("scandir", e.target.value)} />
                 <code className="mod-tag">&lt;scandir&gt;</code>
                 {(inp.fields?.scandir) && <span className="scan-attrs">
@@ -2370,14 +2755,14 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
                 </span>}
               </div>
               <div className="mod-row">
-                <span className="mod-key">After replay</span>
+                <span className="mod-key">{tr("in.afterReplay")}</span>
                 <select className="mod-val" value={inp.fields?.playedFilesHandle ?? ""} onChange={(e) => setField("playedFilesHandle", e.target.value)}>
                   <option value="">—</option><option value="delete">delete</option><option value="move">move</option>
                 </select>
                 <code className="mod-tag">&lt;playedFilesHandle&gt;</code>
               </div>
               {inp.fields?.playedFilesHandle === "move" && <div className="mod-row">
-                <span className="mod-key">Move played to</span>
+                <span className="mod-key">{tr("in.moveTo")}</span>
                 <input className="mod-val" value={inp.fields?.playedFilesMoveTo ?? ""} placeholder="H1/in/played" onChange={(e) => setField("playedFilesMoveTo", e.target.value)} />
                 <code className="mod-tag">&lt;playedFilesMoveTo&gt;</code>
               </div>}
@@ -2390,14 +2775,15 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions }) {
 
         <div className={"pane-validity " + (problems.length ? "bad" : "ok")}>
           <span className="dot" />
-          {problems.length ? `${problems.length} issue${problems.length>1?"s":""} in I${inp.id}` : `I${inp.id} valid`}
+          {problems.length ? `I${inp.id} ${problems.length} ${problems.length>1?tr("common.issuesIn"):tr("common.issueIn")}` : `I${inp.id} ${tr("common.valid")}`}
         </div>
       </div>
     </div>
   );
 }
 
-function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions }) {
+function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t }) {
+  const tr = t || ((k) => k);
   const outputs = doc.outputs ?? [];
   const o = outputs.find((x) => x.id === activeOutput) || outputs[0];
   const problems = useMemo(() => o ? outputProblems(o, []) : [], [o]);
@@ -2441,8 +2827,8 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
   if (!o) return (
     <div className="empty-pane">
       <div className="empty-cta">
-        <p>No outputs yet. An <code>&lt;output&gt;</code> lets a chain rewrite or tag packets — reference it from a chain <code>&lt;out&gt;</code> as <code>O1</code>.</p>
-        <button className="primary" onClick={addOutput}>+ New output</button>
+        <p>{tr("out.emptyMsg")}</p>
+        <button className="primary" onClick={addOutput}>{tr("out.newOutput")}</button>
       </div>
     </div>
   );
@@ -2457,20 +2843,20 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
         onSelect={(x) => setActiveOutput(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, outputs: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...outputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, outputs: [...d.outputs, copy] })); setActiveOutput(nextId); }}
-        addLabel="+ Add output" dupLabel="⧉ Duplicate output" onAdd={addOutput} />
+        addLabel={tr("common.addOutput")} dupLabel={tr("common.dupOutput")} onAdd={addOutput} />
 
       <div className="filter-editor">
         <div className="filter-meta">
           <IdField prefix="O" id={o.id} siblingIds={doc.outputs.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, id: newId } : x) })); setActiveOutput(newId); }} />
-          <label className="ml grow"><span>name</span>
+          <label className="ml grow"><span>{tr("common.name")}</span>
             <input value={o[o.labelAttr ?? "name"] ?? o.name ?? ""}
               onChange={(e) => { const k = o.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
-              placeholder="optional" /></label>
-          <label className="ml"><span>port *</span>
+              placeholder={tr("common.optional")} /></label>
+          <label className="ml"><span>{tr("out.port")}</span>
             <PortSelect value={o.port} options={portOptions} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
-          <button className="del" onClick={() => delOutput(o.id)}>Delete</button>
+          <button className="del" onClick={() => delOutput(o.id)}>{tr("common.delete")}</button>
         </div>
 
         <div className="oattr-bar">
@@ -2498,12 +2884,12 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
 
         <div className="tree-scroll">
           {(o.mods ?? []).length === 0 && (
-            <p className="out-empty">This output just forwards to <code>{o.port}</code> unchanged. Add a modifier below to rewrite or tag packets.</p>
+            <p className="out-empty">{tr("out.forwardNote")}</p>
           )}
           {(o.mods ?? []).map((m) => <OutputModRow key={m.id} mod={m} onChange={setMod} onOp={setModOp} onAttr={setModAttr} onRemove={delMod} />)}
 
           <div className="mod-palette">
-            {[["rewrite","add modifier"],["reply","ARP / ICMP reply"],["redirect","DNS response / redirect"],["mirror","mirror to file"],["vxlan","VXLAN encapsulation"],["nvgre","NVGRE encapsulation"]].map(([grp, label]) => {
+            {[["rewrite",tr("out.pAdd")],["reply",tr("out.pReply")],["redirect",tr("out.pRedirect")],["mirror",tr("out.pMirror")],["vxlan",tr("out.pVxlan")],["nvgre",tr("out.pNvgre")]].map(([grp, label]) => {
               const curType = (o.oattrs ?? {}).type || "";
               const items = OUT_MODS.filter((meta) => meta.grp === grp && modAllowed(meta.k, curType));
               if (items.length === 0) return null; // hide groups with nothing to offer under this type
@@ -2529,7 +2915,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions })
 
         <div className={"pane-validity " + (problems.length ? "bad" : "ok")}>
           <span className="dot" />
-          {problems.length ? `${problems.length} issue${problems.length>1?"s":""} in O${o.id}` : `O${o.id} valid`}
+          {problems.length ? `O${o.id} ${problems.length} ${problems.length>1?tr("common.issuesIn"):tr("common.issueIn")}` : `O${o.id} ${tr("common.valid")}`}
         </div>
       </div>
     </div>
@@ -2587,7 +2973,8 @@ function OutputModRow({ mod, onChange, onOp, onAttr, onRemove }) {
 /* ============================================================
    Actions tab — <action> input-packet-process / linkpairs
    ============================================================ */
-function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions }) {
+function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t }) {
+  const tr = t || ((k) => k);
   const actions = doc.actions ?? [];
   const a = actions.find((x) => x.id === activeAction) || actions[0];
   const problems = useMemo(() => a ? actionProblems(a, []) : [], [a]);
@@ -2609,8 +2996,8 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions })
   if (!a) return (
     <div className="empty-pane">
       <div className="empty-cta">
-        <p>No actions yet. An <code>&lt;action&gt;</code> processes packets at ingress, or links two ports so one going down takes the other with it.</p>
-        <button className="primary" onClick={addAction}>+ New action</button>
+        <p>{tr("act.emptyMsg")}</p>
+        <button className="primary" onClick={addAction}>{tr("act.newAction")}</button>
       </div>
     </div>
   );
@@ -2626,34 +3013,34 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions })
         onSelect={(x) => setActiveAction(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, actions: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...actions.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, actions: [...d.actions, copy] })); setActiveAction(nextId); }}
-        addLabel="+ Add action" dupLabel="⧉ Duplicate action" onAdd={addAction} />
+        addLabel={tr("common.addAction")} dupLabel={tr("common.dupAction")} onAdd={addAction} />
 
       <div className="filter-editor">
         <div className="filter-meta">
           <IdField prefix="A" id={a.id} siblingIds={doc.actions.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, actions: d.actions.map((x) => x.id === a.id ? { ...x, id: newId } : x) })); setActiveAction(newId); }} />
-          <label className="ml grow"><span>name</span>
-            <input value={a.name} onChange={(e) => patch({ name: e.target.value })} placeholder="optional" /></label>
-          <label className="ml"><span>type</span>
+          <label className="ml grow"><span>{tr("common.name")}</span>
+            <input value={a.name} onChange={(e) => patch({ name: e.target.value })} placeholder={tr("common.optional")} /></label>
+          <label className="ml"><span>{tr("common.type")}</span>
             <select value={a.type} onChange={(e) => patch({ type: e.target.value })}>
               <option value="input-packet-process">input-packet-process</option>
               <option value="linkpairs">linkpairs</option>
             </select></label>
-          <button className="del" onClick={() => delAction(a.id)}>Delete</button>
+          <button className="del" onClick={() => delAction(a.id)}>{tr("common.delete")}</button>
         </div>
 
         <div className="tree-scroll">
           {isLink ? (
             <div className="link-form">
-              <p className="out-empty">If one link goes down, the other is forced down too. Enter the two ports to bind.</p>
+              <p className="out-empty">{tr("act.linkNote")}</p>
               <div className="mod-row">
-                <span className="mod-key">Port A</span>
+                <span className="mod-key">{tr("act.portA")}</span>
                 <PortSelect value={a.portA} options={portOptions} onChange={(v) => patch({ portA: v })}
                   invalid={!/^[A-Z][0-9]+$/.test(a.portA)} />
                 <code className="mod-tag">&lt;portA&gt;</code>
               </div>
               <div className="mod-row">
-                <span className="mod-key">Port B</span>
+                <span className="mod-key">{tr("act.portB")}</span>
                 <PortSelect value={a.portB} options={portOptions} onChange={(v) => patch({ portB: v })}
                   invalid={!/^[A-Z][0-9]+$/.test(a.portB)} />
                 <code className="mod-tag">&lt;portB&gt;</code>
@@ -2662,18 +3049,18 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions })
           ) : (
             <>
               <div className="mod-row">
-                <span className="mod-key">Input port *</span>
+                <span className="mod-key">{tr("act.inputPort")}</span>
                 <PortSelect value={a.port} options={portOptions} onChange={(v) => patch({ port: v })}
                   invalid={!/^[A-Z][0-9]+$/.test(a.port)} />
                 <code className="mod-tag">&lt;port&gt;</code>
               </div>
               {(a.mods ?? []).length === 0 && (
-                <p className="out-empty">Add a modifier below to strip, tag, re-VLAN, or answer ARP/ICMP for packets arriving on <code>{a.port}</code>.</p>
+                <p className="out-empty">{tr("act.modNote")}</p>
               )}
               {(a.mods ?? []).map((m) => <ActionModRow key={m.id} mod={m} onChange={setMod} onRemove={delMod} onMtu={(mid, mtu) => patch({ mods: a.mods.map((x) => x.id === mid ? { ...x, mtu } : x) })} />)}
 
               <div className="mod-palette">
-                <span className="mod-palette-label">add modifier</span>
+                <span className="mod-palette-label">{tr("act.addModifier")}</span>
                 <div className="mod-palette-grid">
                   {ACT_MODS.map((meta) => (
                     <button key={meta.k} className="mod-add" onClick={() => addMod(meta.k)}
@@ -2688,7 +3075,7 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions })
 
         <div className={"pane-validity " + (problems.length ? "bad" : "ok")}>
           <span className="dot" />
-          {problems.length ? `${problems.length} issue${problems.length>1?"s":""} in A${a.id}` : `A${a.id} valid`}
+          {problems.length ? `A${a.id} ${problems.length} ${problems.length>1?tr("common.issuesIn"):tr("common.issueIn")}` : `A${a.id} ${tr("common.valid")}`}
         </div>
       </div>
     </div>
@@ -2827,7 +3214,8 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, emptyNote }) 
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, inPortConflicts, portOptions, portsFromDevice }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, inPortConflicts, portOptions, portsFromDevice, t }) {
+  const tr = t || ((k) => k);
   const [selId, setSelId] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [chipConfirm, setChipConfirm] = useState(null); // { field: "fids"|"ports", from, to, nodeId }
@@ -3048,16 +3436,16 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               onDragEnd={() => { setChainDragCid(null); setChainOverCid(null); }}
               onDrop={(e) => { e.preventDefault(); if (chainDragCid != null) moveChain(chainDragCid, c.cid); setChainDragCid(null); setChainOverCid(null); }}
               onClick={() => { setActiveChain(c.cid); setSelId(null); }}>
-              <span className="drag-handle" title="Drag to reorder">⠿</span>
+              <span className="drag-handle" title={tr("ch.dragReorder")}>⠿</span>
               <span className="chain-flow"><b>{inP || "?"}</b> <span className="arr">→</span> <span className="dest">{chainDest(c)}</span></span>
-              {conflict && <span className="chain-conflict" title="another chain uses this ingress port">⚠</span>}
+              {conflict && <span className="chain-conflict" title={tr("ch.portConflict")}>⚠</span>}
             </div>
           );
         })}
-        <button className="filter-add" onClick={addChain}>+ Add chain</button>
-        {chain && <button className="filter-dup" onClick={() => dupChain(chain)}>⧉ Duplicate chain</button>}
+        <button className="filter-add" onClick={addChain}>{tr("ch.addChain")}</button>
+        {chain && <button className="filter-dup" onClick={() => dupChain(chain)}>{tr("ch.dupChain")}</button>}
         {chains.length > 1 && (
-          <button className="chain-del" onClick={() => delChain(cid)}>Delete this chain</button>
+          <button className="chain-del" onClick={() => delChain(cid)}>{tr("ch.deleteChain")}</button>
         )}
       </aside>
 
@@ -3103,97 +3491,97 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
 
       <aside className="chain-rail">
         <div className="inspector">
-          <div className="insp-head">{sel ? (isUnset(sel) ? "Unspecified" : sel.t === "in" ? "Ingress" : sel.t === "branch" ? "FILTER" : isDrop(sel) ? "Discard" : "Output") : "Inspector"}</div>
-          {!sel && <p className="insp-empty">Select a node to edit.</p>}
+          <div className="insp-head">{sel ? (isUnset(sel) ? tr("ch.unspecified") : sel.t === "in" ? tr("ch.ingress") : sel.t === "branch" ? tr("ch.filter") : isDrop(sel) ? tr("ch.discard") : tr("ch.output")) : tr("ch.inspector")}</div>
+          {!sel && <p className="insp-empty">{tr("ch.selectNode")}</p>}
           {sel && sel.t === "in" && <>
             {inPortConflicts.has(chainInFirst(chain)) && (
               <p className="conflict-note">Another chain also ingresses on <code>{chainInFirst(chain)}</code>. Each ingress port should feed one chain — the device may only apply one.</p>
             )}
-            <label className="fld2"><span>Ingress ports</span>
+            <label className="fld2"><span>{tr("ch.ingressPorts")}</span>
               <input value={chain.ports} onChange={(e) => setPorts(e.target.value)} /><em>e.g. P0,P1</em></label>
             <CheckAccordion
-              label={portsFromDevice ? "device ports" : "ports (default list)"}
+              label={portsFromDevice ? tr("ch.devicePorts") : tr("ch.portsDefault")}
               items={portOptions.map((p) => ({ id: p, b: p, on: listHas(chain.ports, p) }))}
               onToggle={(p) => toggleInPort(p)}
               onAll={(on) => setAllInPorts(portOptions, on)}
               onSetOne={(p) => setOneInPort(portOptions, p)}
               emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
-            <CollapseSection label="Advanced operation" active={!!chain.inVlan?.vlantype}>
-              <label className="fld2"><span>VLAN operation</span>
+            <CollapseSection label={tr("ch.advancedOp")} active={!!chain.inVlan?.vlantype}>
+              <label className="fld2"><span>{tr("ch.vlanOp")}</span>
                 <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
                   <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
                 </select><em>optional — tag or strip VLAN at ingress</em></label>
-              {chain.inVlan?.vlantype === "tagging" && <label className="fld2"><span>VLAN id</span>
+              {chain.inVlan?.vlantype === "tagging" && <label className="fld2"><span>{tr("ch.vlanId")}</span>
                 <input value={chain.inVlan?.vlanid ?? ""} onChange={(e) => setInVlan({ vlanid: e.target.value })} placeholder="100" /></label>}
             </CollapseSection>
           </>}
-          {sel && isUnset(sel) && <><p className="insp-note">No branch here — device default applies. No <code>&lt;next&gt;</code> is written.</p>
-            <button className="primary" onClick={() => restoreSide(sel.id)}>Route explicitly</button></>}
+          {sel && isUnset(sel) && <><p className="insp-note">{tr("ch.unsetNote")}</p>
+            <button className="primary" onClick={() => restoreSide(sel.id)}>{tr("ch.routeExplicitly")}</button></>}
           {sel && sel.t === "branch" && <>
-            <label className="fld2"><span>Filter(s)</span>
+            <label className="fld2"><span>{tr("ch.filters")}</span>
               <input value={sel.fids} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fids: e.target.value }))} /><em>e.g. F1 or F1,!F3</em></label>
-            <label className="fld2"><span>Combine</span>
+            <label className="fld2"><span>{tr("ch.combine")}</span>
               <select value={sel.fidOp} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fidOp: e.target.value }))}><option value="or">or</option><option value="and">and</option></select></label>
             <CheckAccordion
-              label="defined filters"
-              items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || "unnamed", on: fidsHas(sel.fids, "F" + f.id) }))}
+              label={tr("ch.definedFilters")}
+              items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"), on: fidsHas(sel.fids, "F" + f.id) }))}
               onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
               onAll={(on) => setAllFids(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), on)}
               onSetOne={(fid) => setOneFid(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), fid)}
-              emptyNote="No filters defined yet." />
+              emptyNote={tr("ch.noFiltersDefined")} />
             <div className="add-filter-group">
-              <span className="add-filter-label">Insert filter above — keep this test on:</span>
+              <span className="add-filter-label">{tr("ch.insertKeepTest")}</span>
               <div className="add-filter-btns">
-                <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>+ filter (this → match)</button>
-                <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>+ filter (this → notmatch)</button>
+                <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>{tr("ch.filterToMatch")}</button>
+                <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>{tr("ch.filterToNotmatch")}</button>
               </div>
             </div>
-            <button className="danger" onClick={() => removeTest(sel.id)}>Remove test → output</button>
+            <button className="danger" onClick={() => removeTest(sel.id)}>{tr("ch.removeTest")}</button>
           </>}
           {sel && sel.t === "out" && <>
             {isDrop(sel) ? <p className="insp-note">Discarded (<code>&lt;out&gt;0&lt;/out&gt;</code>). Explicit, distinct from unspecified.</p> : <>
-              <label className="fld2"><span>Output ports</span><input value={sel.ports} onChange={(e) => mutate(sel.id, (n) => ({ ...n, ports: e.target.value }))} /><em>P1,P2 · 0 drop · S switch · O1 = output def</em></label>
+              <label className="fld2"><span>{tr("ch.outputPorts")}</span><input value={sel.ports} onChange={(e) => mutate(sel.id, (n) => ({ ...n, ports: e.target.value }))} /><em>P1,P2 · 0 drop · S switch · O1 = output def</em></label>
               <CheckAccordion
-                label={portsFromDevice ? "device ports" : "ports (default list)"}
+                label={portsFromDevice ? tr("ch.devicePorts") : tr("ch.portsDefault")}
                 items={portOptions.map((p) => ({ id: p, b: p, on: listHas(sel.ports, p) }))}
                 onToggle={(p) => toggleOutPort(sel.id, sel.ports, p)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, portOptions, on)}
                 onSetOne={(p) => setOneOutPort(sel.id, sel.ports, portOptions, p)}
                 emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
               {(doc.outputs?.length ?? 0) > 0 && <CheckAccordion
-                label="defined outputs"
+                label={tr("ch.definedOutputs")}
                 items={doc.outputs.map((o) => ({ id: "O" + o.id, b: "O" + o.id, sub: o.name || o.port, on: listHas(sel.ports, "O" + o.id) }))}
                 onToggle={(oid) => toggleOutPort(sel.id, sel.ports, oid)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), on)}
                 onSetOne={(oid) => setOneOutPort(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), oid)} />}
-              <label className="fld2"><span>Mode</span><select value={sel.mode} onChange={(e) => mutate(sel.id, (n) => ({ ...n, mode: e.target.value }))}><option value="duplicate">duplicate</option><option value="loadBalance">load balance</option></select></label>
-              {sel.mode === "loadBalance" && <label className="fld2"><span>Balance by</span><select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>{["session","5thash","rr","sip","dip"].map((o) => <option key={o} value={o}>{o}</option>)}</select></label>}
-              <CollapseSection label="Advanced operation" active={!!sel.vlantype}>
-                <label className="fld2"><span>VLAN operation</span>
+              <label className="fld2"><span>{tr("ch.mode")}</span><select value={sel.mode} onChange={(e) => mutate(sel.id, (n) => ({ ...n, mode: e.target.value }))}><option value="duplicate">duplicate</option><option value="loadBalance">load balance</option></select></label>
+              {sel.mode === "loadBalance" && <label className="fld2"><span>{tr("ch.balanceBy")}</span><select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>{["session","5thash","rr","sip","dip"].map((o) => <option key={o} value={o}>{o}</option>)}</select></label>}
+              <CollapseSection label={tr("ch.advancedOp")} active={!!sel.vlantype}>
+                <label className="fld2"><span>{tr("ch.vlanOp")}</span>
                   <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
                     <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
                   </select><em>optional — tag or strip VLAN on egress</em></label>
-                {sel.vlantype === "tagging" && <label className="fld2"><span>VLAN id</span>
+                {sel.vlantype === "tagging" && <label className="fld2"><span>{tr("ch.vlanId")}</span>
                   <input value={sel.vlanid ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlanid: e.target.value }))} placeholder="100" /></label>}
               </CollapseSection>
               <div className="add-filter-group">
-                <span className="add-filter-label">Insert filter above — keep this output on:</span>
+                <span className="add-filter-label">{tr("ch.insertKeepOutput")}</span>
                 <div className="add-filter-btns">
-                  <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>+ filter (this → match)</button>
-                  <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>+ filter (this → notmatch)</button>
+                  <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>{tr("ch.filterToMatch")}</button>
+                  <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>{tr("ch.filterToNotmatch")}</button>
                 </div>
               </div>
             </>}
-            {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>Remove {selOwner.side} branch…</button>}
+            {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>{tr("ch.removeBranch").replace("{side}", selOwner.side)}</button>}
           </>}
         </div>
 
         <div className="refs">
-          <div className="refs-head"><span>Filters referenced</span><span className="refs-count">{refs.length}</span></div>
+          <div className="refs-head"><span>{tr("ch.filtersReferenced")}</span><span className="refs-count">{refs.length}</span></div>
           {refs.map((r) => <div key={r.id} className={"ref-row " + (r.defined ? "here" : "device")}>
             <span className="ref-dot" /><code className="ref-id">{r.id}</code>
             <span className="ref-name">{knownNames[r.id] || ""}</span>
-            <span className="ref-where">{r.defined ? "defined here" : "on device"}</span>
+            <span className="ref-where">{r.defined ? tr("ch.definedHere") : tr("ch.onDevice")}</span>
           </div>)}
           {refs.some((r) => !r.defined) && <p className="refs-note">Undefined here → assumed to exist on the device. No empty filter is generated.</p>}
         </div>
@@ -3329,7 +3717,8 @@ function simulateChain(chain, states, filterAlt) {
    as chain ingress / output highlighted. Clicking a port selects it as the
    simulation ingress. Below, user-added inline devices (e.g. an external IPS)
    are drawn bridging two ports. */
-function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [] }) {
+function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], t }) {
+  const tr = t || ((k) => k);
   const portRole = (p) => { const i = inPortSet.has(p), o = outPortSet.has(p); return i && o ? "both" : i ? "in" : o ? "out" : "idle"; };
   const inlinePorts = new Set(inlines.flatMap((x) => [x.portA, x.portB]));
   const [flipped, setFlipped] = flipState; // lifted so row orientation persists across tab switches
@@ -3638,11 +4027,11 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
     return (
       <button key={p} ref={(el) => { portRefs.current[p] = el; }}
         className={"dev-port " + role + (selected === p ? " selected" : "") + (wired ? " wired" : "") + (isLoop ? " loop" : "") + (nextPortSet.has(p) ? " next" : prevPortSet.has(p) ? " from" : "")}
-        onClick={() => onPick(p)} title={isLoop ? "LOOP interface — traffic returns on the same port" : role === "both" ? "ingress + output" : role === "in" ? "ingress" : role === "out" ? "output" : "unused"}>
+        onClick={() => onPick(p)} title={isLoop ? tr("sim.loopTip") : role === "both" ? tr("sim.roleBoth") : role === "in" ? tr("sim.roleIn") : role === "out" ? tr("sim.roleOut") : tr("sim.roleIdle")}>
         <span className="dev-port-led" />
         <span className="dev-port-name">{p}</span>
         {isLoop ? <span className="dev-port-role loop">LOOP ↻</span> : role !== "idle" && <span className="dev-port-role">{role === "both" ? "IN/OUT" : role.toUpperCase()}</span>}
-        {wired && <span className="dev-port-jack" title="wired to an inline device" />}
+        {wired && <span className="dev-port-jack" title={tr("sim.wiredTip")} />}
       </button>
     );
   };
@@ -3668,35 +4057,35 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
           <div className="dev-chassis-head">
             <div className="dev-brand"><span className="dev-logo">◇</span> GRISM<span className="dev-model"> · packet broker</span></div>
             <div className="dev-head-btns">
-              {playState === "idle" && <button className="dev-play" onClick={play} disabled={!animPlan} title={animPlan ? "Animate a packet along the traced path" : "Select an ingress port first"}>▶ play</button>}
-              {playState === "playing" && <button className="dev-play" onClick={pause} title="Pause">⏸ pause</button>}
-              {playState === "paused" && <button className="dev-play" onClick={resume} title="Resume">▶ resume</button>}
-              {playState !== "idle" && <button className="dev-stop" onClick={stop} title="Stop">⏹ stop</button>}
+              {playState === "idle" && <button className="dev-play" onClick={play} disabled={!animPlan} title={animPlan ? tr("sim.playTip") : tr("sim.selectIngress")}>{tr("sim.play")}</button>}
+              {playState === "playing" && <button className="dev-play" onClick={pause} title={tr("sim.pauseTip")}>{tr("sim.pause")}</button>}
+              {playState === "paused" && <button className="dev-play" onClick={resume} title={tr("sim.resumeTip")}>{tr("sim.resume")}</button>}
+              {playState !== "idle" && <button className="dev-stop" onClick={stop} title={tr("sim.stopTip")}>{tr("sim.stop")}</button>}
               <div className="inline-add-wrap">
-                <button className={"inline-add-btn" + (inlineDraft.open ? " on" : "")} onClick={() => setInlineDraft((s) => ({ ...s, open: !s.open }))}>+ inline device (IPS, etc.)</button>
+                <button className={"inline-add-btn" + (inlineDraft.open ? " on" : "")} onClick={() => setInlineDraft((s) => ({ ...s, open: !s.open }))}>{tr("sim.addInline")}</button>
                 {inlineDraft.open && (
                   <div className="inline-add-pop">
-                    <input className="inline-name-in" value={inlineDraft.name} placeholder="name (e.g. IPS)"
+                    <input className="inline-name-in" value={inlineDraft.name} placeholder={tr("sim.namePh")}
                       onChange={(e) => setInlineDraft((s) => ({ ...s, name: e.target.value }))} />
                     <div className="inline-pop-ports">
                       <select value={inlineDraft.portA} onChange={(e) => setInlineDraft((s) => ({ ...s, portA: e.target.value }))}>
-                        <option value="">port A</option>
+                        <option value="">{tr("sim.portA")}</option>
                         {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
                       </select>
                       <span className="inline-lead-bridge">⇄</span>
                       <select value={inlineDraft.portB} onChange={(e) => setInlineDraft((s) => ({ ...s, portB: e.target.value }))}>
-                        <option value="">port B</option>
+                        <option value="">{tr("sim.portB")}</option>
                         {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
                       </select>
                     </div>
                     <div className="inline-pop-actions">
-                      <button className="inline-add-ok" disabled={!inlineDraft.portA || !inlineDraft.portB || inlineDraft.portA === inlineDraft.portB} onClick={onAddInline}>add</button>
-                      <button className="inline-add-cancel" onClick={() => setInlineDraft((s) => ({ ...s, open: false }))}>cancel</button>
+                      <button className="inline-add-ok" disabled={!inlineDraft.portA || !inlineDraft.portB || inlineDraft.portA === inlineDraft.portB} onClick={onAddInline}>{tr("sim.add")}</button>
+                      <button className="inline-add-cancel" onClick={() => setInlineDraft((s) => ({ ...s, open: false }))}>{tr("sim.cancel")}</button>
                     </div>
                   </div>
                 )}
               </div>
-              <button className="dev-flip" onClick={() => setFlipped((v) => !v)} title="Swap which ports sit on the top / bottom row">⇅ flip rows</button>
+              <button className="dev-flip" onClick={() => setFlipped((v) => !v)} title={tr("sim.flipTip")}>{tr("sim.flipRows")}</button>
             </div>
           </div>
           <div className="dev-port-area">
@@ -3743,8 +4132,8 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
                   <span className="inline-dev-name">{d.name}</span>
                   <span className="inline-dev-sub">inline · {d.portA} ⇄ {d.portB}</span>
                 </div>
-                <span className="inline-dev-grip" title="Drag to reposition">⠿</span>
-                <button className="inline-dev-del" onMouseDown={(e) => e.stopPropagation()} onClick={() => onRemoveInline(d.id)} title="Remove">✕</button>
+                <span className="inline-dev-grip" title={tr("sim.dragReposition")}>⠿</span>
+                <button className="inline-dev-del" onMouseDown={(e) => e.stopPropagation()} onClick={() => onRemoveInline(d.id)} title={tr("sim.remove")}>✕</button>
               </div>
             );
           })}
@@ -3772,7 +4161,8 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   );
 }
 
-function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped }) {
+function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, t }) {
+  const tr = t || ((k) => k);
   // all filter ids to offer as switches: defined here + referenced-but-undefined
   const filterIds = useMemo(() => {
     const s = new Set(doc.filters.map((f) => "F" + f.id));
@@ -3910,40 +4300,40 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
           selected={inPort} onPick={(p) => setInPort(p)}
           inlines={inlines} onRemoveInline={removeInline}
           inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
-          animPlan={animPlan} flipState={simFlipped} loopPorts={loopPorts} />
+          animPlan={animPlan} flipState={simFlipped} loopPorts={loopPorts} t={tr} />
       </div>
-      <div className="sim-resizer" onMouseDown={onResizeStart} title="Drag to resize the device panel">
+      <div className="sim-resizer" onMouseDown={onResizeStart} title={tr("sim.resizeTip")}>
         <span className="sim-resizer-grip" />
       </div>
       <div className="sim-layout">
       <aside className="sim-controls">
         <div className="sim-section">
-          <div className="sim-label">Ingress port</div>
+          <div className="sim-label">{tr("sim.ingressPort")}</div>
           <select className="sim-inport" value={inPort} onChange={(e) => setInPort(e.target.value)}>
-            <option value="">— select ingress —</option>
-            {[...new Set([...chainInPorts, ...portOptions])].map((p) => <option key={p} value={p}>{p}{chainInPorts.includes(p) ? "" : " (no chain)"}</option>)}
+            <option value="">— {tr("sim.selectIngressOpt")} —</option>
+            {[...new Set([...chainInPorts, ...portOptions])].map((p) => <option key={p} value={p}>{p}{chainInPorts.includes(p) ? "" : ` (${tr("sim.noChain")})`}</option>)}
           </select>
         </div>
 
         <div className="sim-section">
           <div className="sim-filters-head">
-            <span className="sim-label">Filter results</span>
+            <span className="sim-label">{tr("sim.filterResults")}</span>
             <div className="sim-bulk">
-              <button onClick={allNotMatch}>all not-match</button>
-              <button onClick={allMatch}>all match</button>
+              <button onClick={allNotMatch}>{tr("sim.allNotMatch")}</button>
+              <button onClick={allMatch}>{tr("sim.allMatch")}</button>
             </div>
           </div>
-          {filterIds.length === 0 && <p className="sim-empty">No filters referenced.</p>}
+          {filterIds.length === 0 && <p className="sim-empty">{tr("sim.noFilters")}</p>}
           <div className="sim-switch-list">
             {filterIds.map((fid) => {
               const on = !!states[fid];
               const undef = !definedSet.has(fid);
               return (
                 <div key={fid} className="sim-switch-row">
-                  <span className="sim-fid">{fid}{undef && <span className="sim-undef" title="not defined in this config"> ·dev</span>}</span>
+                  <span className="sim-fid">{fid}{undef && <span className="sim-undef" title={tr("sim.notDefined")}> ·dev</span>}</span>
                   <span className="sim-falt">{filterAlt[fid]}</span>
                   <button className={"sim-toggle" + (on ? " match" : " notmatch")} onClick={() => setFilter(fid, !on)}>
-                    {on ? "match" : "not-match"}
+                    {on ? tr("flow.match") : tr("flow.nomatch")}
                   </button>
                 </div>
               );
@@ -3991,7 +4381,8 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   );
 }
 
-function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn }) {
+function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, t }) {
+  const tr = t || ((k) => k);
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
   const [confirmSubmit, setConfirmSubmit] = useState(false); // show the "submit to device?" confirmation
@@ -4080,12 +4471,12 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
     }
   };
 
-  const submitLabel = problems.length ? "fix issues to submit"
-    : apply.active ? "applying…"
-    : submit.state === "sending" ? "submitting…"
-    : submit.state === "ok" ? "applied ✓"
-    : submit.state === "error" ? "retry submit"
-    : "submit to device";
+  const submitLabel = problems.length ? tr("ex.fixToSubmit")
+    : apply.active ? tr("ex.applying")
+    : submit.state === "sending" ? tr("ex.submitting")
+    : submit.state === "ok" ? tr("ex.applied")
+    : submit.state === "error" ? tr("ex.retrySubmit")
+    : tr("ex.submit");
 
   const editing = edit !== null;
 
@@ -4096,43 +4487,41 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
           <div className="apply-card">
             <div className="apply-spinner" />
             <div className="apply-msg">{apply.msg}</div>
-            <div className="apply-sub">Applying to the device — please wait.</div>
+            <div className="apply-sub">{tr("ex.applyingToDevice")}</div>
           </div>
         </div>
       )}
       {confirmSubmit && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirmSubmit(false)}>
           <div className={"modal" + (docSource === "template" ? " modal-warn" : "")} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{docSource === "template" ? "⚠ Submit a template to the device?" : "Submit to device?"}</div>
+            <div className="modal-title">{docSource === "template" ? tr("ex.confirmTitleTmpl") : tr("ex.confirmTitle")}</div>
             <p className="modal-body">
-              {docSource === "template"
-                ? "This configuration came straight from a template and may not be tuned for this device. Submitting will overwrite the device's running config and apply it live."
-                : "This will overwrite the device's running config and apply it live."}
+              {docSource === "template" ? tr("ex.confirmBodyTmpl") : tr("ex.confirmBody")}
             </p>
             <button className={"opt" + (docSource === "template" ? " drop" : "")} onClick={() => { setConfirmSubmit(false); submitToDevice(); }}>
-              <span className="opt-name">{docSource === "template" ? "I understand — submit anyway" : "Submit and apply"}</span>
-              <span className="opt-desc">Overwrite and apply the running config on the device.</span>
+              <span className="opt-name">{docSource === "template" ? tr("ex.submitAnyway") : tr("ex.submitApply")}</span>
+              <span className="opt-desc">{tr("ex.overwriteDesc")}</span>
             </button>
-            <button className="opt-cancel" onClick={() => setConfirmSubmit(false)}>Cancel</button>
+            <button className="opt-cancel" onClick={() => setConfirmSubmit(false)}>{tr("ex.cancel")}</button>
           </div>
         </div>
       )}
       <div className="export-main">
         <div className="xb-head">
-          <span className="xb-title">Complete &lt;run&gt;{editing && <span className="xb-editing"> · editing</span>}</span>
+          <span className="xb-title">{tr("ex.completeRun")}{editing && <span className="xb-editing"> · {tr("ex.editing")}</span>}</span>
           <div className="xb-actions">
             {!editing && <>
-              <button className="copy-btn" onClick={startEdit}>edit</button>
-              <button className="copy-btn" disabled={problems.length > 0} onClick={copy}>{copied ? "copied ✓" : problems.length ? "fix issues to copy" : "copy"}</button>
+              <button className="copy-btn" onClick={startEdit}>{tr("ex.edit")}</button>
+              <button className="copy-btn" disabled={problems.length > 0} onClick={copy}>{copied ? tr("ex.copied") : problems.length ? tr("ex.fixToCopy") : tr("ex.copy")}</button>
               {loggedIn && (
                 <button className={"submit-btn" + (submit.state === "error" ? " err" : submit.state === "ok" ? " ok" : "")}
                   disabled={problems.length > 0 || submit.state === "sending" || apply.active} onClick={() => setConfirmSubmit(true)}>{submitLabel}</button>
               )}
             </>}
             {editing && <>
-              <button className="copy-btn" onClick={formatEdit}>format</button>
-              <button className="copy-btn" onClick={cancelEdit}>cancel</button>
-              <button className="submit-btn" onClick={applyEdit}>apply changes</button>
+              <button className="copy-btn" onClick={formatEdit}>{tr("ex.format")}</button>
+              <button className="copy-btn" onClick={cancelEdit}>{tr("ex.cancel")}</button>
+              <button className="submit-btn" onClick={applyEdit}>{tr("ex.applyChanges")}</button>
             </>}
           </div>
         </div>
@@ -4143,23 +4532,23 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
       </div>
       <aside className="export-side">
         {!editing && <div className={"pane-validity " + (problems.length ? "bad" : warnings.length ? "warn" : "ok")}>
-          <span className="dot" />{problems.length ? `${problems.length} issue${problems.length>1?"s":""}` : warnings.length ? `${warnings.length} warning${warnings.length>1?"s":""} — can still submit` : "ready to export"}
+          <span className="dot" />{problems.length ? `${problems.length} ${problems.length>1?tr("ex.issues"):tr("ex.issue")}` : warnings.length ? `${warnings.length} ${warnings.length>1?tr("ex.warningsWord"):tr("ex.warningWord")} ${tr("ex.canSubmit")}` : tr("ex.readyExport")}
         </div>}
         {editing && <div className="edit-help">
-          <p>Edit the XML directly. <b>Format</b> tidies the indentation without changing anything. <b>Apply changes</b> parses it back into the editor — every tab updates to match. <b>Cancel</b> discards your edits.</p>
-          {applyErr && <p className="submit-note err">Couldn't apply: {applyErr}. Fix the XML and try again.</p>}
+          <p>{tr("ex.editHelp")}</p>
+          {applyErr && <p className="submit-note err">{tr("ex.cantApply")}: {applyErr}. {tr("ex.fixTryAgain")}</p>}
         </div>}
-        {!editing && applyWarn.length > 0 && <p className="submit-note warn">Applied with {applyWarn.length} warning{applyWarn.length>1?"s":""}: {applyWarn.slice(0,3).join("; ")}{applyWarn.length>3?"…":""}</p>}
+        {!editing && applyWarn.length > 0 && <p className="submit-note warn">{tr("ex.appliedWith")} {applyWarn.length} {applyWarn.length>1?tr("ex.warningsWord"):tr("ex.warningWord")}: {applyWarn.slice(0,3).join("; ")}{applyWarn.length>3?"…":""}</p>}
         {!editing && apply.warn && <p className="submit-note warn">{apply.warn}</p>}
-        {!editing && submit.state === "error" && <p className="submit-note err">Submit failed: {submit.msg}. Check that you're signed in to the device and try again.</p>}
-        {!editing && submit.state === "ok" && <p className="submit-note ok">Configuration applied — the device is now running <code>run.xml</code>.</p>}
+        {!editing && submit.state === "error" && <p className="submit-note err">{tr("ex.submitFailed")}: {submit.msg}. {tr("ex.checkSignedIn")}</p>}
+        {!editing && submit.state === "ok" && <p className="submit-note ok">{tr("ex.appliedLive")} <code>run.xml</code>.</p>}
         {!editing && problems.length > 0 && <ul className="problem-list">
           {problems.map((p, i) => <li key={i} onClick={() => onGoto(p.scope)}><code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}</li>)}
         </ul>}
         {!editing && warnings.length > 0 && <ul className="problem-list warn-list">
           {warnings.map((p, i) => <li key={i} onClick={() => onGoto(p.scope)}><code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}</li>)}
         </ul>}
-        {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">All filters and the chain validate. Edit the XML, copy it, or submit straight to the device.</p>}
+        {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">{tr("ex.allValidate")}</p>}
       </aside>
     </div>
   );

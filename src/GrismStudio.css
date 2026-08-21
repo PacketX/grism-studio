@@ -59,6 +59,8 @@
 .load-btn:hover:not(:disabled){border-color:var(--accent-2); color:var(--accent-2);}
 .load-btn:disabled{opacity:.5; cursor:default;}
 .theme-btn{background:transparent; border:1px solid var(--line-2); color:var(--txt-dim); border-radius:6px; padding:4px 9px; font-size:14px; line-height:1; margin-right:8px;}
+.lang-btn{background:transparent; border:1px solid var(--line-2); color:var(--txt-dim); border-radius:6px; padding:4px 10px; font-size:12px; font-weight:600; line-height:1; letter-spacing:.03em;}
+.lang-btn:hover{border-color:var(--accent); color:var(--accent);}
 .theme-btn:hover{border-color:var(--accent); background:rgba(127,127,127,.08);}
 .sync-state{display:flex; align-items:center; gap:7px; font-size:12px; font-weight:500; padding:0 10px; margin-right:4px;}
 .src-active{border-color:var(--accent) !important; color:var(--accent) !important;}
@@ -112,11 +114,11 @@
 .tmpl-wrap{flex:1; overflow:auto; padding:26px 24px;}
 .tmpl-lead{max-width:600px; margin:0 auto 24px; text-align:center; color:var(--txt-dim); font-size:15px; line-height:1.6;}
 .tmpl-grid{display:grid; gap:14px; max-width:860px; margin:0 auto; grid-template-columns:repeat(auto-fill,minmax(250px,1fr));}
-.tmpl-card{display:flex; flex-direction:column; align-items:flex-start; gap:8px; text-align:left;
+.tmpl-card{display:flex; flex-direction:column; align-items:flex-start; gap:8px; text-align:left; cursor:pointer; font-family:inherit; color:var(--txt);
   background:var(--panel); border:1px solid var(--line); border-radius:11px; padding:18px; transition:.14s;}
 .tmpl-card:hover{border-color:var(--accent); transform:translateY(-2px); box-shadow:0 8px 26px -14px rgba(94,234,212,.4);}
 .tmpl-tag{font-family:var(--mono); font-size:11px; color:var(--accent); border:1px solid var(--line-2); border-radius:99px; padding:2px 9px;}
-.tmpl-title{font-size:16px; font-weight:650;}
+.tmpl-title{font-size:16px; font-weight:650; color:var(--txt);}
 .tmpl-blurb{font-size:13px; color:var(--txt-dim); line-height:1.5; flex:1;}
 .tmpl-cta{font-size:13px; color:var(--accent-2); font-weight:600;}
 
