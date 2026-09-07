@@ -9,11 +9,67 @@ const I18N = {
     "tab.filters": "Filters", "tab.inputs": "Inputs", "tab.outputs": "Outputs",
     "tab.actions": "Actions", "tab.chain": "Chains", "tab.simulate": "Simulate",
     "tab.export": "Export", "tab.overview": "Overview",
+    "tab.status": "System status",
+    "tab.settings": "Settings",
+    "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System",
+    // system status page
+    "sys.title": "System status", "sys.needLogin": "Sign in to the device to view system status.",
+    "sys.refresh": "Refresh", "sys.refreshing": "refreshing…", "sys.auto": "Auto-refresh",
+    "sys.lastUpdated": "Updated", "sys.loadFailed": "Couldn't load system status",
+    "sys.host": "Host", "sys.uptime": "Uptime", "sys.datetime": "Device time", "sys.loadavg": "Load average",
+    "sys.cpu": "CPU usage", "sys.cpuOverall": "overall", "sys.core": "core",
+    "sys.memory": "Memory", "sys.used": "used", "sys.of": "of",
+    "sys.disk": "Disk", "sys.mount": "Mount", "sys.size": "Size", "sys.availShort": "avail",
+    "sys.processes": "Processes", "sys.proc.name": "Process", "sys.proc.pid": "PID",
+    "sys.proc.cpu": "CPU %", "sys.proc.rss": "RSS", "sys.proc.state": "State",
+    "sys.temp": "Temperature", "sys.fan": "Fan", "sys.noData": "no data",
+    "sys.power": "Power supply", "sys.fanSpeed": "Speed", "sys.fanRpm": "rpm",
+    "sys.fault": "Fault", "sys.ok": "OK", "sys.rear": "Rear", "sys.front": "Front",
+    "sys.present": "Present", "sys.powered": "Powered", "sys.absent": "Absent", "sys.psuOff": "Off",
+    // settings page
+    "set.title": "Device settings", "set.needLogin": "Sign in to the device to view and change settings.",
+    "set.load": "Reload from device", "set.loading": "loading…", "set.loadFailed": "Couldn't load config",
+    "set.mgmtIP": "Management interfaces", "set.rawXml": "Raw configuration",
+    "set.iface": "Interface", "set.enabled": "Enabled", "set.ip": "IP address", "set.name": "Name",
+    "set.eth": "NIC", "set.netmask": "Netmask", "set.gateway": "Gateway", "set.garp": "GARP interval",
+    "set.role": "role", "set.applyIP": "Apply IP changes", "set.applyXml": "Submit XML",
+    "set.submitting": "submitting…", "set.applied": "applied ✓", "set.retry": "retry",
+    "set.confirmTitle": "Change management IP?", "set.confirmBody": "Changing the management interface can disconnect you from the device. You may need to reconnect at the new address. Continue?",
+    "set.confirmXmlTitle": "Submit full configuration?", "set.confirmXmlBody": "This submits the entire configuration to the device. Incorrect values can disrupt device operation. Continue?",
+    "set.confirmApply": "Apply", "set.mgmtNote": "Only the changed <ifcfgs> section is submitted.",
+    "set.rawNote": "Edit the full device configuration and submit it as-is. Submitted via submit_config.",
+    "set.submitFailed": "Submit failed",
+    // traffic statistics page
+    "tf.title": "Interface traffic", "tf.needLogin": "Sign in to the device to view traffic statistics.",
+    "tf.refresh": "Refresh", "tf.refreshing": "refreshing…", "tf.loadFailed": "Couldn't load statistics",
+    "tf.mode": "Update", "tf.static": "Static", "tf.live": "Live", "tf.every": "every", "tf.seconds": "s",
+    "tf.updated": "Updated", "tf.iface": "Interface", "tf.link": "Link", "tf.up": "up", "tf.down": "down",
+    "tf.speed": "Speed", "tf.inRate": "In", "tf.outRate": "Out",
+    "tf.inPkts": "In packets", "tf.outPkts": "Out packets", "tf.inBytes": "In bytes", "tf.outBytes": "Out bytes",
+    "tf.errors": "Errors", "tf.drops": "Drops", "tf.pps": "pps",
+    "tf.desc": "Description",
+    "tf.flowTitle": "Session tables", "tf.flowV4": "IPv4 flow", "tf.flowV6": "IPv6 flow",
+    "tf.total": "Total", "tf.concurrent": "Concurrent",
+    "tf.vports": "Virtual ports", "tf.physPorts": "Physical ports", "tf.showPhys": "show physical ports",
+    "tf.d.inPps": "In pps", "tf.d.outPps": "Out pps", "tf.rateGroup": "Packet rate",
+    "tf.inDrops": "In drops", "tf.outDrops": "Out drops", "tf.detail": "detail",
+    "tf.detailTitle": "Ingress detail",
+    "tf.d.inMulticastPackets": "Multicast packets", "tf.d.inBroadcastPackets": "Broadcast packets",
+    "tf.d.inBytes": "In bytes", "tf.d.outBytes": "Out bytes",
+    "tf.d.inDropBytes": "Drop bytes", "tf.d.inDups": "Duplicate packets",
+    "tf.d.lenGroup": "Packet size distribution",
+    "tf.d.inLen64Packets": "≤64 B", "tf.d.inLen65-127Packets": "65–127 B", "tf.d.inLen128-255Packets": "128–255 B",
+    "tf.d.inLen256-511Packets": "256–511 B", "tf.d.inLen512-1023Packets": "512–1023 B",
+    "tf.d.inLen1024-1518Packets": "1024–1518 B", "tf.d.inLen1519-MaxPackets": "1519+ B",
+    "tf.d.errGroup": "Error counters",
+    "tf.d.inFcsAlignErrorPackets": "FCS/align errors", "tf.d.inRuntErrorPackets": "Runt errors",
+    "tf.d.inRuntCrcErrorPackets": "Runt CRC errors", "tf.d.inOversizeErrorPackets": "Oversize errors",
+    "tf.d.inOversizeCrcErrorPackets": "Oversize CRC errors",
     "nav.advanced": "advanced",
     "brand.tip": "Overview — what this configuration does",
     "btn.templates": "Templates", "btn.template_current": "Template",
-    "btn.loadRunning": "load running config", "btn.loading": "loading…",
-    "btn.loadFailed": "load failed — retry",
+    "btn.loadRunning": "load running", "btn.loading": "loading…",
+    "btn.loadFailed": "load failed",
     "btn.login": "login", "btn.logout": "logout",
     "sync.dirty": "unapplied changes", "sync.synced": "in sync",
     "sync.dirtyTip": "The current config differs from what's running on the device",
@@ -42,6 +98,10 @@ const I18N = {
     "ov.filters": "Filters", "ov.chains": "Chains",
     "ov.noCondition": "(no condition)",
     "ov.editFilters": "edit filters →", "ov.editChains": "edit chains →",
+    "ov.showAll": "show all", "ov.showLess": "show less", "ov.more": "more",
+    "ov.model": "Model", "ov.serial": "Serial number", "ov.version": "Version",
+    "ov.copyright": "Copyright © 2000-2026 PacketX Technology Co., LTD. All rights reserved",
+    "ov.website": "Website",
     // chain flow labels
     "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match",
     "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate",
@@ -178,11 +238,67 @@ const I18N = {
     "tab.filters": "篩選器", "tab.inputs": "輸入", "tab.outputs": "輸出",
     "tab.actions": "動作", "tab.chain": "鏈結", "tab.simulate": "模擬",
     "tab.export": "匯出", "tab.overview": "總覽",
+    "tab.status": "系統狀態",
+    "tab.settings": "設定",
+    "ws.overview": "總覽", "ws.pipeline": "封包處理", "ws.traffic": "流量統計", "ws.system": "系統",
+    // system status page
+    "sys.title": "系統狀態", "sys.needLogin": "登入裝置以檢視系統狀態。",
+    "sys.refresh": "重新整理", "sys.refreshing": "整理中…", "sys.auto": "自動重整",
+    "sys.lastUpdated": "更新於", "sys.loadFailed": "無法載入系統狀態",
+    "sys.host": "主機", "sys.uptime": "運行時間", "sys.datetime": "裝置時間", "sys.loadavg": "負載平均",
+    "sys.cpu": "CPU 使用率", "sys.cpuOverall": "整體", "sys.core": "核心",
+    "sys.memory": "記憶體", "sys.used": "已用", "sys.of": "／",
+    "sys.disk": "磁碟", "sys.mount": "掛載點", "sys.size": "容量", "sys.availShort": "可用",
+    "sys.processes": "行程", "sys.proc.name": "行程", "sys.proc.pid": "PID",
+    "sys.proc.cpu": "CPU %", "sys.proc.rss": "RSS", "sys.proc.state": "狀態",
+    "sys.temp": "溫度", "sys.fan": "風扇", "sys.noData": "無資料",
+    "sys.power": "電源供應器", "sys.fanSpeed": "轉速", "sys.fanRpm": "rpm",
+    "sys.fault": "故障", "sys.ok": "正常", "sys.rear": "後", "sys.front": "前",
+    "sys.present": "存在", "sys.powered": "供電中", "sys.absent": "未安裝", "sys.psuOff": "未供電",
+    // settings page
+    "set.title": "裝置設定", "set.needLogin": "登入裝置以檢視與變更設定。",
+    "set.load": "從裝置重新載入", "set.loading": "載入中…", "set.loadFailed": "無法載入設定",
+    "set.mgmtIP": "管理介面", "set.rawXml": "原始設定",
+    "set.iface": "介面", "set.enabled": "啟用", "set.ip": "IP 位址", "set.name": "名稱",
+    "set.eth": "網卡", "set.netmask": "子網路遮罩", "set.gateway": "閘道", "set.garp": "GARP 間隔",
+    "set.role": "role", "set.applyIP": "套用 IP 變更", "set.applyXml": "送出 XML",
+    "set.submitting": "送出中…", "set.applied": "已套用 ✓", "set.retry": "重試",
+    "set.confirmTitle": "變更管理 IP?", "set.confirmBody": "變更管理介面可能會使你與裝置斷線,你可能需要用新位址重新連線。要繼續嗎?",
+    "set.confirmXmlTitle": "送出完整設定?", "set.confirmXmlBody": "這會把整份設定送到裝置。錯誤的值可能中斷裝置運作。要繼續嗎?",
+    "set.confirmApply": "套用", "set.mgmtNote": "只會送出變更的 <ifcfgs> 區段。",
+    "set.rawNote": "編輯完整的裝置設定並原樣送出。透過 submit_config 送出。",
+    "set.submitFailed": "送出失敗",
+    // traffic statistics page
+    "tf.title": "介面流量", "tf.needLogin": "登入裝置以檢視流量統計。",
+    "tf.refresh": "重新整理", "tf.refreshing": "整理中…", "tf.loadFailed": "無法載入統計",
+    "tf.mode": "更新", "tf.static": "靜態", "tf.live": "動態", "tf.every": "每", "tf.seconds": "秒",
+    "tf.updated": "更新於", "tf.iface": "介面", "tf.link": "連線", "tf.up": "up", "tf.down": "down",
+    "tf.speed": "速率", "tf.inRate": "入", "tf.outRate": "出",
+    "tf.inPkts": "入封包", "tf.outPkts": "出封包", "tf.inBytes": "入位元組", "tf.outBytes": "出位元組",
+    "tf.errors": "錯誤", "tf.drops": "丟棄", "tf.pps": "pps",
+    "tf.desc": "描述",
+    "tf.flowTitle": "連線表", "tf.flowV4": "IPv4 flow", "tf.flowV6": "IPv6 flow",
+    "tf.total": "總數", "tf.concurrent": "在線數",
+    "tf.vports": "虛擬埠", "tf.physPorts": "實體埠", "tf.showPhys": "顯示實體埠",
+    "tf.d.inPps": "入 pps", "tf.d.outPps": "出 pps", "tf.rateGroup": "封包速率",
+    "tf.inDrops": "入丟棄", "tf.outDrops": "出丟棄", "tf.detail": "詳細",
+    "tf.detailTitle": "入方向詳細",
+    "tf.d.inMulticastPackets": "多播封包", "tf.d.inBroadcastPackets": "廣播封包",
+    "tf.d.inBytes": "入位元組", "tf.d.outBytes": "出位元組",
+    "tf.d.inDropBytes": "丟棄位元組", "tf.d.inDups": "重複封包",
+    "tf.d.lenGroup": "封包大小分布",
+    "tf.d.inLen64Packets": "≤64 B", "tf.d.inLen65-127Packets": "65–127 B", "tf.d.inLen128-255Packets": "128–255 B",
+    "tf.d.inLen256-511Packets": "256–511 B", "tf.d.inLen512-1023Packets": "512–1023 B",
+    "tf.d.inLen1024-1518Packets": "1024–1518 B", "tf.d.inLen1519-MaxPackets": "1519+ B",
+    "tf.d.errGroup": "錯誤計數",
+    "tf.d.inFcsAlignErrorPackets": "FCS/對齊錯誤", "tf.d.inRuntErrorPackets": "Runt 錯誤",
+    "tf.d.inRuntCrcErrorPackets": "Runt CRC 錯誤", "tf.d.inOversizeErrorPackets": "超長錯誤",
+    "tf.d.inOversizeCrcErrorPackets": "超長 CRC 錯誤",
     "nav.advanced": "進階",
     "brand.tip": "總覽 — 這份設定在做什麼",
     "btn.templates": "範本", "btn.template_current": "範本",
-    "btn.loadRunning": "載入執行中設定", "btn.loading": "載入中…",
-    "btn.loadFailed": "載入失敗 — 重試",
+    "btn.loadRunning": "載入設定", "btn.loading": "載入中…",
+    "btn.loadFailed": "載入失敗",
     "btn.login": "登入", "btn.logout": "登出",
     "sync.dirty": "尚未套用的變更", "sync.synced": "已同步",
     "sync.dirtyTip": "目前設定與裝置執行中的設定不同",
@@ -211,6 +327,10 @@ const I18N = {
     "ov.filters": "篩選器", "ov.chains": "鏈結",
     "ov.noCondition": "(無條件)",
     "ov.editFilters": "編輯篩選器 →", "ov.editChains": "編輯鏈結 →",
+    "ov.showAll": "顯示全部", "ov.showLess": "收合", "ov.more": "筆",
+    "ov.model": "型號", "ov.serial": "序號", "ov.version": "版本",
+    "ov.copyright": "版權所有 © 2000-2026 瑞擎數位股份有限公司",
+    "ov.website": "網站",
     // chain flow labels
     "flow.in": "流量進入", "flow.match": "符合", "flow.nomatch": "不符合",
     "flow.forward": "轉發", "flow.loadBalance": "負載平衡", "flow.duplicate": "複製",
@@ -437,6 +557,8 @@ const FIELDS = [
     { v: "gtp.data", label: "GTP data", kind: "exists" },
     { v: "gtp.imsi", label: "GTP IMSI", kind: "str" },
     { v: "gtp.teid", label: "GTP TEID", kind: "str" },
+    { v: "gtp.data.by.s1ap.CellIdentity", label: "S1AP Cell Identity", kind: "num" },
+    { v: "gtp.data.by.s1ap.SubscriberProfileIDforRFP", label: "S1AP Subscriber Profile ID for RFP", kind: "num" },
     { v: "ip.addr.related.gtp.imsi", label: "IP related to GTP IMSI", kind: "str" },
   ]},
   { g: "Tunnels", items: [
@@ -1543,63 +1665,68 @@ export default function GrismStudio() {
 
   const [tab, setTab] = useState("overview");
 
+  // --- two-level navigation: workspaces contain tabs ---
+  // Overview is a standalone page. Config holds the editing/build tabs. System
+  // holds device status pages. Future feature pages become new workspaces.
+  const WORKSPACES = [
+    { id: "overview", tabs: ["overview"] },
+    { id: "pipeline", tabs: ["filters", "inputs", "outputs", "actions", "chain", "simulate", "export"] },
+    { id: "traffic", tabs: ["trafficPorts"] },
+    { id: "system", tabs: ["status", "settings"] },
+  ];
+  const tabWorkspace = (tb) => (WORKSPACES.find((w) => w.tabs.includes(tb)) ?? WORKSPACES[0]).id;
+  const workspace = tabWorkspace(tab);
+  const gotoWorkspace = (wid) => { const w = WORKSPACES.find((x) => x.id === wid); if (w) setTab(w.tabs[0]); };
+
   // --- per-section undo/redo history (filters / inputs / outputs / actions / chains) ---
   // Each section keeps its own past/future stacks of JSON snapshots. We snapshot a
   // section whenever it changes (unless the change is itself an undo/redo). Undo/redo
-  // act on the section matching the current tab. A tick state forces button re-render.
-  const HIST_KEYS = ["filters", "inputs", "outputs", "actions", "chains"];
-  const TAB_TO_KEY = { filters: "filters", inputs: "inputs", outputs: "outputs", actions: "actions", chain: "chains" };
-  const histRef = useRef(Object.fromEntries(HIST_KEYS.map((k) => [k, { past: [], future: [], last: null, applying: false }])));
+  // act on the whole document (not per-tab). A tick state forces button re-render.
+  const hist = useRef({ past: [], future: [], last: null, applying: false });
   const [histTick, setHistTick] = useState(0);
-  const recordSection = (key, value) => {
-    const h = histRef.current[key];
-    const snap = JSON.stringify(value ?? []);
+  // snapshot the parts of the doc that the editors change (filters/inputs/outputs/
+  // actions/chains). One global stack, so undo/redo is consistent across all tabs.
+  const docSnapshot = (d) => JSON.stringify({ filters: d.filters, inputs: d.inputs, outputs: d.outputs, actions: d.actions, chains: d.chains });
+  useEffect(() => {
+    const h = hist.current;
+    const snap = docSnapshot(doc);
     if (h.last === null) { h.last = snap; return; }        // baseline
     if (snap === h.last) return;                            // no change
     if (h.applying) { h.applying = false; h.last = snap; return; } // from undo/redo
-    h.past.push(h.last); if (h.past.length > 100) h.past.shift();
+    h.past.push(h.last); if (h.past.length > 200) h.past.shift();
     h.future = [];
     h.last = snap;
     setHistTick((t) => t + 1);
+  }, [doc.filters, doc.inputs, doc.outputs, doc.actions, doc.chains]);
+  const applySnapshot = (snap) => {
+    const parts = JSON.parse(snap);
+    hist.current.applying = true;
+    setDoc((d) => ({ ...d, ...parts }));
+    setHistTick((t) => t + 1);
   };
-  useEffect(() => { recordSection("filters", doc.filters); }, [doc.filters]);
-  useEffect(() => { recordSection("inputs", doc.inputs); }, [doc.inputs]);
-  useEffect(() => { recordSection("outputs", doc.outputs); }, [doc.outputs]);
-  useEffect(() => { recordSection("actions", doc.actions); }, [doc.actions]);
-  useEffect(() => { recordSection("chains", doc.chains); }, [doc.chains]);
-  const undoSection = useCallback((key) => {
-    const h = histRef.current[key];
-    if (!h.past.length) return;
-    const prev = h.past.pop();
-    h.future.push(h.last);
-    h.applying = true;
-    setDoc((d) => ({ ...d, [key]: JSON.parse(prev) }));
-    setHistTick((t) => t + 1);
+  const doUndo = useCallback(() => {
+    const h = hist.current; if (!h.past.length) return;
+    const prev = h.past.pop(); h.future.push(h.last); applySnapshot(prev);
   }, []);
-  const redoSection = useCallback((key) => {
-    const h = histRef.current[key];
-    if (!h.future.length) return;
-    const nextSnap = h.future.pop();
-    h.past.push(h.last);
-    h.applying = true;
-    setDoc((d) => ({ ...d, [key]: JSON.parse(nextSnap) }));
-    setHistTick((t) => t + 1);
+  const doRedo = useCallback(() => {
+    const h = hist.current; if (!h.future.length) return;
+    const next = h.future.pop(); h.past.push(h.last); applySnapshot(next);
   }, []);
-  const histKey = TAB_TO_KEY[tab] || null;
-  // clear all undo/redo history — used after loading a template or running config,
+  // undo/redo buttons show on any pipeline editor tab.
+  const PIPELINE_EDIT_TABS = ["filters", "inputs", "outputs", "actions", "chain"];
+  const histKey = PIPELINE_EDIT_TABS.includes(tab) ? "doc" : null;
+  // clear undo/redo history — used after loading a template or running config,
   // so the load itself can't be undone back into the previous document.
   const resetHistory = useCallback(() => {
-    HIST_KEYS.forEach((k) => { histRef.current[k] = { past: [], future: [], last: null, applying: false }; });
+    hist.current = { past: [], future: [], last: null, applying: false };
     setHistTick((t) => t + 1);
   }, []);
   // pending "replace the whole document" action, awaiting user confirmation.
   // Loading a template or running config discards current edits, so we confirm first.
   const [pendingLoad, setPendingLoad] = useState(null); // { run: () => void, kind: "template" | "running" }
-  const canUndo = histKey ? histRef.current[histKey].past.length > 0 : false;
-  const canRedo = histKey ? histRef.current[histKey].future.length > 0 : false;
-  const doUndo = useCallback(() => { if (histKey) undoSection(histKey); }, [histKey, undoSection]);
-  const doRedo = useCallback(() => { if (histKey) redoSection(histKey); }, [histKey, redoSection]);
-  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo — on any section tab, and
+  const canUndo = hist.current.past.length > 0;
+  const canRedo = hist.current.future.length > 0;
+  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo — on any editor tab, and
   // not while typing in a field.
   useEffect(() => {
     if (!histKey) return;
@@ -1614,8 +1741,8 @@ export default function GrismStudio() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [histKey, doUndo, doRedo]);
-  const [theme, setTheme] = useState("dark"); // "light" | "dark" — default dark, not persisted
-  const [lang, setLang] = useState("en"); // "en" | "zh-TW" — UI language, not persisted
+  const [theme, setTheme] = useState("light"); // "light" | "dark" — default light, not persisted
+  const [lang, setLang] = useState("zh-TW"); // "en" | "zh-TW" — UI language, default Traditional Chinese, not persisted
   const t = useMemo(() => makeT(lang), [lang]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
@@ -1736,9 +1863,18 @@ export default function GrismStudio() {
       setLoad({ state: "error", msg: e.message || "load failed" });
     }
   }, [resetHistory]);
+  // whether the current document has unsaved edits worth confirming before we
+  // replace it: either the user made undoable changes, or it differs from the
+  // device baseline. When clean, loads apply directly without a confirm dialog.
+  const docModified = () => hist.current.past.length > 0 || (baseline !== null && runXml !== baseline);
+  // request a whole-document replace: confirm first only if there are edits to lose.
+  const requestLoad = useCallback((req) => {
+    if (!docModified()) req.run();
+    else setPendingLoad(req);
+  }, [baseline, runXml]);
   const loadRunning = useCallback(() => {
-    setPendingLoad({ kind: "running", run: doLoadRunning });
-  }, [doLoadRunning]);
+    requestLoad({ kind: "running", run: doLoadRunning });
+  }, [doLoadRunning, requestLoad]);
 
   // fetch the device's interface/port list; flatten every interface's ports to
   // their names. Falls back to the default list on any failure.
@@ -1862,6 +1998,14 @@ export default function GrismStudio() {
           <span className="brand-name">GRISM</span>
           <span className="brand-sub">studio</span>
         </button>
+        <nav className="ws-switch">
+          {WORKSPACES.filter((w) => w.id !== "overview").map((w) => (
+            <button key={w.id} className={"ws-btn" + (workspace === w.id ? " on" : "")} onClick={() => gotoWorkspace(w.id)}>
+              {t("ws." + w.id)}
+            </button>
+          ))}
+        </nav>
+        {workspace === "pipeline" && (
         <nav className="tabs">
           {[["filters","core"],["inputs","adv"],["outputs","adv"],["actions","adv"],["chain","core"],["simulate","core"],["export","core"]].map(([k, grp], i, arr) => {
             const prevGrp = i > 0 ? arr[i-1][1] : null;
@@ -1883,28 +2027,41 @@ export default function GrismStudio() {
             );
           })}
         </nav>
+        )}
+        {workspace === "system" && (
+        <nav className="tabs">
+          {["status", "settings"].map((k) => (
+            <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
+              {t("tab." + k)}
+            </button>
+          ))}
+        </nav>
+        )}
+        <div className="tabs-spacer" />
         {histKey && (
           <div className="topbar-undo" title={t("undo.tip")}>
             <button className="undo-btn" onClick={doUndo} disabled={!canUndo} title={t("undo.undo")}>↶</button>
             <button className="undo-btn" onClick={doRedo} disabled={!canRedo} title={t("undo.redo")}>↷</button>
           </div>
         )}
-        <button className={"tmpl-btn" + (docSource === "template" ? " src-active" : "")} onClick={() => setShowTemplates(true)}
-          title={docSource === "template" ? `${t("btn.template_current")}: ${templateName}` : t("tmpl.tip")}>
-          {docSource === "template" ? `${t("btn.template_current")} · ${templateName}` : t("btn.templates")}
-        </button>
-        {baseline !== null && (
-          <div className={"sync-state " + (dirty ? "dirty" : "synced")}
-            title={dirty ? t("sync.dirtyTip") : t("sync.syncedTip")}>
-            <span className="sync-dot" />{dirty ? t("sync.dirty") : t("sync.synced")}
-          </div>
-        )}
-        {login.who && (
-          <button className={"load-btn " + load.state + (docSource === "running" ? " src-active" : "")} onClick={loadRunning} disabled={load.state === "loading"}
-            title={t("btn.loadRunningTip")}>
-            {load.state === "loading" ? t("btn.loading") : load.state === "error" ? t("btn.loadFailed") : t("btn.loadRunning")}
+        {workspace === "pipeline" && <>
+          <button className={"tmpl-btn" + (docSource === "template" ? " src-active" : "")} onClick={() => setShowTemplates(true)}
+            title={docSource === "template" ? `${t("btn.template_current")}: ${templateName}` : t("tmpl.tip")}>
+            {docSource === "template" ? `${t("btn.template_current")} · ${templateName}` : t("btn.templates")}
           </button>
-        )}
+          {baseline !== null && (
+            <div className={"sync-state " + (dirty ? "dirty" : "synced")}
+              title={dirty ? t("sync.dirtyTip") : t("sync.syncedTip")}>
+              <span className="sync-dot" />{dirty ? t("sync.dirty") : t("sync.synced")}
+            </div>
+          )}
+          {login.who && (
+            <button className={"load-btn " + load.state + (docSource === "running" ? " src-active" : "")} onClick={loadRunning} disabled={load.state === "loading"}
+              title={t("btn.loadRunningTip")}>
+              {load.state === "loading" ? t("btn.loading") : load.state === "error" ? t("btn.loadFailed") : t("btn.loadRunning")}
+            </button>
+          )}
+        </>}
         {login.who
           ? <div className="user-box">
               <span className="user-name" title={t("user.signedIn")}>{login.who}</span>
@@ -1918,9 +2075,11 @@ export default function GrismStudio() {
           title={theme === "light" ? t("theme.toDark") : t("theme.toLight")}>
           {theme === "light" ? "🌙" : "☀️"}
         </button>
+        {workspace === "pipeline" && (
         <div className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}>
           <span className="dot" />{allProblems.length ? `${allProblems.length} ${allProblems.length>1?t("health.issues"):t("health.issue")}` : allWarnings.length ? `${allWarnings.length} ${allWarnings.length>1?t("health.warnings"):t("health.warning")}` : t("health.valid")}
         </div>
+        )}
       </header>
       {load.state === "error" && <div className="load-banner err">{t("banner.loadFailed")}: {load.msg}. {t("banner.checkSignedIn")}</div>}
       {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — {t("banner.someUnrecognised")}</div>}
@@ -1956,7 +2115,7 @@ export default function GrismStudio() {
               <span className="tmpl-modal-title">{t("tmpl.modalTitle")}</span>
               <button className="tmpl-close" onClick={() => setShowTemplates(false)}>✕</button>
             </div>
-            <TemplatesTab lang={lang} t={t} onApply={(tpl) => setPendingLoad({ kind: "template", run: () => { const nd = normalizeDoc(tpl.make()); setDoc(nd); setBaseline(null); setDocSource("template"); setTemplateName(tpl.title); setLoad({ state: "idle", msg: "" }); resetHistory(); setActiveFilter(1); setShowTemplates(false); } })} />
+            <TemplatesTab lang={lang} t={t} onApply={(tpl) => requestLoad({ kind: "template", run: () => { const nd = normalizeDoc(tpl.make()); setDoc(nd); setBaseline(null); setDocSource("template"); setTemplateName(tpl.title); setLoad({ state: "idle", msg: "" }); resetHistory(); setActiveFilter(1); setShowTemplates(false); } })} />
           </div>
         </div>
       )}
@@ -1986,8 +2145,17 @@ export default function GrismStudio() {
           </div>
         )}
         {tab === "overview" && (
-          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t}
+          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t} loggedIn={!!login.who}
             onGoto={(dest) => setTab(dest)} />
+        )}
+        {tab === "status" && (
+          <SystemStatusTab loggedIn={!!login.who} t={t} />
+        )}
+        {tab === "settings" && (
+          <SettingsTab loggedIn={!!login.who} t={t} />
+        )}
+        {tab === "trafficPorts" && (
+          <TrafficTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "filters" && (
           <FiltersTab
@@ -2051,9 +2219,44 @@ export default function GrismStudio() {
 /* ============================================================
    Overview tab — auto-generated explanation of the current doc
    ============================================================ */
-function OverviewTab({ doc, docSource, templateName, onGoto, lang, t }) {
+function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn }) {
   const tr = t || ((k) => k);
   const info = useMemo(() => describeDoc(doc, tr), [doc, lang]);
+  const [dev, setDev] = React.useState({ model: "", serial: "", version: "" });
+  const [filtersOpen, setFiltersOpen] = React.useState(false); // Overview: show all filters vs first few
+
+  // fetch device identity when signed in (model from config, serial + version from
+  // their own endpoints). Version drops the "-<hash>" suffix.
+  React.useEffect(() => {
+    if (!loggedIn) { setDev({ model: "", serial: "", version: "" }); return; }
+    let alive = true;
+    (async () => {
+      const out = { model: "", serial: "", version: "" };
+      try {
+        const r = await fetch("/grism/task/get_config", { credentials: "include" });
+        if (r.ok) {
+          // get_config returns JSON; model lives at args.model (fall back to top-level
+          // model, or an XML <model> tag if the endpoint ever returns XML).
+          const text = await r.text();
+          let model = "";
+          try { const j = JSON.parse(text); model = (j.args && j.args.model) || j.model || ""; }
+          catch { const m = text.match(/<model>([^<]*)<\/model>/i); if (m) model = m[1]; }
+          out.model = String(model || "").trim();
+        }
+      } catch {}
+      try {
+        const r = await fetch("/grism/get_sn", { credentials: "include" });
+        if (r.ok) out.serial = (await r.text()).trim();
+      } catch {}
+      try {
+        const r = await fetch("/grism/task/get_version", { credentials: "include" });
+        if (r.ok) out.version = (await r.text()).trim().split("-")[0];
+      } catch {}
+      if (alive) setDev(out);
+    })();
+    return () => { alive = false; };
+  }, [loggedIn]);
+
   const sourceLabel = docSource === "running" ? tr("ov.src.running")
     : docSource === "template" ? tr("ov.src.template").replace("{name}", templateName) : tr("ov.src.manual");
 
@@ -2075,6 +2278,13 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t }) {
 
   return (
     <div className="ov-wrap">
+      {loggedIn && (dev.model || dev.serial || dev.version) && (
+        <div className="ov-device">
+          {dev.model && <div className="ov-dev-item"><span className="ov-dev-k">{tr("ov.model")}</span><span className="ov-dev-v">GRISM-{dev.model}</span></div>}
+          {dev.version && <div className="ov-dev-item"><span className="ov-dev-k">{tr("ov.version")}</span><span className="ov-dev-v mono">{dev.version}</span></div>}
+          {dev.serial && <div className="ov-dev-item"><span className="ov-dev-k">{tr("ov.serial")}</span><span className="ov-dev-v mono">{dev.serial}</span></div>}
+        </div>
+      )}
       <div className="ov-head">
         <div>
           <h2 className="ov-title">{tr("ov.title")}</h2>
@@ -2099,7 +2309,7 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t }) {
         <section className="ov-section">
           <h3 className="ov-h3">{tr("ov.filters")} <span className="ov-count">{info.filters.length}</span></h3>
           <div className="ov-filters">
-            {info.filters.map((f) => (
+            {(filtersOpen ? info.filters : info.filters.slice(0, 4)).map((f) => (
               <div className="ov-filter" key={f.id}>
                 <code className="ov-fid">{f.id}</code>
                 <div className="ov-fbody">
@@ -2109,6 +2319,11 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t }) {
               </div>
             ))}
           </div>
+          {info.filters.length > 4 && (
+            <button className="ov-collapse" onClick={() => setFiltersOpen((v) => !v)}>
+              {filtersOpen ? `▴ ${tr("ov.showLess")}` : `▾ ${tr("ov.showAll")} (${info.filters.length - 4} ${tr("ov.more")})`}
+            </button>
+          )}
           <button className="ov-jump" onClick={() => onGoto("filters")}>{tr("ov.editFilters")}</button>
         </section>
       )}
@@ -2122,6 +2337,11 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t }) {
           <button className="ov-jump" onClick={() => onGoto("chain")}>{tr("ov.editChains")}</button>
         </section>
       )}
+
+      <footer className="ov-footer">
+        <p>{tr("ov.copyright")}</p>
+        <p>{tr("ov.website")}: <a href="http://www.packetx.biz/" target="_blank" rel="noreferrer">http://packetx.biz/</a></p>
+      </footer>
     </div>
   );
 }
@@ -2132,11 +2352,564 @@ function tmplText(tpl, field, lang) {
   return tpl[field] || "";
 }
 
-// Flow diagram for one chain. Renders the decision TREE: each filter test sits at
-// a column by its depth; its match and notmatch each point either to another test
-// (deeper column) or to an output port (shared right column). Every arrow is
-// labelled by its real side, so match/no-match are never confused — even when the
-// match side is the one that continues to the next test.
+/* ============================================================
+   System status tab — device health from get_system_status
+   ============================================================ */
+// Parse the uname string into a friendly host + kernel summary.
+function parseUname(uname) {
+  const parts = String(uname || "").split(/\s+/);
+  // "Linux GRISM-HL1 5.15.72-... #1 SMP ... aarch64"
+  return { host: parts[1] || "", kernel: parts[2] || "", arch: parts[parts.length - 1] || "" };
+}
+// Bytes (KB units from the API) → human string. mem_usage/disk are in KB.
+function fmtKB(kb) {
+  const n = Number(kb) || 0;
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " GB";
+  if (n >= 1024) return (n / 1024).toFixed(0) + " MB";
+  return n + " KB";
+}
+function pct(used, total) { const t = Number(total) || 0; return t ? Math.min(100, Math.round((Number(used) / t) * 100)) : 0; }
+// Format a duration in seconds as "1y 2d 3h 4m 5s", dropping leading zero units.
+function fmtUptime(sec) {
+  let s = Math.max(0, Math.floor(Number(sec) || 0));
+  const y = Math.floor(s / 31536000); s -= y * 31536000;
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); s -= m * 60;
+  const parts = [];
+  if (y) parts.push(y + "y");
+  if (d || y) parts.push(d + "d");
+  if (h || d || y) parts.push(h + "h");
+  if (m || h || d || y) parts.push(m + "m");
+  parts.push(s + "s");
+  return parts.join(" ");
+}
+// Summarise the raw status JSON into display-ready pieces (pure → testable).
+function summarizeStatus(s) {
+  if (!s) return null;
+  const u = parseUname(s.uname);
+  const cpu = Array.isArray(s.cpu_usage) ? s.cpu_usage.map((v) => Number(v) || 0) : [];
+  const cpuOverall = cpu.length ? cpu.reduce((a, b) => a + b, 0) / cpu.length : 0;
+  const mem = Array.isArray(s.mem_usage) ? s.mem_usage : [0, 0];
+  const memTotal = Number(mem[0]) || 0, memUsed = Number(mem[1]) || 0;
+  const disks = (Array.isArray(s.disk_usage) ? s.disk_usage : []).map((d) => ({
+    dev: d[0], mount: d[1], total: Number(d[2]) || 0, used: Number(d[3]) || 0, avail: Number(d[4]) || 0,
+    pctText: String(d[5] || "").replace(/%+/g, "%"), pct: pct(d[3], d[2]),
+  }));
+  const procs = (Array.isArray(s.process) ? s.process : []).map((p) => ({
+    name: p[0], pid: p[1], core: p[2], state: p[3], rss: p[4], cpu: Number(p[5]) || 0,
+  })).sort((a, b) => b.cpu - a.cpu);
+  const temps = s.Temperature && typeof s.Temperature === "object" ? Object.entries(s.Temperature) : [];
+  const fans = Array.isArray(s.Fan) ? s.Fan : [];
+  const psus = Array.isArray(s.Rpsu) ? s.Rpsu : [];
+  return { u, datetime: s.datetime, uptime: s.uptime_s != null ? fmtUptime(s.uptime_s) : s.uptime, loadavg: s.loadavg,
+    cpu, cpuOverall, memTotal, memUsed, memPct: pct(memUsed, memTotal), disks, procs, temps, fans, psus };
+}
+
+function SystemStatusTab({ loggedIn, t }) {
+  const tr = t || ((k) => k);
+  const [status, setStatus] = React.useState(null);
+  const [state, setState] = React.useState("idle"); // idle | loading | ok | error
+  const [errMsg, setErrMsg] = React.useState("");
+  const [updatedAt, setUpdatedAt] = React.useState(null);
+  const [auto, setAuto] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    setState((s) => (s === "ok" ? "ok" : "loading"));
+    try {
+      const res = await fetch("/grism/task/get_system_status", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const json = await res.json();
+      setStatus(json); setState("ok"); setUpdatedAt(new Date()); setErrMsg("");
+    } catch (e) { setState("error"); setErrMsg(String(e.message || e)); }
+  }, []);
+
+  // initial load when logged in
+  React.useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
+  // auto-refresh every 5s while enabled
+  React.useEffect(() => {
+    if (!auto || !loggedIn) return;
+    const id = setInterval(load, 5000);
+    return () => clearInterval(id);
+  }, [auto, loggedIn, load]);
+
+  const info = useMemo(() => summarizeStatus(status), [status]);
+
+  if (!loggedIn) return (
+    <div className="sys-wrap"><div className="sys-need-login">{tr("sys.needLogin")}</div></div>
+  );
+
+  return (
+    <div className="sys-wrap">
+      <div className="sys-head">
+        <h2 className="sys-title">{tr("sys.title")}</h2>
+        <div className="sys-controls">
+          {updatedAt && <span className="sys-updated">{tr("sys.lastUpdated")} {updatedAt.toLocaleTimeString()}</span>}
+          <label className="sys-auto"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> {tr("sys.auto")}</label>
+          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>{state === "loading" ? tr("sys.refreshing") : tr("sys.refresh")}</button>
+        </div>
+      </div>
+
+      {state === "error" && <div className="sys-err">{tr("sys.loadFailed")}: {errMsg}</div>}
+
+      {info && <>
+        <div className="sys-summary">
+          <div className="sys-kv"><span className="sys-k">{tr("sys.host")}</span><span className="sys-v">{info.u.host} <em>{info.u.kernel} · {info.u.arch}</em></span></div>
+          <div className="sys-kv"><span className="sys-k">{tr("sys.uptime")}</span><span className="sys-v">{info.uptime}</span></div>
+          <div className="sys-kv"><span className="sys-k">{tr("sys.datetime")}</span><span className="sys-v">{info.datetime}</span></div>
+          <div className="sys-kv"><span className="sys-k">{tr("sys.loadavg")}</span><span className="sys-v mono">{info.loadavg}</span></div>
+        </div>
+
+        <div className="sys-grid">
+          {/* CPU */}
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("sys.cpu")} <span className="sys-card-metric">{info.cpuOverall.toFixed(1)}%</span></h3>
+            <div className="sys-bar big"><div className="sys-bar-fill" style={{ width: info.cpuOverall + "%" }} /></div>
+            <div className="sys-cores">
+              {info.cpu.map((c, i) => (
+                <div className="sys-core" key={i}>
+                  <span className="sys-core-label">{tr("sys.core")} {i}</span>
+                  <div className="sys-bar"><div className="sys-bar-fill" style={{ width: c + "%" }} /></div>
+                  <span className="sys-core-val">{c.toFixed(0)}%</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Memory */}
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("sys.memory")} <span className="sys-card-metric">{info.memPct}%</span></h3>
+            <div className="sys-bar big"><div className="sys-bar-fill" style={{ width: info.memPct + "%" }} /></div>
+            <p className="sys-note">{tr("sys.used")} {fmtKB(info.memUsed)} {tr("sys.of")} {fmtKB(info.memTotal)}</p>
+          </section>
+
+          {/* Disk */}
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("sys.disk")}</h3>
+            <div className="sys-disks">
+              {info.disks.map((d, i) => (
+                <div className="sys-disk" key={i}>
+                  <div className="sys-disk-head"><code>{d.mount}</code><span className="sys-disk-dev">{d.dev}</span><span className="sys-disk-pct">{d.pctText}</span></div>
+                  <div className="sys-bar"><div className="sys-bar-fill" style={{ width: d.pct + "%" }} /></div>
+                  <p className="sys-note">{fmtKB(d.avail)} {tr("sys.availShort")} / {fmtKB(d.total)}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Temperature */}
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("sys.temp")}</h3>
+            {info.temps.length === 0
+              ? <p className="sys-note dim">{tr("sys.noData")}</p>
+              : <div className="sys-temp-list">
+                  {info.temps.map(([k, v]) => {
+                    const num = parseFloat(String(v));
+                    const hot = !isNaN(num) && num >= 70;
+                    return <div className="sys-temp-row" key={k}><span className="sys-temp-k">{k}</span><span className={"sys-temp-v" + (hot ? " tf-bad" : "")}>{String(v)}</span></div>;
+                  })}
+                </div>}
+          </section>
+
+          {/* Fans + Power */}
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("sys.fan")} · {tr("sys.power")}</h3>
+            {info.fans.length === 0 && info.psus.length === 0
+              ? <p className="sys-note dim">{tr("sys.noData")}</p>
+              : <>
+                  {info.fans.map((f, i) => {
+                    const fault = f.Fault === true;
+                    return (
+                      <div className="sys-hw-row" key={"f" + i}>
+                        <span className="sys-hw-name">{tr("sys.fan")} {f.Index ?? i + 1}{f.Rear != null && <em> · {f.Rear ? tr("sys.rear") : tr("sys.front")}</em>}</span>
+                        {f.Speed != null && <span className="sys-hw-val mono">{f.Speed} {tr("sys.fanRpm")}</span>}
+                        <span className={"sys-hw-badge " + (fault ? "bad" : "ok")}>{fault ? tr("sys.fault") : tr("sys.ok")}</span>
+                      </div>
+                    );
+                  })}
+                  {info.psus.map((p, i) => {
+                    const present = p.Present === true, powered = p.Powered === true;
+                    const state = !present ? "absent" : powered ? "ok" : "off";
+                    return (
+                      <div className="sys-hw-row" key={"p" + i}>
+                        <span className="sys-hw-name">{tr("sys.power")} {p.Index ?? i + 1}</span>
+                        <span className={"sys-hw-badge " + (state === "ok" ? "ok" : state === "absent" ? "dim" : "bad")}>
+                          {state === "ok" ? tr("sys.powered") : state === "absent" ? tr("sys.absent") : tr("sys.psuOff")}</span>
+                      </div>
+                    );
+                  })}
+                </>}
+          </section>
+        </div>
+
+        {/* Processes */}
+        <section className="sys-card wide">
+          <h3 className="sys-card-title">{tr("sys.processes")} <span className="sys-card-metric">{info.procs.length}</span></h3>
+          <table className="sys-proc-table">
+            <thead><tr>
+              <th>{tr("sys.proc.name")}</th><th>{tr("sys.proc.pid")}</th><th>{tr("sys.proc.cpu")}</th><th>{tr("sys.proc.rss")}</th><th>{tr("sys.proc.state")}</th>
+            </tr></thead>
+            <tbody>
+              {info.procs.map((p, i) => (
+                <tr key={i}>
+                  <td className="sys-proc-name">{p.name}</td>
+                  <td className="mono">{p.pid}</td>
+                  <td><div className="sys-proc-cpu"><div className="sys-bar mini"><div className="sys-bar-fill" style={{ width: Math.min(100, p.cpu) + "%" }} /></div><span>{p.cpu.toFixed(1)}</span></div></td>
+                  <td className="mono">{p.rss}</td>
+                  <td><span className={"sys-state s-" + p.state}>{p.state}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      </>}
+    </div>
+  );
+}
+
+/* ============================================================
+   Settings tab — device config (management IP + raw XML)
+   ============================================================ */
+const IFCFG_FIELDS = ["enable", "ip", "name", "eth", "netmask", "gateway", "garp_interval", "bypassfilter"];
+// Pull the management ifcfgs sections out of a parsed config document. Returns an
+// array of { role, fields{} } for each <ifcfgs><find role="management*">.
+function parseMgmtIfaces(xmlText) {
+  try {
+    const dom = new DOMParser().parseFromString(xmlText, "application/xml");
+    if (dom.querySelector("parsererror")) return [];
+    const finds = [...dom.querySelectorAll("ifcfgs > find")].filter((f) => /^management/.test(f.getAttribute("role") || ""));
+    return finds.map((f) => {
+      const fields = {};
+      IFCFG_FIELDS.forEach((k) => { const el = f.querySelector(":scope > " + k); fields[k] = el ? el.textContent.trim() : ""; });
+      return { role: f.getAttribute("role"), fields };
+    });
+  } catch { return []; }
+}
+// Build the minimal <configSet> holding just one management ifcfgs section.
+function buildMgmtConfigSet(iface) {
+  const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+  const lines = IFCFG_FIELDS.map((k) => `            <${k}>${esc(iface.fields[k])}</${k}>`).join("\n");
+  return `<configSet reboot="no">\n    <ifcfgs>\n        <find role="${esc(iface.role)}">\n${lines}\n        </find>\n    </ifcfgs>\n</configSet>`;
+}
+
+function SettingsTab({ loggedIn, t }) {
+  const tr = t || ((k) => k);
+  const [raw, setRaw] = React.useState("");
+  const [ifaces, setIfaces] = React.useState([]);
+  const [state, setState] = React.useState("idle");     // idle | loading | ok | error
+  const [errMsg, setErrMsg] = React.useState("");
+  const [submit, setSubmit] = React.useState({ state: "idle", msg: "" }); // idle|sending|ok|error
+  const [confirm, setConfirm] = React.useState(null);   // { kind:"ip", iface } | { kind:"xml" }
+  const [section, setSection] = React.useState("mgmt");  // mgmt | raw
+
+  const load = React.useCallback(async () => {
+    setState("loading");
+    try {
+      const res = await fetch("/grism/task/get_config_xml", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const text = await res.text();
+      let pretty = text; try { pretty = formatXml(text); } catch { /* keep raw if unbalanced */ }
+      setRaw(pretty); setIfaces(parseMgmtIfaces(text)); setState("ok"); setErrMsg("");
+    } catch (e) { setState("error"); setErrMsg(String(e.message || e)); }
+  }, []);
+  React.useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
+
+  const submitConfig = async (xmlText) => {
+    setSubmit({ state: "sending", msg: "" });
+    try {
+      const body = new URLSearchParams(); body.set("data", xmlText);
+      const res = await fetch("/grism/task/submit_config", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setSubmit({ state: "ok", msg: "" });
+      setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+
+  const setIfaceField = (idx, k, v) => setIfaces((arr) => arr.map((it, i) => i === idx ? { ...it, fields: { ...it.fields, [k]: v } } : it));
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("set.needLogin")}</div></div>;
+
+  return (
+    <div className="sys-wrap">
+      <div className="sys-head">
+        <h2 className="sys-title">{tr("set.title")}</h2>
+        <div className="sys-controls">
+          <div className="set-seg">
+            <button className={section === "mgmt" ? "on" : ""} onClick={() => setSection("mgmt")}>{tr("set.mgmtIP")}</button>
+            <button className={section === "raw" ? "on" : ""} onClick={() => setSection("raw")}>{tr("set.rawXml")}</button>
+          </div>
+          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>{state === "loading" ? tr("set.loading") : tr("set.load")}</button>
+        </div>
+      </div>
+
+      {state === "error" && <div className="sys-err">{tr("set.loadFailed")}: {errMsg}</div>}
+      {submit.state === "error" && <div className="sys-err">{tr("set.submitFailed")}: {submit.msg}</div>}
+      {submit.state === "ok" && <div className="set-ok-banner">{tr("set.applied")}</div>}
+
+      {section === "mgmt" && (
+        <div className="set-ifaces">
+          {ifaces.map((it, idx) => (
+            <section className="set-card" key={it.role}>
+              <div className="set-card-head">
+                <h3>{it.fields.name || it.role} <span className="set-role">{tr("set.role")}: {it.role}</span></h3>
+                <label className="set-enable"><input type="checkbox" checked={it.fields.enable === "True"}
+                  onChange={(e) => setIfaceField(idx, "enable", e.target.checked ? "True" : "False")} /> {tr("set.enabled")}</label>
+              </div>
+              <div className="set-grid">
+                {[["ip","set.ip",false],["netmask","set.netmask",false],["gateway","set.gateway",false],["name","set.name",true],["eth","set.eth",true]].map(([k, lbl, ro]) => (
+                  <label className="set-field" key={k}><span>{tr(lbl)}</span>
+                    {ro
+                      ? <input className="ro" value={it.fields[k]} readOnly tabIndex={-1} />
+                      : <input value={it.fields[k]} onChange={(e) => setIfaceField(idx, k, e.target.value)} />}
+                  </label>
+                ))}
+              </div>
+              <div className="set-actions">
+                <span className="set-note">{tr("set.mgmtNote")}</span>
+                <button className="sys-refresh" disabled={submit.state === "sending"}
+                  onClick={() => setConfirm({ kind: "ip", iface: it })}>
+                  {submit.state === "sending" ? tr("set.submitting") : tr("set.applyIP")}</button>
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {section === "raw" && (
+        <div className="set-raw">
+          <p className="set-note">{tr("set.rawNote")}</p>
+          <textarea className="set-raw-xml" value={raw} spellCheck={false} onChange={(e) => setRaw(e.target.value)} />
+          <div className="set-actions">
+            <button className="copy-btn" disabled={!raw.trim()}
+              onClick={() => { try { setRaw(formatXml(raw)); } catch { /* leave as-is if unbalanced */ } }}>
+              {tr("ex.format")}</button>
+            <button className="sys-refresh" disabled={submit.state === "sending" || !raw.trim()}
+              onClick={() => setConfirm({ kind: "xml" })}>
+              {submit.state === "sending" ? tr("set.submitting") : tr("set.applyXml")}</button>
+          </div>
+        </div>
+      )}
+
+      {confirm && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
+          <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : tr("set.confirmXmlTitle")}</div>
+            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : tr("set.confirmXmlBody")}</p>
+            <button className="opt drop" onClick={() => {
+              const xml = confirm.kind === "ip" ? buildMgmtConfigSet(confirm.iface) : raw;
+              setConfirm(null); submitConfig(xml);
+            }}>
+              <span className="opt-name">{tr("set.confirmApply")}</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setConfirm(null)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   Traffic tab — per-interface statistics from get_statistics_json
+   ============================================================ */
+// Compact large integers: 1234567 → "1.23M". Pure → testable.
+function fmtNum(n) {
+  const v = Number(n) || 0;
+  if (v >= 1e12) return (v / 1e12).toFixed(2) + "T";
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + "G";
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(2) + "K";
+  return String(v);
+}
+// Link speed (Mbps from the API) as an integer with unit: 100000 → "100 Gbps".
+function fmtSpeed(mbps) {
+  const v = Number(mbps) || 0;
+  if (v >= 1000 && v % 1000 === 0) return (v / 1000) + " Gbps";
+  if (v >= 1000) return Math.round(v / 1000) + " Gbps";
+  return Math.round(v) + " Mbps";
+}
+// Bytes → human string.
+function fmtBytes(n) {
+  let v = Number(n) || 0; const units = ["B", "KB", "MB", "GB", "TB", "PB"]; let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(2)) + " " + units[i];
+}
+
+function TrafficTab({ loggedIn, t }) {
+  const tr = t || ((k) => k);
+  const [rows, setRows] = React.useState([]);
+  const [sessions, setSessions] = React.useState(null); // { v4:{total,concurrent}, v6:{total,concurrent} }
+  const [descs, setDescs] = React.useState({});         // { portName: description }
+  const [state, setState] = React.useState("idle");   // idle | loading | ok | error
+  const [errMsg, setErrMsg] = React.useState("");
+  const [updatedAt, setUpdatedAt] = React.useState(null);
+  const [interval, setIntervalSec] = React.useState(5);
+  const [expanded, setExpanded] = React.useState(null); // idx of the open detail row
+  const [showPhys, setShowPhys] = React.useState(false); // when V-ports exist, also show physical
+
+  const load = React.useCallback(async () => {
+    setState((s) => (s === "ok" ? "ok" : "loading"));
+    try {
+      const res = await fetch("/grism/task/get_statistics_json", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const json = await res.json();
+      setRows(Array.isArray(json.statistics) ? json.statistics : []);
+      setSessions({
+        v4: { total: json.sessions?.total ?? 0, concurrent: json.sessions?.concurrent ?? 0 },
+        v6: { total: json.sessionsv6?.total ?? 0, concurrent: json.sessionsv6?.concurrent ?? 0 },
+      });
+      setState("ok"); setUpdatedAt(new Date()); setErrMsg("");
+    } catch (e) { setState("error"); setErrMsg(String(e.message || e)); }
+  }, []);
+
+  // port descriptions come from get_config (interfaces > ports), keyed by name.
+  const loadDescs = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_config", { credentials: "include" });
+      if (!res.ok) return;
+      const json = await res.json();
+      const map = {};
+      (json.interfaces || []).forEach((grp) => (grp.ports || []).forEach((p) => { if (p.name) map[p.name] = p.description || ""; }));
+      setDescs(map);
+    } catch {}
+  }, []);
+
+  React.useEffect(() => { if (loggedIn) { load(); loadDescs(); } }, [loggedIn, load, loadDescs]);
+  // always live: refresh on the chosen interval
+  React.useEffect(() => {
+    if (!loggedIn) return;
+    const ms = Math.max(1, Number(interval) || 5) * 1000;
+    const id = setInterval(load, ms);
+    return () => clearInterval(id);
+  }, [interval, loggedIn, load]);
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+
+  // detail field groups for the expanded ingress view
+  const DETAIL_SIMPLE = ["inMulticastPackets", "inBroadcastPackets", "inDups", "inDropBytes"];
+  const DETAIL_LEN = ["inLen64Packets", "inLen65-127Packets", "inLen128-255Packets", "inLen256-511Packets", "inLen512-1023Packets", "inLen1024-1518Packets", "inLen1519-MaxPackets"];
+  const DETAIL_ERR = ["inFcsAlignErrorPackets", "inRuntErrorPackets", "inRuntCrcErrorPackets", "inOversizeErrorPackets", "inOversizeCrcErrorPackets"];
+  const COLSPAN = 15;
+
+  // split V-ports (virtual, name starts with "V") from the rest. When any exist,
+  // show them on their own and let the user reveal the physical ports too.
+  const isV = (r) => /^V/i.test(r.name || "");
+  const vRows = rows.filter(isV);
+  const physRows = rows.filter((r) => !isV(r));
+  const hasV = vRows.length > 0;
+  const shownRows = !hasV ? rows : (showPhys ? [...vRows, ...physRows] : vRows);
+
+  return (
+    <div className="sys-wrap">
+      <div className="sys-head">
+        <h2 className="sys-title">{tr("tf.title")}</h2>
+        <div className="sys-controls">
+          {updatedAt && <span className="sys-updated">{tr("tf.updated")} {updatedAt.toLocaleTimeString()}</span>}
+          <label className="tf-interval">{tr("tf.every")}
+            <input type="number" min="1" value={interval} onChange={(e) => setIntervalSec(e.target.value)} />
+            {tr("tf.seconds")}</label>
+          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>{state === "loading" ? tr("tf.refreshing") : tr("tf.refresh")}</button>
+        </div>
+      </div>
+
+      {state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {errMsg}</div>}
+
+      {sessions && (
+        <div className="tf-flow-line">
+          <span className="tf-flow-seg"><b>{tr("tf.flowV4")}</b> {tr("tf.total")} <span className="mono">{fmtNum(sessions.v4.total)}</span> · {tr("tf.concurrent")} <span className="mono">{fmtNum(sessions.v4.concurrent)}</span></span>
+          <span className="tf-flow-div">|</span>
+          <span className="tf-flow-seg"><b>{tr("tf.flowV6")}</b> {tr("tf.total")} <span className="mono">{fmtNum(sessions.v6.total)}</span> · {tr("tf.concurrent")} <span className="mono">{fmtNum(sessions.v6.concurrent)}</span></span>
+        </div>
+      )}
+
+      {hasV && (
+        <div className="tf-portfilter">
+          <span className="tf-portfilter-label">{tr("tf.vports")} ({vRows.length})</span>
+          <label className="tf-portfilter-toggle"><input type="checkbox" checked={showPhys} onChange={(e) => setShowPhys(e.target.checked)} /> {tr("tf.showPhys")} ({physRows.length})</label>
+        </div>
+      )}
+
+      {shownRows.length > 0 && (
+        <div className="tf-table-wrap">
+          <table className="tf-table">
+            <thead><tr>
+              <th className="tf-expander" />
+              <th>{tr("tf.iface")}</th><th>{tr("tf.desc")}</th><th>{tr("tf.link")}</th><th>{tr("tf.speed")}</th>
+              <th className="tf-num">{tr("tf.inRate")}</th><th className="tf-num">{tr("tf.outRate")}</th>
+              <th className="tf-num">{tr("tf.inPkts")}</th><th className="tf-num">{tr("tf.outPkts")}</th>
+              <th className="tf-num">{tr("tf.inBytes")}</th><th className="tf-num">{tr("tf.outBytes")}</th>
+              <th className="tf-num">{tr("tf.inDrops")}</th><th className="tf-num">{tr("tf.outDrops")}</th>
+              <th className="tf-num">{tr("tf.errors")}</th>
+            </tr></thead>
+            <tbody>
+              {shownRows.map((r) => {
+                const up = r.linkStatus === 1;
+                const errs = (Number(r.inErrors) || 0);
+                const inDrops = (Number(r.inDrops) || 0), outDrops = (Number(r.outDrops) || 0);
+                const open = expanded === r.idx;
+                return (
+                  <React.Fragment key={r.idx}>
+                    <tr className={"tf-row" + (open ? " open" : "")} onClick={() => setExpanded(open ? null : r.idx)}>
+                      <td className="tf-expander"><span className="tf-caret">{open ? "▾" : "▸"}</span></td>
+                      <td className="tf-name">{r.name}</td>
+                      <td className="tf-desc">{descs[r.name] || "—"}</td>
+                      <td><span className={"tf-link " + (up ? "up" : "down")}>{up ? tr("tf.up") : tr("tf.down")}</span></td>
+                      <td className="mono">{r.speed ? fmtSpeed(r.speed) : "—"}</td>
+                      <td className="tf-num"><b>{(Number(r.inMbps) || 0).toFixed(2)}</b> <span className="tf-unit">Mbps</span></td>
+                      <td className="tf-num"><b>{(Number(r.outMbps) || 0).toFixed(2)}</b> <span className="tf-unit">Mbps</span></td>
+                      <td className="tf-num mono">{fmtNum(r.inPackets)}</td>
+                      <td className="tf-num mono">{fmtNum(r.outPackets)}</td>
+                      <td className="tf-num mono">{fmtBytes(r.inBytes)}</td>
+                      <td className="tf-num mono">{fmtBytes(r.outBytes)}</td>
+                      <td className={"tf-num mono" + (inDrops ? " tf-bad" : "")}>{fmtNum(inDrops)}</td>
+                      <td className={"tf-num mono" + (outDrops ? " tf-bad" : "")}>{fmtNum(outDrops)}</td>
+                      <td className={"tf-num mono" + (errs ? " tf-bad" : "")}>{fmtNum(errs)}</td>
+                    </tr>
+                    {open && (
+                      <tr className="tf-detail-row">
+                        <td colSpan={COLSPAN}>
+                          <div className="tf-detail">
+                            <div className="tf-detail-title">{tr("tf.detailTitle")} · <code>{r.name}</code></div>
+                            <div className="tf-detail-sub">{tr("tf.rateGroup")}</div>
+                            <div className="tf-detail-grid">
+                              <div className="tf-dcell"><span className="tf-dk">{tr("tf.d.inPps")}</span><span className="tf-dv mono">{fmtNum(r.inPps)} {tr("tf.pps")}</span></div>
+                              <div className="tf-dcell"><span className="tf-dk">{tr("tf.d.outPps")}</span><span className="tf-dv mono">{fmtNum(r.outPps)} {tr("tf.pps")}</span></div>
+                            </div>
+                            <div className="tf-detail-sub">{tr("tf.detailTitle")}</div>
+                            <div className="tf-detail-grid">
+                              {DETAIL_SIMPLE.map((k) => (
+                                <div className="tf-dcell" key={k}><span className="tf-dk">{tr("tf.d." + k)}</span><span className="tf-dv mono">{/Bytes$/.test(k) ? fmtBytes(r[k]) : fmtNum(r[k])}</span></div>
+                              ))}
+                            </div>
+                            <div className="tf-detail-sub">{tr("tf.d.lenGroup")}</div>
+                            <div className="tf-detail-grid">
+                              {DETAIL_LEN.map((k) => (
+                                <div className="tf-dcell" key={k}><span className="tf-dk">{tr("tf.d." + k)}</span><span className="tf-dv mono">{fmtNum(r[k])}</span></div>
+                              ))}
+                            </div>
+                            <div className="tf-detail-sub">{tr("tf.d.errGroup")}</div>
+                            <div className="tf-detail-grid">
+                              {DETAIL_ERR.map((k) => {
+                                const v = Number(r[k]) || 0;
+                                return <div className="tf-dcell" key={k}><span className="tf-dk">{tr("tf.d." + k)}</span><span className={"tf-dv mono" + (v ? " tf-bad" : "")}>{fmtNum(v)}</span></div>;
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChainFlow({ chain, filterNames = {}, t }) {
   const tr = t || ((k) => ({ "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match", "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "all", "flow.any": "any" }[k] || k));
   const flow = chain.flow || { root: null, terminal: null };
@@ -2241,7 +3014,7 @@ function ChainFlow({ chain, filterNames = {}, t }) {
         {destOrder.map((d) => (
           <g key={"d" + d}>
             <rect x={outX} y={destY[d] - 15} width={outW} height="30" rx="7" className={d === "drop" ? "ovf-out drop" : "ovf-out"} />
-            <text x={outX + outW / 2} y={destY[d] + 5} className="ovf-out-lbl">{d}</text>
+            <text x={outX + outW / 2} y={destY[d] + 5} className={"ovf-out-lbl" + (d === "drop" ? " drop" : "")}>{d}</text>
           </g>
         ))}
 
