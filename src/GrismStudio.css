@@ -97,7 +97,6 @@
 .login-field input:focus{outline:none; border-color:var(--accent-2);}
 .login-err{color:var(--notmatch); font-size:12px; margin:0 0 12px; padding:8px 11px; background:rgba(251,113,133,.08); border-left:2px solid var(--notmatch); border-radius:0 6px 6px 0;}
 .login-submit{margin-top:2px;}
-.login-note{font-size:11px; color:var(--txt-faint); line-height:1.5; margin:12px 0 0; text-align:center;}
 .user-box{display:flex; align-items:center; gap:8px; margin-right:4px;}
 .user-name{font-size:12px; color:var(--txt); font-weight:600; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .user-name::before{content:"●"; color:var(--match); font-size:9px; margin-right:6px; vertical-align:middle;}
@@ -479,7 +478,6 @@
 .ovf-lbl.flow{fill:var(--txt-dim);}
 .ovf-lbl.match{fill:var(--match);}
 .ovf-lbl.notmatch{fill:var(--notmatch);}
-.ovf-note{font-family:var(--mono); font-size:10px; fill:var(--txt-faint); font-style:italic;}
 .ovf-ar.flow{fill:var(--txt-dim);} .ovf-ar.match{fill:var(--match);} .ovf-ar.notmatch{fill:var(--notmatch);}
 .brand{background:transparent; border:none; cursor:pointer; padding:0; color:var(--txt); font-family:inherit;}
 .brand:hover .brand-name{color:var(--accent);}
@@ -583,7 +581,6 @@
 .inline-pop-ports select{flex:1;}
 .inline-pop-actions{display:flex; gap:8px; justify-content:flex-end;}
 .inline-add-btn:hover{border-color:var(--accent); color:var(--accent);}
-.inline-add-form{display:flex; align-items:center; gap:7px; background:var(--panel); border:1px solid var(--accent-2); border-radius:10px; padding:8px 12px; flex-wrap:wrap;}
 .inline-add-form input,.inline-add-form select{background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:6px; padding:6px 9px; font-size:12px; font-family:var(--mono);}
 .inline-name-in{width:120px;}
 .inline-add-ok{background:var(--accent); border:none; color:var(--accent-ink); font-weight:600; border-radius:6px; padding:6px 12px; font-size:12px;}
@@ -731,7 +728,6 @@
 .tf-link.up{color:var(--match); border-color:rgba(52,211,153,.4);}
 .tf-link.down{color:var(--txt-faint);}
 .tf-unit{font-size:10px; color:var(--txt-dim);}
-.tf-sub{font-size:10px; color:var(--txt-faint); font-family:var(--mono); margin-top:1px;}
 .tf-bad{color:var(--notmatch) !important; font-weight:700;}
 
 /* ---- traffic detail rows ---- */
@@ -785,3 +781,6 @@
 .tf-portfilter-label{font-size:12px; font-weight:600; color:var(--accent);}
 .tf-portfilter-toggle{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--txt-dim); cursor:pointer;}
 .tf-desc{color:var(--txt-dim); font-size:12px; max-width:140px; overflow:hidden; text-overflow:ellipsis;}
+
+/* ---- studio build version ---- */
+.ov-build{font-family:var(--mono); font-size:10.5px; color:var(--txt-faint); margin-top:8px !important;}
