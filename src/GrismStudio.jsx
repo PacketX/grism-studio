@@ -54,6 +54,7 @@ export default function GrismStudio() {
   ];
   const tabWorkspace = (tb) => (WORKSPACES.find((w) => w.tabs.includes(tb)) ?? WORKSPACES[0]).id;
   const workspace = tabWorkspace(tab);
+  useEffect(() => { if (workspace !== "pipeline") setHealthOpen(false); }, [workspace]);
   const gotoWorkspace = (wid) => { const w = WORKSPACES.find((x) => x.id === wid); if (w) setTab(w.tabs[0]); };
 
   // --- per-section undo/redo history (filters / inputs / outputs / actions / chains) ---
@@ -132,6 +133,20 @@ export default function GrismStudio() {
   }, []);
   // pending "replace the whole document" action, awaiting user confirmation.
   const [pendingLoad, setPendingLoad] = useState(null); // { run: () => void, kind: "template" | "running" }
+  const [healthOpen, setHealthOpen] = useState(false);   // topbar issue/warning popover
+  const [showAdv, setShowAdv] = useState(false);         // reveal empty advanced sections
+  // jump to the tab (and item) a problem belongs to. Shared by the Export list and
+  // the topbar health popover.
+  const gotoScope = useCallback((scope) => {
+    if (scope === "chain" || scope.startsWith("chain:")) {
+      if (scope.startsWith("chain:")) setActiveChain(scope.slice(6));
+      setTab("chain");
+    }
+    else if (scope[0] === "I") { setActiveInput(+scope.slice(1)); setTab("inputs"); }
+    else if (scope[0] === "O") { setActiveOutput(+scope.slice(1)); setTab("outputs"); }
+    else if (scope[0] === "A") { setActiveAction(+scope.slice(1)); setTab("actions"); }
+    else { setActiveFilter(+scope.slice(1)); setTab("filters"); }
+  }, []);
   const canUndo = histLens.u > 0;
   const canRedo = histLens.r > 0;
   // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo — on any editor tab, and
@@ -202,16 +217,6 @@ export default function GrismStudio() {
   const dirty = baseline !== null && runXml !== baseline;
 
   // in-port conflict: two chains sharing the same first ingress port
-  const inPortConflicts = useMemo(() => {
-    const seen = new Map();
-    (doc.chains ?? []).forEach((c) => {
-      const first = (c.ports || "").split(",")[0].trim();
-      if (!first) return;
-      seen.set(first, (seen.get(first) || 0) + 1);
-    });
-    return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([p]) => p));
-  }, [doc.chains]);
-
   // aggregate problems across the doc
   const allProblems = useMemo(() => {
     const fp = doc.filters.flatMap((f) => filterProblems(f.root, []).map((p) => ({ ...p, scope: `F${f.id}` })));
@@ -228,7 +233,7 @@ export default function GrismStudio() {
 
   // non-blocking warnings — surfaced to the user but they don't prevent submit/copy
   const allWarnings = useMemo(() => {
-    const w = [...inPortConflicts].map((p) => ({ id: "conflict-" + p, scope: "chain", msg: `two chains both ingress on ${p}`, label: "in port" }));
+    const w = [];
     // chain references to filter (F) / output (O) ids that aren't defined in this config
     (doc.chains ?? []).forEach((c) => {
       const missingF = new Set(), missingO = new Set();
@@ -255,7 +260,7 @@ export default function GrismStudio() {
       missingO.forEach((id) => w.push({ id: `missingO-${c.cid}-${id}`, scope: `chain:${c.cid}`, label: id, msg: `output ${id} isn't defined in this config` }));
     });
     return w;
-  }, [inPortConflicts, doc.chains, definedIds, outputIds, deviceFilterIds]);
+  }, [doc.chains, definedIds, outputIds, deviceFilterIds]);
 
   // --- load the device's running config ---
   const [load, setLoad] = useState({ state: "idle", msg: "" }); // idle | loading | ok | error
@@ -424,25 +429,58 @@ export default function GrismStudio() {
         </nav>
         {workspace === "pipeline" && (
         <nav className="tabs">
-          {[["filters","core"],["inputs","adv"],["outputs","adv"],["actions","adv"],["chain","core"],["simulate","core"],["export","core"]].map(([k, grp], i, arr) => {
-            const prevGrp = i > 0 ? arr[i-1][1] : null;
-            const showDivider = grp === "adv" && prevGrp !== "adv";     // before the advanced block
-            const showDividerAfter = grp === "adv" && (i === arr.length-1 || arr[i+1][1] !== "adv"); // after it
-            return (
-              <React.Fragment key={k}>
-                {showDivider && <span className="tab-sep" title="Advanced — most setups don't need these"><span className="tab-sep-label">{t("nav.advanced")}</span></span>}
-                <button className={"tab" + (tab === k ? " on" : "") + (grp === "adv" ? " adv" : "")} onClick={() => setTab(k)}>
-                  {t("tab." + k)}
-                  {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
-                  {k === "inputs" && (doc.inputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.inputs.length}</span>}
-                  {k === "outputs" && (doc.outputs?.length ?? 0) > 0 && <span className="tab-badge">{doc.outputs.length}</span>}
-                  {k === "actions" && (doc.actions?.length ?? 0) > 0 && <span className="tab-badge">{doc.actions.length}</span>}
-                  {k === "chain" && (doc.chains?.length ?? 0) > 0 && <span className="tab-badge">{doc.chains.length}</span>}
-                </button>
-                {showDividerAfter && <span className="tab-sep" />}
-              </React.Fragment>
+          {(() => {
+            // Advanced sections (inputs / outputs / actions) stay out of the way until
+            // they hold something. The toggle sits exactly where the advanced group
+            // lives, so expanding/collapsing happens in place rather than at the end.
+            const counts = { inputs: doc.inputs?.length ?? 0, outputs: doc.outputs?.length ?? 0, actions: doc.actions?.length ?? 0 };
+            const advKeys = ["inputs", "outputs", "actions"];
+            const used = advKeys.filter((k) => counts[k] > 0 || tab === k);   // always-visible ones
+            const expanded = showAdv || used.length === advKeys.length;        // nothing left to reveal
+            const shown = expanded ? advKeys : used;
+            const hiddenCount = advKeys.length - shown.length;
+
+            const tabBtn = (k) => (
+              <button key={k} className={"tab" + (tab === k ? " on" : "") + (advKeys.includes(k) ? " adv" : "")} onClick={() => setTab(k)}>
+                {t("tab." + k)}
+                {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
+                {counts[k] > 0 && <span className="tab-badge">{counts[k]}</span>}
+                {k === "chain" && (doc.chains?.length ?? 0) > 0 && <span className="tab-badge">{doc.chains.length}</span>}
+              </button>
             );
-          })}
+
+            return (<>
+              {tabBtn("filters")}
+
+              {/* Advanced group, boxed so it reads as one optional area rather than
+                  more top-level tabs. The caret opens/closes it in place; the label
+                  sits above it as the group's heading. */}
+              {(shown.length > 0 || hiddenCount > 0) && (
+                <span className="tab-group">
+                  {(() => {
+                    // label + caret are one control: clicking either toggles the group
+                    const canExpand = hiddenCount > 0;
+                    const canCollapse = showAdv && used.length < advKeys.length;
+                    const toggles = canExpand || canCollapse;
+                    if (!toggles) return <span className="tab-group-label">{t("nav.advanced")}</span>;
+                    const tip = canExpand ? t("nav.showAdvancedTip") : t("nav.hideAdvancedTip");
+                    return (
+                      <button className="tab-group-toggle" onClick={() => setShowAdv(canExpand)}
+                        title={tip} aria-label={tip} aria-expanded={!canExpand}>
+                        <span className="tab-group-label">{t("nav.advanced")}</span>
+                        <span className="tab-group-caret" aria-hidden="true">{canExpand ? "›" : "‹"}</span>
+                      </button>
+                    );
+                  })()}
+                  {shown.map(tabBtn)}
+                </span>
+              )}
+
+              {tabBtn("chain")}
+              {tabBtn("simulate")}
+              {tabBtn("export")}
+            </>);
+          })()}
         </nav>
         )}
         {workspace === "system" && (
@@ -493,8 +531,41 @@ export default function GrismStudio() {
           {theme === "light" ? "🌙" : "☀️"}
         </button>
         {workspace === "pipeline" && (
-        <div className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}>
-          <span className="dot" />{allProblems.length ? `${allProblems.length} ${allProblems.length>1?t("health.issues"):t("health.issue")}` : allWarnings.length ? `${allWarnings.length} ${allWarnings.length>1?t("health.warnings"):t("health.warning")}` : t("health.valid")}
+        <div className="health-wrap">
+          <button className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}
+            onClick={() => setHealthOpen((v) => !v)} title={t("health.tip")} aria-expanded={healthOpen}>
+            <span className="dot" />{allProblems.length ? `${allProblems.length} ${allProblems.length>1?t("health.issues"):t("health.issue")}` : allWarnings.length ? `${allWarnings.length} ${allWarnings.length>1?t("health.warnings"):t("health.warning")}` : t("health.valid")}
+          </button>
+          {healthOpen && (
+            <>
+              <div className="health-scrim" onClick={() => setHealthOpen(false)} />
+              <div className="health-pop">
+                <div className="health-pop-head">
+                  <span>{allProblems.length || allWarnings.length ? t("health.detailsTitle") : t("health.noneTitle")}</span>
+                  <button className="health-pop-close" onClick={() => setHealthOpen(false)} aria-label={t("health.close")}>✕</button>
+                </div>
+                {allProblems.length === 0 && allWarnings.length === 0 && <p className="health-pop-none">{t("health.noneBody")}</p>}
+                {allProblems.length > 0 && (
+                  <ul className="problem-list">
+                    {allProblems.map((p, i) => (
+                      <li key={"p" + i} onClick={() => { gotoScope(p.scope); setHealthOpen(false); }}>
+                        <code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {allWarnings.length > 0 && (
+                  <ul className="problem-list warn-list">
+                    {allWarnings.map((p, i) => (
+                      <li key={"w" + i} onClick={() => { gotoScope(p.scope); setHealthOpen(false); }}>
+                        <code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
         </div>
         )}
       </header>
@@ -594,7 +665,7 @@ export default function GrismStudio() {
           <ChainTab doc={doc} definedIds={definedIds} outputIds={outputIds}
             setChainTreeFor={setChainTreeFor} setDoc={setDoc}
             activeChain={activeChain} setActiveChain={setActiveChain}
-            inPortConflicts={inPortConflicts} t={t}
+            t={t}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null} />
         )}
         {tab === "simulate" && (
@@ -618,16 +689,7 @@ export default function GrismStudio() {
               setActiveChain(parsed.chains[0]?.cid ?? null);
               return warnings;
             }}
-            onGoto={(scope) => {
-            if (scope === "chain" || scope.startsWith("chain:")) {
-              if (scope.startsWith("chain:")) setActiveChain(scope.slice(6));
-              setTab("chain");
-            }
-            else if (scope[0] === "I") { setActiveInput(+scope.slice(1)); setTab("inputs"); }
-            else if (scope[0] === "O") { setActiveOutput(+scope.slice(1)); setTab("outputs"); }
-            else if (scope[0] === "A") { setActiveAction(+scope.slice(1)); setTab("actions"); }
-            else { setActiveFilter(+scope.slice(1)); setTab("filters"); }
-          }} />
+            onGoto={gotoScope} />
         )}
       </div>
     </div>
@@ -640,40 +702,7 @@ export default function GrismStudio() {
 function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn }) {
   const tr = t || ((k) => k);
   const info = useMemo(() => describeDoc(doc, tr), [doc, lang]);
-  const [dev, setDev] = React.useState({ model: "", serial: "", version: "" });
   const [filtersOpen, setFiltersOpen] = React.useState(false); // Overview: show all filters vs first few
-
-  // fetch device identity when signed in (model from config, serial + version from
-  // their own endpoints). Version drops the "-<hash>" suffix.
-  React.useEffect(() => {
-    if (!loggedIn) { setDev({ model: "", serial: "", version: "" }); return; }
-    let alive = true;
-    (async () => {
-      const out = { model: "", serial: "", version: "" };
-      try {
-        const r = await fetch("/grism/task/get_config", { credentials: "include" });
-        if (r.ok) {
-          // get_config returns JSON; model lives at args.model (fall back to top-level
-          // model, or an XML <model> tag if the endpoint ever returns XML).
-          const text = await r.text();
-          let model = "";
-          try { const j = JSON.parse(text); model = (j.args && j.args.model) || j.model || ""; }
-          catch { const m = text.match(/<model>([^<]*)<\/model>/i); if (m) model = m[1]; }
-          out.model = String(model || "").trim();
-        }
-      } catch (e) { warnFetch("device model", e); }
-      try {
-        const r = await fetch("/grism/get_sn", { credentials: "include" });
-        if (r.ok) out.serial = (await r.text()).trim();
-      } catch (e) { warnFetch("device serial number", e); }
-      try {
-        const r = await fetch("/grism/task/get_version", { credentials: "include" });
-        if (r.ok) out.version = (await r.text()).trim().split("-")[0];
-      } catch (e) { warnFetch("device version", e); }
-      if (alive) setDev(out);
-    })();
-    return () => { alive = false; };
-  }, [loggedIn]);
 
   const sourceLabel = docSource === "running" ? tr("ov.src.running")
     : docSource === "template" ? tr("ov.src.template").replace("{name}", templateName) : tr("ov.src.manual");
@@ -696,15 +725,27 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn }
 
   return (
     <div className="ov-wrap">
-      {loggedIn && (dev.model || dev.serial || dev.version) && (
-        <div className="ov-device">
-          {dev.model && <div className="ov-dev-item"><span className="ov-dev-k">{tr("ov.model")}</span><span className="ov-dev-v">GRISM-{dev.model}</span></div>}
-          {dev.version && <div className="ov-dev-item"><span className="ov-dev-k">{tr("ov.version")}</span><span className="ov-dev-v mono">{dev.version}</span></div>}
-          {dev.serial && <div className="ov-dev-item"><span className="ov-dev-k">{tr("ov.serial")}</span><span className="ov-dev-v mono">{dev.serial}</span></div>}
+      {/* what the product does, before we get into the loaded document */}
+      <section className="ov-intro">
+        <h2 className="ov-intro-title">{tr("ov.welcomeTitle")}</h2>
+        <p className="ov-intro-body">{tr("ov.welcomeBody")}</p>
+        <div className="ov-caps">
+          {[["ov.capFilters", "ov.capFiltersBody", "filters"],
+            ["ov.capSimulate", "ov.capSimulateBody", "simulate"],
+            ["ov.capTraffic", "ov.capTrafficBody", null],
+            ["ov.capSystem", "ov.capSystemBody", null]].map(([tk, bk, dest]) => (
+            <div className={"ov-cap" + (dest ? " linked" : "")} key={tk}
+              onClick={dest ? () => onGoto(dest) : undefined}>
+              <span className="ov-cap-title">{tr(tk)}</span>
+              <span className="ov-cap-body">{tr(bk)}</span>
+            </div>
+          ))}
         </div>
-      )}
+      </section>
+
       <div className="ov-head">
         <div>
+          <h3 className="ov-section-label">{tr("ov.currentTitle")}</h3>
           <h2 className="ov-title">{tr("ov.title")}</h2>
           <p className="ov-sub">{tr("ov.loadedFrom")} {sourceLabel}. <span className="ov-summary">{summary}</span></p>
         </div>
@@ -773,6 +814,39 @@ function SystemStatusTab({ loggedIn, t }) {
   const [errMsg, setErrMsg] = React.useState("");
   const [updatedAt, setUpdatedAt] = React.useState(null);
   const [auto, setAuto] = React.useState(false);
+  // device identity (model / version / serial / machine id) — fetched once per login
+  const [dev, setDev] = React.useState({ model: "", serial: "", version: "", machineId: "" });
+  React.useEffect(() => {
+    if (!loggedIn) { setDev({ model: "", serial: "", version: "", machineId: "" }); return; }
+    let alive = true;
+    (async () => {
+      const out = { model: "", serial: "", version: "", machineId: "" };
+      try {
+        const r = await fetch("/grism/task/get_config", { credentials: "include" });
+        if (r.ok) {
+          const text = await r.text();
+          let model = "";
+          try { const cfg = JSON.parse(text); model = (cfg.args && cfg.args.model) || cfg.model || ""; }
+          catch { const m = text.match(/<model>([^<]*)<\/model>/i); if (m) model = m[1]; }
+          out.model = String(model || "").trim();
+        }
+      } catch (e) { warnFetch("device model", e); }
+      try {
+        const r = await fetch("/grism/get_sn", { credentials: "include" });
+        if (r.ok) out.serial = (await r.text()).trim();
+      } catch (e) { warnFetch("device serial number", e); }
+      try {
+        const r = await fetch("/grism/task/get_version", { credentials: "include" });
+        if (r.ok) out.version = (await r.text()).trim().split("-")[0];
+      } catch (e) { warnFetch("device version", e); }
+      try {
+        const r = await fetch("/grism/get_machine_id", { credentials: "include" });
+        if (r.ok) out.machineId = (await r.text()).trim();
+      } catch (e) { warnFetch("machine id", e); }
+      if (alive) setDev(out);
+    })();
+    return () => { alive = false; };
+  }, [loggedIn]);
 
   const load = React.useCallback(async () => {
     setState((s) => (s === "ok" ? "ok" : "loading"));
@@ -811,6 +885,15 @@ function SystemStatusTab({ loggedIn, t }) {
       </div>
 
       {state === "error" && <div className="sys-err">{tr("sys.loadFailed")}: {errMsg}</div>}
+
+      {(dev.model || dev.version || dev.serial || dev.machineId) && (
+        <div className="sys-summary sys-identity">
+          {dev.model && <div className="sys-kv"><span className="sys-k">{tr("sys.model")}</span><span className="sys-v">GRISM-{dev.model}</span></div>}
+          {dev.version && <div className="sys-kv"><span className="sys-k">{tr("sys.version")}</span><span className="sys-v mono">{dev.version}</span></div>}
+          {dev.serial && <div className="sys-kv"><span className="sys-k">{tr("sys.serial")}</span><span className="sys-v mono">{dev.serial}</span></div>}
+          {dev.machineId && <div className="sys-kv"><span className="sys-k">{tr("sys.machineId")}</span><span className="sys-v mono sys-mid">{dev.machineId}</span></div>}
+        </div>
+      )}
 
       {info && <>
         <div className="sys-summary">
@@ -907,13 +990,14 @@ function SystemStatusTab({ loggedIn, t }) {
           <h3 className="sys-card-title">{tr("sys.processes")} <span className="sys-card-metric">{info.procs.length}</span></h3>
           <table className="sys-proc-table">
             <thead><tr>
-              <th>{tr("sys.proc.name")}</th><th>{tr("sys.proc.pid")}</th><th>{tr("sys.proc.cpu")}</th><th>{tr("sys.proc.rss")}</th><th>{tr("sys.proc.state")}</th>
+              <th>{tr("sys.proc.name")}</th><th>{tr("sys.proc.pid")}</th><th>{tr("sys.proc.core")}</th><th>{tr("sys.proc.cpu")}</th><th>{tr("sys.proc.rss")}</th><th>{tr("sys.proc.state")}</th>
             </tr></thead>
             <tbody>
               {info.procs.map((p, i) => (
                 <tr key={i}>
                   <td className="sys-proc-name">{p.name}</td>
                   <td className="mono">{p.pid}</td>
+                  <td className="mono">{p.core}</td>
                   <td><div className="sys-proc-cpu"><div className="sys-bar mini"><div className="sys-bar-fill" style={{ width: Math.min(100, p.cpu) + "%" }} /></div><span>{p.cpu.toFixed(1)}</span></div></td>
                   <td className="mono">{p.rss}</td>
                   <td><span className={"sys-state s-" + p.state}>{p.state}</span></td>
@@ -1183,7 +1267,8 @@ function TrafficTab({ loggedIn, t }) {
                       <td className="tf-num mono">{fmtBytes(r.inBytes)}</td>
                       <td className="tf-num mono">{fmtBytes(r.outBytes)}</td>
                       <td className={"tf-num mono" + (inDrops ? " tf-bad" : "")}>{fmtNum(inDrops)}</td>
-                      <td className={"tf-num mono" + (outDrops ? " tf-bad" : "")}>{fmtNum(outDrops)}</td>
+                      {/* out drops are normal on many setups — keep them in the default text colour */}
+                      <td className="tf-num mono">{fmtNum(outDrops)}</td>
                       <td className={"tf-num mono" + (errs ? " tf-bad" : "")}>{fmtNum(errs)}</td>
                     </tr>
                     {open && (
@@ -1537,6 +1622,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
           <button className="del" onClick={() => delFilter(f.id)}>{tr("common.delete")}</button>
         </div>
 
+
         <div className="oattr-bar">
           <CollapseSection label="Advanced attributes" active={Object.values(f.fattrs ?? {}).some((v) => v && v !== "no")}>
             <div className="oattr-grid">
@@ -1587,6 +1673,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
             onChangeOp={onChangeOp} onChangeFind={onChangeFind}
             onAddCond={onAddCond} onAddGroup={onAddGroup} onAddNot={onAddNot} onRemove={onRemove} />
         </div>
+
 
         {isEmptyFilter(f) && (
           <div className="empty-note">
@@ -2265,7 +2352,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, emptyNote }) 
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, inPortConflicts, portOptions, portsFromDevice, t }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, t }) {
   const tr = t || ((k) => k);
   const [selId, setSelId] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -2477,7 +2564,6 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
         <div className="chain-list-head">chains</div>
         {chains.map((c) => {
           const inP = chainInFirst(c);
-          const conflict = inPortConflicts.has(inP);
           return (
             <div key={c.cid}
               className={"chain-item sortable" + (c.cid === cid ? " on" : "") + (c.cid === chainOverCid && chainDragCid !== c.cid ? " drop-target" : "") + (c.cid === chainDragCid ? " dragging" : "")}
@@ -2489,7 +2575,6 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               onClick={() => { setActiveChain(c.cid); setSelId(null); }}>
               <span className="drag-handle" title={tr("ch.dragReorder")} aria-hidden="true">⠿</span>
               <span className="chain-flow"><b>{inP || "?"}</b> <span className="arr">→</span> <span className="dest">{chainDest(c)}</span></span>
-              {conflict && <span className="chain-conflict" title={tr("ch.portConflict")}>⚠</span>}
             </div>
           );
         })}
@@ -2545,9 +2630,6 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
           <div className="insp-head">{sel ? (isUnset(sel) ? tr("ch.unspecified") : sel.t === "in" ? tr("ch.ingress") : sel.t === "branch" ? tr("ch.filter") : isDrop(sel) ? tr("ch.discard") : tr("ch.output")) : tr("ch.inspector")}</div>
           {!sel && <p className="insp-empty">{tr("ch.selectNode")}</p>}
           {sel && sel.t === "in" && <>
-            {inPortConflicts.has(chainInFirst(chain)) && (
-              <p className="conflict-note">Another chain also ingresses on <code>{chainInFirst(chain)}</code>. Each ingress port should feed one chain — the device may only apply one.</p>
-            )}
             <label className="fld2"><span>{tr("ch.ingressPorts")}</span>
               <input value={chain.ports} onChange={(e) => setPorts(e.target.value)} /><em>e.g. P0,P1</em></label>
             <CheckAccordion

@@ -1253,8 +1253,10 @@ export function summarizeStatus(s) {
   const u = parseUname(s.uname);
   const cpu = Array.isArray(s.cpu_usage) ? s.cpu_usage.map((v) => Number(v) || 0) : [];
   const cpuOverall = cpu.length ? cpu.reduce((a, b) => a + b, 0) / cpu.length : 0;
+  // mem_usage is [total, free] in KB — used is the difference, not the second value.
   const mem = Array.isArray(s.mem_usage) ? s.mem_usage : [0, 0];
-  const memTotal = Number(mem[0]) || 0, memUsed = Number(mem[1]) || 0;
+  const memTotal = Number(mem[0]) || 0, memFree = Number(mem[1]) || 0;
+  const memUsed = Math.max(0, memTotal - memFree);
   const disks = (Array.isArray(s.disk_usage) ? s.disk_usage : []).map((d) => ({
     dev: d[0], mount: d[1], total: Number(d[2]) || 0, used: Number(d[3]) || 0, avail: Number(d[4]) || 0,
     pctText: String(d[5] || "").replace(/%+/g, "%"), pct: pct(d[3], d[2]),
@@ -1266,7 +1268,7 @@ export function summarizeStatus(s) {
   const fans = Array.isArray(s.Fan) ? s.Fan : [];
   const psus = Array.isArray(s.Rpsu) ? s.Rpsu : [];
   return { u, datetime: s.datetime, uptime: s.uptime_s != null ? fmtUptime(s.uptime_s) : s.uptime, loadavg: s.loadavg,
-    cpu, cpuOverall, memTotal, memUsed, memPct: pct(memUsed, memTotal), disks, procs, temps, fans, psus };
+    cpu, cpuOverall, memTotal, memUsed, memFree, memPct: pct(memUsed, memTotal), disks, procs, temps, fans, psus };
 }
 
 
