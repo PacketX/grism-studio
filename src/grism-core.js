@@ -494,7 +494,12 @@ export function collectRefs(tree, definedIds) {
     if (!n) return;
     if (n.t === "branch" && n.fids) n.fids.split(",").map((s) => s.trim()).filter(Boolean).forEach((tok) => {
       const id = tok.replace(/^!/, "");
-      if (!seen.has(id)) seen.set(id, { id, defined: definedIds.has(id) });
+      if (!seen.has(id)) {
+        const defined = definedIds.has(id);
+        // undefined ids at/above the threshold live on the device; below it they're
+        // genuinely missing from this configuration
+        seen.set(id, { id, defined, onDevice: !defined && isDeviceFilterId(id) });
+      }
     });
     ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
   })(tree);
@@ -665,39 +670,39 @@ export const YN = ["no","yes"];
 export const OUT_MODS = [
   { k: "modify_srcip", label: "Modify source IP", kind: "ip", ph: "10.1.1.1", grp: "rewrite",
     attrs: [{ name: "sessionDir", opts: YN, def: "no" }, { name: "nat", opts: YN, def: "no" }] },
-  { k: "modify_dstip", label: "Modify dest IP", kind: "ip", ph: "10.1.1.2", grp: "rewrite",
+  { k: "modify_dstip", label: "Modify destination IP", kind: "ip", ph: "10.1.1.2", grp: "rewrite",
     attrs: [{ name: "sessionDir", opts: YN, def: "no" }] },
   { k: "modify_srcport", label: "Modify source port", kind: "port", ph: "8080", grp: "rewrite" },
-  { k: "modify_dstport", label: "Modify dest port", kind: "port", ph: "80", grp: "rewrite" },
+  { k: "modify_dstport", label: "Modify destination port", kind: "port", ph: "80", grp: "rewrite" },
   { k: "modify_srcmac", label: "Modify source MAC", kind: "mac", ph: "d8:fe:e3:a4:d3:78", grp: "rewrite" },
-  { k: "modify_dstmac", label: "Modify dest MAC", kind: "mac", ph: "d8:fe:e3:a4:d3:78", grp: "rewrite" },
-  { k: "modify_swapmac", label: "Swap src/dst MAC", kind: "flag", grp: "rewrite" },
-  { k: "modify_src_default_mac", label: "Src = device MAC", kind: "flag", grp: "rewrite" },
-  { k: "modify_dstip2nat", label: "Dst IP → NAT", kind: "flag", grp: "rewrite" },
-  { k: "modify_tcp_syn_mss", label: "TCP SYN MSS", kind: "int", ph: "1400", grp: "rewrite" },
+  { k: "modify_dstmac", label: "Modify destination MAC", kind: "mac", ph: "d8:fe:e3:a4:d3:78", grp: "rewrite" },
+  { k: "modify_swapmac", label: "Swap source/destination MAC", kind: "flag", grp: "rewrite" },
+  { k: "modify_src_default_mac", label: "Source MAC = device MAC", kind: "flag", grp: "rewrite" },
+  { k: "modify_dstip2nat", label: "Dest IP from NAT table", kind: "flag", grp: "rewrite" },
+  { k: "modify_tcp_syn_mss", label: "Rewrite TCP SYN MSS", kind: "int", ph: "1400", grp: "rewrite" },
   { k: "Q", label: "VLAN tag (Q)", kind: "vlanop", ph: "10", grp: "rewrite", defOp: "add" },
   { k: "QinQ", label: "VLAN tag (QinQ)", kind: "vlanop", ph: "20", grp: "rewrite", defOp: "add" },
   { k: "gateway", label: "Gateway (ARP for MAC)", kind: "ip", ph: "192.168.1.1", grp: "rewrite" },
-  { k: "stripping", label: "Strip header", kind: "enum", opts: STRIP_TYPES, grp: "rewrite" },
+  { k: "stripping", label: "Strip header/tag", kind: "enum", opts: STRIP_TYPES, grp: "rewrite" },
   { k: "tagging", label: "Add tag", kind: "enum", opts: TAG_TYPES, grp: "rewrite" },
   { k: "maxlen", label: "Max packet length", kind: "num", ph: "64", grp: "rewrite" },
   // ARP / ICMP replies
   { k: "arp_reply_target_mac", label: "ARP reply target MAC", kind: "mac", ph: "00:0c:bd:0b:fd:36", grp: "reply" },
-  { k: "arp_reply_default_mac", label: "ARP reply (device MAC)", kind: "flag", grp: "reply" },
+  { k: "arp_reply_default_mac", label: "ARP reply with device MAC", kind: "flag", grp: "reply" },
   { k: "icmp_reply", label: "ICMP reply", kind: "flag", grp: "reply" },
-  { k: "icmp_reply_fragment_need", label: "ICMP frag-needed", kind: "flag", grp: "reply",
+  { k: "icmp_reply_fragment_need", label: "Reply ICMP fragmentation-needed", kind: "flag", grp: "reply",
     attrs: [{ name: "mtu", kind: "num", def: "1400", required: true }] },
   // DNS response / redirect
   { k: "dns_response_ipv4", label: "DNS response IPv4", kind: "ip", ph: "1.2.3.4", grp: "redirect",
     attrs: [{ name: "noswapmac", opts: YN, def: "no" }] },
   { k: "dns_response_ipv6", label: "DNS response IPv6", kind: "ipv6", ph: "2001:db8::1", grp: "redirect" },
-  { k: "redirect2safeweb", label: "Redirect to safe web", kind: "str", ph: "http://safe.example", grp: "redirect",
+  { k: "redirect2safeweb", label: "Redirect to a safe website", kind: "str", ph: "http://safe.example", grp: "redirect",
     attrs: [{ name: "noswapmac", opts: YN, def: "no" }, { name: "redirectPort", kind: "str", def: "" }] },
   // Mirror-to-file (dir) group
   { k: "dir", label: "Write to dir", kind: "str", ph: "/data/capture", grp: "mirror",
     attrs: [{ name: "timeout", kind: "num", def: "0" }, { name: "max_split_size", kind: "num", def: "104857600" },
             { name: "category", opts: DIR_CATEGORY, def: "" }, { name: "type", opts: DIR_TYPE, def: "pcap" }] },
-  { k: "dip", label: "Mirror dest IP", kind: "str", ph: "10.0.0.9", grp: "mirror" },
+  { k: "dip", label: "Mirror to destination IP", kind: "str", ph: "10.0.0.9", grp: "mirror" },
   { k: "sport", label: "Mirror source port", kind: "port", ph: "0", grp: "mirror" },
   { k: "dport", label: "Mirror dest port", kind: "port", ph: "0", grp: "mirror" },
   // VXLAN encapsulation
@@ -787,7 +792,7 @@ export function outputProblems(o, out) {
 export const ACT_STRIP_TYPES = ["payload","payload2","vlan","mpls","gre","vxlan","gre-erspan","gtp","grism","mpls-in-udp","mpls-in-gre","udpencap"];
 export const ACT_TAG_TYPES = ["grism","timestamp"];
 export const ACT_MODS = [
-  { k: "stripping", label: "Strip header", kind: "enum", opts: ACT_STRIP_TYPES },
+  { k: "stripping", label: "Strip header/tag", kind: "enum", opts: ACT_STRIP_TYPES },
   { k: "Q", label: "VLAN tag (Q)", kind: "vlan", ph: "10" },
   { k: "QinQ", label: "VLAN tag (QinQ)", kind: "vlan", ph: "20" },
   { k: "tagging", label: "Add tag", kind: "enum", opts: ACT_TAG_TYPES },
@@ -797,7 +802,7 @@ export const ACT_MODS = [
   { k: "netmask", label: "Netmask", kind: "ip", ph: "255.255.255.0" },
   { k: "arp_reply_default_mac", label: "ARP reply (default MAC)", kind: "flag" },
   { k: "icmp_reply", label: "ICMP reply", kind: "flag" },
-  { k: "icmp_reply_fragment_need", label: "ICMP frag-needed", kind: "mtu", ph: "" },
+  { k: "icmp_reply_fragment_need", label: "Reply ICMP fragmentation-needed", kind: "mtu", ph: "" },
 ];
 export const ACT_MOD_INDEX = Object.fromEntries(ACT_MODS.map((m) => [m.k, m]));
 export const mkActionMod = (k) => ({ id: nid(), k, val: ACT_MOD_INDEX[k]?.opts?.[0] ?? "", mtu: k === "icmp_reply_fragment_need" ? "1440" : undefined });
@@ -1375,3 +1380,180 @@ export const docSnapshot = (d) => JSON.stringify({
   filters: d.filters ?? [], inputs: d.inputs ?? [], outputs: d.outputs ?? [],
   actions: d.actions ?? [], chains: d.chains ?? [],
 });
+
+/* ===================== port ordering =====================
+   Device port lists arrive in whatever order the config happens to hold them.
+   Sort them predictably for the pickers: virtual ports (V*) first, then physical
+   ports (P*), then anything else — each group by its numeric suffix ascending, so
+   V0, V1, V2 … P0, P1, … P10 (not P1, P10, P2). */
+export function comparePortNames(a, b) {
+  const parse = (n) => {
+    const m = String(n).match(/^([A-Za-z]*)(\d*)$/);
+    return { prefix: (m?.[1] ?? String(n)).toUpperCase(), num: m?.[2] === "" ? null : Number(m[2]) };
+  };
+  const rank = (p) => (p === "V" ? 0 : p === "P" ? 1 : 2);
+  const pa = parse(a), pb = parse(b);
+  if (rank(pa.prefix) !== rank(pb.prefix)) return rank(pa.prefix) - rank(pb.prefix);
+  if (pa.prefix !== pb.prefix) return pa.prefix.localeCompare(pb.prefix);
+  if (pa.num === null || pb.num === null) return String(a).localeCompare(String(b));
+  return pa.num - pb.num;
+}
+export const sortPortNames = (names) => [...names].sort(comparePortNames);
+
+/* ===================== change tracking =====================
+   Compare the working document against the one that was loaded, so the UI can
+   point at exactly what the user changed rather than just saying "modified".
+   Items are matched by id (cid for chains); anything added, removed or edited is
+   reported per section. */
+const SECTION_KEYS = { filters: "id", inputs: "id", outputs: "id", actions: "id", chains: "cid" };
+
+export function diffDoc(baseDoc, curDoc) {
+  const out = {};
+  let total = 0;
+  for (const [section, key] of Object.entries(SECTION_KEYS)) {
+    const base = baseDoc?.[section] ?? [];
+    const cur = curDoc?.[section] ?? [];
+    const baseById = new Map(base.map((x) => [x[key], x]));
+    const curById = new Map(cur.map((x) => [x[key], x]));
+    const added = [], removed = [], changed = [];
+    curById.forEach((item, id) => {
+      if (!baseById.has(id)) added.push(id);
+      else if (JSON.stringify(baseById.get(id)) !== JSON.stringify(item)) changed.push(id);
+    });
+    baseById.forEach((_, id) => { if (!curById.has(id)) removed.push(id); });
+    const n = added.length + removed.length + changed.length;
+    total += n;
+    out[section] = { added, removed, changed, count: n,
+      // ids still present in the document, for badging list rows
+      touched: new Set([...added, ...changed]) };
+  }
+  out.total = total;
+  return out;
+}
+
+/* True when a section has any change at all — handy for tab badges. */
+export const sectionChanged = (diff, section) => (diff?.[section]?.count ?? 0) > 0;
+
+/* ===================== traffic statistics shaping =====================
+   The statistics endpoint returns parallel arrays (values, concurrent counts and
+   byte counts share an index). These helpers zip them into rows the UI can render
+   and sort, and translate protocol numbers into names. */
+
+export const IP_PROTOCOLS = {
+  1: "ICMP", 2: "IGMP", 6: "TCP", 17: "UDP", 41: "IPv6", 47: "GRE", 50: "ESP", 51: "AH",
+  58: "ICMPv6", 89: "OSPF", 103: "PIM", 112: "VRRP", 132: "SCTP",
+};
+export const protocolName = (n) => IP_PROTOCOLS[n] ? `${IP_PROTOCOLS[n]} (${n})` : String(n);
+
+/* Well-known ports worth naming in the port breakdown. */
+export const PORT_SERVICES = {
+  20: "FTP-data", 21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS", 67: "DHCP",
+  68: "DHCP", 80: "HTTP", 110: "POP3", 123: "NTP", 143: "IMAP", 161: "SNMP", 389: "LDAP",
+  443: "HTTPS", 445: "SMB", 514: "Syslog", 547: "DHCPv6", 587: "SMTP", 993: "IMAPS",
+  995: "POP3S", 1812: "RADIUS", 3306: "MySQL", 3389: "RDP", 5060: "SIP", 8080: "HTTP-alt",
+};
+export const portLabel = (p) => PORT_SERVICES[p] ? `${p} (${PORT_SERVICES[p]})` : String(p);
+
+/* Zip parallel arrays into [{ key, concurrent, bytes }], busiest first. */
+export function zipBreakdown(keys, concurrent, bytes) {
+  const k = Array.isArray(keys) ? keys : [];
+  return k.map((key, i) => ({
+    key,
+    concurrent: Number(concurrent?.[i]) || 0,
+    bytes: Number(bytes?.[i]) || 0,
+  })).sort((a, b) => b.concurrent - a.concurrent || b.bytes - a.bytes);
+}
+
+/* Shape one session family (v4 or v6) for display. */
+export function summarizeSessions(s, { v6 = false } = {}) {
+  if (!s) return null;
+  const total = Number(s.total) || 0;
+  const concurrent = Number(s.concurrent) || 0;
+  return {
+    total,
+    concurrent,
+    // share of all sessions seen that are still open
+    usage: total ? concurrent / total : 0,
+    netflowCount: Number(s.netflow_count) || 0,
+    netflowEps: Number(s.netflow_eps) || 0,
+    protocols: v6
+      ? zipBreakdown(s.next_hdr, s.next_hdr_concurrent, s.next_hdr_concurrent_bytes)
+      : zipBreakdown(s.protocols, s.protocols_concurrent, s.protocols_concurrent_bytes),
+    tcp: zipBreakdown(s.tcp_ports, s.tcp_ports_concurrent, s.tcp_ports_concurrent_bytes),
+    udp: zipBreakdown(s.udp_ports, s.udp_ports_concurrent, s.udp_ports_concurrent_bytes),
+  };
+}
+
+/* Merge the filter counters into rows with a hit rate. */
+export function summarizeFilterCounters(list) {
+  return (Array.isArray(list) ? list : []).map((f) => {
+    const tried = Number(f.try_count) || 0, matched = Number(f.matched_count) || 0;
+    return {
+      id: f.id, refs: Number(f.count) || 0, tried, matched,
+      perSecond: Number(f.matched_per_second) || 0,
+      rate: tried ? matched / tried : 0,
+    };
+  }).sort((a, b) => b.matched - a.matched || b.tried - a.tried);
+}
+
+/* Flatten flow_service into service rows with their busiest hosts.
+   Each host entry is [ip, sessions, bytes]. */
+export function summarizeFlowServices(fs) {
+  const groups = [];
+  for (const scope of ["public", "private"]) {
+    (fs?.[scope] ?? []).forEach((svc) => {
+      const hosts = (svc.host ?? []).map((h) => ({
+        ip: h?.[0] ?? "", sessions: Number(h?.[1]) || 0, bytes: Number(h?.[2]) || 0,
+      })).sort((a, b) => b.bytes - a.bytes);
+      groups.push({
+        scope, name: svc.name ?? "",
+        hosts,
+        sessions: hosts.reduce((n, h) => n + h.sessions, 0),
+        bytes: hosts.reduce((n, h) => n + h.bytes, 0),
+      });
+    });
+  }
+  return groups.sort((a, b) => b.bytes - a.bytes);
+}
+
+/* Country counters, busiest first, with each row's share of the total bytes. */
+export function summarizeCountries(list) {
+  const rows = (Array.isArray(list) ? list : []).map((c) => ({
+    iso: c.iso_code ?? "", packets: Number(c.packets) || 0, bytes: Number(c.bytes) || 0,
+  })).sort((a, b) => b.bytes - a.bytes);
+  const totalBytes = rows.reduce((n, r) => n + r.bytes, 0);
+  const totalPackets = rows.reduce((n, r) => n + r.packets, 0);
+  return { rows: rows.map((r) => ({ ...r, share: totalBytes ? r.bytes / totalBytes : 0 })), totalBytes, totalPackets };
+}
+
+/* Packet-type counters → rows, non-zero first so oddities stand out. */
+export function summarizePacketTypes(pt) {
+  return Object.entries(pt ?? {})
+    .map(([key, v]) => ({ key, count: Number(v) || 0 }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/* ===================== device-side filter ids =====================
+   Filters numbered below this threshold are expected to be defined in the
+   configuration; anything at or above it is created dynamically on the device
+   (by the syslog patch-filter service and friends), so a reference to one that
+   isn't in the XML is normal rather than a mistake. */
+export const DEVICE_FILTER_ID_MIN = 1000;
+
+/* True when an undefined filter reference should be treated as living on the
+   device rather than reported as missing. `id` may be "F1234" or 1234. */
+export function isDeviceFilterId(id) {
+  const n = typeof id === "number" ? id : Number(String(id).replace(/^!?F/i, ""));
+  return Number.isFinite(n) && n >= DEVICE_FILTER_ID_MIN;
+}
+
+/* Percentage formatter that keeps small ratios readable: session usage is often a
+   tiny fraction (44 of 2.4M), where "0%" would be useless. */
+export function fmtPct(ratio) {
+  const p = (Number(ratio) || 0) * 100;
+  if (p === 0) return "0%";
+  if (p >= 10) return p.toFixed(0) + "%";
+  if (p >= 1) return p.toFixed(1) + "%";
+  if (p >= 0.01) return p.toFixed(2) + "%";
+  return p.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") + "%";
+}

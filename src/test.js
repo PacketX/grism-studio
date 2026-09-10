@@ -105,6 +105,17 @@ group("chain validation");
   check("refs collected", refs.length === 2);
   check("defined ref marked", refs.find((r) => r.id === "F1").defined === true);
   check("undefined ref marked", refs.find((r) => r.id === "F3").defined === false);
+  // filter ids at/above the threshold are created on the device, so an undefined
+  // reference to one is expected rather than a mistake
+  check("ids below the threshold are local", C.isDeviceFilterId("F1") === false && C.isDeviceFilterId("F999") === false);
+  check("ids at/above the threshold are device-side", C.isDeviceFilterId("F1000") && C.isDeviceFilterId("F10001"));
+  check("bare numbers accepted", C.isDeviceFilterId(1000) && !C.isDeviceFilterId(999));
+  check("negated refs accepted", C.isDeviceFilterId("!F1000") === true);
+  const mixed = C.collectRefs({ t: "branch", fids: "F1,F5,F1000",
+    match: { t: "out", ports: "P1" }, notmatch: C.mkUnset() }, new Set(["F1"]));
+  check("defined ref is not device-side", mixed.find((r) => r.id === "F1").onDevice === false);
+  check("low undefined ref is not device-side", mixed.find((r) => r.id === "F5").onDevice === false);
+  check("high undefined ref is device-side", mixed.find((r) => r.id === "F1000").onDevice === true);
 }
 
 /* ---------- whole-document round trip ---------- */
@@ -360,6 +371,99 @@ group("chain layout");
   check("notmatch edge labelled", laid.edges.some((e) => e.kind === "notmatch"));
 }
 
+
+/* ---------- traffic statistics shaping ---------- */
+group("traffic statistics");
+{
+  const sessions = { total: 2400000, concurrent: 44, protocols: [2, 17, 6, 47],
+    protocols_concurrent: [17, 22, 4, 1], protocols_concurrent_bytes: [1088, 767433, 78494, 852],
+    tcp_ports: [443], tcp_ports_concurrent: [4], tcp_ports_concurrent_bytes: [78494],
+    udp_ports: [53, 67, 68, 123, 443], udp_ports_concurrent: [12, 1, 1, 1, 2],
+    udp_ports_concurrent_bytes: [3564, 72578, 65286, 230, 43414],
+    netflow_count: 29760, netflow_eps: 2 };
+  const v4 = C.summarizeSessions(sessions);
+  check("session totals read", v4.total === 2400000 && v4.concurrent === 44);
+  check("netflow read", v4.netflowCount === 29760 && v4.netflowEps === 2);
+  check("usage is concurrent over total", Math.abs(v4.usage - 44 / 2400000) < 1e-12);
+  check("zero total gives zero usage", C.summarizeSessions({ total: 0, concurrent: 0 }).usage === 0);
+  check("tiny ratios stay readable", C.fmtPct(44 / 2400000) === "0.0018%");
+  check("percentages scale up", C.fmtPct(0.5) === "50%" && C.fmtPct(0.05) === "5.0%");
+  check("zero percent", C.fmtPct(0) === "0%");
+  check("protocols sorted busiest first", v4.protocols[0].key === 17 && v4.protocols[0].concurrent === 22);
+  check("protocol bytes aligned", v4.protocols[0].bytes === 767433);
+  check("udp ports sorted", v4.udp[0].key === 53 && v4.udp[0].concurrent === 12);
+  check("tcp ports read", v4.tcp.length === 1 && v4.tcp[0].key === 443);
+
+  const v6src = { total: 500000, concurrent: 18, next_hdr: [58, 0, 17],
+    next_hdr_concurrent: [12, 2, 4], next_hdr_concurrent_bytes: [1655100, 268, 3450345],
+    tcp_ports: [], tcp_ports_concurrent: [], tcp_ports_concurrent_bytes: [],
+    udp_ports: [547], udp_ports_concurrent: [1], udp_ports_concurrent_bytes: [133],
+    netflow_count: 7277, netflow_eps: 0 };
+  const v6 = C.summarizeSessions(v6src, { v6: true });
+  check("v6 uses next_hdr", v6.protocols[0].key === 58 && v6.protocols[0].concurrent === 12);
+  check("v6 empty tcp handled", v6.tcp.length === 0);
+  check("null sessions yield null", C.summarizeSessions(null) === null);
+
+  check("protocol names", C.protocolName(6) === "TCP (6)" && C.protocolName(58) === "ICMPv6 (58)");
+  check("unknown protocol falls back", C.protocolName(250) === "250");
+  check("port service names", C.portLabel(443) === "443 (HTTPS)" && C.portLabel(9999) === "9999");
+
+  const fc = C.summarizeFilterCounters([
+    { id: 1, count: 1, try_count: 880197, matched_count: 117940, matched_per_second: 0 },
+    { id: 5, count: 2, try_count: 762257, matched_count: 261023, matched_per_second: 0 },
+    { id: 4, count: 1, try_count: 0, matched_count: 0, matched_per_second: 0 }]);
+  check("filters sorted by matches", fc[0].id === 5);
+  check("hit rate computed", Math.abs(fc[1].rate - 117940 / 880197) < 1e-9);
+  check("zero evaluations give zero rate", fc[2].rate === 0);
+
+  const svc = C.summarizeFlowServices({ private: [], public: [{ name: "HTTPS (TCP/443,UDP/443)",
+    host: [["151.101.193.140", 1, 23106], ["31.13.87.52", 4, 53564]] }] });
+  check("service totals summed", svc[0].sessions === 5 && svc[0].bytes === 76670);
+  check("hosts sorted by bytes", svc[0].hosts[0].ip === "31.13.87.52");
+  check("scope recorded", svc[0].scope === "public");
+  check("no services tolerated", C.summarizeFlowServices(undefined).length === 0);
+
+  const ctry = C.summarizeCountries([{ iso_code: "TW", packets: 191323, bytes: 189896597 },
+    { iso_code: "US", packets: 108920, bytes: 70444632 }, { iso_code: "AU", packets: 177, bytes: 57763 }]);
+  check("countries sorted by bytes", ctry.rows[0].iso === "TW");
+  check("totals summed", ctry.totalPackets === 300420);
+  check("share computed", Math.abs(ctry.rows[0].share - 189896597 / ctry.totalBytes) < 1e-9);
+
+  const pt = C.summarizePacketTypes({ ipfragment: 252, gtp: 0, gre: 109599, vxlan: 0 });
+  check("packet types sorted", pt[0].key === "gre" && pt[0].count === 109599);
+  check("zero types kept", pt.some((p) => p.key === "gtp" && p.count === 0));
+}
+
+/* ---------- change tracking ---------- */
+group("change tracking");
+{
+  const base = { filters: [{ id: 1, name: "a" }, { id: 2, name: "b" }],
+                 chains: [{ cid: "c1", ports: "P0" }], inputs: [], outputs: [], actions: [] };
+  const cur = { filters: [{ id: 1, name: "a" }, { id: 2, name: "EDITED" }, { id: 3, name: "new" }],
+                chains: [{ cid: "c1", ports: "P0" }], inputs: [], outputs: [], actions: [] };
+  const d = C.diffDoc(base, cur);
+  check("added item detected", d.filters.added.length === 1 && d.filters.added[0] === 3);
+  check("edited item detected", d.filters.changed.length === 1 && d.filters.changed[0] === 2);
+  check("untouched item ignored", !d.filters.touched.has(1));
+  check("touched holds added + edited", d.filters.touched.has(2) && d.filters.touched.has(3));
+  check("unchanged section is clean", d.chains.count === 0);
+  check("total counts every section", d.total === 2);
+  const removed = C.diffDoc(base, { ...base, filters: [{ id: 1, name: "a" }] });
+  check("removed item detected", removed.filters.removed.length === 1 && removed.filters.removed[0] === 2);
+  check("identical docs report no change", C.diffDoc(base, base).total === 0);
+  check("chains match on cid", C.diffDoc(base, { ...base, chains: [{ cid: "c1", ports: "P9" }] }).chains.changed[0] === "c1");
+  check("sectionChanged helper", C.sectionChanged(d, "filters") && !C.sectionChanged(d, "chains"));
+  check("missing sections tolerated", C.diffDoc({}, {}).total === 0);
+}
+
+/* ---------- port ordering ---------- */
+group("port ordering");
+check("virtual ports first, then physical, then the rest",
+  C.sortPortNames(["P10", "P2", "V1", "P0", "V0", "H1", "P1", "V10", "V2"]).join(" ")
+  === "V0 V1 V2 V10 P0 P1 P2 P10 H1");
+check("numeric, not lexical", C.sortPortNames(["P10", "P9"]).join(" ") === "P9 P10");
+check("already sorted stays put", C.sortPortNames(["V0", "P0"]).join(" ") === "V0 P0");
+check("does not mutate its input", (() => { const a = ["P1", "V0"]; C.sortPortNames(a); return a[0] === "P1"; })());
 
 /* ---------- module wiring (guards against the split-file class of bug) ---------- */
 group("module wiring");

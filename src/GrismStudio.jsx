@@ -4,12 +4,14 @@ import { STUDIO_VERSION, makeT } from "./i18n.js";
 import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
-  cUpdate, chainProblems, docSnapshot, cloneForDup, collectRefs, describeDoc, filterProblems,
+  cUpdate, chainProblems, diffDoc, docSnapshot, isDeviceFilterId, cloneForDup, collectRefs, describeDoc, filterProblems,
   fmtBytes, fmtKB, fmtNum, fmtSpeed, formatXml, inferIntent,
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
   mkAction, mkActionMod, mkChain, mkDrop, mkFind, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
-  namesOnly, nid, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun,
+  fmtPct, namesOnly, nid, portLabel, protocolName, sortPortNames,
+  summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
+  summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -49,12 +51,15 @@ export default function GrismStudio() {
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
     { id: "pipeline", tabs: ["filters", "inputs", "outputs", "actions", "chain", "simulate", "export"] },
-    { id: "traffic", tabs: ["trafficPorts"] },
+    { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries"] },
     { id: "system", tabs: ["status", "settings"] },
   ];
   const tabWorkspace = (tb) => (WORKSPACES.find((w) => w.tabs.includes(tb)) ?? WORKSPACES[0]).id;
   const workspace = tabWorkspace(tab);
-  useEffect(() => { if (workspace !== "pipeline") setHealthOpen(false); }, [workspace]);
+  // leaving the pipeline closes its popovers and folds the advanced group back up
+  useEffect(() => {
+    if (workspace !== "pipeline") { setHealthOpen(false); setAdvOpen(false); }
+  }, [workspace]);
   const gotoWorkspace = (wid) => { const w = WORKSPACES.find((x) => x.id === wid); if (w) setTab(w.tabs[0]); };
 
   // --- per-section undo/redo history (filters / inputs / outputs / actions / chains) ---
@@ -134,19 +139,25 @@ export default function GrismStudio() {
   // pending "replace the whole document" action, awaiting user confirmation.
   const [pendingLoad, setPendingLoad] = useState(null); // { run: () => void, kind: "template" | "running" }
   const [healthOpen, setHealthOpen] = useState(false);   // topbar issue/warning popover
-  const [showAdv, setShowAdv] = useState(false);         // reveal empty advanced sections
+  const [acctOpen, setAcctOpen] = useState(false);       // account / preferences menu
+  const [navOpen, setNavOpen] = useState(true);          // sub-tabs expanded beside the workspace
+  const [advOpen, setAdvOpen] = useState(false);         // advanced group revealed by clicking its label
   // jump to the tab (and item) a problem belongs to. Shared by the Export list and
   // the topbar health popover.
+  // Navigate to a sub-tab from outside the tab bar (Overview links, problem lists).
+  // Always reveal the sub-tabs, otherwise the user lands on a page with no visible
+  // indication of where they are — the bar stays collapsed from an earlier click.
+  const goTab = useCallback((k) => { setTab(k); setNavOpen(true); }, []);
   const gotoScope = useCallback((scope) => {
     if (scope === "chain" || scope.startsWith("chain:")) {
       if (scope.startsWith("chain:")) setActiveChain(scope.slice(6));
-      setTab("chain");
+      goTab("chain");
     }
-    else if (scope[0] === "I") { setActiveInput(+scope.slice(1)); setTab("inputs"); }
-    else if (scope[0] === "O") { setActiveOutput(+scope.slice(1)); setTab("outputs"); }
-    else if (scope[0] === "A") { setActiveAction(+scope.slice(1)); setTab("actions"); }
-    else { setActiveFilter(+scope.slice(1)); setTab("filters"); }
-  }, []);
+    else if (scope[0] === "I") { setActiveInput(+scope.slice(1)); goTab("inputs"); }
+    else if (scope[0] === "O") { setActiveOutput(+scope.slice(1)); goTab("outputs"); }
+    else if (scope[0] === "A") { setActiveAction(+scope.slice(1)); goTab("actions"); }
+    else { setActiveFilter(+scope.slice(1)); goTab("filters"); }
+  }, [goTab]);
   const canUndo = histLens.u > 0;
   const canRedo = histLens.r > 0;
   // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo — on any editor tab, and
@@ -177,7 +188,6 @@ export default function GrismStudio() {
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
   const [loopPorts, setLoopPorts] = useState([]); // ports on a LOOP-type interface (out returns in on the same port)
-  const [deviceFilterIds, setDeviceFilterIds] = useState(null); // filter ids that exist on the device (from get_filter_counter); null = unknown/not logged in
   const [activeFilter, setActiveFilter] = useState(1);
   const [activeOutput, setActiveOutput] = useState(1);
   const [activeAction, setActiveAction] = useState(1);
@@ -212,6 +222,10 @@ export default function GrismStudio() {
   // "dirty" tracking: baseline is the XML as last loaded from / applied to the
   // device. When the current runXml differs, there are unapplied changes.
   const [baseline, setBaseline] = useState(null); // null until first load/apply
+  const [baselineDoc, setBaselineDoc] = useState(null); // the document that baseline XML came from
+  // What changed since the config was loaded — drives the "modified" badges so the
+  // user can see which sections and which rows they actually touched.
+  const changes = useMemo(() => (baselineDoc ? diffDoc(baselineDoc, doc) : null), [baselineDoc, doc]);
   const [docSource, setDocSource] = useState("template"); // "template" | "running" | "new" — drives which top-bar button is highlighted
   const [templateName, setTemplateName] = useState(() => TEMPLATES.find((t) => t.id === "starter")?.title ?? "Starter"); // title of the template the doc came from (for the Templates button label)
   const dirty = baseline !== null && runXml !== baseline;
@@ -243,9 +257,10 @@ export default function GrismStudio() {
           n.fids.split(",").map((s) => s.trim()).filter(Boolean).forEach((tok) => {
             const id = tok.replace(/^!/, "");
             if (!/^F\d+$/.test(id) || definedIds.has(id)) return;
-            // defined here? no. On the device (from get_filter_counter)? then it's fine.
-            const num = +id.slice(1);
-            if (deviceFilterIds && deviceFilterIds.has(num)) return;
+            // Not defined here. Ids at or above the device threshold are created on
+            // the device itself, so referencing one is expected — only lower ids are
+            // genuinely missing from this configuration.
+            if (isDeviceFilterId(id)) return;
             missingF.add(id);
           });
         }
@@ -260,7 +275,7 @@ export default function GrismStudio() {
       missingO.forEach((id) => w.push({ id: `missingO-${c.cid}-${id}`, scope: `chain:${c.cid}`, label: id, msg: `output ${id} isn't defined in this config` }));
     });
     return w;
-  }, [doc.chains, definedIds, outputIds, deviceFilterIds]);
+  }, [doc.chains, definedIds, outputIds]);
 
   // --- load the device's running config ---
   const [load, setLoad] = useState({ state: "idle", msg: "" }); // idle | loading | ok | error
@@ -275,7 +290,7 @@ export default function GrismStudio() {
       docRef.current = normalized; setDocRaw(normalized);
       resetHistory();                          // the load itself is not undoable
       setDocSource("running");
-      setBaseline(serializeRun(normalized)); // this is now in sync with the device
+      setBaseline(serializeRun(normalized)); setBaselineDoc(normalized); // in sync with the device
       setActiveFilter(parsed.filters[0]?.id ?? 1);
       setActiveOutput(parsed.outputs[0]?.id ?? 1);
       setActiveAction(parsed.actions[0]?.id ?? 1);
@@ -306,12 +321,11 @@ export default function GrismStudio() {
       if (!res.ok) throw new Error(`status ${res.status}`);
       const cfg = await res.json();
       const ifaces = cfg.interfaces ?? [];
-      // list VPORT-type interfaces' ports first, then everything else (preserving
-      // each group's own order), so the panel shows VPORTs before other types.
-      const isVport = (i) => (i.type || "").toUpperCase() === "VPORT";
-      const ordered = [...ifaces.filter(isVport), ...ifaces.filter((i) => !isVport(i))];
-      const names = ordered.flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
-      setDevicePorts(names.length ? [...new Set(names)] : null);
+      // Sort the device's ports predictably: virtual (V*) first, then physical (P*),
+      // then anything else — each numerically ascending, so the pickers always read
+      // V0, V1 … P0, P1 … regardless of the order the config happens to use.
+      const names = ifaces.flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
+      setDevicePorts(names.length ? sortPortNames([...new Set(names)]) : null);
       // ports belonging to a LOOP-type interface: traffic sent out returns on the
       // same port. Tracked separately so the panel can list & animate them.
       const loops = ifaces.filter((i) => (i.type || "").toUpperCase() === "LOOP")
@@ -340,18 +354,6 @@ export default function GrismStudio() {
   }, []);
 
   // fetch the set of filter ids that actually exist on the device. Used to
-  // suppress "filter Fn isn't defined" warnings when a chain references a filter
-  // that lives on the device even though it isn't defined in this XML.
-  const loadFilterCounter = useCallback(async () => {
-    try {
-      const res = await fetch("/grism/task/get_filter_counter", { credentials: "include" });
-      if (!res.ok) { setDeviceFilterIds(null); return; }
-      const data = await res.json();
-      const ids = (data.filter_counter ?? []).map((f) => f.id).filter((n) => n != null);
-      setDeviceFilterIds(new Set(ids));
-    } catch { setDeviceFilterIds(null); }
-  }, []);
-
   // --- device login ---
   const doLogin = useCallback(async (username, password) => {
     setLogin((l) => ({ ...l, busy: true, err: "" }));
@@ -371,12 +373,11 @@ export default function GrismStudio() {
       setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
       loadBaseline();      // now authenticated — set the sync baseline (doesn't touch the current edits)
       loadDevicePorts();   // and the interface/port list for pickers
-      loadFilterCounter(); // and the device's filter ids (to suppress false "undefined" warnings)
       loadRunning();       // prompt to confirm before replacing edits on manual login
     } catch (e) {
       setLogin((l) => ({ ...l, busy: false, err: e.message || "login failed" }));
     }
-  }, [loadBaseline, loadDevicePorts, loadFilterCounter, loadRunning]);
+  }, [loadBaseline, loadDevicePorts, loadRunning]);
 
   // On mount, detect an existing device session (the session cookie survives a
   // page refresh even though React state resets). We probe an authed endpoint;
@@ -392,12 +393,11 @@ export default function GrismStudio() {
         setLogin((l) => ({ ...l, who: "signed in" }));
         loadBaseline();
         loadDevicePorts();
-        loadFilterCounter();
         doLoadRunning();                                     // auto-load the running config on session restore
       } catch { /* offline or not authed — stay logged out */ }
     })();
     return () => { cancelled = true; };
-  }, [loadBaseline, loadDevicePorts, loadFilterCounter, doLoadRunning]);
+  }, [loadBaseline, loadDevicePorts, doLoadRunning]);
 
   const doLogout = useCallback(async () => {
     try {
@@ -407,7 +407,6 @@ export default function GrismStudio() {
     setHbTargets([]);
     setDeviceStorages([]);
     setLoopPorts([]);
-    setDeviceFilterIds(null);
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
   }, []);
 
@@ -420,78 +419,88 @@ export default function GrismStudio() {
           <span className="brand-name">GRISM</span>
           <span className="brand-sub">studio</span>
         </button>
+        {/* Workspace switcher. Each workspace's sub-tabs slide out horizontally to the
+            right of its button, so switching sections never shifts the rows below.
+            Clicking the active workspace collapses the sub-tabs again. */}
         <nav className="ws-switch">
-          {WORKSPACES.filter((w) => w.id !== "overview").map((w) => (
-            <button key={w.id} className={"ws-btn" + (workspace === w.id ? " on" : "")} onClick={() => gotoWorkspace(w.id)}>
-              {t("ws." + w.id)}
-            </button>
-          ))}
-        </nav>
-        {workspace === "pipeline" && (
-        <nav className="tabs">
-          {(() => {
-            // Advanced sections (inputs / outputs / actions) stay out of the way until
-            // they hold something. The toggle sits exactly where the advanced group
-            // lives, so expanding/collapsing happens in place rather than at the end.
-            const counts = { inputs: doc.inputs?.length ?? 0, outputs: doc.outputs?.length ?? 0, actions: doc.actions?.length ?? 0 };
-            const advKeys = ["inputs", "outputs", "actions"];
-            const used = advKeys.filter((k) => counts[k] > 0 || tab === k);   // always-visible ones
-            const expanded = showAdv || used.length === advKeys.length;        // nothing left to reveal
-            const shown = expanded ? advKeys : used;
-            const hiddenCount = advKeys.length - shown.length;
+          {WORKSPACES.filter((w) => w.id !== "overview").map((w) => {
+            const active = workspace === w.id;
+            const open = active && navOpen;
+            return (
+              <span className={"ws-item" + (open ? " open" : "")} key={w.id}>
+                <button className={"ws-btn" + (active ? " on" : "")}
+                  onClick={() => { if (active) setNavOpen((v) => !v); else { gotoWorkspace(w.id); setNavOpen(true); } }}
+                  aria-expanded={open}>
+                  {t("ws." + w.id)}
+                  <span className="ws-caret" aria-hidden="true">{open ? "▲" : "▼"}</span>
+                </button>
 
-            const tabBtn = (k) => (
-              <button key={k} className={"tab" + (tab === k ? " on" : "") + (advKeys.includes(k) ? " adv" : "")} onClick={() => setTab(k)}>
-                {t("tab." + k)}
-                {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
-                {counts[k] > 0 && <span className="tab-badge">{counts[k]}</span>}
-                {k === "chain" && (doc.chains?.length ?? 0) > 0 && <span className="tab-badge">{doc.chains.length}</span>}
-              </button>
-            );
+                {open && w.id === "pipeline" && (() => {
+                  const counts = { inputs: doc.inputs?.length ?? 0, outputs: doc.outputs?.length ?? 0, actions: doc.actions?.length ?? 0 };
+                  const advKeys = ["inputs", "outputs", "actions"];
+                  // All-or-nothing: once any advanced section is in use (or the user is
+                  // on one), show all three. Showing a subset made the row's width — and
+                  // therefore every tab's position — change as sections filled up.
+                  const inUse = advKeys.some((k) => counts[k] > 0 || tab === k);
+                  const shown = (inUse || advOpen) ? advKeys : [];
+                  const hidden = advKeys.length - shown.length;
+                  // a tab shows a dot when its section differs from the loaded config
+                  const TAB_SECTION = { filters: "filters", inputs: "inputs", outputs: "outputs", actions: "actions", chain: "chains" };
+                  const tabBtn = (k) => (
+                    <button key={k} className={"tab" + (tab === k ? " on" : "") + (advKeys.includes(k) ? " adv" : "")} onClick={() => setTab(k)}>
+                      {t("tab." + k)}
+                      {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
+                      {counts[k] > 0 && <span className="tab-badge">{counts[k]}</span>}
+                      {k === "chain" && (doc.chains?.length ?? 0) > 0 && <span className="tab-badge">{doc.chains.length}</span>}
+                      {(changes?.[TAB_SECTION[k]]?.count ?? 0) > 0 &&
+                        <span className="tab-changed" title={t("chg.tabTip")} aria-label={t("chg.tabTip")} />}
+                    </button>
+                  );
+                  return (
+                    <nav className="tabs ws-tabs">
+                      {tabBtn("filters")}
+                      {tabBtn("chain")}
+                      <span className={"tab-group" + (hidden > 0 ? " collapsed" : "")}>
+                        {hidden > 0 ? (
+                          <button className="tab-group-label as-button" onClick={() => setAdvOpen(true)}
+                            title={t("nav.advancedTip")} aria-label={t("nav.advancedTip")} aria-expanded={false}>
+                            {t("nav.advanced")}
+                            <span className="tab-group-caret" aria-hidden="true">▼</span>
+                          </button>
+                        ) : (
+                          <span className="tab-group-label">{t("nav.advanced")}</span>
+                        )}
+                        {shown.map(tabBtn)}
+                      </span>
+                      {tabBtn("simulate")}
+                      {tabBtn("export")}
+                    </nav>
+                  );
+                })()}
 
-            return (<>
-              {tabBtn("filters")}
-
-              {/* Advanced group, boxed so it reads as one optional area rather than
-                  more top-level tabs. The caret opens/closes it in place; the label
-                  sits above it as the group's heading. */}
-              {(shown.length > 0 || hiddenCount > 0) && (
-                <span className="tab-group">
-                  {(() => {
-                    // label + caret are one control: clicking either toggles the group
-                    const canExpand = hiddenCount > 0;
-                    const canCollapse = showAdv && used.length < advKeys.length;
-                    const toggles = canExpand || canCollapse;
-                    if (!toggles) return <span className="tab-group-label">{t("nav.advanced")}</span>;
-                    const tip = canExpand ? t("nav.showAdvancedTip") : t("nav.hideAdvancedTip");
-                    return (
-                      <button className="tab-group-toggle" onClick={() => setShowAdv(canExpand)}
-                        title={tip} aria-label={tip} aria-expanded={!canExpand}>
-                        <span className="tab-group-label">{t("nav.advanced")}</span>
-                        <span className="tab-group-caret" aria-hidden="true">{canExpand ? "›" : "‹"}</span>
+                {open && w.id === "traffic" && (
+                  <nav className="tabs ws-tabs">
+                    {["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries"].map((k) => (
+                      <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
+                        {t("tab." + k)}
                       </button>
-                    );
-                  })()}
-                  {shown.map(tabBtn)}
-                </span>
-              )}
+                    ))}
+                  </nav>
+                )}
 
-              {tabBtn("chain")}
-              {tabBtn("simulate")}
-              {tabBtn("export")}
-            </>);
-          })()}
+                {open && w.id === "system" && (
+                  <nav className="tabs ws-tabs">
+                    {["status", "settings"].map((k) => (
+                      <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
+                        {t("tab." + k)}
+                      </button>
+                    ))}
+                  </nav>
+                )}
+              </span>
+            );
+          })}
         </nav>
-        )}
-        {workspace === "system" && (
-        <nav className="tabs">
-          {["status", "settings"].map((k) => (
-            <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
-              {t("tab." + k)}
-            </button>
-          ))}
-        </nav>
-        )}
         <div className="tabs-spacer" />
         {histKey && (
           <div className="topbar-undo" title={t("undo.tip")}>
@@ -500,36 +509,20 @@ export default function GrismStudio() {
           </div>
         )}
         {workspace === "pipeline" && <>
-          <button className={"tmpl-btn" + (docSource === "template" ? " src-active" : "")} onClick={() => setShowTemplates(true)}
-            title={docSource === "template" ? `${t("btn.template_current")}: ${templateName}` : t("tmpl.tip")}>
-            {docSource === "template" ? `${t("btn.template_current")} · ${templateName}` : t("btn.templates")}
-          </button>
-          {baseline !== null && (
-            <div className={"sync-state " + (dirty ? "dirty" : "synced")}
-              title={dirty ? t("sync.dirtyTip") : t("sync.syncedTip")}>
-              <span className="sync-dot" />{dirty ? t("sync.dirty") : t("sync.synced")}
-            </div>
-          )}
           {login.who && (
             <button className={"load-btn " + load.state + (docSource === "running" ? " src-active" : "")} onClick={loadRunning} disabled={load.state === "loading"}
-              title={t("btn.loadRunningTip")}>
+              title={baseline !== null ? (dirty ? t("sync.dirtyTip") : t("sync.syncedTip")) : t("btn.loadRunningTip")}>
               {load.state === "loading" ? t("btn.loading") : load.state === "error" ? t("btn.loadFailed") : t("btn.loadRunning")}
+              {/* sync state belongs to the loaded config, so it rides on this button */}
+              {baseline !== null && (
+                <span className={"load-sync " + (dirty ? "dirty" : "synced")}>
+                  <span className="load-sync-dot" aria-hidden="true" />
+                  {dirty ? t("sync.dirty") : t("sync.synced")}
+                </span>
+              )}
             </button>
           )}
         </>}
-        {login.who
-          ? <div className="user-box">
-              <span className="user-name" title={t("user.signedIn")}>{login.who}</span>
-              <button className="load-btn" onClick={doLogout} title={t("btn.logoutTip")}>{t("btn.logout")}</button>
-            </div>
-          : <button className={"load-btn" + (login.ok ? " ok" : "")} onClick={() => setLogin((l) => ({ ...l, open: true, err: "" }))}
-              title={t("btn.loginTip")}>{t("btn.login")}</button>}
-        <button className="lang-btn" onClick={() => setLang((l) => l === "en" ? "zh-TW" : "en")}
-          title={t("lang.toggle")}>{t("lang.name")}</button>
-        <button className="theme-btn" onClick={() => setTheme((tm) => tm === "light" ? "dark" : "light")}
-          title={theme === "light" ? t("theme.toDark") : t("theme.toLight")}>
-          {theme === "light" ? "🌙" : "☀️"}
-        </button>
         {workspace === "pipeline" && (
         <div className="health-wrap">
           <button className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}
@@ -544,7 +537,31 @@ export default function GrismStudio() {
                   <span>{allProblems.length || allWarnings.length ? t("health.detailsTitle") : t("health.noneTitle")}</span>
                   <button className="health-pop-close" onClick={() => setHealthOpen(false)} aria-label={t("health.close")}>✕</button>
                 </div>
-                {allProblems.length === 0 && allWarnings.length === 0 && <p className="health-pop-none">{t("health.noneBody")}</p>}
+                {(changes?.total ?? 0) > 0 && (
+                  <div className="chg-summary">
+                    <div className="chg-summary-head">{t("chg.title")}</div>
+                    <ul className="chg-list">
+                      {[["filters", "F"], ["inputs", "I"], ["outputs", "O"], ["actions", "A"], ["chains", "C"]]
+                        .filter(([sec]) => changes[sec].count > 0)
+                        .map(([sec, prefix]) => {
+                          const c = changes[sec];
+                          const parts = [];
+                          if (c.added.length) parts.push(`+${c.added.length} ${t("chg.added")}`);
+                          if (c.changed.length) parts.push(`${c.changed.length} ${t("chg.edited")}`);
+                          if (c.removed.length) parts.push(`−${c.removed.length} ${t("chg.removed")}`);
+                          const ids = [...c.added, ...c.changed].map((id) => prefix + id).join(", ");
+                          return (
+                            <li key={sec} onClick={() => { gotoScope(sec === "chains" ? "chain" : prefix + ([...c.touched][0] ?? "")); setHealthOpen(false); }}>
+                              <b>{t("tab." + (sec === "chains" ? "chain" : sec))}</b>
+                              <span className="chg-detail">{parts.join(" · ")}</span>
+                              {ids && <code className="chg-ids">{ids}</code>}
+                            </li>
+                          );
+                        })}
+                    </ul>
+                  </div>
+                )}
+                {allProblems.length === 0 && allWarnings.length === 0 && (changes?.total ?? 0) === 0 && <p className="health-pop-none">{t("health.noneBody")}</p>}
                 {allProblems.length > 0 && (
                   <ul className="problem-list">
                     {allProblems.map((p, i) => (
@@ -568,6 +585,59 @@ export default function GrismStudio() {
           )}
         </div>
         )}
+        {/* Account menu: session, language and theme live behind one control so the
+            topbar stays focused on the work rather than on settings. */}
+        <div className="acct-wrap">
+          <button className={"acct-btn" + (acctOpen ? " on" : "")} onClick={() => setAcctOpen((v) => !v)}
+            title={login.who || t("btn.login")} aria-expanded={acctOpen} aria-haspopup="true">
+            <span className="acct-avatar" aria-hidden="true">{login.who ? login.who.slice(0, 1).toUpperCase() : "◦"}</span>
+            <span className="acct-name">{login.who || t("btn.login")}</span>
+            <span className="acct-caret" aria-hidden="true">{acctOpen ? "▲" : "▼"}</span>
+          </button>
+          {acctOpen && (
+            <>
+              <div className="acct-scrim" onClick={() => setAcctOpen(false)} />
+              <div className="acct-menu">
+                <div className="acct-section">
+                  {login.who ? (
+                    <>
+                      <div className="acct-user">
+                        <span className="acct-user-k">{t("user.signedIn")}</span>
+                        <span className="acct-user-v">{login.who}</span>
+                      </div>
+                      <button className="acct-item" onClick={() => { setAcctOpen(false); doLogout(); }}>
+                        {t("btn.logout")}
+                      </button>
+                    </>
+                  ) : (
+                    <button className="acct-item" onClick={() => { setAcctOpen(false); setLogin((l) => ({ ...l, open: true, err: "" })); }}>
+                      {t("btn.login")}
+                    </button>
+                  )}
+                </div>
+
+                <div className="acct-section">
+                  <div className="acct-row">
+                    <span className="acct-row-k">{t("acct.language")}</span>
+                    <div className="acct-seg">
+                      <button className={lang === "zh-TW" ? "on" : ""} onClick={() => setLang("zh-TW")}>繁中</button>
+                      <button className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>EN</button>
+                    </div>
+                  </div>
+                  <div className="acct-row">
+                    <span className="acct-row-k">{t("acct.theme")}</span>
+                    <div className="acct-seg">
+                      <button className={theme === "light" ? "on" : ""} onClick={() => setTheme("light")}>☀️ {t("acct.light")}</button>
+                      <button className={theme === "dark" ? "on" : ""} onClick={() => setTheme("dark")}>🌙 {t("acct.dark")}</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="acct-foot">GRISM Studio {STUDIO_VERSION}</div>
+              </div>
+            </>
+          )}
+        </div>
       </header>
       {load.state === "error" && <div className="load-banner err">{t("banner.loadFailed")}: {load.msg}. {t("banner.checkSignedIn")}</div>}
       {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — {t("banner.someUnrecognised")}</div>}
@@ -603,7 +673,7 @@ export default function GrismStudio() {
               <span className="tmpl-modal-title">{t("tmpl.modalTitle")}</span>
               <button className="tmpl-close" onClick={() => setShowTemplates(false)} aria-label={t("common.cancel")}>✕</button>
             </div>
-            <TemplatesTab lang={lang} t={t} onApply={(tpl) => requestLoad({ kind: "template", run: () => { const nd = normalizeDoc(tpl.make()); docRef.current = nd; setDocRaw(nd); setBaseline(null); setDocSource("template"); setTemplateName(tpl.title); setLoad({ state: "idle", msg: "" }); resetHistory(); setActiveFilter(1); setShowTemplates(false); } })} />
+            <TemplatesTab lang={lang} t={t} onApply={(tpl) => requestLoad({ kind: "template", run: () => { const nd = normalizeDoc(tpl.make()); docRef.current = nd; setDocRaw(nd); setBaseline(null); setBaselineDoc(null); setDocSource("template"); setTemplateName(tpl.title); setLoad({ state: "idle", msg: "" }); resetHistory(); setActiveFilter(1); setShowTemplates(false); } })} />
           </div>
         </div>
       )}
@@ -634,7 +704,8 @@ export default function GrismStudio() {
         )}
         {tab === "overview" && (
           <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t} loggedIn={!!login.who}
-            onGoto={(dest) => setTab(dest)} />
+            onOpenTemplates={() => setShowTemplates(true)}
+            onGoto={goTab} />
         )}
         {tab === "status" && (
           <SystemStatusTab loggedIn={!!login.who} t={t} />
@@ -645,25 +716,34 @@ export default function GrismStudio() {
         {tab === "trafficPorts" && (
           <TrafficTab loggedIn={!!login.who} t={t} />
         )}
+        {tab === "trafficSessions" && (
+          <TrafficSessionsTab loggedIn={!!login.who} t={t} />
+        )}
+        {tab === "trafficServices" && (
+          <TrafficServicesTab loggedIn={!!login.who} t={t} />
+        )}
+        {tab === "trafficCountries" && (
+          <TrafficCountriesTab loggedIn={!!login.who} t={t} />
+        )}
         {tab === "filters" && (
           <FiltersTab
             doc={doc} setDoc={setDoc}
             activeFilter={activeFilter} setActiveFilter={setActiveFilter}
-            setFilterRoot={setFilterRoot} hbTargets={hbTargets} t={t}
+            setFilterRoot={setFilterRoot} hbTargets={hbTargets} t={t} touched={changes?.filters?.touched}
           />
         )}
         {tab === "inputs" && (
-          <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} portOptions={devicePorts ?? DEFAULT_PORTS} t={t} />
+          <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} portOptions={devicePorts ?? DEFAULT_PORTS} t={t} touched={changes?.inputs?.touched} />
         )}
         {tab === "outputs" && (
-          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={[...(devicePorts ?? DEFAULT_PORTS), ...deviceStorages]} t={t} />
+          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={[...(devicePorts ?? DEFAULT_PORTS), ...deviceStorages]} t={t} touched={changes?.outputs?.touched} />
         )}
         {tab === "actions" && (
-          <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} portOptions={devicePorts ?? DEFAULT_PORTS} t={t} />
+          <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} portOptions={devicePorts ?? DEFAULT_PORTS} t={t} touched={changes?.actions?.touched} />
         )}
         {tab === "chain" && (
           <ChainTab doc={doc} definedIds={definedIds} outputIds={outputIds}
-            setChainTreeFor={setChainTreeFor} setDoc={setDoc}
+            setChainTreeFor={setChainTreeFor} setDoc={setDoc} touched={changes?.chains?.touched}
             activeChain={activeChain} setActiveChain={setActiveChain}
             t={t}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null} />
@@ -674,7 +754,7 @@ export default function GrismStudio() {
         )}
         {tab === "export" && (
           <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} t={t}
-            onApplied={() => setBaseline(runXml)}
+            onApplied={() => { setBaseline(runXml); setBaselineDoc(doc); }}
             onApplyXml={(xmlText) => {
               const { doc: parsed, warnings } = parseRun(xmlText); // throws on malformed → caught in ExportTab
               const nd = normalizeDoc(parsed);
@@ -699,7 +779,7 @@ export default function GrismStudio() {
 /* ============================================================
    Overview tab — auto-generated explanation of the current doc
    ============================================================ */
-function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn }) {
+function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, onOpenTemplates }) {
   const tr = t || ((k) => k);
   const info = useMemo(() => describeDoc(doc, tr), [doc, lang]);
   const [filtersOpen, setFiltersOpen] = React.useState(false); // Overview: show all filters vs first few
@@ -732,10 +812,12 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn }
         <div className="ov-caps">
           {[["ov.capFilters", "ov.capFiltersBody", "filters"],
             ["ov.capSimulate", "ov.capSimulateBody", "simulate"],
-            ["ov.capTraffic", "ov.capTrafficBody", null],
-            ["ov.capSystem", "ov.capSystemBody", null]].map(([tk, bk, dest]) => (
+            ["ov.capTraffic", "ov.capTrafficBody", "trafficPorts"],
+            ["ov.capSystem", "ov.capSystemBody", "status"]].map(([tk, bk, dest]) => (
             <div className={"ov-cap" + (dest ? " linked" : "")} key={tk}
-              onClick={dest ? () => onGoto(dest) : undefined}>
+              onClick={dest ? () => onGoto(dest) : undefined}
+              role={dest ? "button" : undefined} tabIndex={dest ? 0 : undefined}
+              onKeyDown={dest ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onGoto(dest); } } : undefined}>
               <span className="ov-cap-title">{tr(tk)}</span>
               <span className="ov-cap-body">{tr(bk)}</span>
             </div>
@@ -749,6 +831,12 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn }
           <h2 className="ov-title">{tr("ov.title")}</h2>
           <p className="ov-sub">{tr("ov.loadedFrom")} {sourceLabel}. <span className="ov-summary">{summary}</span></p>
         </div>
+        {onOpenTemplates && (
+          <button className={"tmpl-btn" + (docSource === "template" ? " src-active" : "")} onClick={onOpenTemplates}
+            title={docSource === "template" ? `${tr("btn.template_current")}: ${templateName}` : tr("tmpl.tip")}>
+            {docSource === "template" ? `${tr("btn.template_current")} · ${templateName}` : tr("btn.templates")}
+          </button>
+        )}
       </div>
 
       {authored && (
@@ -1136,6 +1224,91 @@ function SettingsTab({ loggedIn, t }) {
    Traffic tab — per-interface statistics from get_statistics_json
    ============================================================ */
 // Compact large integers: 1234567 → "1.23M". Pure → testable.
+/* Shared polling for the traffic pages: fetch on sign-in, refresh on an interval
+   the user controls, and expose the plumbing each page needs for its header. */
+function usePolledJson(url, loggedIn, { transform, defaultSec = 10, prefKey = "refreshSecStats", followSec = null } = {}) {
+  const [data, setData] = React.useState(null);
+  const [state, setState] = React.useState("idle");   // idle | loading | ok | error
+  const [errMsg, setErrMsg] = React.useState("");
+  const [updatedAt, setUpdatedAt] = React.useState(null);
+  // The statistics pages refresh less often than the interface counters — their
+  // data moves slowly and the payloads are much larger.
+  const [ownSec, setRefreshSec] = React.useState(() => readPrefs()[prefKey] ?? defaultSec);
+  // a secondary poll on the same page follows the primary one's interval
+  const refreshSec = followSec ?? ownSec;
+  React.useEffect(() => { if (followSec == null) writePref(prefKey, ownSec); }, [prefKey, ownSec, followSec]);
+
+  const load = React.useCallback(async () => {
+    setState((s) => (s === "ok" ? "ok" : "loading"));
+    try {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const json = await res.json();
+      setData(transform ? transform(json) : json);
+      setState("ok"); setUpdatedAt(new Date()); setErrMsg("");
+    } catch (e) { setState("error"); setErrMsg(String(e.message || e)); }
+  }, [url]);
+
+  React.useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
+  React.useEffect(() => {
+    if (!loggedIn) return;
+    const id = setInterval(load, Math.max(1, Number(refreshSec) || 5) * 1000);
+    return () => clearInterval(id);
+  }, [refreshSec, loggedIn, load]);
+
+  return { data, state, errMsg, updatedAt, refreshSec, setRefreshSec, reload: load };
+}
+
+/* The header every traffic page shares: title, last-updated, interval, refresh. */
+function TrafficHead({ title, tr, poll }) {
+  return (
+    <div className="sys-head">
+      <h2 className="sys-title">{title}</h2>
+      <div className="sys-controls">
+        {poll.updatedAt && <span className="sys-updated">{tr("tf.updated")} {poll.updatedAt.toLocaleTimeString()}</span>}
+        <label className="tf-interval">{tr("tf.every")}
+          <input type="number" min="1" value={poll.refreshSec} onChange={(e) => poll.setRefreshSec(e.target.value)} />
+          {tr("tf.seconds")}</label>
+        <button className="sys-refresh" onClick={poll.reload} disabled={poll.state === "loading"}>
+          {poll.state === "loading" ? tr("tf.refreshing") : tr("tf.refresh")}</button>
+      </div>
+    </div>
+  );
+}
+
+/* A compact breakdown table (protocols / ports): busiest first with a share bar. */
+function BreakdownTable({ rows, keyLabel, labelOf, tr, limit = 10 }) {
+  const [showAll, setShowAll] = React.useState(false);
+  if (!rows.length) return <p className="sys-note dim">{tr("sess.none")}</p>;
+  const max = Math.max(...rows.map((r) => r.concurrent), 1);
+  // rows arrive busiest-first, so the head of the list is the part worth showing
+  const shown = showAll ? rows : rows.slice(0, limit);
+  const hidden = rows.length - shown.length;
+  return (
+    <>
+      <table className="tf-mini-table">
+        <thead><tr><th>{keyLabel}</th><th className="tf-num">{tr("sess.sessions")}</th><th className="tf-num">{tr("sess.bytes")}</th></tr></thead>
+        <tbody>
+          {shown.map((r) => (
+            <tr key={r.key}>
+              <td className="mono">{labelOf(r.key)}</td>
+              <td className="tf-num">
+                <div className="tf-share"><div className="tf-share-bar"><div style={{ width: (r.concurrent / max) * 100 + "%" }} /></div><span className="mono">{fmtNum(r.concurrent)}</span></div>
+              </td>
+              <td className="tf-num mono">{fmtBytes(r.bytes)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {(hidden > 0 || showAll) && (
+        <button className="tf-more" onClick={() => setShowAll((v) => !v)}>
+          {showAll ? `▴ ${tr("tf.showLess")}` : `▾ ${tr("tf.showAll")} (${hidden})`}
+        </button>
+      )}
+    </>
+  );
+}
+
 function TrafficTab({ loggedIn, t }) {
   const tr = t || ((k) => k);
   const [rows, setRows] = React.useState([]);
@@ -1310,6 +1483,239 @@ function TrafficTab({ loggedIn, t }) {
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ============================================================
+   Traffic → Sessions: session tables, protocol/port breakdowns,
+   packet types and filter hit counters
+   ============================================================ */
+function TrafficSessionsTab({ loggedIn, t }) {
+  const tr = t || ((k) => k);
+  const poll = usePolledJson("/grism/task/get_statistics_json", loggedIn);
+  const fPoll = usePolledJson("/grism/task/get_filter_counter", loggedIn, { followSec: poll.refreshSec });
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+
+  const v4 = summarizeSessions(poll.data?.sessions);
+  const v6 = summarizeSessions(poll.data?.sessionsv6, { v6: true });
+  const pkts = summarizePacketTypes(poll.data?.packet_type_counter);
+  const filters = summarizeFilterCounters(fPoll.data?.filter_counter);
+
+  const family = (info, label, protoLabel) => info && (
+    <section className="sys-card">
+      <h3 className="sys-card-title">{label}
+        <span className="sys-card-metric">{fmtNum(info.concurrent)} {tr("sess.concurrent").toLowerCase()}</span>
+      </h3>
+      <div className="sess-figures">
+        <div><span className="sess-k">{tr("sess.total")}</span><span className="sess-v mono">{fmtNum(info.total)}</span></div>
+        <div><span className="sess-k">{tr("sess.concurrent")}</span><span className="sess-v mono">{fmtNum(info.concurrent)}</span>
+          <span className="sess-sub mono">{fmtPct(info.usage)} {tr("sess.ofTotal")}</span></div>
+        <div><span className="sess-k">{tr("sess.netflow")}</span><span className="sess-v mono">{fmtNum(info.netflowCount)}</span>
+          <span className="sess-sub mono">{info.netflowEps} {tr("sess.eps")}</span></div>
+      </div>
+      <div className="sess-breakdowns">
+        <div><div className="sess-bd-head">{protoLabel}</div>
+          <BreakdownTable rows={info.protocols} keyLabel={tr("sess.proto")} labelOf={protocolName} tr={tr} /></div>
+        <div><div className="sess-bd-head">{tr("sess.tcpPorts")}</div>
+          <BreakdownTable rows={info.tcp} keyLabel={tr("sess.port")} labelOf={portLabel} tr={tr} /></div>
+        <div><div className="sess-bd-head">{tr("sess.udpPorts")}</div>
+          <BreakdownTable rows={info.udp} keyLabel={tr("sess.port")} labelOf={portLabel} tr={tr} /></div>
+      </div>
+    </section>
+  );
+
+  return (
+    <div className="sys-wrap">
+      <TrafficHead title={tr("sess.title")} tr={tr} poll={poll} />
+      {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
+
+      <div className="sess-families">
+        {family(v4, tr("sess.v4"), tr("sess.protocols"))}
+        {family(v6, tr("sess.v6"), tr("sess.nextHdr"))}
+      </div>
+
+      {pkts.length > 0 && (
+        <section className="sys-card">
+          <h3 className="sys-card-title">{tr("sess.pktTypes")}</h3>
+          <div className="tf-detail-grid">
+            {pkts.map((p) => (
+              <div className="tf-dcell" key={p.key}>
+                <span className="tf-dk">{p.key}</span>
+                <span className={"tf-dv mono" + (p.count ? "" : " dim")}>{fmtNum(p.count)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="sys-card">
+        <h3 className="sys-card-title">{tr("sess.filters")} <span className="sys-card-metric">{filters.length}</span></h3>
+        {filters.length === 0 ? <p className="sys-note dim">{tr("sess.noFilters")}</p> : (
+          <table className="tf-table sess-filter-table">
+            <thead><tr>
+              <th>{tr("sess.filterId")}</th><th className="tf-num">{tr("sess.refs")}</th>
+              <th className="tf-num">{tr("sess.tried")}</th><th className="tf-num">{tr("sess.matched")}</th>
+              <th>{tr("sess.rate")}</th><th className="tf-num">{tr("sess.perSec")}</th>
+            </tr></thead>
+            <tbody>
+              {filters.map((f) => (
+                <tr key={f.id}>
+                  <td className="tf-name">F{f.id}</td>
+                  <td className="tf-num mono">{f.refs}</td>
+                  <td className="tf-num mono">{fmtNum(f.tried)}</td>
+                  <td className="tf-num mono">{fmtNum(f.matched)}</td>
+                  <td>
+                    <div className="tf-share">
+                      <div className="tf-share-bar"><div style={{ width: (f.rate * 100).toFixed(1) + "%" }} /></div>
+                      <span className="mono">{(f.rate * 100).toFixed(f.rate >= 0.1 ? 0 : 2)}%</span>
+                    </div>
+                  </td>
+                  <td className="tf-num mono">{f.perSecond}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* Hosts behind one service. Busy services can list hundreds, so only the top
+   talkers are shown until the user asks for the rest. */
+function HostTable({ hosts, tr, limit = 20 }) {
+  const [showAll, setShowAll] = React.useState(false);
+  const shown = showAll ? hosts : hosts.slice(0, limit);
+  const hidden = hosts.length - shown.length;
+  return (
+    <>
+      <table className="tf-mini-table">
+        <thead><tr><th>{tr("svc.host")}</th><th className="tf-num">{tr("sess.sessions")}</th><th className="tf-num">{tr("sess.bytes")}</th></tr></thead>
+        <tbody>
+          {shown.map((h) => (
+            <tr key={h.ip}>
+              <td className="mono">{h.ip}</td>
+              <td className="tf-num mono">{fmtNum(h.sessions)}</td>
+              <td className="tf-num mono">{fmtBytes(h.bytes)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {(hidden > 0 || showAll) && (
+        <button className="tf-more" onClick={() => setShowAll((v) => !v)}>
+          {showAll ? `▴ ${tr("tf.showLess")}` : `▾ ${tr("tf.showAll")} (${hidden})`}
+        </button>
+      )}
+    </>
+  );
+}
+
+/* ============================================================
+   Traffic → Services: flow services and the hosts behind them
+   ============================================================ */
+function TrafficServicesTab({ loggedIn, t }) {
+  const tr = t || ((k) => k);
+  const poll = usePolledJson("/grism/task/get_flow_service", loggedIn);
+  const [open, setOpen] = React.useState(null);
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+  const services = summarizeFlowServices(poll.data?.flow_service);
+
+  return (
+    <div className="sys-wrap">
+      <TrafficHead title={tr("svc.title")} tr={tr} poll={poll} />
+      {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
+
+      {services.length === 0 ? <p className="sys-note dim">{tr("svc.none")}</p> : (
+        <div className="tf-table-wrap">
+          <table className="tf-table">
+            <thead><tr>
+              <th className="tf-expander" /><th>{tr("svc.service")}</th><th>{tr("svc.scope")}</th>
+              <th className="tf-num">{tr("svc.hosts")}</th><th className="tf-num">{tr("sess.sessions")}</th>
+              <th className="tf-num">{tr("sess.bytes")}</th>
+            </tr></thead>
+            <tbody>
+              {services.map((s, i) => {
+                const isOpen = open === i;
+                return (
+                  <React.Fragment key={i}>
+                    <tr className={"tf-row" + (isOpen ? " open" : "")} onClick={() => setOpen(isOpen ? null : i)}>
+                      <td className="tf-expander"><span className="tf-caret" aria-hidden="true">{isOpen ? "▾" : "▸"}</span></td>
+                      <td className="tf-name">{s.name}</td>
+                      <td><span className={"svc-scope " + s.scope}>{tr("svc." + s.scope)}</span></td>
+                      <td className="tf-num mono">{s.hosts.length}</td>
+                      <td className="tf-num mono">{fmtNum(s.sessions)}</td>
+                      <td className="tf-num mono">{fmtBytes(s.bytes)}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="tf-detail-row"><td colSpan={6}>
+                        <div className="tf-detail">
+                          <div className="tf-detail-title">{tr("svc.hosts")} · <code>{s.name}</code></div>
+                          <HostTable hosts={s.hosts} tr={tr} />
+                        </div>
+                      </td></tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   Traffic → Countries: GeoIP traffic breakdown
+   ============================================================ */
+function TrafficCountriesTab({ loggedIn, t }) {
+  const tr = t || ((k) => k);
+  const poll = usePolledJson("/grism/task/get_country_counter", loggedIn);
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+  const { rows, totalBytes, totalPackets } = summarizeCountries(poll.data?.country_counter);
+
+  return (
+    <div className="sys-wrap">
+      <TrafficHead title={tr("ctry.title")} tr={tr} poll={poll} />
+      {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
+
+      {rows.length === 0 ? <p className="sys-note dim">{tr("ctry.none")}</p> : (
+        <>
+          <div className="tf-flow-line">
+            <span className="tf-flow-seg"><b>{tr("ctry.packets")}</b> <span className="mono">{fmtNum(totalPackets)}</span></span>
+            <span className="tf-flow-div">|</span>
+            <span className="tf-flow-seg"><b>{tr("ctry.bytes")}</b> <span className="mono">{fmtBytes(totalBytes)}</span></span>
+          </div>
+          <div className="tf-table-wrap">
+            <table className="tf-table">
+              <thead><tr>
+                <th>{tr("ctry.country")}</th><th className="tf-num">{tr("ctry.packets")}</th>
+                <th className="tf-num">{tr("ctry.bytes")}</th><th>{tr("ctry.share")}</th>
+              </tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.iso}>
+                    <td className="tf-name">{r.iso}</td>
+                    <td className="tf-num mono">{fmtNum(r.packets)}</td>
+                    <td className="tf-num mono">{fmtBytes(r.bytes)}</td>
+                    <td>
+                      <div className="tf-share">
+                        <div className="tf-share-bar"><div style={{ width: (r.share * 100).toFixed(1) + "%" }} /></div>
+                        <span className="mono">{(r.share * 100).toFixed(r.share >= 0.1 ? 0 : 1)}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
@@ -1547,7 +1953,7 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
   );
 }
 
-function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, t }) {
+function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, t, touched }) {
   const tr = t || ((k) => k);
   const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
   const problems = useMemo(() => f ? filterProblems(f.root, []) : [], [f]);
@@ -1593,7 +1999,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
     <div className="filters-layout">
       <SortableList
         items={doc.filters} activeKey={f.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>{tr("flt.unnamed")}</em>}</span></>}
+        renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>{tr("flt.unnamed")}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveFilter(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, filters: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...doc.filters.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, filters: [...d.filters, copy] })); setActiveFilter(nextId); }}
@@ -1607,15 +2013,15 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
             <input value={f[f.labelAttr ?? "name"] ?? f.name ?? ""}
               onChange={(e) => { const k = f.labelAttr ?? "name"; patchMeta(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
               placeholder={tr("flt.namePh")} /></label>
-          <label className="ml"><span>sessionBase</span>
+          <label className="ml" title={`sessionBase — ${tr("flt.sessionBaseTip")}`}><span>{tr("flt.sessionBase")}</span>
             <select value={f.sessionBase} onChange={(e) => patchMeta({ sessionBase: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
             </select></label>
-          <label className="ml"><span>blockifempty</span>
+          <label className="ml" title={`blockifempty — ${tr("flt.blockIfEmptyTip")}`}><span>{tr("flt.blockIfEmpty")}</span>
             <select value={f.blockifempty || "no"} onChange={(e) => patchMeta({ blockifempty: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
             </select></label>
-          <label className="ml"><span>matchedlog</span>
+          <label className="ml" title={`matchedlog — ${tr("flt.matchedLogTip")}`}><span>{tr("flt.matchedLog")}</span>
             <select value={f.matchedlog || "no"} onChange={(e) => patchMeta({ matchedlog: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
             </select></label>
@@ -1626,24 +2032,25 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
         <div className="oattr-bar">
           <CollapseSection label="Advanced attributes" active={Object.values(f.fattrs ?? {}).some((v) => v && v !== "no")}>
             <div className="oattr-grid">
-              {[{ name: "maxPackets", kind: "num" }].map((a) => (
-                <label key={a.name} className="oattr-field">
-                  <span>{a.name}</span>
+              {[{ name: "maxPackets", label: "Max packets per session", kind: "num" }].map((a) => (
+                <label key={a.name} className="oattr-field"
+                  title={a.name === "mpslog" ? `mpslog — ${tr("flt.mpslogTip")}` : a.name}>
+                  <span>{a.label ?? a.name}</span>
                   <input value={(f.fattrs ?? {})[a.name] ?? ""} placeholder={a.name}
                     onChange={(e) => patchFattr(a.name, e.target.value)} />
                 </label>
               ))}
             </div>
-            <div className="oattr-subhead">regular expression</div>
+            <div className="oattr-subhead">{tr("flt.regexOnly")}</div>
             <div className="oattr-grid">
               {[
-                { name: "masking", opts: ["no","yes"] },
-                { name: "start", opts: ["","l2","l3","l4","l7","http_body"] },
-                { name: "position", kind: "num" },
-                { name: "within", kind: "num" },
+                { name: "masking", label: "Mask the match", opts: ["no","yes"] },
+                { name: "start", label: "Search from", opts: ["","l2","l3","l4","l7","http_body"] },
+                { name: "position", label: "Offset from start (bytes)", kind: "num" },
+                { name: "within", label: "Search length (bytes)", kind: "num" },
               ].map((a) => (
-                <label key={a.name} className="oattr-field">
-                  <span>{a.name}</span>
+                <label key={a.name} className="oattr-field" title={a.name}>
+                  <span>{a.label ?? a.name}</span>
                   {a.opts
                     ? <select value={(f.fattrs ?? {})[a.name] ?? ""} onChange={(e) => patchFattr(a.name, e.target.value)}>
                         {a.opts.map((op) => <option key={op} value={op}>{op || "—"}</option>)}
@@ -1655,11 +2062,12 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
             </div>
             <div className="oattr-grid">
               {[
-                { name: "tuple5_live_hashtable_size", kind: "num" },
-                { name: "mpslog", kind: "num" },
+                { name: "tuple5_live_hashtable_size", label: "5-tuple table size", kind: "num" },
+                { name: "mpslog", label: "Matches/sec → syslog", kind: "num" },
               ].map((a) => (
-                <label key={a.name} className="oattr-field">
-                  <span>{a.name}</span>
+                <label key={a.name} className="oattr-field"
+                  title={a.name === "mpslog" ? `mpslog — ${tr("flt.mpslogTip")}` : a.name}>
+                  <span>{a.label ?? a.name}</span>
                   <input value={(f.fattrs ?? {})[a.name] ?? ""} placeholder={a.name}
                     onChange={(e) => patchFattr(a.name, e.target.value)} />
                 </label>
@@ -1800,7 +2208,7 @@ function PortSelect({ value, options, onChange, invalid }) {
   );
 }
 
-function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t }) {
+function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, touched }) {
   const tr = t || ((k) => k);
   const inputs = doc.inputs ?? [];
   const inp = inputs.find((x) => x.id === activeInput) || inputs[0];
@@ -1866,7 +2274,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t })
     <div className="filters-layout">
       <SortableList
         items={inputs} activeKey={inp.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>I{x.id}</b><span>{x.name || <em>{x.type === "traffic-gen" ? "traffic-gen" : x.port}</em>}</span></>}
+        renderLabel={(x) => <><b>I{x.id}</b><span>{x.name || <em>{x.type === "traffic-gen" ? "traffic-gen" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveInput(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, inputs: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...inputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, inputs: [...d.inputs, copy] })); setActiveInput(nextId); }}
@@ -1964,7 +2372,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t })
   );
 }
 
-function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t }) {
+function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t, touched }) {
   const tr = t || ((k) => k);
   const outputs = doc.outputs ?? [];
   const o = outputs.find((x) => x.id === activeOutput) || outputs[0];
@@ -2021,7 +2429,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
     <div className="filters-layout">
       <SortableList
         items={outputs} activeKey={o.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>O{x.id}</b><span>{x.name || <em>{x.port}</em>}</span></>}
+        renderLabel={(x) => <><b>O{x.id}</b><span>{x.name || <em>{x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveOutput(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, outputs: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...outputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, outputs: [...d.outputs, copy] })); setActiveOutput(nextId); }}
@@ -2045,13 +2453,16 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
           <CollapseSection label="Output attributes (advanced)" active={Object.values(o.oattrs ?? {}).some((v) => v && v !== "no")}>
             <div className="oattr-grid">
               {[
-                { name: "type", opts: ["","httprequesthijack","tcpreset","udpencap"] },
-                { name: "mtu", kind: "num" }, { name: "stl", kind: "num" },
-                { name: "arp_srcip", kind: "ip" }, { name: "arp_dstip_mac", opts: ["no","yes"] },
-                { name: "minbps", kind: "num" }, { name: "maxbps", kind: "num" },
+                { name: "type", label: "Type", opts: ["","httprequesthijack","tcpreset","udpencap"] },
+                { name: "mtu", label: "MTU", kind: "num" },
+                { name: "stl", label: "Seconds to Live", kind: "num" },
+                { name: "arp_srcip", label: "ARP source IP", kind: "ip" },
+                { name: "arp_dstip_mac", label: "ARP destination IP → MAC", opts: ["no","yes"] },
+                { name: "minbps", label: "Minimum bitrate (bps)", kind: "num" },
+                { name: "maxbps", label: "Maximum bitrate (bps)", kind: "num" },
               ].map((a) => (
-                <label key={a.name} className="oattr-field">
-                  <span>{a.name}</span>
+                <label key={a.name} className="oattr-field" title={a.name}>
+                  <span>{a.label ?? a.name}</span>
                   {a.opts
                     ? <select value={(o.oattrs ?? {})[a.name] ?? "" } onChange={(e) => patchAttr(a.name, e.target.value)}>
                         {a.opts.map((op) => <option key={op} value={op}>{op || "—"}</option>)}
@@ -2155,7 +2566,7 @@ function OutputModRow({ mod, onChange, onOp, onAttr, onRemove }) {
 /* ============================================================
    Actions tab — <action> input-packet-process / linkpairs
    ============================================================ */
-function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t }) {
+function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t, touched }) {
   const tr = t || ((k) => k);
   const actions = doc.actions ?? [];
   const a = actions.find((x) => x.id === activeAction) || actions[0];
@@ -2191,7 +2602,7 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
     <div className="filters-layout">
       <SortableList
         items={actions} activeKey={a.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>A{x.id}</b><span>{x.name || <em>{x.type === "linkpairs" ? "linkpairs" : x.port}</em>}</span></>}
+        renderLabel={(x) => <><b>A{x.id}</b><span>{x.name || <em>{x.type === "linkpairs" ? "linkpairs" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveAction(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, actions: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...actions.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, actions: [...d.actions, copy] })); setActiveAction(nextId); }}
@@ -2205,8 +2616,8 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
             <input value={a.name} onChange={(e) => patch({ name: e.target.value })} placeholder={tr("common.optional")} /></label>
           <label className="ml"><span>{tr("common.type")}</span>
             <select value={a.type} onChange={(e) => patch({ type: e.target.value })}>
-              <option value="input-packet-process">input-packet-process</option>
-              <option value="linkpairs">linkpairs</option>
+              <option value="input-packet-process">{tr("act.typeProcess")}</option>
+              <option value="linkpairs">{tr("act.typeLinkPairs")}</option>
             </select></label>
           <button className="del" onClick={() => delAction(a.id)}>{tr("common.delete")}</button>
         </div>
@@ -2352,7 +2763,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, emptyNote }) 
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, t }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, t, touched }) {
   const tr = t || ((k) => k);
   const [selId, setSelId] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -2575,6 +2986,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               onClick={() => { setActiveChain(c.cid); setSelId(null); }}>
               <span className="drag-handle" title={tr("ch.dragReorder")} aria-hidden="true">⠿</span>
               <span className="chain-flow"><b>{inP || "?"}</b> <span className="arr">→</span> <span className="dest">{chainDest(c)}</span></span>
+              {touched?.has(c.cid) && <span className="row-changed" title={tr("chg.rowTip")} />}
             </div>
           );
         })}
@@ -2711,12 +3123,13 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
 
         <div className="refs">
           <div className="refs-head"><span>{tr("ch.filtersReferenced")}</span><span className="refs-count">{refs.length}</span></div>
-          {refs.map((r) => <div key={r.id} className={"ref-row " + (r.defined ? "here" : "device")}>
+          {refs.map((r) => <div key={r.id} className={"ref-row " + (r.defined ? "here" : r.onDevice ? "device" : "missing")}>
             <span className="ref-dot" /><code className="ref-id">{r.id}</code>
             <span className="ref-name">{knownNames[r.id] || ""}</span>
-            <span className="ref-where">{r.defined ? tr("ch.definedHere") : tr("ch.onDevice")}</span>
+            <span className="ref-where">{r.defined ? tr("ch.definedHere") : r.onDevice ? tr("ch.onDevice") : tr("ch.notDefined")}</span>
           </div>)}
-          {refs.some((r) => !r.defined) && <p className="refs-note">Undefined here → assumed to exist on the device. No empty filter is generated.</p>}
+          {refs.some((r) => r.onDevice) && <p className="refs-note">{tr("ch.deviceNote")}</p>}
+          {refs.some((r) => !r.defined && !r.onDevice) && <p className="refs-note bad">{tr("ch.missingNote")}</p>}
         </div>
       </aside>
 
@@ -2989,14 +3402,24 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
       });
       geomRef.current = geo;
       setCables(next);
-      // seed a floating position for any inline that doesn't have one yet:
-      // just above its port A (so it starts near where it connects).
+      // Seed a floating position for any inline that doesn't have one yet: below and
+      // to the right of its port A, nudged further down if that spot is already
+      // taken, so new devices land in free space rather than on top of each other.
       setDevPos((prev) => {
         let changed = false; const nextPos = { ...prev };
+        const wrapH = wrap.getBoundingClientRect().height;
         inlines.forEach((d) => {
           if (nextPos[d.id]) return;
           const pa = geo.ports[d.portA];
-          if (pa) { nextPos[d.id] = { x: pa.x - 60, y: Math.max(4, (pa.topEdge ?? pa.y) - 96) }; changed = true; }
+          if (!pa) return;
+          const bottom = pa.bottomEdge ?? pa.y;
+          let x = pa.x + 34, y = bottom + 40;
+          const taken = (px, py) => Object.values(nextPos).some((p) => Math.abs(p.x - px) < 120 && Math.abs(p.y - py) < 70);
+          let guard = 0;
+          while (taken(x, y) && guard++ < 12) y += 72;               // stack downward…
+          if (y > wrapH - 60) { y = bottom + 40; x += 150; }          // …then start a new column
+          nextPos[d.id] = { x: Math.max(4, x), y: Math.max(4, y) };
+          changed = true;
         });
         // drop positions for removed inlines
         Object.keys(nextPos).forEach((id) => { if (!inlines.some((d) => d.id === id)) { delete nextPos[id]; changed = true; } });
@@ -3126,12 +3549,16 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
     cancelAnimationFrame(rafRef.current);
     const lists = buildAllWaypoints();
     if (!lists || !lists.length) return;
-    const SPEED = 220; // px/sec
+    // Travel time is distance-based so short hops feel snappy, but it's clamped at
+    // both ends: without a ceiling, a packet routed through an inline device or a
+    // LOOP port covers so much distance that the animation drags.
+    const SPEED = 320;      // px/sec for ordinary distances
+    const MIN_DUR = 650, MAX_DUR = 2000;
     let maxDur = 0;
     const paths = lists.map((pts) => {
       const segs = []; let total = 0;
       for (let i = 0; i < pts.length - 1; i++) { const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y; const len = Math.hypot(dx, dy); segs.push(len); total += len; }
-      const dur = Math.max(700, (total / SPEED) * 1000);
+      const dur = Math.min(MAX_DUR, Math.max(MIN_DUR, (total / SPEED) * 1000));
       maxDur = Math.max(maxDur, dur);
       return { pts, segs, total, dur };
     });
@@ -3195,7 +3622,17 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
               {playState === "paused" && <button className="dev-play" onClick={resume} title={tr("sim.resumeTip")}>{tr("sim.resume")}</button>}
               {playState !== "idle" && <button className="dev-stop" onClick={stop} title={tr("sim.stopTip")}>{tr("sim.stop")}</button>}
               <div className="inline-add-wrap">
-                <button className={"inline-add-btn" + (inlineDraft.open ? " on" : "")} onClick={() => setInlineDraft((s) => ({ ...s, open: !s.open }))}>{tr("sim.addInline")}</button>
+                <button className={"inline-add-btn" + (inlineDraft.open ? " on" : "")}
+                  onClick={() => setInlineDraft((s) => {
+                    if (s.open) return { ...s, open: false };
+                    // Prefill with the selected port and the one after it; with nothing
+                    // selected, fall back to the first two ports on the device.
+                    const i = selected ? portOptions.indexOf(selected) : -1;
+                    const a = i >= 0 ? portOptions[i] : portOptions[0] ?? "";
+                    const b = i >= 0 ? (portOptions[i + 1] ?? portOptions[i - 1] ?? "")
+                                     : (portOptions[1] ?? "");
+                    return { ...s, open: true, portA: a, portB: b };
+                  })}>{tr("sim.addInline")}</button>
                 {inlineDraft.open && (
                   <div className="inline-add-pop">
                     <input className="inline-name-in" value={inlineDraft.name} placeholder={tr("sim.namePh")}
