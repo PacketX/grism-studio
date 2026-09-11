@@ -1557,3 +1557,62 @@ export function fmtPct(ratio) {
   if (p >= 0.01) return p.toFixed(2) + "%";
   return p.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") + "%";
 }
+
+/* ===================== country names =====================
+   Intl.DisplayNames turns an ISO-3166 alpha-2 code into a localised country name,
+   so we don't ship (and don't have to maintain) a translation table. A small set
+   of codes the platform data doesn't cover is handled explicitly, and anything
+   unresolved falls back to the raw code. */
+const EXTRA_REGIONS = { EU: "European Union", AP: "Asia/Pacific", ZZ: "Unknown" };
+const _regionNames = new Map();
+export function countryName(iso, lang = "en") {
+  const code = String(iso || "").toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return String(iso ?? "");
+  if (EXTRA_REGIONS[code]) return EXTRA_REGIONS[code];
+  try {
+    if (!_regionNames.has(lang)) {
+      _regionNames.set(lang, new Intl.DisplayNames([lang], { type: "region" }));
+    }
+    return _regionNames.get(lang).of(code) || code;
+  } catch { return code; }
+}
+
+/* Read a cookie value by name. Returns "" when absent or unreadable (HttpOnly). */
+export function readCookie(name, cookieString) {
+  const src = cookieString ?? (typeof document !== "undefined" ? document.cookie : "");
+  for (const part of String(src).split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === name) {
+      try { return decodeURIComponent(part.slice(eq + 1).trim()); }
+      catch { return part.slice(eq + 1).trim(); }
+    }
+  }
+  return "";
+}
+
+/* The device records the signed-in account in this (readable) cookie. */
+export const USERNAME_COOKIE = "X-PacketX-Username";
+export const signedInUser = (cookieString) => readCookie(USERNAME_COOKIE, cookieString);
+
+/* Pull a username out of whatever get_current_user returns. The endpoint may hand
+   back a bare string, or an object using any of a few plausible key names, so we
+   accept the common shapes rather than depending on one exact contract. */
+export function extractUsername(payload) {
+  if (payload == null) return "";
+  if (typeof payload === "string") {
+    const s = payload.trim();
+    if (!s || s.startsWith("<")) return "";        // empty, or an HTML error page
+    try {
+      const j = JSON.parse(s);
+      return extractUsername(j);
+    } catch { return s; }                           // a bare username in the body
+  }
+  if (typeof payload !== "object") return "";
+  const src = payload.args ?? payload.data ?? payload;
+  for (const k of ["username", "user", "Username", "User", "name", "login"]) {
+    const v = src?.[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
+}

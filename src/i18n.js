@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "1.4.3";
+export const STUDIO_VERSION = "1.5.2";
 
 export const I18N = {
   en: {
@@ -18,7 +18,7 @@ export const I18N = {
     "tab.trafficServices": "Services", "tab.trafficCountries": "Countries",
     "sess.title": "Session tables", "sess.v4": "IPv4", "sess.v6": "IPv6",
     "sess.total": "Total sessions", "sess.concurrent": "Concurrent", "sess.netflow": "NetFlow records",
-    "sess.eps": "events/sec", "sess.ofTotal": "of total", "sess.protocols": "Protocols", "sess.nextHdr": "Next headers",
+    "sess.eps": "events/sec", "sess.ofTotal": "of capacity", "sess.protocols": "Protocols", "sess.nextHdr": "Next headers",
     "sess.tcpPorts": "TCP ports", "sess.udpPorts": "UDP ports",
     "sess.proto": "Protocol", "sess.port": "Port", "sess.sessions": "Sessions", "sess.bytes": "Bytes",
     "sess.none": "no active sessions",
@@ -26,9 +26,11 @@ export const I18N = {
     "sess.filters": "Filter hit counters", "sess.filterId": "Filter", "sess.refs": "Refs",
     "sess.tried": "Evaluated", "sess.matched": "Matched", "sess.rate": "Hit rate", "sess.perSec": "Matches/sec",
     "sess.noFilters": "No filter counters reported.",
+    "sess.note": "Total sessions is the maximum the device supports; concurrent is how many are open right now, and usage is the share of that capacity in use. Protocol and port breakdowns show the busiest entries first — sessions is the live count, bytes the traffic those sessions are carrying. Filter counters show how many packets each filter evaluated and how many it matched.",
     "svc.title": "Flow services", "svc.public": "Public", "svc.private": "Private",
-    "svc.scope": "Scope", "svc.service": "Service", "svc.hosts": "Hosts", "svc.host": "Host",
+    "svc.scope": "Scope", "svc.service": "Service", "svc.hosts": "Top 100 hosts", "svc.host": "Host",
     "svc.none": "No services reported.",
+    "svc.note": "Services are identified by the ports their traffic uses. Click a row to see the hosts behind it — the top 100 talkers by traffic, newest data each refresh. Public covers traffic to and from the internet; private covers traffic that stays inside your network.",
     "ctry.title": "Traffic by country", "ctry.country": "Country", "ctry.packets": "Packets",
     "ctry.bytes": "Bytes", "ctry.share": "Share", "ctry.none": "No country data reported.",
     "tab.status": "System status",
@@ -52,13 +54,13 @@ export const I18N = {
     "set.title": "Device settings", "set.needLogin": "Sign in to the device to view and change settings.",
     "set.load": "Reload from device", "set.loading": "loading…", "set.loadFailed": "Couldn't load config",
     "set.mgmtIP": "Management interfaces", "set.rawXml": "Raw configuration",
-    "set.iface": "Interface", "set.enabled": "Enabled", "set.ip": "IP address", "set.name": "Name",
+    "set.iface": "Interface", "set.enabled": "Enabled", "set.ip": "IP address",
     "set.eth": "NIC", "set.netmask": "Netmask", "set.gateway": "Gateway", "set.garp": "GARP interval",
     "set.role": "role", "set.applyIP": "Apply IP changes", "set.applyXml": "Submit XML",
     "set.submitting": "submitting…", "set.applied": "applied ✓",
     "set.confirmTitle": "Change management IP?", "set.confirmBody": "Changing the management interface can disconnect you from the device. You may need to reconnect at the new address. Continue?",
     "set.confirmXmlTitle": "Submit full configuration?", "set.confirmXmlBody": "This submits the entire configuration to the device. Incorrect values can disrupt device operation. Continue?",
-    "set.confirmApply": "Apply", "set.mgmtNote": "Only the changed <ifcfgs> section is submitted.",
+    "set.confirmApply": "Apply",
     "set.rawNote": "Edit the full device configuration and submit it as-is. Submitted via submit_config.",
     "set.submitFailed": "Submit failed",
     // traffic statistics page
@@ -212,7 +214,7 @@ export const I18N = {
     "tmpl.modalTitle": "Start from a template",
     // filter editor
     "flt.sessionBase": "Whole session", "flt.blockIfEmpty": "Empty = match none", "flt.matchedLog": "Log matches",
-    "flt.regexOnly": "regular expression (regex conditions only)",
+    "flt.advAttrs": "Advanced", "flt.regexOnly": "regular expression (regex conditions only)",
     "flt.sessionBaseTip": "One matching packet marks the entire session as matched.",
     "flt.blockIfEmptyTip": "By default an empty filter matches everything; set this to make it match nothing instead.",
     "flt.matchedLogTip": "Send matched packets to syslog (requires syslog to be configured under System).",
@@ -235,7 +237,7 @@ export const I18N = {
     "in.newInput": "+ New input",
     // outputs editor
     "out.emptyMsg": "No outputs yet. An <output> lets a chain rewrite or tag packets — reference it from a chain <out> as O1.",
-    "out.newOutput": "+ New output", "out.port": "port *",
+    "out.newOutput": "+ New output", "out.attrs": "Advanced", "out.port": "port *",
     "out.forwardNote": "This output just forwards unchanged. Add a modifier below to rewrite or tag packets.",
     "out.pAdd": "add modifier", "out.pReply": "ARP / ICMP reply", "out.pRedirect": "DNS response / redirect",
     "out.pMirror": "mirror to file", "out.pVxlan": "VXLAN encapsulation", "out.pNvgre": "NVGRE encapsulation",
@@ -289,9 +291,11 @@ export const I18N = {
     "sess.filters": "篩選器命中計數", "sess.filterId": "篩選器", "sess.refs": "引用",
     "sess.tried": "比對次數", "sess.matched": "命中次數", "sess.rate": "命中率", "sess.perSec": "命中/秒",
     "sess.noFilters": "裝置未回報篩選器計數。",
+    "sess.note": "總連線數是裝置支援的最大連線數量,在線數是目前開啟中的連線,使用率則是已用掉的容量比例。協定與埠的明細依繁忙程度排序,「連線數」為目前在線數,「位元組」為這些連線承載的流量。篩選器計數顯示每個篩選器比對了多少封包、命中多少。",
     "svc.title": "流量服務", "svc.public": "公開", "svc.private": "私有",
-    "svc.scope": "範圍", "svc.service": "服務", "svc.hosts": "主機", "svc.host": "主機",
+    "svc.scope": "範圍", "svc.service": "服務", "svc.hosts": "TOP 100 主機", "svc.host": "主機",
     "svc.none": "未回報任何服務。",
+    "svc.note": "服務是依流量使用的埠號辨識。點選任一列可看到其背後的主機——依流量排序的前 100 名,每次更新都是最新資料。「公開」是與網際網路往來的流量,「私有」則是留在內部網路的流量。",
     "ctry.title": "各國流量", "ctry.country": "國家", "ctry.packets": "封包數",
     "ctry.bytes": "位元組", "ctry.share": "佔比", "ctry.none": "未回報國家資料。",
     "tab.status": "系統狀態",
@@ -315,13 +319,13 @@ export const I18N = {
     "set.title": "裝置設定", "set.needLogin": "登入裝置以檢視與變更設定。",
     "set.load": "從裝置重新載入", "set.loading": "載入中…", "set.loadFailed": "無法載入設定",
     "set.mgmtIP": "管理介面", "set.rawXml": "原始設定",
-    "set.iface": "介面", "set.enabled": "啟用", "set.ip": "IP 位址", "set.name": "名稱",
+    "set.iface": "介面", "set.enabled": "啟用", "set.ip": "IP 位址",
     "set.eth": "網卡", "set.netmask": "子網路遮罩", "set.gateway": "閘道", "set.garp": "GARP 間隔",
     "set.role": "role", "set.applyIP": "套用 IP 變更", "set.applyXml": "送出 XML",
     "set.submitting": "送出中…", "set.applied": "已套用 ✓",
     "set.confirmTitle": "變更管理 IP?", "set.confirmBody": "變更管理介面可能會使你與裝置斷線,你可能需要用新位址重新連線。要繼續嗎?",
     "set.confirmXmlTitle": "送出完整設定?", "set.confirmXmlBody": "這會把整份設定送到裝置。錯誤的值可能中斷裝置運作。要繼續嗎?",
-    "set.confirmApply": "套用", "set.mgmtNote": "只會送出變更的 <ifcfgs> 區段。",
+    "set.confirmApply": "套用",
     "set.rawNote": "編輯完整的裝置設定並原樣送出。透過 submit_config 送出。",
     "set.submitFailed": "送出失敗",
     // traffic statistics page
@@ -475,7 +479,7 @@ export const I18N = {
     "tmpl.modalTitle": "從範本開始",
     // filter editor
     "flt.sessionBase": "整條連線", "flt.blockIfEmpty": "空白 = 不符合", "flt.matchedLog": "記錄命中",
-    "flt.regexOnly": "正規表示式(僅適用 regex 條件)",
+    "flt.advAttrs": "Advanced", "flt.advAttrs": "進階", "flt.regexOnly": "正規表示式(僅適用 regex 條件)",
     "flt.sessionBaseTip": "只要命中連線中的一個封包,整條連線都視為命中。",
     "flt.blockIfEmptyTip": "預設空篩選器會符合所有封包;設為 yes 則改成不符合任何封包。",
     "flt.matchedLogTip": "將命中的封包以 syslog 送出(需先在「系統」設定 syslog)。",
@@ -498,7 +502,7 @@ export const I18N = {
     "in.newInput": "+ 新 input",
     // outputs editor
     "out.emptyMsg": "尚無 output。<output> 讓鏈結改寫或標記封包 — 在鏈結的 <out> 以 O1 引用。",
-    "out.newOutput": "+ 新 output", "out.port": "埠 *",
+    "out.newOutput": "+ 新 output", "out.attrs": "Advanced", "out.port": "埠 *",
     "out.forwardNote": "此 output 只是原樣轉發。在下方新增 modifier 以改寫或標記封包。",
     "out.pAdd": "新增 modifier", "out.pReply": "ARP / ICMP 回應", "out.pRedirect": "DNS 回應 / 重導向",
     "out.pMirror": "鏡像到檔案", "out.pVxlan": "VXLAN 封裝", "out.pNvgre": "NVGRE 封裝",

@@ -429,6 +429,12 @@ group("traffic statistics");
   check("totals summed", ctry.totalPackets === 300420);
   check("share computed", Math.abs(ctry.rows[0].share - 189896597 / ctry.totalBytes) < 1e-9);
 
+  check("country codes resolve to names", C.countryName("TW", "en") === "Taiwan" && C.countryName("JP", "en") === "Japan");
+  check("country names localise", C.countryName("US", "zh-TW") === "美國");
+  check("unknown codes fall back to the code", C.countryName("XX", "en") === "XX");
+  check("non-country values pass through", C.countryName("", "en") === "" && C.countryName("ABC", "en") === "ABC");
+  check("regional codes handled", C.countryName("EU", "en") === "European Union");
+
   const pt = C.summarizePacketTypes({ ipfragment: 252, gtp: 0, gre: 109599, vxlan: 0 });
   check("packet types sorted", pt[0].key === "gre" && pt[0].count === 109599);
   check("zero types kept", pt.some((p) => p.key === "gtp" && p.count === 0));
@@ -455,6 +461,24 @@ group("change tracking");
   check("sectionChanged helper", C.sectionChanged(d, "filters") && !C.sectionChanged(d, "chains"));
   check("missing sections tolerated", C.diffDoc({}, {}).total === 0);
 }
+
+/* ---------- signed-in user ---------- */
+group("current user endpoint");
+check("bare username body", C.extractUsername("packetx") === "packetx");
+check("json body", C.extractUsername('{"username":"packetx","priv":15}') === "packetx");
+check("object payload", C.extractUsername({ username: "packetx" }) === "packetx");
+check("capitalised key", C.extractUsername({ User: "admin" }) === "admin");
+check("nested under args", C.extractUsername({ args: { username: "a1" } }) === "a1");
+check("html error page ignored", C.extractUsername("<html>404</html>") === "");
+check("empty and null ignored", C.extractUsername("") === "" && C.extractUsername(null) === "");
+check("whitespace trimmed", C.extractUsername("  packetx  ") === "packetx");
+
+group("session cookie");
+check("username read from the cookie", C.signedInUser("a=1; X-PacketX-Username=packetx; b=2") === "packetx");
+check("percent-encoding decoded", C.signedInUser("X-PacketX-Username=admin%40site") === "admin@site");
+check("absent cookie yields empty", C.signedInUser("a=1; b=2") === "");
+check("prefix names don't match", C.readCookie("X-PacketX-User", "X-PacketX-Username=zzz") === "");
+check("surrounding spaces tolerated", C.signedInUser(" X-PacketX-Username = packetx ".replace(" = ", "=")) === "packetx");
 
 /* ---------- port ordering ---------- */
 group("port ordering");

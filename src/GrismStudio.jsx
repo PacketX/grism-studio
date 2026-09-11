@@ -9,7 +9,7 @@ import {
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
   mkAction, mkActionMod, mkChain, mkDrop, mkFind, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
-  fmtPct, namesOnly, nid, portLabel, protocolName, sortPortNames,
+  countryName, extractUsername, fmtPct, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
@@ -140,6 +140,9 @@ export default function GrismStudio() {
   const [pendingLoad, setPendingLoad] = useState(null); // { run: () => void, kind: "template" | "running" }
   const [healthOpen, setHealthOpen] = useState(false);   // topbar issue/warning popover
   const [acctOpen, setAcctOpen] = useState(false);       // account / preferences menu
+  const healthBtnRef = useRef(null), acctBtnRef = useRef(null);
+  const healthPos = useAnchoredPos(healthOpen, healthBtnRef, 460);
+  const acctPos = useAnchoredPos(acctOpen, acctBtnRef, 250);
   const [navOpen, setNavOpen] = useState(true);          // sub-tabs expanded beside the workspace
   const [advOpen, setAdvOpen] = useState(false);         // advanced group revealed by clicking its label
   // jump to the tab (and item) a problem belongs to. Shared by the Export list and
@@ -313,13 +316,28 @@ export default function GrismStudio() {
     requestLoad({ kind: "running", run: doLoadRunning });
   }, [doLoadRunning, requestLoad]);
 
+  // Ask the device who is signed in. Any failure (missing endpoint, error status,
+  // unexpected body) resolves to "" so the caller just keeps its fallback.
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_current_user", { credentials: "include" });
+      if (!res.ok) return "";
+      return extractUsername(await res.text());
+    } catch { return ""; }
+  }, []);
+
   // fetch the device's interface/port list; flatten every interface's ports to
   // their names. Falls back to the default list on any failure.
-  const loadDevicePorts = useCallback(async () => {
+  // `preloaded` lets a caller that already fetched get_config (the session probe)
+  // hand the parsed body over instead of us fetching the same thing again.
+  const loadDevicePorts = useCallback(async (preloaded) => {
     try {
-      const res = await fetch("/grism/task/get_config", { credentials: "include" });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const cfg = await res.json();
+      let cfg = preloaded;
+      if (!cfg) {
+        const res = await fetch("/grism/task/get_config", { credentials: "include" });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        cfg = await res.json();
+      }
       const ifaces = cfg.interfaces ?? [];
       // Sort the device's ports predictably: virtual (V*) first, then physical (P*),
       // then anything else — each numerically ascending, so the pickers always read
@@ -371,33 +389,43 @@ export default function GrismStudio() {
       if (!res.ok) throw new Error(`login failed (${res.status})`);
       setLogin((l) => ({ ...l, busy: false, ok: true, pass: "", open: false, who: username }));
       setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
-      loadBaseline();      // now authenticated — set the sync baseline (doesn't touch the current edits)
-      loadDevicePorts();   // and the interface/port list for pickers
-      loadRunning();       // prompt to confirm before replacing edits on manual login
+      loadDevicePorts();   // interface/port list for the pickers
+      // loadRunning() replaces the document and sets the baseline itself. It only
+      // does that straight away when there's nothing to lose; if it has to ask
+      // first, fetch the baseline separately so the sync indicator is still right.
+      if (docModified()) loadBaseline();
+      loadRunning();
     } catch (e) {
       setLogin((l) => ({ ...l, busy: false, err: e.message || "login failed" }));
     }
-  }, [loadBaseline, loadDevicePorts, loadRunning]);
+  }, [loadBaseline, loadDevicePorts, loadRunning, docModified]);
 
   // On mount, detect an existing device session (the session cookie survives a
   // page refresh even though React state resets). We probe an authed endpoint;
   // if it succeeds we're still logged in, so restore the signed-in UI and run the
-  // usual post-login loads. The username cookie is HttpOnly (not readable from JS),
-  // so on a restored session we show a generic "signed in" marker.
+  // usual post-login loads. The device also records the account name in a readable
+  // cookie, so a restored session shows the real user rather than a generic marker.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/grism/task/get_config", { credentials: "include" });
         if (!res.ok || cancelled) return;                 // not authenticated → stay logged out
-        setLogin((l) => ({ ...l, who: "signed in" }));
-        loadBaseline();
-        loadDevicePorts();
-        doLoadRunning();                                     // auto-load the running config on session restore
+        const cfg = await res.json().catch(() => null);   // reuse this body for the port list
+        if (cancelled) return;
+        // Show the real account when we can. The username cookie is usually HttpOnly
+        // (so unreadable here), so ask the device; if that endpoint doesn't exist or
+        // doesn't answer, fall back to the cookie and then to a generic marker.
+        setLogin((l) => ({ ...l, who: signedInUser() || "signed in" }));
+        loadDevicePorts(cfg);
+        fetchCurrentUser().then((name) => {
+          if (name && !cancelled) setLogin((l) => (l.who ? { ...l, who: name } : l));
+        });
+        doLoadRunning();   // loads the running config AND sets the sync baseline
       } catch { /* offline or not authed — stay logged out */ }
     })();
     return () => { cancelled = true; };
-  }, [loadBaseline, loadDevicePorts, doLoadRunning]);
+  }, [loadDevicePorts, doLoadRunning, fetchCurrentUser]);
 
   const doLogout = useCallback(async () => {
     try {
@@ -525,14 +553,14 @@ export default function GrismStudio() {
         </>}
         {workspace === "pipeline" && (
         <div className="health-wrap">
-          <button className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}
+          <button ref={healthBtnRef} className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}
             onClick={() => setHealthOpen((v) => !v)} title={t("health.tip")} aria-expanded={healthOpen}>
             <span className="dot" />{allProblems.length ? `${allProblems.length} ${allProblems.length>1?t("health.issues"):t("health.issue")}` : allWarnings.length ? `${allWarnings.length} ${allWarnings.length>1?t("health.warnings"):t("health.warning")}` : t("health.valid")}
           </button>
           {healthOpen && (
             <>
               <div className="health-scrim" onClick={() => setHealthOpen(false)} />
-              <div className="health-pop">
+              <div className="health-pop" style={healthPos ? { top: healthPos.top, left: healthPos.left, width: healthPos.width } : undefined}>
                 <div className="health-pop-head">
                   <span>{allProblems.length || allWarnings.length ? t("health.detailsTitle") : t("health.noneTitle")}</span>
                   <button className="health-pop-close" onClick={() => setHealthOpen(false)} aria-label={t("health.close")}>✕</button>
@@ -588,7 +616,7 @@ export default function GrismStudio() {
         {/* Account menu: session, language and theme live behind one control so the
             topbar stays focused on the work rather than on settings. */}
         <div className="acct-wrap">
-          <button className={"acct-btn" + (acctOpen ? " on" : "")} onClick={() => setAcctOpen((v) => !v)}
+          <button ref={acctBtnRef} className={"acct-btn" + (acctOpen ? " on" : "")} onClick={() => setAcctOpen((v) => !v)}
             title={login.who || t("btn.login")} aria-expanded={acctOpen} aria-haspopup="true">
             <span className="acct-avatar" aria-hidden="true">{login.who ? login.who.slice(0, 1).toUpperCase() : "◦"}</span>
             <span className="acct-name">{login.who || t("btn.login")}</span>
@@ -597,7 +625,7 @@ export default function GrismStudio() {
           {acctOpen && (
             <>
               <div className="acct-scrim" onClick={() => setAcctOpen(false)} />
-              <div className="acct-menu">
+              <div className="acct-menu" style={acctPos ? { top: acctPos.top, left: acctPos.left, width: acctPos.width } : undefined}>
                 <div className="acct-section">
                   {login.who ? (
                     <>
@@ -723,7 +751,7 @@ export default function GrismStudio() {
           <TrafficServicesTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "trafficCountries" && (
-          <TrafficCountriesTab loggedIn={!!login.who} t={t} />
+          <TrafficCountriesTab loggedIn={!!login.who} t={t} lang={lang} />
         )}
         {tab === "filters" && (
           <FiltersTab
@@ -1167,7 +1195,7 @@ function SettingsTab({ loggedIn, t }) {
                   onChange={(e) => setIfaceField(idx, "enable", e.target.checked ? "True" : "False")} /> {tr("set.enabled")}</label>
               </div>
               <div className="set-grid">
-                {[["ip","set.ip",false],["netmask","set.netmask",false],["gateway","set.gateway",false],["name","set.name",true],["eth","set.eth",true]].map(([k, lbl, ro]) => (
+                {[["ip","set.ip",false],["netmask","set.netmask",false],["gateway","set.gateway",false],["eth","set.eth",true]].map(([k, lbl, ro]) => (
                   <label className="set-field" key={k}><span>{tr(lbl)}</span>
                     {ro
                       ? <input className="ro" value={it.fields[k]} readOnly tabIndex={-1} />
@@ -1176,7 +1204,6 @@ function SettingsTab({ loggedIn, t }) {
                 ))}
               </div>
               <div className="set-actions">
-                <span className="set-note">{tr("set.mgmtNote")}</span>
                 <button className="sys-refresh" disabled={submit.state === "sending"}
                   onClick={() => setConfirm({ kind: "ip", iface: it })}>
                   {submit.state === "sending" ? tr("set.submitting") : tr("set.applyIP")}</button>
@@ -1531,6 +1558,7 @@ function TrafficSessionsTab({ loggedIn, t }) {
   return (
     <div className="sys-wrap">
       <TrafficHead title={tr("sess.title")} tr={tr} poll={poll} />
+      <p className="page-note">{tr("sess.note")}</p>
       {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
 
       <div className="sess-families">
@@ -1581,6 +1609,7 @@ function TrafficSessionsTab({ loggedIn, t }) {
           </table>
         )}
       </section>
+
     </div>
   );
 }
@@ -1628,6 +1657,7 @@ function TrafficServicesTab({ loggedIn, t }) {
   return (
     <div className="sys-wrap">
       <TrafficHead title={tr("svc.title")} tr={tr} poll={poll} />
+      <p className="page-note">{tr("svc.note")}</p>
       {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
 
       {services.length === 0 ? <p className="sys-note dim">{tr("svc.none")}</p> : (
@@ -1666,6 +1696,7 @@ function TrafficServicesTab({ loggedIn, t }) {
           </table>
         </div>
       )}
+
     </div>
   );
 }
@@ -1673,12 +1704,16 @@ function TrafficServicesTab({ loggedIn, t }) {
 /* ============================================================
    Traffic → Countries: GeoIP traffic breakdown
    ============================================================ */
-function TrafficCountriesTab({ loggedIn, t }) {
+function TrafficCountriesTab({ loggedIn, t, lang = "en" }) {
   const tr = t || ((k) => k);
+  const [showAll, setShowAll] = React.useState(false);
   const poll = usePolledJson("/grism/task/get_country_counter", loggedIn);
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
   const { rows, totalBytes, totalPackets } = summarizeCountries(poll.data?.country_counter);
+  // rows arrive busiest-first, so the head of the list is the part worth showing
+  const shownRows = showAll ? rows : rows.slice(0, 20);
+  const hiddenRows = rows.length - shownRows.length;
 
   return (
     <div className="sys-wrap">
@@ -1699,9 +1734,12 @@ function TrafficCountriesTab({ loggedIn, t }) {
                 <th className="tf-num">{tr("ctry.bytes")}</th><th>{tr("ctry.share")}</th>
               </tr></thead>
               <tbody>
-                {rows.map((r) => (
+                {shownRows.map((r) => (
                   <tr key={r.iso}>
-                    <td className="tf-name">{r.iso}</td>
+                    <td className="tf-name">
+                      <span className="ctry-code mono">{r.iso}</span>
+                      <span className="ctry-name">{countryName(r.iso, lang)}</span>
+                    </td>
                     <td className="tf-num mono">{fmtNum(r.packets)}</td>
                     <td className="tf-num mono">{fmtBytes(r.bytes)}</td>
                     <td>
@@ -1715,6 +1753,11 @@ function TrafficCountriesTab({ loggedIn, t }) {
               </tbody>
             </table>
           </div>
+          {(hiddenRows > 0 || showAll) && (
+            <button className="tf-more" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? `▴ ${tr("tf.showLess")}` : `▾ ${tr("tf.showAll")} (${hiddenRows})`}
+            </button>
+          )}
         </>
       )}
     </div>
@@ -1915,7 +1958,7 @@ function IdField({ prefix, id, siblingIds, onCommit }) {
 
 /* Left-hand list with drag-to-reorder and a per-item duplicate button. Reorder
    changes the underlying array order (and therefore XML output order). */
-function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReorder, onDuplicate, addLabel, dupLabel, onAdd }) {
+function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReorder, onDuplicate, addLabel, dupLabel, onAdd, title }) {
   const [dragKey, setDragKey] = useState(null);
   const [overKey, setOverKey] = useState(null);
   const move = (fromKey, toKey) => {
@@ -1931,6 +1974,7 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
   const active = items.find((it) => getKey(it) === activeKey);
   return (
     <aside className="filter-list">
+      {title && <div className="chain-list-head">{title}</div>}
       {items.map((it) => {
         const k = getKey(it);
         return (
@@ -1955,6 +1999,7 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
 
 function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, t, touched }) {
   const tr = t || ((k) => k);
+  const [attrsOpen, setAttrsOpen] = useState(false);   // advanced attributes panel
   const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
   const problems = useMemo(() => f ? filterProblems(f.root, []) : [], [f]);
 
@@ -1998,7 +2043,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
   return (
     <div className="filters-layout">
       <SortableList
-        items={doc.filters} activeKey={f.id} getKey={(x) => x.id}
+        title={tr("tab.filters")} items={doc.filters} activeKey={f.id} getKey={(x) => x.id}
         renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>{tr("flt.unnamed")}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveFilter(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, filters: next }))}
@@ -2009,7 +2054,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
         <div className="filter-meta">
           <IdField prefix="F" id={f.id} siblingIds={doc.filters.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, id: newId } : x) })); setActiveFilter(newId); }} />
-          <label className="ml grow"><span>{tr("common.name")}</span>
+          <label className="ml name"><span>{tr("common.name")}</span>
             <input value={f[f.labelAttr ?? "name"] ?? f.name ?? ""}
               onChange={(e) => { const k = f.labelAttr ?? "name"; patchMeta(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
               placeholder={tr("flt.namePh")} /></label>
@@ -2025,12 +2070,14 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
             <select value={f.matchedlog || "no"} onChange={(e) => patchMeta({ matchedlog: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
             </select></label>
+          <AttrToggle open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
+            label={tr("flt.advAttrs")} active={Object.values(f.fattrs ?? {}).some((v) => v && v !== "no")} />
           <button className="del" onClick={() => delFilter(f.id)}>{tr("common.delete")}</button>
         </div>
 
-
+        {attrsOpen && (
         <div className="oattr-bar">
-          <CollapseSection label="Advanced attributes" active={Object.values(f.fattrs ?? {}).some((v) => v && v !== "no")}>
+          <div className="oattr-panel">
             <div className="oattr-grid">
               {[{ name: "maxPackets", label: "Max packets per session", kind: "num" }].map((a) => (
                 <label key={a.name} className="oattr-field"
@@ -2073,8 +2120,9 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
                 </label>
               ))}
             </div>
-          </CollapseSection>
+          </div>
         </div>
+        )}
 
         <div className="tree-scroll">
           <CritNode node={f.root} depth={0} canRemove={false} isRoot={true} hbTargets={hbTargets} t={tr}
@@ -2273,7 +2321,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
   return (
     <div className="filters-layout">
       <SortableList
-        items={inputs} activeKey={inp.id} getKey={(x) => x.id}
+        title={tr("tab.inputs")} items={inputs} activeKey={inp.id} getKey={(x) => x.id}
         renderLabel={(x) => <><b>I{x.id}</b><span>{x.name || <em>{x.type === "traffic-gen" ? "traffic-gen" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveInput(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, inputs: next }))}
@@ -2284,7 +2332,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
         <div className="filter-meta">
           <IdField prefix="I" id={inp.id} siblingIds={doc.inputs.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, inputs: d.inputs.map((x) => x.id === inp.id ? { ...x, id: newId } : x) })); setActiveInput(newId); }} />
-          <label className="ml grow"><span>{tr("common.name")}</span>
+          <label className="ml name"><span>{tr("common.name")}</span>
             <input value={inp[inp.labelAttr ?? "name"] ?? inp.name ?? ""}
               onChange={(e) => { const k = inp.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
               placeholder={tr("common.optional")} /></label>
@@ -2293,16 +2341,13 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
               <option value="replayPcap">replayPcap</option>
               <option value="traffic-gen">traffic-gen</option>
             </select></label>
+          <label className="ml" title="port"><span>{tr("in.outputPort")}</span>
+            <PortSelect value={inp.port} options={portOptions} onChange={(v) => patch({ port: v })}
+              invalid={!/^[A-Z][0-9]+$/.test(inp.port)} /></label>
           <button className="del" onClick={() => delInput(inp.id)}>{tr("common.delete")}</button>
         </div>
 
         <div className="tree-scroll">
-          <div className="mod-row">
-            <span className="mod-key">{tr("in.outputPort")}</span>
-            <PortSelect value={inp.port} options={portOptions} onChange={(v) => patch({ port: v })}
-              invalid={!/^[A-Z][0-9]+$/.test(inp.port)} />
-            <code className="mod-tag">&lt;port&gt;</code>
-          </div>
           <p className="out-empty">
             {inp.type === "traffic-gen" ? tr("in.helpGen") : tr("in.helpPcap")}
           </p>
@@ -2374,6 +2419,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
 
 function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t, touched }) {
   const tr = t || ((k) => k);
+  const [attrsOpen, setAttrsOpen] = useState(false);   // output attributes panel
   const outputs = doc.outputs ?? [];
   const o = outputs.find((x) => x.id === activeOutput) || outputs[0];
   const problems = useMemo(() => o ? outputProblems(o, []) : [], [o]);
@@ -2428,7 +2474,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
   return (
     <div className="filters-layout">
       <SortableList
-        items={outputs} activeKey={o.id} getKey={(x) => x.id}
+        title={tr("tab.outputs")} items={outputs} activeKey={o.id} getKey={(x) => x.id}
         renderLabel={(x) => <><b>O{x.id}</b><span>{x.name || <em>{x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveOutput(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, outputs: next }))}
@@ -2439,18 +2485,21 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
         <div className="filter-meta">
           <IdField prefix="O" id={o.id} siblingIds={doc.outputs.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, id: newId } : x) })); setActiveOutput(newId); }} />
-          <label className="ml grow"><span>{tr("common.name")}</span>
+          <label className="ml name"><span>{tr("common.name")}</span>
             <input value={o[o.labelAttr ?? "name"] ?? o.name ?? ""}
               onChange={(e) => { const k = o.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
               placeholder={tr("common.optional")} /></label>
           <label className="ml"><span>{tr("out.port")}</span>
             <PortSelect value={o.port} options={portOptions} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
+          <AttrToggle open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
+            label={tr("out.attrs")} active={Object.values(o.oattrs ?? {}).some((v) => v && v !== "no")} />
           <button className="del" onClick={() => delOutput(o.id)}>{tr("common.delete")}</button>
         </div>
 
+        {attrsOpen && (
         <div className="oattr-bar">
-          <CollapseSection label="Output attributes (advanced)" active={Object.values(o.oattrs ?? {}).some((v) => v && v !== "no")}>
+          <div className="oattr-panel">
             <div className="oattr-grid">
               {[
                 { name: "type", label: "Type", opts: ["","httprequesthijack","tcpreset","udpencap"] },
@@ -2472,8 +2521,9 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
                 </label>
               ))}
             </div>
-          </CollapseSection>
+          </div>
         </div>
+        )}
 
         <div className="tree-scroll">
           {(o.mods ?? []).length === 0 && (
@@ -2601,7 +2651,7 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
   return (
     <div className="filters-layout">
       <SortableList
-        items={actions} activeKey={a.id} getKey={(x) => x.id}
+        title={tr("tab.actions")} items={actions} activeKey={a.id} getKey={(x) => x.id}
         renderLabel={(x) => <><b>A{x.id}</b><span>{x.name || <em>{x.type === "linkpairs" ? "linkpairs" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveAction(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, actions: next }))}
@@ -2612,13 +2662,25 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
         <div className="filter-meta">
           <IdField prefix="A" id={a.id} siblingIds={doc.actions.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, actions: d.actions.map((x) => x.id === a.id ? { ...x, id: newId } : x) })); setActiveAction(newId); }} />
-          <label className="ml grow"><span>{tr("common.name")}</span>
+          <label className="ml name"><span>{tr("common.name")}</span>
             <input value={a.name} onChange={(e) => patch({ name: e.target.value })} placeholder={tr("common.optional")} /></label>
           <label className="ml"><span>{tr("common.type")}</span>
             <select value={a.type} onChange={(e) => patch({ type: e.target.value })}>
               <option value="input-packet-process">{tr("act.typeProcess")}</option>
               <option value="linkpairs">{tr("act.typeLinkPairs")}</option>
             </select></label>
+          {isLink ? (<>
+            <label className="ml" title="portA"><span>{tr("act.portA")}</span>
+              <PortSelect value={a.portA} options={portOptions} onChange={(v) => patch({ portA: v })}
+                invalid={!/^[A-Z][0-9]+$/.test(a.portA)} /></label>
+            <label className="ml" title="portB"><span>{tr("act.portB")}</span>
+              <PortSelect value={a.portB} options={portOptions} onChange={(v) => patch({ portB: v })}
+                invalid={!/^[A-Z][0-9]+$/.test(a.portB)} /></label>
+          </>) : (
+            <label className="ml" title="port"><span>{tr("act.inputPort")}</span>
+              <PortSelect value={a.port} options={portOptions} onChange={(v) => patch({ port: v })}
+                invalid={!/^[A-Z][0-9]+$/.test(a.port)} /></label>
+          )}
           <button className="del" onClick={() => delAction(a.id)}>{tr("common.delete")}</button>
         </div>
 
@@ -2626,27 +2688,9 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
           {isLink ? (
             <div className="link-form">
               <p className="out-empty">{tr("act.linkNote")}</p>
-              <div className="mod-row">
-                <span className="mod-key">{tr("act.portA")}</span>
-                <PortSelect value={a.portA} options={portOptions} onChange={(v) => patch({ portA: v })}
-                  invalid={!/^[A-Z][0-9]+$/.test(a.portA)} />
-                <code className="mod-tag">&lt;portA&gt;</code>
-              </div>
-              <div className="mod-row">
-                <span className="mod-key">{tr("act.portB")}</span>
-                <PortSelect value={a.portB} options={portOptions} onChange={(v) => patch({ portB: v })}
-                  invalid={!/^[A-Z][0-9]+$/.test(a.portB)} />
-                <code className="mod-tag">&lt;portB&gt;</code>
-              </div>
             </div>
           ) : (
             <>
-              <div className="mod-row">
-                <span className="mod-key">{tr("act.inputPort")}</span>
-                <PortSelect value={a.port} options={portOptions} onChange={(v) => patch({ port: v })}
-                  invalid={!/^[A-Z][0-9]+$/.test(a.port)} />
-                <code className="mod-tag">&lt;port&gt;</code>
-              </div>
               {(a.mods ?? []).length === 0 && (
                 <p className="out-empty">{tr("act.modNote")}</p>
               )}
@@ -2705,6 +2749,40 @@ function ActionModRow({ mod, onChange, onRemove, onMtu }) {
 /* ============================================================
    Chain tab — decision tree canvas
    ============================================================ */
+/* A meta-row toggle for a panel that opens below the row. Keeps the row compact
+   while still signalling (via the dot) that values are set inside. */
+/* Position a popup under its trigger using viewport coordinates, clamped so it can
+   never run off either edge. Absolute positioning anchored to the trigger breaks
+   once the topbar wraps and the trigger sits near the left of the screen. */
+function useAnchoredPos(open, triggerRef, width) {
+  const [pos, setPos] = React.useState(null);
+  React.useLayoutEffect(() => {
+    if (!open || !triggerRef.current) { setPos(null); return; }
+    const place = () => {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const w = Math.min(width, window.innerWidth - 16);
+      const left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+      setPos({ top: r.bottom + 8, left, width: w });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [open, triggerRef, width]);
+  return pos;
+}
+
+function AttrToggle({ label, active, open, onToggle }) {
+  return (
+    <button className={"attr-toggle" + (open ? " open" : "")} onClick={onToggle} aria-expanded={open}>
+      <span>{label}</span>
+      {active && !open && <span className="coll-dot" title="A value is set" />}
+      <span className="attr-toggle-caret" aria-hidden="true">{open ? "▲" : "▼"}</span>
+    </button>
+  );
+}
+
 function CollapseSection({ label, active, children }) {
   const [open, setOpen] = useState(false);
   return (
@@ -2972,7 +3050,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   return (
     <div className="chain-layout3">
       <aside className="chain-list">
-        <div className="chain-list-head">chains</div>
+        <div className="chain-list-head">{tr("tab.chain")}</div>
         {chains.map((c) => {
           const inP = chainInFirst(c);
           return (
