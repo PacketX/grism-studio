@@ -182,7 +182,15 @@
 .find-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 8px; border-radius:7px; background:var(--panel); border:1px solid var(--line);}
 .find-row .fld{background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:6px; padding:6px 8px; font-size:13px; min-width:190px;}
 .find-row .rel{background:var(--bg); border:1px solid var(--line-2); color:var(--accent); border-radius:6px; padding:6px 8px; font-size:13px; font-family:var(--mono); width:56px; text-align:center;}
-.find-row .val{background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:6px; padding:6px 9px; font-size:13px; font-family:var(--mono); min-width:140px; flex:1;}
+/* Wide enough to show a full JA4 (36 mono chars) without scrolling: ch tracks
+   the mono font and +20px covers the 9px padding / 1px border each side under
+   border-box. min() stops it overflowing a container narrower than that -- the
+   row is flex-wrap, so it drops to its own line instead. flex:3 outweighs the
+   trailing .spacer (flex:1) so the value takes most of the free space rather
+   than splitting it evenly with the gap before the field-name caption.
+   40ch rather than 37 leaves ~4 chars of slack at 1280px wide, where the field
+   otherwise sits exactly on its min-width, without costing any extra wrapping. */
+.find-row .val{background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:6px; padding:6px 9px; font-size:13px; font-family:var(--mono); min-width:min(100%, calc(40ch + 20px)); flex:3;}
 .find-row .val.invalid{border-color:var(--notmatch); background:rgba(251,113,133,.06);}
 .find-row .fld:focus,.find-row .rel:focus,.find-row .val:focus{outline:none; border-color:var(--accent-2);}
 .exists-note{color:var(--txt-faint); font-size:12.5px; font-style:italic; padding:0 6px;}
