@@ -32,6 +32,20 @@ check("num kind has comparison relations", C.relationsFor("num").includes(">=") 
 // matches on fewer conditions than the UI showed.
 check("no bogus gtp.imsi field", !C.FIELD_INDEX["gtp.imsi"]);
 check("the real IMSI field is still offered", !!C.FIELD_INDEX["ip.addr.related.gtp.imsi"]);
+// fields that exist in g_ftype[] and are genuinely authorable from XML
+for (const f of ["quic.tag", "tunnel.outerlayer.ip.dsfield", "tunnel.innerlayer1.ip.dsfield",
+                 "tunnel.innerlayer2.ip.dsfield", "heartbeat.target.miss.nth",
+                 "mec.mapping.ue.ipv4.connected"])
+  check(`${f} offered`, !!C.FIELD_INDEX[f]);
+check("tunnel dsfields are uint8 like ip.dsfield",
+  ["tunnel.outerlayer.ip.dsfield", "tunnel.innerlayer1.ip.dsfield", "tunnel.innerlayer2.ip.dsfield"]
+    .every((f) => C.FIELD_INDEX[f].kind === C.FIELD_INDEX["ip.dsfield"].kind));
+// these are in g_ftype[] but doing nothing / not authorable - see the note on FIELDS
+for (const f of ["service.google.youtube", "ip.addr.hash", "dns.qry.name.hash",
+                 "dns.qry.name_public_suffix.hash", "http.request.url.hash", "5-tuple.live"])
+  check(`${f} deliberately not offered`, !C.FIELD_INDEX[f]);
+check("quic.tag accepts CHLO", C.validate("quictag", "CHLO") === null);
+check("quic.tag rejects anything else", C.validate("quictag", "SHLO") !== null);
 const JA4_FIELDS = ["tls.handshake.ja4", "tls.handshake.ja4_a", "tls.handshake.ja4_b", "tls.handshake.ja4_c",
                     "tls.handshake.ja4s", "tls.handshake.ja4s_a", "tls.handshake.ja4s_b", "tls.handshake.ja4s_c"];
 check("all 8 JA4/JA4S fields present", JA4_FIELDS.every((f) => !!C.FIELD_INDEX[f]));

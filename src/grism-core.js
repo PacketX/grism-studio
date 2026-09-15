@@ -53,9 +53,21 @@ export function cloneForDup(obj) {
 }
 
 /* ===================== field catalogue =====================
-   Complete GRISM <find> name list, transcribed from the official
-   find.md. `kind` drives which relations are offered and how the
-   value is validated. exists = boolean presence check (no value). */
+   GRISM <find> name list, mirroring g_ftype[] in the firmware's
+   tools/common/fc.c. `kind` drives which relations are offered and how the
+   value is validated. exists = boolean presence check (no value).
+
+   Six g_ftype entries are deliberately absent, because writing them into a
+   <find> does nothing:
+     service.google.youtube      match case is an empty stub; never matches.
+     ip.addr.hash                these four are filled from binary hash tables
+     dns.qry.name.hash           pushed over the GRISM data protocol, not from
+     dns.qry.name_public_suffix.hash   a content string in the XML.
+     http.request.url.hash
+     5-tuple.live                synthesised by the firmware when a filter has
+                                 tuple5_live_hashtable_size; not authorable.
+   Check the firmware before adding anything here — a name g_ftype does not
+   know is dropped with a log line, leaving a filter weaker than the UI shows. */
 export const FIELDS = [
   { g: "Ethernet / VLAN", items: [
     { v: "eth.addr", label: "MAC (src or dst)", kind: "mac" },
@@ -117,12 +129,16 @@ export const FIELDS = [
     { v: "gtp.data.by.s1ap.CellIdentity", label: "S1AP Cell Identity", kind: "num" },
     { v: "gtp.data.by.s1ap.SubscriberProfileIDforRFP", label: "S1AP Subscriber Profile ID for RFP", kind: "num" },
     { v: "ip.addr.related.gtp.imsi", label: "IP related to GTP IMSI", kind: "str" },
+    { v: "mec.mapping.ue.ipv4.connected", label: "UE IPv4 in MEC mapping", kind: "exists" },
   ]},
   { g: "Tunnels", items: [
     { v: "gre", label: "is GRE", kind: "exists" },
     { v: "vxlan", label: "is VXLAN", kind: "exists" },
     { v: "vxlan.vni", label: "VXLAN VNI", kind: "uint24" },
     { v: "erspan.spanid", label: "ERSPAN ID", kind: "num" },
+    { v: "tunnel.outerlayer.ip.dsfield", label: "Outer layer DiffServ", kind: "uint8" },
+    { v: "tunnel.innerlayer1.ip.dsfield", label: "Inner layer 1 DiffServ", kind: "uint8" },
+    { v: "tunnel.innerlayer2.ip.dsfield", label: "Inner layer 2 DiffServ", kind: "uint8" },
   ]},
   { g: "VoIP", items: [
     { v: "voip", label: "is SIP or RTP", kind: "exists" },
@@ -162,6 +178,7 @@ export const FIELDS = [
     { v: "tls.handshake.ja4s_a", label: "TLS JA4S a (prefix)", kind: "ja4part" },
     { v: "tls.handshake.ja4s_b", label: "TLS JA4S b (cipher)", kind: "ja4part" },
     { v: "tls.handshake.ja4s_c", label: "TLS JA4S c (extension hash)", kind: "ja4part" },
+    { v: "quic.tag", label: "QUIC tag", kind: "quictag" },
   ]},
   { g: "ARP / FTP", items: [
     { v: "arp", label: "is ARP", kind: "exists" },
@@ -184,6 +201,7 @@ export const FIELDS = [
     { v: "grism.port.linkdown", label: "Port link down", kind: "grismport" },
     { v: "session.packet.nth", label: "Nth packet in flow", kind: "num" },
     { v: "heartbeat.target.miss.id", label: "Heartbeat miss (target id)", kind: "num" },
+    { v: "heartbeat.target.miss.nth", label: "Heartbeat miss (target index)", kind: "num" },
     { v: "flowtable.matched.fid", label: "Flow matched filter id", kind: "fidref" },
     { v: "flowtable.inport", label: "Flow ingress port", kind: "grismport" },
     { v: "dstmac.in.l2gre.mapping.table", label: "dstMAC in l2gre table", kind: "exists" },
@@ -225,6 +243,9 @@ export const VAL = {
     ? null : "JA4S, e.g. t130200_1301_234ea6891581",
   // a single a/b/c segment — the device compares one segment, so "_" can never match
   ja4part: (s) => /^[0-9a-z]+$/.test(s) ? null : "One JA4 part, no _",
+  // the device only maps "CHLO" to a tag; anything else parses to 0 and can
+  // never match, so reject it here rather than let it through silently
+  quictag: (s) => /^CHLO$/i.test(s) ? null : "CHLO",
   str: (s) => s && s.length ? null : "Required",
   regex: (s) => s && s.length ? null : "Pattern required",
   exists: () => null,
@@ -234,7 +255,7 @@ export const ph = (k) => ({ ip:"8.8.8.8", ipv6:"2001:db8::1", mac:"12:34:56:78:9
   vlan:"100", uint8:"6", uint16:"2048", uint24:"1", bit:"1", country:"TW", num:"500",
   grismport:"P0", fidref:"F1", tuple:"- 192.168.1.203 - - 443", regex:"\\x08facebook\\x03com",
   ja4:"t13d1516h2_8daaf6152771_02713d6af862", ja4s:"t130200_1301_234ea6891581",
-  ja4part:"8daaf6152771" }[k] ?? "value");
+  ja4part:"8daaf6152771", quictag:"CHLO" }[k] ?? "value");
 
 /* ===================== filter (boolean tree) model ===================== */
 export const mkFind = () => ({ id: nid(), t: "find", field: "ip.addr", rel: "==", val: "" });
