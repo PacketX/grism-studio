@@ -27,6 +27,11 @@ check("S1AP CellIdentity present", !!C.FIELD_INDEX["gtp.data.by.s1ap.CellIdentit
 check("S1AP CellIdentity is integer", C.FIELD_INDEX["gtp.data.by.s1ap.CellIdentity"].kind === "num");
 check("S1AP SubscriberProfileIDforRFP is integer", C.FIELD_INDEX["gtp.data.by.s1ap.SubscriberProfileIDforRFP"]?.kind === "num");
 check("num kind has comparison relations", C.relationsFor("num").includes(">=") && C.relationsFor("num").includes("<="));
+// gtp.imsi is in doc/filter.md but not in the firmware's g_ftype[]: the device
+// logs "filter find type unsupport" and drops the find, so the filter silently
+// matches on fewer conditions than the UI showed.
+check("no bogus gtp.imsi field", !C.FIELD_INDEX["gtp.imsi"]);
+check("the real IMSI field is still offered", !!C.FIELD_INDEX["ip.addr.related.gtp.imsi"]);
 const JA4_FIELDS = ["tls.handshake.ja4", "tls.handshake.ja4_a", "tls.handshake.ja4_b", "tls.handshake.ja4_c",
                     "tls.handshake.ja4s", "tls.handshake.ja4s_a", "tls.handshake.ja4s_b", "tls.handshake.ja4s_c"];
 check("all 8 JA4/JA4S fields present", JA4_FIELDS.every((f) => !!C.FIELD_INDEX[f]));

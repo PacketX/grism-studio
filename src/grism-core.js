@@ -108,7 +108,11 @@ export const FIELDS = [
   { g: "GTP", items: [
     { v: "gtp.cp", label: "GTP control plane", kind: "exists" },
     { v: "gtp.data", label: "GTP data", kind: "exists" },
-    { v: "gtp.imsi", label: "GTP IMSI", kind: "str" },
+    /* No plain "gtp.imsi" here: doc/filter.md lists it, but it is not in the
+       firmware's g_ftype[] (checked across every branch), so the device logs
+       "filter find type unsupport" and drops the find -- leaving a filter that
+       quietly matches on fewer conditions than the UI showed.
+       ip.addr.related.gtp.imsi below is the real, implemented field. */
     { v: "gtp.teid", label: "GTP TEID", kind: "str" },
     { v: "gtp.data.by.s1ap.CellIdentity", label: "S1AP Cell Identity", kind: "num" },
     { v: "gtp.data.by.s1ap.SubscriberProfileIDforRFP", label: "S1AP Subscriber Profile ID for RFP", kind: "num" },
