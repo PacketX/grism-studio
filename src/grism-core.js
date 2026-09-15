@@ -451,7 +451,11 @@ export function vlanAttrs(o) {
 export function serializeChain(chain) {
   const inPorts = chain.ports || "P0";
   const emitOut = (n, pad) => {
-    const attr = n.mode === "loadBalance" ? ` type="loadBalance" lbtype="${n.lb}"` : "";
+    // Load balancing needs somewhere to balance between: with a single destination
+    // port the attribute is meaningless, so don't emit it even if the mode is still
+    // set from when the node had several ports.
+    const multi = String(n.ports || "").split(",").filter((p) => p.trim()).length > 1;
+    const attr = (n.mode === "loadBalance" && multi) ? ` type="loadBalance" lbtype="${n.lb}"` : "";
     return `${pad}<out${attr}${vlanAttrs(n)}>${n.ports}</out>`;
   };
   function body(node, depth) {
@@ -1407,20 +1411,50 @@ export const sortPortNames = (names) => [...names].sort(comparePortNames);
    reported per section. */
 const SECTION_KEYS = { filters: "id", inputs: "id", outputs: "id", actions: "id", chains: "cid" };
 
+/* Two items are "the same" when they describe the same configuration — which is
+   what they serialise to, not how they happen to look in memory. Comparing the
+   objects directly would report edits that aren't there, because parsing fills in
+   defaults (alt, fattrs, fidAlt…) and hands out fresh cid/node ids every time. */
+const SECTION_SERIALIZERS = {
+  filters: serializeFilter, inputs: serializeInput, outputs: serializeOutput,
+  actions: serializeAction, chains: serializeChain,
+};
+
+function canonicalItem(item, section) {
+  const ser = SECTION_SERIALIZERS[section];
+  if (ser) { try { return ser(item); } catch { /* fall through to the raw shape */ } }
+  return JSON.stringify(item);
+}
+
 export function diffDoc(baseDoc, curDoc) {
   const out = {};
   let total = 0;
   for (const [section, key] of Object.entries(SECTION_KEYS)) {
     const base = baseDoc?.[section] ?? [];
     const cur = curDoc?.[section] ?? [];
-    const baseById = new Map(base.map((x) => [x[key], x]));
-    const curById = new Map(cur.map((x) => [x[key], x]));
     const added = [], removed = [], changed = [];
-    curById.forEach((item, id) => {
-      if (!baseById.has(id)) added.push(id);
-      else if (JSON.stringify(baseById.get(id)) !== JSON.stringify(item)) changed.push(id);
-    });
-    baseById.forEach((_, id) => { if (!curById.has(id)) removed.push(id); });
+
+    if (key === "cid") {
+      // Chains have no stable identifier of their own, so match them on content:
+      // a chain whose text is already in the baseline hasn't been touched.
+      const pool = new Map();
+      base.forEach((x) => { const c = canonicalItem(x, section); pool.set(c, (pool.get(c) ?? 0) + 1); });
+      cur.forEach((x) => {
+        const c = canonicalItem(x, section);
+        if (pool.get(c) > 0) pool.set(c, pool.get(c) - 1);
+        else added.push(x[key]);
+      });
+      pool.forEach((n, c) => { for (let i = 0; i < n; i++) removed.push(c); });
+    } else {
+      const baseById = new Map(base.map((x) => [x[key], x]));
+      const curById = new Map(cur.map((x) => [x[key], x]));
+      curById.forEach((item, id) => {
+        if (!baseById.has(id)) added.push(id);
+        else if (canonicalItem(baseById.get(id), section) !== canonicalItem(item, section)) changed.push(id);
+      });
+      baseById.forEach((_, id) => { if (!curById.has(id)) removed.push(id); });
+    }
+
     const n = added.length + removed.length + changed.length;
     total += n;
     out[section] = { added, removed, changed, count: n,
@@ -1615,4 +1649,789 @@ export function extractUsername(payload) {
     if (typeof v === "string" && v.trim()) return v.trim();
   }
   return "";
+}
+
+/* ===================== interface (port) settings =====================
+   Ports come from get_config's `interfaces` list; their live link state comes from
+   the statistics feed, keyed by port name. Only description and enable are
+   editable — everything else is shown for context. */
+
+/* Flatten get_config's interfaces into one list of ports, keeping the parent
+   interface's type/name and, for virtual ports, their member ports and VLAN id. */
+export function parseInterfacePorts(cfg) {
+  const out = [];
+  (cfg?.interfaces ?? []).forEach((iface) => {
+    const type = iface.type || "";
+    (iface.ports ?? []).forEach((p) => {
+      if (!p.name) return;
+      const row = {
+        name: p.name,
+        ifaceName: iface.name || "",
+        type,
+        description: p.description ?? "",
+        enable: p.enable !== false,
+        virtual: /^V/i.test(p.name),
+      };
+      if (row.virtual) {
+        row.memberPorts = p.port ?? "";
+        row.vlanid = p.vlanid ?? "";
+      }
+      out.push(row);
+    });
+  });
+  return out.sort((a, b) => comparePortNames(a.name, b.name));
+}
+
+/* Merge the live figures from get_statistics_json into the port rows. */
+export function mergePortStats(ports, statistics) {
+  const byName = new Map((statistics ?? []).map((s) => [s.name, s]));
+  return ports.map((p) => {
+    const s = byName.get(p.name);
+    return {
+      ...p,
+      ifidx: s?.ifidx ?? null,
+      linkUp: s ? Number(s.linkStatus) === 1 : null,
+      speed: s?.speed ?? null,
+    };
+  });
+}
+
+/* Build the configSet that applies description/enable for the changed ports.
+   Mirrors the shape get_config_xml uses for port settings. */
+export function buildPortConfigSet(ports) {
+  const body = ports.map((p) =>
+    `  <interfaces><ports><find name="${esc(p.name)}">` +
+    `<description>${esc(p.description ?? "")}</description>` +
+    `<enable>${p.enable ? "True" : "False"}</enable>` +
+    `</find></ports></interfaces>`
+  ).join("\n");
+  return `<configSet reboot="no">\n${body}\n</configSet>`;
+}
+
+/* Which ports differ from the values the device reported. */
+export function changedPorts(original, edited) {
+  const base = new Map((original ?? []).map((p) => [p.name, p]));
+  return (edited ?? []).filter((p) => {
+    const o = base.get(p.name);
+    if (!o) return false;
+    return (o.description ?? "") !== (p.description ?? "") || !!o.enable !== !!p.enable;
+  });
+}
+
+/* ===================== generic <args> settings =====================
+   Time servers, name servers, deduplication and the fragmentation-correlation
+   toggles all live under <args>, so one builder covers them. Booleans are written
+   as True/False the way the device's own config dump does. */
+const argVal = (v) => (typeof v === "boolean" ? (v ? "True" : "False") : esc(String(v ?? "")));
+
+export function buildArgsConfigSet(args) {
+  const body = Object.entries(args)
+    .map(([k, v]) => `    <${k}>${argVal(v)}</${k}>`)
+    .join("\n");
+  return `<configSet reboot="no">\n  <args>\n${body}\n  </args>\n</configSet>`;
+}
+
+/* The in-tunnel decapsulation switches live under <filters><in-tunnels>. */
+export function buildInTunnelsConfigSet(tunnels) {
+  const body = Object.entries(tunnels)
+    .map(([k, v]) => `      <${k}>${v ? "True" : "False"}</${k}>`)
+    .join("\n");
+  return `<configSet reboot="no">\n  <filters>\n    <in-tunnels>\n${body}\n    </in-tunnels>\n  </filters>\n</configSet>`;
+}
+
+/* Each service is enabled or disabled through its own <services><find name=…>. */
+export function buildServicesConfigSet(services) {
+  const body = (services ?? [])
+    .map((s) => `  <services><find name="${esc(s.name)}"><enable>${s.enable ? "True" : "False"}</enable></find></services>`)
+    .join("\n");
+  return `<configSet reboot="no">\n${body}\n</configSet>`;
+}
+
+/* Internal daemons the operator has no reason to toggle from here — they're
+   either managed by the platform or would cut off the very session being used. */
+export const HIDDEN_SERVICES = new Set([
+  "bsem_wd_feed", "telnetd", "ftpd", "packetx_trap_dispatcher", "statistics_backup",
+]);
+
+/* Services as the UI needs them, in the order the device reports. */
+export function parseServices(cfg) {
+  return (cfg?.services ?? []).map((s) => ({
+    name: s.name ?? "",
+    description: s.description ?? "",
+    enable: s.enable === true,
+  })).filter((s) => s.name && !HIDDEN_SERVICES.has(s.name));
+}
+
+/* Which services the user toggled. */
+export function changedServices(original, edited) {
+  const base = new Map((original ?? []).map((s) => [s.name, s]));
+  return (edited ?? []).filter((s) => base.has(s.name) && !!base.get(s.name).enable !== !!s.enable);
+}
+
+/* The timezone endpoint returns [{ "Asia/Taipei": 0 }, …]; flatten to names. */
+export function parseTimezones(payload) {
+  return (payload?.timezone ?? [])
+    .flatMap((entry) => Object.keys(entry ?? {}))
+    .filter(Boolean);
+}
+
+/* The same payload marks the zone currently in use with a 1, e.g.
+   { "Asia/Taipei": 1 }. Returns "" when nothing is flagged. */
+export function currentTimezone(payload) {
+  for (const entry of payload?.timezone ?? []) {
+    for (const [name, active] of Object.entries(entry ?? {})) {
+      if (Number(active) === 1) return name;
+    }
+  }
+  return "";
+}
+
+/* ===================== XML syntax highlighting =====================
+   Split XML into typed tokens so the raw-configuration view can colour it.
+   Returns [{ type, text }] covering the input exactly, in order. */
+export function tokenizeXml(text) {
+  const out = [];
+  const src = String(text ?? "");
+  const re = /(<!--[\s\S]*?-->)|(<\/?)([A-Za-z_][\w.:-]*)((?:[^<>"']|"[^"]*"|'[^']*')*?)(\/?>)/g;
+  let last = 0, m;
+  while ((m = re.exec(src)) !== null) {
+    if (m.index > last) out.push({ type: "text", text: src.slice(last, m.index) });
+    if (m[1]) { out.push({ type: "comment", text: m[1] }); last = re.lastIndex; continue; }
+    out.push({ type: "punct", text: m[2] });
+    out.push({ type: "tag", text: m[3] });
+    // attributes: name="value" pairs, anything else passes through as punctuation
+    const attrs = m[4] ?? "";
+    const ar = /([A-Za-z_][\w.:-]*)(\s*=\s*)("[^"]*"|'[^']*')|(\s+)/g;
+    let al = 0, am;
+    while ((am = ar.exec(attrs)) !== null) {
+      if (am.index > al) out.push({ type: "punct", text: attrs.slice(al, am.index) });
+      if (am[4]) out.push({ type: "punct", text: am[4] });
+      else {
+        out.push({ type: "attr", text: am[1] });
+        out.push({ type: "punct", text: am[2] });
+        out.push({ type: "value", text: am[3] });
+      }
+      al = ar.lastIndex;
+    }
+    if (al < attrs.length) out.push({ type: "punct", text: attrs.slice(al) });
+    out.push({ type: "punct", text: m[5] });
+    last = re.lastIndex;
+  }
+  if (last < src.length) out.push({ type: "text", text: src.slice(last) });
+  return out.filter((t) => t.text !== "");
+}
+
+/* ===================== heartbeat =====================
+   The device sends a canned frame out one port and expects it back on another;
+   a target that stops returning frames is reported as down. Settings are written
+   back in full — the whole <heartbeat> block replaces what's there — so targets
+   can be added, edited or removed in one submit. */
+
+/* The stock probe frame the device ships with — a new target starts from this so
+   it works without the operator having to craft one by hand. */
+export const DEFAULT_HEARTBEAT_PACKET =
+  "000d48285134000d482851338137ffff0030000000004004eca2c613010" +
+  "2c61301010000000000000000000000000000000000000000000000000000";
+
+export const mkHeartbeatTarget = (id = 1) => ({
+  id, enable: true, sendPort: "P0", receivePort: "P0", description: "",
+  packetData: DEFAULT_HEARTBEAT_PACKET,
+});
+
+export function parseHeartbeat(cfg) {
+  const hb = cfg?.heartbeat ?? {};
+  return {
+    enable: hb.enable === true,
+    frequency: hb.frequency ?? 500,
+    maxAllowTimeouts: hb.maxAllowTimeouts ?? 3,
+    targets: (hb.target ?? []).map((t) => ({
+      id: Number(t.id) || 0,
+      enable: t.enable === true,
+      sendPort: t.sendPort ?? "",
+      receivePort: t.receivePort ?? "",
+      packetData: t.packetData ?? "",
+      description: t.description ?? "",
+    })),
+  };
+}
+
+export function buildHeartbeatConfigSet(hb) {
+  const targets = (hb.targets ?? []).map((t) =>
+    `    <target>` +
+    `<enable>${t.enable ? "true" : "false"}</enable>` +
+    `<sendPort>${esc(t.sendPort ?? "")}</sendPort>` +
+    `<receivePort>${esc(t.receivePort ?? "")}</receivePort>` +
+    `<packetData>${esc(t.packetData ?? "")}</packetData>` +
+    `<description>${esc(t.description ?? "")}</description>` +
+    `<id>${Number(t.id) || 0}</id>` +
+    `</target>`
+  ).join("\n");
+  return `<configSet reboot="no">\n  <heartbeat>\n` +
+    `    <enable>${hb.enable ? "true" : "false"}</enable>\n` +
+    `    <frequency>${Number(hb.frequency) || 0}</frequency>\n` +
+    `    <maxAllowTimeouts>${Number(hb.maxAllowTimeouts) || 0}</maxAllowTimeouts>\n` +
+    (targets ? targets + "\n" : "") +
+    `  </heartbeat>\n</configSet>`;
+}
+
+/* get_heartbeat_status returns [[n, up], …] where n is the position among the
+   *enabled* targets, not the target's own id. Keep the raw rows in order. */
+export function parseHeartbeatStatus(payload) {
+  return (payload?.heartbeat_status ?? [])
+    .filter((row) => Array.isArray(row) && row.length >= 2)
+    .map((row) => ({ index: Number(row[0]), up: row[1] === true }));
+}
+
+/* Line the status rows up with the enabled targets so each one can be labelled. */
+export function heartbeatStatusRows(targets, status) {
+  const enabled = (targets ?? []).filter((t) => t.enable);
+  return (status ?? []).map((s) => {
+    const t = enabled[s.index];
+    return { ...s, id: t?.id ?? null, description: t?.description ?? "",
+      sendPort: t?.sendPort ?? "", receivePort: t?.receivePort ?? "" };
+  });
+}
+
+
+export function heartbeatProblems(hb, problems = []) {
+  // Targets are written back positionally and the device itself ships configs with
+  // repeated ids, so ids are not required to be unique.
+  (hb.targets ?? []).forEach((t, i) => {
+    const where = `heartbeat #${i + 1}`;
+    if (!t.sendPort || !t.receivePort) problems.push({ scope: where, msg: "send and receive ports are required" });
+    if (!/^[0-9a-fA-F]*$/.test(t.packetData ?? "")) problems.push({ scope: where, msg: "packet data must be hexadecimal" });
+    if ((t.packetData ?? "").length % 2 !== 0) problems.push({ scope: where, msg: "packet data needs an even number of hex digits" });
+  });
+  return problems;
+}
+
+/* ===================== extra service settings =====================
+   A couple of services carry more than an on/off switch. */
+export function parseServiceExtras(cfg) {
+  const find = (n) => (cfg?.services ?? []).find((s) => s.name === n) ?? {};
+  const b = find("backup"), x = find("xmlrpc");
+  return {
+    xmlrpc: { localhost_only: x.localhost_only === true },
+    backup: {
+      host: b.host ?? "", port: b.port ?? 21, user: b.user ?? "",
+      pass: b.pass ?? "", dir: b.dir ?? "", crontab: b.crontab ?? "0 0 * * *",
+    },
+  };
+}
+
+export function buildServiceExtrasConfigSet(extras) {
+  const b = extras.backup ?? {};
+  return `<configSet reboot="no">\n` +
+    `  <services><find name="xmlrpc"><localhost_only>${extras.xmlrpc?.localhost_only ? "True" : "False"}</localhost_only></find></services>\n` +
+    `  <services><find name="backup">` +
+    `<host>${esc(b.host ?? "")}</host>` +
+    `<port>${Number(b.port) || 21}</port>` +
+    `<user>${esc(b.user ?? "")}</user>` +
+    `<pass>${esc(b.pass ?? "")}</pass>` +
+    `<dir>${esc(b.dir ?? "")}</dir>` +
+    `<crontab>${esc(b.crontab ?? "")}</crontab>` +
+    `</find></services>\n</configSet>`;
+}
+
+/* The target list is a fixed set of slots that the device rewrites positionally,
+   so adding one doesn't grow the list: the first disabled slot is taken over and
+   its contents replaced. Only when every slot is in use does the list extend.
+
+     1+ 2- 3-   add 9   ->   1+ 9+ 3-      (slot two reused)
+     1+ 9+ 3-   remove  ->   1+ 9- 3-      (slot two switched off, id kept) */
+export function insertHeartbeatTarget(targets, target) {
+  const list = targets ?? [];
+  const free = list.findIndex((t) => !t.enable);
+  if (free < 0) return [...list, target];
+  const next = list.slice();
+  next[free] = target;
+  return next;
+}
+
+/* ===================== logging (NetFlow / syslog / DPI) =====================
+   The device exports flow records as NetFlow or syslog, and can additionally log
+   DNS, HTTP and TLS metadata. Each exporter has a list of targets (collector
+   address, port, which interfaces, optional filter). Blank values come back as a
+   single space, so everything is trimmed on the way in. */
+
+const s_ = (v) => String(v ?? "").trim();
+const n_ = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+
+export const SYSLOG_SYSTEM_SUBTYPES = ["alert_dropped_packets", "alert_heartbeat_miss", "alert_power_failure", "common"];
+export const SYSLOG_MATCHED_SUBTYPES = ["sip", "dip", "sport", "dport", "protocol", "find_id", "find_content"];
+
+const parseTarget = (t) => ({
+  enable: t?.enable === true,
+  dip: s_(t?.dip), dport: n_(t?.dport, 514),
+  interfaces: s_(t?.interfaces) || "all", filter: s_(t?.filter),
+});
+
+export const mkLogTarget = (dport = 514) => ({ enable: true, dip: "", dport, interfaces: "all", filter: "" });
+export const mkNetflowTarget = () => ({ ...mkLogTarget(9995), version: 9 });
+/* A fresh target is only useful if it actually carries something, so the fields
+   and events people normally want are on from the start. */
+export const SYSLOG_SYSTEM_DEFAULTS = SYSLOG_SYSTEM_SUBTYPES;   // report every system event by default
+
+export const mkSyslogTarget = (type = "matched") => {
+  const keys = type === "system" ? SYSLOG_SYSTEM_SUBTYPES : SYSLOG_MATCHED_SUBTYPES;
+  const on = type === "system" ? SYSLOG_SYSTEM_DEFAULTS : SYSLOG_MATCHED_SUBTYPES;
+  return { ...mkLogTarget(514), type, subtype: Object.fromEntries(keys.map((k) => [k, on.includes(k)])) };
+};
+
+export function parseLogging(cfg) {
+  const log = cfg?.log ?? {}, nf = log.netflow ?? {}, sl = log.syslog ?? {};
+  const dpi = (key) => {
+    const d = cfg?.[key] ?? {}, s = d.syslog ?? {};
+    return {
+      enable: d.enable === true, port: s_(s.port) || "M0",
+      targets: (s.target ?? []).map(parseTarget),
+      ...(key === "dpidnslog" ? {
+        active_timeout: n_(s.active_timeout, 30), inactive_timeout: n_(s.inactive_timeout, 10),
+        response_only: s.response_only === true, noerror_only: s.noerror_only === true,
+      } : {}),
+      ...(key === "dpissllog" ? { ja3: s.ja3 === true, ja4: s.ja4 === true } : {}),
+    };
+  };
+  return {
+    enable: log.enable === true,
+    type: s_(log.type) || "netflow",
+    netflow: {
+      port: s_(nf.port) || "M0",
+      engine_type: n_(nf.engine_type), engine_id: n_(nf.engine_id),
+      active_timeout: n_(nf.active_timeout, 7200), inactive_timeout: n_(nf.inactive_timeout, 60),
+      tcp_fin_rst_timeout: n_(nf.tcp_fin_rst_timeout, 5),
+      targets: (nf.target ?? []).map((t) => ({ ...parseTarget(t), version: n_(t?.version, 9) })),
+    },
+    syslog: {
+      enable: sl.enable === true, port: s_(sl.port) || "M0",
+      targets: (sl.target ?? []).map((t) => ({
+        ...parseTarget(t), type: s_(t?.type) || "matched",
+        subtype: Object.fromEntries(
+          (s_(t?.type) === "system" ? SYSLOG_SYSTEM_SUBTYPES : SYSLOG_MATCHED_SUBTYPES)
+            .map((k) => [k, t?.subtype?.[k] === true])),
+      })),
+    },
+    dns: dpi("dpidnslog"), http: dpi("dpihttplog"), ssl: dpi("dpissllog"),
+  };
+}
+
+const bool_ = (v) => (v ? "True" : "False");
+const tagsFor = (t, pad) =>
+  `${pad}<enable>${bool_(t.enable)}</enable>\n` +
+  `${pad}<dip>${esc(t.dip ?? "")}</dip>\n` +
+  `${pad}<dport>${n_(t.dport, 514)}</dport>\n` +
+  `${pad}<interfaces>${esc(t.interfaces || "all")}</interfaces>\n` +
+  `${pad}<filter>${esc(t.filter ?? "")}</filter>`;
+
+export function buildLoggingConfigSet(log) {
+  const nf = log.netflow, sl = log.syslog;
+  const nfTargets = nf.targets.map((t) =>
+    `      <target>\n${tagsFor(t, "        ")}\n        <version>${n_(t.version, 9)}</version>\n      </target>`).join("\n");
+  const slTargets = sl.targets.map((t) => {
+    const keys = t.type === "system" ? SYSLOG_SYSTEM_SUBTYPES : SYSLOG_MATCHED_SUBTYPES;
+    const sub = keys.map((k) => `          <${k}>${bool_(t.subtype?.[k])}</${k}>`).join("\n");
+    return `      <target>\n${tagsFor(t, "        ")}\n        <type>${esc(t.type)}</type>\n` +
+      `        <subtype>\n${sub}\n        </subtype>\n      </target>`;
+  }).join("\n");
+
+  const dpiBlock = (tag, d, extra = "") => {
+    const targets = d.targets.map((t) => `      <target>\n${tagsFor(t, "        ")}\n      </target>`).join("\n");
+    return `  <${tag}>\n    <enable>${bool_(d.enable)}</enable>\n    <type>syslog</type>\n` +
+      `    <syslog>\n      <port>${esc(d.port)}</port>\n${extra}` +
+      (targets ? targets + "\n" : "") + `    </syslog>\n  </${tag}>`;
+  };
+
+  return `<configSet reboot="no">\n` +
+    `  <log>\n    <enable>${bool_(log.enable)}</enable>\n    <type>${esc(log.type)}</type>\n` +
+    `    <netflow>\n      <port>${esc(nf.port)}</port>\n` +
+    `      <engine_type>${n_(nf.engine_type)}</engine_type>\n` +
+    `      <engine_id>${n_(nf.engine_id)}</engine_id>\n` +
+    `      <active_timeout>${n_(nf.active_timeout, 7200)}</active_timeout>\n` +
+    `      <inactive_timeout>${n_(nf.inactive_timeout, 60)}</inactive_timeout>\n` +
+    `      <tcp_fin_rst_timeout>${n_(nf.tcp_fin_rst_timeout, 5)}</tcp_fin_rst_timeout>\n` +
+    (nfTargets ? nfTargets + "\n" : "") + `    </netflow>\n` +
+    `    <syslog>\n      <enable>${bool_(sl.enable)}</enable>\n      <port>${esc(sl.port)}</port>\n` +
+    (slTargets ? slTargets + "\n" : "") + `    </syslog>\n  </log>\n` +
+    dpiBlock("dpidnslog", log.dns,
+      `      <active_timeout>${n_(log.dns.active_timeout, 30)}</active_timeout>\n` +
+      `      <inactive_timeout>${n_(log.dns.inactive_timeout, 10)}</inactive_timeout>\n` +
+      `      <response_only>${bool_(log.dns.response_only)}</response_only>\n` +
+      `      <noerror_only>${bool_(log.dns.noerror_only)}</noerror_only>\n`) + "\n" +
+    dpiBlock("dpihttplog", log.http) + "\n" +
+    dpiBlock("dpissllog", log.ssl,
+      `      <ja3>${bool_(log.ssl.ja3)}</ja3>\n      <ja4>${bool_(log.ssl.ja4)}</ja4>\n`) +
+    `\n</configSet>`;
+}
+
+export function loggingProblems(log, problems = []) {
+  const check1 = (where, targets) => (targets ?? []).forEach((t, i) => {
+    if (!t.enable) return;
+    if (!t.dip) problems.push({ scope: `${where} #${i + 1}`, msg: "collector address is required" });
+    else if (validate("ip", t.dip)) problems.push({ scope: `${where} #${i + 1}`, msg: "collector address is not a valid IP" });
+    if (validate("port", String(t.dport))) problems.push({ scope: `${where} #${i + 1}`, msg: "invalid port" });
+    if (t.interfaces !== undefined && String(t.interfaces).trim() === "")
+      problems.push({ scope: `${where} #${i + 1}`, msg: "select at least one interface" });
+  });
+  check1("netflow", log.netflow?.targets);
+  check1("syslog", log.syslog?.targets);
+  check1("dns log", log.dns?.targets);
+  check1("http log", log.http?.targets);
+  check1("tls log", log.ssl?.targets);
+  return problems;
+}
+
+/* ===================== log source / interface choices =====================
+   Records leave through a management interface or a data port. LOOP ports only
+   carry traffic back into the device, so they're never a sensible source, and
+   they aren't something you'd scope logging to either. */
+const isLoopIface = (iface) => (iface?.type || "").toUpperCase() === "LOOP";
+
+/* Data ports traffic can arrive on. LOOP ports are excluded by default because
+   they're never a sensible *source* for an exporter, but logging can still be
+   scoped to them, so callers can ask for the full list. */
+export function dataPortNames(cfg, { includeLoop = false } = {}) {
+  const names = (cfg?.interfaces ?? [])
+    .filter((i) => includeLoop || !isLoopIface(i))
+    .flatMap((i) => i.ports ?? [])
+    .map((p) => p.name)
+    .filter(Boolean);
+  return sortPortNames([...new Set(names)]);
+}
+
+/* Enabled management interfaces, e.g. M0 / M1. */
+export function managementPortNames(cfg) {
+  return (cfg?.ifcfgs ?? [])
+    .filter((f) => /^management/i.test(f.role ?? "") && f.enable === true && f.name)
+    .map((f) => f.name);
+}
+
+/* Ports a log exporter can send from. */
+export const logSourcePorts = (cfg) => [...managementPortNames(cfg), ...dataPortNames(cfg)];
+
+/* The interfaces field is either "all" or a comma list. Selecting every data port
+   is the same as "all", so it collapses back to that. */
+export function interfacesToList(value, allPorts) {
+  const v = String(value ?? "").trim();
+  if (v.toLowerCase() === "all") return [...allPorts];
+  if (!v) return [];                                  // cleared, not "everything"
+  return v.split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+export function listToInterfaces(selected, allPorts) {
+  const chosen = [...new Set(selected)].filter((p) => allPorts.includes(p));
+  if (chosen.length === 0) return "";                       // nothing picked yet
+  if (chosen.length === allPorts.length) return "all";      // everything is just "all"
+  return sortPortNames(chosen).join(",");
+}
+
+/* ===================== flow engine =====================
+   Flow tracking itself (v4/v6 on-off plus table sizes) lives under <args>, while
+   the three timeouts that decide when a flow is considered finished are carried
+   inside <netflow> in the device's XML. They belong together in the UI even
+   though they're written back to two different places. */
+export const FLOW_ARGS = ["flow", "flowv6", "flowCacheBaseSize", "flowv6TableSize"];
+export const FLOW_TIMEOUTS = ["active_timeout", "inactive_timeout", "tcp_fin_rst_timeout"];
+
+export function parseFlowArgs(cfg) {
+  const a = cfg?.args ?? {};
+  return {
+    flow: a.flow === true,
+    flowv6: a.flowv6 === true,
+    flowCacheBaseSize: n_(a.flowCacheBaseSize, 0),
+    flowv6TableSize: n_(a.flowv6TableSize, 0),
+  };
+}
+
+export function flowProblems(flow, problems = []) {
+  if (flow.flow && !(flow.flowCacheBaseSize > 0))
+    problems.push({ scope: "flow", msg: "IPv4 flow table size must be greater than zero" });
+  if (flow.flowv6 && !(flow.flowv6TableSize > 0))
+    problems.push({ scope: "flow", msg: "IPv6 flow table size must be greater than zero" });
+  return problems;
+}
+
+/* ===================== flow service catalogue =====================
+   statisticsFlowService tells the device which protocol/port combinations to
+   group together when it reports per-service traffic. The wire format packs each
+   service into one semicolon-separated chunk: the protocol/port pairs first, then
+   the display name last, e.g.
+
+     TCP/443,UDP/443,HTTPS;UDP/53,TCP/53,DNS                              */
+export function parseFlowServices(value) {
+  return String(value ?? "").split(";").map((chunk) => chunk.trim()).filter(Boolean)
+    .map((chunk) => {
+      const parts = chunk.split(",").map((p) => p.trim()).filter(Boolean);
+      const ports = [], rest = [];
+      parts.forEach((p) => {
+        const m = p.match(/^([A-Za-z]+)\/(\d+)$/);
+        if (m) ports.push({ proto: m[1].toUpperCase(), port: Number(m[2]) });
+        else rest.push(p);
+      });
+      return { name: rest.join(" ") || "", ports };
+    })
+    .filter((s) => s.ports.length || s.name);
+}
+
+export function buildFlowServices(services) {
+  return (services ?? [])
+    .filter((s) => s.ports?.length && s.name)
+    .map((s) => [...s.ports.map((p) => `${p.proto}/${p.port}`), s.name].join(","))
+    .join(";");
+}
+
+export const mkFlowService = () => ({ name: "", ports: [{ proto: "TCP", port: 80 }] });
+
+export function flowServiceProblems(services, problems = []) {
+  (services ?? []).forEach((s, i) => {
+    const where = `service #${i + 1}`;
+    if (!s.name.trim()) problems.push({ scope: where, msg: "a service needs a name" });
+    if (!s.ports?.length) problems.push({ scope: where, msg: "add at least one protocol and port" });
+    (s.ports ?? []).forEach((p) => {
+      if (validate("port", String(p.port))) problems.push({ scope: where, msg: `invalid port ${p.port}` });
+    });
+  });
+  return problems;
+}
+
+/* ===================== login authentication (RADIUS / TACACS+) ===================== */
+export function parseViews(cfg) {
+  const v = cfg?.views ?? {};
+  return {
+    radiusLogin: v.radiusLogin === true, radiusHost: s_(v.radiusHost),
+    radiusPort: n_(v.radiusPort, 1812), radiusSecret: s_(v.radiusSecret),
+    tacacsLogin: v.tacacsLogin === true, tacacsHost: s_(v.tacacsHost),
+    tacacsPort: n_(v.tacacsPort, 49), tacacsSecret: s_(v.tacacsSecret),
+  };
+}
+
+export function buildViewsConfigSet(v) {
+  const row = (k, val) => `    <${k}>${typeof val === "boolean" ? bool_(val) : esc(String(val))}</${k}>`;
+  return `<configSet reboot="no">\n  <views>\n` +
+    [["radiusLogin", v.radiusLogin], ["radiusHost", v.radiusHost], ["radiusPort", n_(v.radiusPort, 1812)],
+     ["radiusSecret", v.radiusSecret], ["tacacsLogin", v.tacacsLogin], ["tacacsHost", v.tacacsHost],
+     ["tacacsPort", n_(v.tacacsPort, 49)], ["tacacsSecret", v.tacacsSecret]]
+      .map(([k, val]) => row(k, val)).join("\n") +
+    `\n  </views>\n</configSet>`;
+}
+
+export function viewsProblems(v, problems = []) {
+  const one = (on, host, port, label) => {
+    if (!on) return;
+    if (!host) problems.push({ scope: label, msg: "server address is required" });
+    else if (validate("ip", host) && !/^[\w.-]+$/.test(host))
+      problems.push({ scope: label, msg: "server address is not a valid host or IP" });
+    if (validate("port", String(port))) problems.push({ scope: label, msg: "invalid port" });
+  };
+  one(v.radiusLogin, v.radiusHost, v.radiusPort, "RADIUS");
+  one(v.tacacsLogin, v.tacacsHost, v.tacacsPort, "TACACS+");
+  // only one external authentication server can be in charge at a time
+  if (v.radiusLogin && v.tacacsLogin)
+    problems.push({ scope: "login", msg: "enable either RADIUS or TACACS+, not both" });
+  return problems;
+}
+
+/* ===================== firmware update =====================
+   update_download_check returns "downloaded,total" in bytes. The download is only
+   finished when both numbers agree and the total is non-zero — a total of 0 means
+   the device hasn't started (or has lost) the transfer. */
+export function parseDownloadProgress(text) {
+  const [a, b] = String(text ?? "").trim().split(",");
+  const done = n_(a, 0), total = n_(b, 0);
+  return { done, total, ratio: total > 0 ? Math.min(1, done / total) : 0, complete: total > 0 && done >= total };
+}
+
+/* update_check answers with a version string when an update is available, and
+   with something else (empty, "no", an error page) when there isn't. */
+export function parseUpdateCheck(text) {
+  const v = String(text ?? "").trim();
+  return /^\d+(\.\d+)+$/.test(v) ? v : "";
+}
+
+/* ===================== instant packet capture =====================
+   A short-lived capture: one output writing to a storage volume, and one chain
+   feeding it from the chosen ingress ports. It is submitted as a complete <run>
+   to submit_instant, which the device applies alongside the running config and
+   tears down once the output's seconds-to-live expire. */
+
+export function buildInstantCapture({ ports, filter, stl, storage, dir }) {
+  const inPorts = (Array.isArray(ports) ? ports : String(ports ?? "").split(","))
+    .map((p) => String(p).trim()).filter(Boolean).join(",");
+  const fid = String(filter ?? "").trim();
+  return `<run>` +
+    `<output id="777" stl="${n_(stl, 5)}">` +
+      `<port>${esc(storage ?? "")}</port>` +
+      `<dir>${esc(dir ?? "snapshot")}</dir>` +
+    `</output>` +
+    `<chain>` +
+      `<in>${esc(inPorts)}</in>` +
+      (fid ? `<fid>${esc(fid)}</fid>` : "") +
+      `<out>O777</out>` +
+    `</chain>` +
+  `</run>`;
+}
+
+export function captureProblems(opts, problems = []) {
+  const ports = Array.isArray(opts.ports) ? opts.ports : [];
+  if (ports.length === 0) problems.push({ scope: "capture", msg: "choose at least one interface to capture from" });
+  if (!opts.storage) problems.push({ scope: "capture", msg: "choose a storage volume" });
+  if (!String(opts.dir ?? "").trim()) problems.push({ scope: "capture", msg: "a directory is required" });
+  if (!(n_(opts.stl, 0) > 0)) problems.push({ scope: "capture", msg: "seconds to live must be greater than zero" });
+  return problems;
+}
+
+/* Storage volumes offered for capture — only the ones that are switched on. */
+export function parseStorages(payload) {
+  const list = Array.isArray(payload) ? payload : (payload?.storages ?? payload?.storage ?? []);
+  return (list ?? [])
+    .filter((s) => s && s.name && s.enable !== false)
+    .map((s) => ({
+      name: s.name,
+      usage: n_(s.usage ?? s.used, 0),
+      available: n_(s.available ?? s.avail ?? s.free, 0),
+      dir: s.dir ?? "",
+    }));
+}
+
+/* get_storage_file_list rows are [kind, name, bytes, modified], where kind is 0
+   for a directory and 1 for a file. Listing a volume without a directory answers
+   a bare array; listing a directory answers { file_list: [...] }. Directories sort
+   first so a listing reads top-down, then files newest first. */
+export function parseStorageFiles(payload, { storage, dir } = {}) {
+  const rows = Array.isArray(payload) ? payload : (payload?.file_list ?? []);
+  return (rows ?? [])
+    .filter((r) => Array.isArray(r) && r.length >= 2)
+    .map((r) => {
+      const name = String(r[1]);
+      const isDir = Number(r[0]) === 0;
+      return {
+        name, isDir,
+        bytes: n_(r[2], 0),
+        modified: String(r[3] ?? ""),
+        href: isDir ? "" : captureFileHref(storage, dir, name),
+      };
+    })
+    .sort((a, b) => (a.isDir === b.isDir
+      ? (a.isDir ? a.name.localeCompare(b.name)
+                 : (b.modified.localeCompare(a.modified) || a.name.localeCompare(b.name)))
+      : (a.isDir ? -1 : 1)));
+}
+
+/* Directory names for a storage volume. */
+export const parseStorageDirs = (payload) =>
+  parseStorageFiles(payload).filter((r) => r.isDir).map((r) => r.name);
+
+/* Path helpers for walking into and back out of directories. */
+export const joinDir = (dir, name) => [dir, name].map((p) => String(p ?? "").replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/");
+export const parentDir = (dir) => String(dir ?? "").replace(/^\/+|\/+$/g, "").split("/").slice(0, -1).join("/");
+export const dirCrumbs = (dir) => {
+  const parts = String(dir ?? "").replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  return parts.map((name, i) => ({ name, path: parts.slice(0, i + 1).join("/") }));
+};
+
+/* The path an <input> filepath uses, e.g. H1/snapshot/capture.pcap */
+export const storagePath = (storage, dir, name) =>
+  [storage, dir, name].map((p) => String(p ?? "").replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/");
+
+/* A .tmp file is still being written by the device — downloading it would give a
+   truncated capture, so it isn't offered until the device renames it. */
+export const isPartialCapture = (name) => /\.tmp$/i.test(String(name ?? "").trim());
+
+export const captureFileHref = (storage, dir, name) =>
+  `/file_manager/preview?download=1&file=/${[storage, dir, name].map((p) => String(p ?? "").replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/")}`;
+
+/* ===================== traffic generator defaults =====================
+   A newly created generator should produce sensible traffic straight away, so
+   the fields that must be filled in get a working starting value. The MAC
+   addresses come from the device itself — see parsePortMacs. */
+export const TRAFFIC_GEN_DEFAULTS = {
+  protocol: "UDP",
+  packet_size: "512",
+  payload_text: "packetx",
+  src_ip: "10.0.1.99",
+  dest_ip: "10.0.1.100",
+  src_port: "5000",
+  dest_port: "5001",
+};
+
+/* get_port_mac rows are [index, mac, portName]. */
+export function parsePortMacs(payload) {
+  const rows = payload?.port_mac ?? [];
+  return rows
+    .filter((r) => Array.isArray(r) && r.length >= 3)
+    .map((r) => ({ index: n_(r[0], 0), mac: String(r[1] ?? ""), port: String(r[2] ?? "") }))
+    .filter((r) => r.mac);
+}
+
+/* Seed a generator: the stock defaults plus the first two device MACs, so the
+   frames it emits carry real addresses rather than placeholders. */
+export function trafficGenDefaults(macPayload) {
+  const macs = parsePortMacs(macPayload);
+  return {
+    ...TRAFFIC_GEN_DEFAULTS,
+    ...(macs[0] ? { src_mac: macs[0].mac } : {}),
+    ...(macs[1] ? { dest_mac: macs[1].mac } : {}),
+  };
+}
+
+/* A custom output is only identifiable by its id unless we show what the author
+   called it and where it actually sends traffic. */
+export function outputLabel(o) {
+  const name = String(o?.name || o?.alt || "").trim();
+  const port = String(o?.port || "").trim();
+  return name && port ? `${name} · ${port}` : (name || port);
+}
+
+/* Same idea for a filter: "F12" alone says nothing about what it matches. */
+export const filterLabel = (f) => {
+  const name = String(f?.name || f?.alt || "").trim();
+  return name ? `F${f.id} — ${name}` : `F${f.id}`;
+};
+
+/* ===================== XML validation =====================
+   formatXml only notices unbalanced tags. Before submitting the device's whole
+   configuration it's worth catching everything a parser would reject — stray
+   "&", mismatched names, junk before the root — and saying where. */
+export function xmlError(text) {
+  const src = String(text ?? "").trim();
+  if (!src) return "the configuration is empty";
+  if (!src.startsWith("<")) return "the configuration must start with an XML tag";
+  let doc;
+  try { doc = parseXml(src); }
+  catch (e) { return String(e.message || e); }
+
+  // Browsers and linkedom both report failures as a <parsererror> element rather
+  // than by throwing, so the document has to be inspected for one.
+  const err = doc.getElementsByTagName("parsererror")[0];
+  if (err) {
+    const msg = (err.textContent || "").replace(/\s+/g, " ").trim();
+    return msg ? msg.slice(0, 200) : "the XML could not be parsed";
+  }
+  if (!doc.documentElement) return "the XML has no root element";
+
+  // linkedom is lenient about closing tags, so keep the balance check as well.
+  try { formatXml(src); }
+  catch (e) { return String(e.message || e); }
+  return "";
+}
+
+/* ===================== GRISM document validation =====================
+   Well-formed XML can still be a nonsense pipeline — an output with no port, a
+   chain referencing a filter that isn't defined. Parse the text and run the same
+   checks the editors use, so the author hears about it before applying. */
+export function grismXmlProblems(xmlText) {
+  const out = [];
+  // Check well-formedness first: some parsers silently close dangling tags, so
+  // relying on parseRun to fail would give different answers in different hosts.
+  const bad = xmlError(xmlText);
+  if (bad) return [{ scope: "xml", msg: bad }];
+  let doc;
+  try { doc = parseRun(xmlText); }
+  catch (e) { return [{ scope: "run", msg: String(e.message || e) }]; }
+
+  (doc.filters ?? []).forEach((f) => filterProblems(f, out));
+  (doc.inputs ?? []).forEach((i) => inputProblems(i, out));
+  (doc.outputs ?? []).forEach((o) => outputProblems(o, out));
+  (doc.actions ?? []).forEach((a) => actionProblems(a, out));
+  (doc.chains ?? []).forEach((c) => chainProblems(c, doc, out));
+  return out;
 }

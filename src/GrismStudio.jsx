@@ -4,12 +4,24 @@ import { STUDIO_VERSION, makeT } from "./i18n.js";
 import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
-  cUpdate, chainProblems, diffDoc, docSnapshot, isDeviceFilterId, cloneForDup, collectRefs, describeDoc, filterProblems,
+  buildArgsConfigSet, buildInTunnelsConfigSet, buildPortConfigSet, buildServicesConfigSet,
+  cUpdate, chainProblems, changedPorts, changedServices, diffDoc, docSnapshot, isDeviceFilterId,
+  buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
+  FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
+  buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
+  parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
+  heartbeatStatusRows, interfacesToList, listToInterfaces, logSourcePorts,
+  insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
+  mkSyslogTarget, parseHeartbeat, parseLogging,
+  parseHeartbeatStatus, parseServiceExtras,
+  parseServices, parseTimezones, tokenizeXml,
+  mergePortStats, parseInterfacePorts, cloneForDup, collectRefs, describeDoc, filterProblems,
   fmtBytes, fmtKB, fmtNum, fmtSpeed, formatXml, inferIntent,
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
   mkAction, mkActionMod, mkChain, mkDrop, mkFind, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
-  countryName, extractUsername, fmtPct, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
+  dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
@@ -26,6 +38,9 @@ function readPrefs() {
 /* Non-fatal failures (optional device info, port descriptions) shouldn't break the
    page, but they shouldn't vanish silently either — log them so problems are
    diagnosable from the console. */
+/* Fallback port list for when the device hasn't told us its real one yet. */
+const DEFAULT_PORTS = ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7"];
+
 function warnFetch(what, err) {
   console.warn(`[GRISM Studio] ${what} unavailable:`, err?.message ?? err);
 }
@@ -50,9 +65,9 @@ export default function GrismStudio() {
   // holds device status pages. Future feature pages become new workspaces.
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
-    { id: "pipeline", tabs: ["filters", "inputs", "outputs", "actions", "chain", "simulate", "export"] },
+    { id: "pipeline", tabs: ["filters", "inputs", "outputs", "actions", "chain", "simulate", "export", "capture"] },
     { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries"] },
-    { id: "system", tabs: ["status", "settings"] },
+    { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
   const tabWorkspace = (tb) => (WORKSPACES.find((w) => w.tabs.includes(tb)) ?? WORKSPACES[0]).id;
   const workspace = tabWorkspace(tab);
@@ -186,7 +201,6 @@ export default function GrismStudio() {
   const t = useMemo(() => makeT(lang), [lang]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
-  const DEFAULT_PORTS = ["P0","P1","P2","P3","P4","P5","P6","P7"];
   const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
@@ -502,6 +516,10 @@ export default function GrismStudio() {
                       </span>
                       {tabBtn("simulate")}
                       {tabBtn("export")}
+                      {/* capture submits a temporary run of its own — set it apart
+                          from the tabs that build the persistent configuration */}
+                      <span className="tab-divider" aria-hidden="true" />
+                      {tabBtn("capture")}
                     </nav>
                   );
                 })()}
@@ -518,7 +536,7 @@ export default function GrismStudio() {
 
                 {open && w.id === "system" && (
                   <nav className="tabs ws-tabs">
-                    {["status", "settings"].map((k) => (
+                    {["status", "syslog", "settings"].map((k) => (
                       <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
                         {t("tab." + k)}
                       </button>
@@ -530,12 +548,6 @@ export default function GrismStudio() {
           })}
         </nav>
         <div className="tabs-spacer" />
-        {histKey && (
-          <div className="topbar-undo" title={t("undo.tip")}>
-            <button className="undo-btn" onClick={doUndo} disabled={!canUndo} title={t("undo.undo")} aria-label={t("undo.undo")}>↶</button>
-            <button className="undo-btn" onClick={doRedo} disabled={!canRedo} title={t("undo.redo")} aria-label={t("undo.redo")}>↷</button>
-          </div>
-        )}
         {workspace === "pipeline" && <>
           {login.who && (
             <button className={"load-btn " + load.state + (docSource === "running" ? " src-active" : "")} onClick={loadRunning} disabled={load.state === "loading"}
@@ -613,6 +625,12 @@ export default function GrismStudio() {
           )}
         </div>
         )}
+        {histKey && (
+          <div className="topbar-undo" title={t("undo.tip")}>
+            <button className="undo-btn" onClick={doUndo} disabled={!canUndo} title={t("undo.undo")} aria-label={t("undo.undo")}>↶</button>
+            <button className="undo-btn" onClick={doRedo} disabled={!canRedo} title={t("undo.redo")} aria-label={t("undo.redo")}>↷</button>
+          </div>
+        )}
         {/* Account menu: session, language and theme live behind one control so the
             topbar stays focused on the work rather than on settings. */}
         <div className="acct-wrap">
@@ -661,6 +679,9 @@ export default function GrismStudio() {
                   </div>
                 </div>
 
+                <a className="acct-item acct-legacy" href="/index.html">
+                  {t("acct.legacy")}<span className="acct-legacy-arrow" aria-hidden="true">↗</span>
+                </a>
                 <div className="acct-foot">GRISM Studio {STUDIO_VERSION}</div>
               </div>
             </>
@@ -722,6 +743,7 @@ export default function GrismStudio() {
       )}
 
       <div className="body">
+        <TabErrorBoundary tabKey={tab} label={t("err.tabFailed")} retryLabel={t("err.retry")}>
         {(tab === "inputs" || tab === "outputs" || tab === "actions") && (
           <div className="adv-note">
             <span className="adv-note-badge">{t("adv.badge")}</span>
@@ -738,20 +760,29 @@ export default function GrismStudio() {
         {tab === "status" && (
           <SystemStatusTab loggedIn={!!login.who} t={t} />
         )}
+        {tab === "syslog" && (
+          <SystemLogTab loggedIn={!!login.who} t={t} />
+        )}
         {tab === "settings" && (
-          <SettingsTab loggedIn={!!login.who} t={t} />
+          <SettingsTab loggedIn={!!login.who} t={t} portOptions={devicePorts ?? DEFAULT_PORTS}
+            filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
         {tab === "trafficPorts" && (
           <TrafficTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "trafficSessions" && (
-          <TrafficSessionsTab loggedIn={!!login.who} t={t} />
+          <TrafficSessionsTab loggedIn={!!login.who} t={t}
+            filterNames={Object.fromEntries(doc.filters.map((f) => [f.id, f.name || f.alt || ""]))} />
         )}
         {tab === "trafficServices" && (
           <TrafficServicesTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "trafficCountries" && (
           <TrafficCountriesTab loggedIn={!!login.who} t={t} lang={lang} />
+        )}
+        {tab === "capture" && (
+          <CaptureTab loggedIn={!!login.who} t={t}
+            ports={devicePorts ?? DEFAULT_PORTS} filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
         {tab === "filters" && (
           <FiltersTab
@@ -799,6 +830,7 @@ export default function GrismStudio() {
             }}
             onGoto={gotoScope} />
         )}
+        </TabErrorBoundary>
       </div>
     </div>
   );
@@ -852,6 +884,20 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
           ))}
         </div>
       </section>
+
+      {/* Signed out, nothing has been read from a device — make it unmistakable that
+          what's on screen is an example, not this device's configuration. */}
+      {!loggedIn && docSource === "template" && (
+        <div className="tmpl-banner">
+          <div className="tmpl-banner-text">
+            <b>{tr("ov.tmplBannerTitle")} · {templateName}</b>
+            <span>{tr("ov.tmplBannerBody")}</span>
+          </div>
+          {onOpenTemplates && (
+            <button className="tmpl-btn on" onClick={onOpenTemplates}>{tr("ov.tmplBannerBtn")}</button>
+          )}
+        </div>
+      )}
 
       <div className="ov-head">
         <div>
@@ -1130,7 +1176,149 @@ function SystemStatusTab({ loggedIn, t }) {
 /* ============================================================
    Settings tab — device config (management IP + raw XML)
    ============================================================ */
-function SettingsTab({ loggedIn, t }) {
+/* Which interfaces an exporter covers. A dropdown rather than a row of checkboxes:
+   the list can be long, and it keeps each target compact. */
+function InterfacePicker({ value, ports, onChange, tr, hideBulk = false }) {
+  const [open, setOpen] = React.useState(false);
+  // "all" is a distinct value from "nothing chosen" — an empty string must not
+  // fall back to all, or clearing the selection would tick every box instead.
+  const isAll = String(value ?? "").trim().toLowerCase() === "all";
+  const chosen = interfacesToList(value, ports);
+  const toggle = (p) => onChange(listToInterfaces(
+    chosen.includes(p) ? chosen.filter((x) => x !== p) : [...chosen, p], ports));
+  // A <div>, not a <label>: a label forwards clicks anywhere inside it to its
+  // control, which swallowed the scrim and the Select all / Clear buttons.
+  return (
+    <div className="ml iface-pick"><span>{tr("set.lgInterfaces")}</span>
+      <button type="button" className="iface-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="mono">{isAll ? tr("set.lgAllInterfaces") : (chosen.join(",") || tr("set.lgNoInterfaces"))}</span>
+        <span className="iface-caret" aria-hidden="true">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <>
+          <div className="iface-scrim" onClick={() => setOpen(false)} />
+          <div className="iface-menu">
+            {!hideBulk && (
+              <div className="iface-menu-head">
+                <button type="button" onClick={() => onChange("all")}>{tr("set.lgSelectAll")}</button>
+                <button type="button" onClick={() => onChange("")}>{tr("set.lgSelectNone")}</button>
+              </div>
+            )}
+            {ports.map((p) => (
+              <label className="iface-opt" key={p}>
+                <input type="checkbox" checked={chosen.includes(p)} onChange={() => toggle(p)} />
+                <span className="mono">{p}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* One collector target. Every exporter shares this shape — address, port, which
+   interfaces to cover and an optional filter — so they share one editor. */
+function LogTarget({ target, onPatch, onRemove, tr, extra, dataPorts = [], filterIds = [], hideScope = false }) {
+  return (
+    <div className="hb-target">
+      <div className="hb-target-head">
+        <span className="log-target-name mono">{target.dip || tr("set.lgNoCollector")}</span>
+        <button className="del" onClick={onRemove}>{tr("common.delete")}</button>
+      </div>
+      <div className="set-grid">
+        <label className="ml"><span>{tr("set.lgCollector")}</span>
+          <input value={target.dip} placeholder="192.168.1.10"
+            onChange={(e) => onPatch({ dip: e.target.value })} /></label>
+        <label className="ml" style={{ flex: "0 1 120px" }}><span>{tr("set.bkPort")}</span>
+          <input type="number" min="1" max="65535" value={target.dport}
+            onChange={(e) => onPatch({ dport: Number(e.target.value) || 0 })} /></label>
+        {!hideScope && (
+          <label className="ml"><span>{tr("set.lgFilter")}</span>
+            <select value={target.filter} onChange={(e) => onPatch({ filter: e.target.value })}>
+              <option value="">{tr("set.lgAllTraffic")}</option>
+              {filterIds.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select></label>
+        )}
+      </div>
+      {!hideScope && <InterfacePicker value={target.interfaces} ports={dataPorts} tr={tr}
+        onChange={(v) => onPatch({ interfaces: v })} />}
+      {extra}
+    </div>
+  );
+}
+
+/* A file chooser that shows what's selected and warns if the name doesn't match
+   what the device expects — picking the wrong archive is an easy mistake. */
+function FilePick({ accept, file, onPick, tr, hint }) {
+  const ref = React.useRef(null);
+  const wrong = file && hint && file.name !== hint;
+  return (
+    <div className="file-pick">
+      <input ref={ref} type="file" accept={accept} style={{ display: "none" }}
+        onChange={(e) => onPick(e.target.files?.[0] ?? null)} />
+      <button className="copy-btn" onClick={() => ref.current?.click()}>{tr("set.chooseFile")}</button>
+      <span className="file-name mono">{file ? file.name : tr("set.noFile")}</span>
+      {file && <span className="file-size mono">{fmtBytes(file.size)}</span>}
+      {wrong && <span className="file-warn">{tr("set.fileNameHint")} {hint}</span>}
+    </div>
+  );
+}
+
+/* The device's log, as plain text. It's append-only, so the view stays pinned to
+   the newest line unless the reader has scrolled up to look at something. */
+function SystemLogTab({ loggedIn, t }) {
+  const tr = t || ((k) => k);
+  const [text, setText] = React.useState("");
+  const [state, setState] = React.useState("idle");
+  const [errMsg, setErrMsg] = React.useState("");
+  const [updatedAt, setUpdatedAt] = React.useState(null);
+  const [follow, setFollow] = React.useState(true);
+  const boxRef = React.useRef(null);
+
+  const load = React.useCallback(async () => {
+    setState((p) => (p === "ok" ? "ok" : "loading"));
+    try {
+      const res = await fetch("/grism/get_log", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setText(await res.text());
+      setState("ok"); setUpdatedAt(new Date()); setErrMsg("");
+    } catch (e) { setState("error"); setErrMsg(String(e.message || e)); }
+  }, []);
+  React.useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
+  React.useLayoutEffect(() => {
+    if (follow && boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
+  }, [text, follow]);
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+  const lines = text ? text.replace(/\s+$/, "").split("\n") : [];
+
+  return (
+    <div className="sys-wrap">
+      <div className="sys-head">
+        <h2 className="sys-title">{tr("log.title")}<span className="sys-card-metric">{lines.length}</span></h2>
+        <div className="sys-controls">
+          {updatedAt && <span className="sys-updated">{tr("tf.updated")} {updatedAt.toLocaleTimeString()}</span>}
+          <label className="tf-interval"><input type="checkbox" checked={follow}
+            onChange={(e) => setFollow(e.target.checked)} /> {tr("log.follow")}</label>
+          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>
+            {state === "loading" ? tr("sys.refreshing") : tr("sys.refresh")}</button>
+        </div>
+      </div>
+      {state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {errMsg}</div>}
+      <pre className="syslog-box" ref={boxRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          // stop following as soon as the reader scrolls away from the end
+          setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 24);
+        }}>
+        {lines.length ? text : <span className="dim">{tr("log.empty")}</span>}
+      </pre>
+    </div>
+  );
+}
+
+function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] }) {
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
   const [ifaces, setIfaces] = React.useState([]);
@@ -1138,7 +1326,42 @@ function SettingsTab({ loggedIn, t }) {
   const [errMsg, setErrMsg] = React.useState("");
   const [submit, setSubmit] = React.useState({ state: "idle", msg: "" }); // idle|sending|ok|error
   const [confirm, setConfirm] = React.useState(null);   // { kind:"ip", iface } | { kind:"xml" }
-  const [section, setSection] = React.useState("mgmt");  // mgmt | raw
+  const [section, setSection] = React.useState("mgmt");  // mgmt | ports | raw
+  // interface (port) settings: values as the device reports them, plus the edits
+  const [portsBase, setPortsBase] = React.useState(null);
+  const [ports, setPorts] = React.useState(null);
+  // system / packet-handling / services sections, each with an untouched baseline
+  const [sysBase, setSysBase] = React.useState(null);
+  const [sys, setSys] = React.useState(null);        // { timeServer, timeServer2, resolveNameServer, ... }
+  const [zones, setZones] = React.useState([]);      // available timezone names
+  const [zone, setZone] = React.useState("");
+  const [zoneBase, setZoneBase] = React.useState("");
+  const [svcBase, setSvcBase] = React.useState(null);
+  const [svc, setSvc] = React.useState(null);
+  const [community, setCommunity] = React.useState("");
+  const [communityBase, setCommunityBase] = React.useState("");
+  const [extras, setExtras] = React.useState(null);      // xmlrpc / backup service settings
+  const [extrasBase, setExtrasBase] = React.useState(null);
+  const [hb, setHb] = React.useState(null);              // heartbeat settings
+  const [hbBase, setHbBase] = React.useState(null);
+  const [hbRows, setHbRows] = React.useState([]);   // status rows lined up with targets
+  const [lg, setLg] = React.useState(null);        // NetFlow / syslog / DPI logging
+  const [lgBase, setLgBase] = React.useState(null);
+  const [rawCfg, setRawCfg] = React.useState(null);   // for the port pickers
+  const [views, setViews] = React.useState(null);     // RADIUS / TACACS+ login
+  const [viewsBase, setViewsBase] = React.useState(null);
+  const [fsList, setFsList] = React.useState(null);   // traffic service catalogue
+  const [copied, setCopied] = React.useState(false);
+  const [editingRaw, setEditingRaw] = React.useState(false);
+  const [rawBase, setRawBase] = React.useState("");   // text as it was before editing
+  // checked as you type, so a mistake is visible before you reach for a button
+  const rawErr = React.useMemo(() => (raw.trim() ? xmlError(raw) : ""), [raw]);
+  const [backupUrl, setBackupUrl] = React.useState("");
+  const [restoreFile, setRestoreFile] = React.useState(null);
+  const [fwFile, setFwFile] = React.useState(null);
+  const [fw, setFw] = React.useState({ model: "", version: "", available: "", checked: false });
+  const [dl, setDl] = React.useState(null);          // firmware download progress
+  const [fwChecking, setFwChecking] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setState("loading");
@@ -1152,6 +1375,244 @@ function SettingsTab({ loggedIn, t }) {
   }, []);
   React.useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
 
+  // Port settings need both sources: get_config holds the editable values, the
+  // statistics feed holds the live link state. Keep an untouched copy so we can
+  // tell what the user changed and submit only that.
+  // Several sections read the same get_config body, and the effect below can fire
+  // again while a load is still in flight. Share one request: callers awaiting the
+  // same fetch get the same promise, and only an explicit refresh starts a new one.
+  const cfgReq = React.useRef(null);
+  const getConfig = React.useCallback((fresh = false) => {
+    if (fresh || !cfgReq.current) {
+      cfgReq.current = fetch("/grism/task/get_config", { credentials: "include" })
+        .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .catch((e) => { cfgReq.current = null; throw e; });
+    }
+    return cfgReq.current;
+  }, []);
+
+  const loadPorts = React.useCallback(async () => {
+    try {
+      const [cfg, statRes] = await Promise.all([
+        getConfig(),
+        fetch("/grism/task/get_statistics_json", { credentials: "include" }),
+      ]);
+      const stats = statRes.ok ? (await statRes.json()).statistics : [];
+      const rows = mergePortStats(parseInterfacePorts(cfg), stats);
+      setPortsBase(rows); setPorts(rows);
+    } catch (e) { warnFetch("interface settings", e); setPortsBase([]); setPorts([]); }
+  }, []);
+  React.useEffect(() => { if (loggedIn && section === "ports" && !ports) loadPorts(); }, [loggedIn, section, ports, loadPorts]);
+
+  // System + packet-handling settings all come out of get_config's <args> and
+  // <filters>; the timezone list and SNMP community have endpoints of their own.
+  const SYS_ARGS = ["timeServer", "timeServer2", "resolveNameServer", "resolveNameServer2"];
+  const PKT_ARGS = ["deduplication", "ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct", "tryRunXmltoGdp"];
+  const TUNNELS = ["GTP", "GRE", "IPV4", "VXLAN", "MPLS_IN_UDP", "MPLS_IN_GRE", "L2MPLS_IN_UDP", "L2MPLS_IN_GRE"];
+  const busy = React.useRef({});
+  const loadSys = React.useCallback(async () => {
+    if (busy.current.sys) return; busy.current.sys = true;
+    try {
+      const cfg = await getConfig();
+      const a = cfg.args ?? {}, t = cfg.filters?.["in-tunnels"] ?? {};
+      const shaped = { ...parseFlowArgs(cfg) };
+      shaped.statisticsFlowService = a.statisticsFlowService ?? "";
+      setFsList(parseFlowServices(shaped.statisticsFlowService));
+      SYS_ARGS.forEach((k) => { shaped[k] = a[k] ?? ""; });
+      PKT_ARGS.forEach((k) => { shaped[k] = a[k] === true; });
+      TUNNELS.forEach((k) => { shaped["tun_" + k] = t[k] === true; });
+      setSysBase(shaped); setSys(shaped);
+    } catch (e) { warnFetch("system settings", e); setSysBase({}); setSys({}); }
+    finally { busy.current.sys = false; }
+  }, [getConfig]);
+  const loadZones = React.useCallback(async () => {
+    if (busy.current.zones) return; busy.current.zones = true;
+    try {
+      const res = await fetch("/grism/get_time_zone", { credentials: "include" });
+      if (res.ok) {
+        const payload = await res.json();
+        setZones(parseTimezones(payload));
+        // the entry flagged with 1 is the zone the device is currently using
+        const cur = currentTimezone(payload);
+        setZone(cur); setZoneBase(cur);
+      }
+    } catch (e) { warnFetch("timezone list", e); }
+    finally { busy.current.zones = false; }
+  }, []);
+  const loadServices = React.useCallback(async () => {
+    try {
+      const cfg = await getConfig();
+      const list = parseServices(cfg);
+      setSvcBase(list); setSvc(list);
+      const ex = parseServiceExtras(cfg);
+      setExtrasBase(ex); setExtras(ex);
+    } catch (e) { warnFetch("services", e); setSvcBase([]); setSvc([]); }
+    try {
+      const res = await fetch("/grism/get_snmp_read_community", { credentials: "include" });
+      if (res.ok) { const v = (await res.text()).trim(); setCommunity(v); setCommunityBase(v); }
+    } catch (e) { warnFetch("SNMP community", e); }
+  }, []);
+  React.useEffect(() => {
+    if (!loggedIn) return;
+    if ((section === "system" || section === "packet") && !sys) loadSys();
+    // Zones are their own endpoint and must not hang off `sys`: visiting the packet
+    // page first loads `sys`, and the system page would then never fetch them.
+    if (section === "system" && zones.length === 0) loadZones();
+    if (section === "services" && !svc) loadServices();
+  }, [loggedIn, section, sys, svc, zones.length, loadSys, loadZones, loadServices]);
+
+  // model and running version for the firmware page
+  React.useEffect(() => {
+    if (!loggedIn || section !== "firmware" || fw.version) return;
+    (async () => {
+      try {
+        const cfg = await getConfig();
+        const r = await fetch("/grism/task/get_version", { credentials: "include" });
+        const v = r.ok ? (await r.text()).trim().split("-")[0] : "";
+        setFw((o) => ({ ...o, model: cfg?.args?.model ?? "", version: v }));
+      } catch (e) { warnFetch("firmware version", e); }
+    })();
+  }, [loggedIn, section, fw.version, getConfig]);
+
+  /* Ask the device to fetch the image, then poll until the byte counts agree. */
+  const startDownload = React.useCallback((version) => {
+    // Kick the transfer off and start watching straight away — the request itself
+    // stays open for the whole download, so waiting on it would leave the progress
+    // bar hidden until the file had already arrived.
+    fetch(`/grism/task/update_download?version=${encodeURIComponent(version)}`, { credentials: "include" })
+      .catch((e) => warnFetch("firmware download", e));
+    setDl({ done: 0, total: 0, ratio: 0, complete: false });
+  }, []);
+  React.useEffect(() => {
+    if (!dl || dl.complete) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const res = await fetch("/grism/task/update_download_check", { credentials: "include" });
+        if (res.ok && alive) setDl(parseDownloadProgress(await res.text()));
+      } catch { /* transient — the next tick tries again */ }
+    };
+    poll();                                   // report progress without waiting a tick
+    const id = setInterval(poll, 1000);
+    return () => { alive = false; clearInterval(id); };
+  }, [dl]);
+
+  const loadViews = React.useCallback(async () => {
+    try {
+      const parsed = parseViews(await getConfig());
+      setViewsBase(parsed); setViews(parsed);
+    } catch (e) { warnFetch("login authentication", e); }
+  }, [getConfig]);
+  React.useEffect(() => { if (loggedIn && section === "auth" && !views) loadViews(); }, [loggedIn, section, views, loadViews]);
+
+  const loadHeartbeat = React.useCallback(async () => {
+    try {
+      const parsed = parseHeartbeat(await getConfig());
+      setHbBase(parsed); setHb(parsed);
+    } catch (e) { warnFetch("heartbeat settings", e); }
+  }, []);
+  // A snapshot is enough here — the live view lives on the Traffic → Sessions page.
+  const loadHbStatus = React.useCallback(async (targets) => {
+    try {
+      const res = await fetch("/grism/task/get_heartbeat_status", { credentials: "include" });
+      if (res.ok) setHbRows(heartbeatStatusRows(targets, parseHeartbeatStatus(await res.json())));
+    } catch { /* status is optional decoration */ }
+  }, []);
+  React.useEffect(() => {
+    if (!loggedIn || section !== "heartbeat") return;
+    if (!hb) { loadHeartbeat(); return; }
+    loadHbStatus(hb.targets);
+  }, [loggedIn, section, hb, loadHeartbeat, loadHbStatus]);
+
+  const loadLogging = React.useCallback(async () => {
+    try {
+      const cfg = await getConfig();
+      setRawCfg(cfg);                       // port lists come from the same body
+      const parsed = parseLogging(cfg);
+      setLgBase(parsed); setLg(parsed);
+    } catch (e) { warnFetch("logging settings", e); }
+  }, []);
+  React.useEffect(() => {
+    // the packet page shows the flow timeouts, which are stored inside <netflow>
+    if (loggedIn && (section === "logging" || section === "packet") && !lg) loadLogging();
+  }, [loggedIn, section, lg, loadLogging]);
+  const lgDirty = lg && lgBase && JSON.stringify(lg) !== JSON.stringify(lgBase);
+  // every exporter keeps its targets the same way heartbeat does: adding reuses the
+  // first disabled slot, removing switches a slot off
+  const setLgTargets = (path, fn) => setLg((o) => {
+    const next = structuredClone(o);
+    const node = path === "netflow" ? next.netflow : path === "syslog" ? next.syslog : next[path];
+    node.targets = fn(node.targets);
+    return next;
+  });
+
+  const setHbField = (k, v) => setHb((o) => ({ ...o, [k]: v }));
+  const setHbTarget = (i, patch) => setHb((o) => ({ ...o, targets: o.targets.map((t, j) => j === i ? { ...t, ...patch } : t) }));
+  const hbDirty = hb && hbBase && JSON.stringify(hb) !== JSON.stringify(hbBase);
+
+  const setSysField = (k, v) => setSys((o) => ({ ...o, [k]: v }));
+  const sysDirty = (keys) => sys && sysBase && keys.some((k) => sys[k] !== sysBase[k]);
+
+  // Two settings use plain form posts rather than a configSet.
+  const submitForm = async (url, field, value, after) => {
+    setSubmit({ state: "sending", msg: "" });
+    try {
+      const body = new URLSearchParams(); body.set(field, value);
+      const res = await fetch(url, { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setSubmit({ state: "ok", msg: "" });
+      after?.();
+      setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+
+  // The device stops responding as it powers down, so a network error here is the
+  // expected outcome rather than a failure to report.
+  const [powered, setPowered] = React.useState(null);   // "reboot" | "halt" once requested
+  const [wait, setWait] = React.useState(null);         // { title, body, left } while the device reboots
+  React.useEffect(() => {
+    if (!wait) return;
+    if (wait.left <= 0) { setWait(null); return; }
+    const id = setTimeout(() => setWait((w) => (w ? { ...w, left: w.left - 1 } : null)), 1000);
+    return () => clearTimeout(id);
+  }, [wait]);
+
+  /* POST a file and then hold the page while the device restarts. */
+  const uploadAndWait = async (url, file, field, minutes, title, body) => {
+    setSubmit({ state: "sending", msg: "" });
+    try {
+      const fd = new FormData(); fd.append(field, file, file.name);
+      const res = await fetch(url, { method: "POST", credentials: "include", body: fd });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setSubmit({ state: "idle", msg: "" });
+      setWait({ title, body, left: minutes * 60 });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+  const submitPower = async (url, kind) => {
+    setSubmit({ state: "sending", msg: "" });
+    try { await fetch(url, { method: "POST", credentials: "include" }); } catch { /* expected */ }
+    setSubmit({ state: "idle", msg: "" });
+    setPowered(kind);
+  };
+
+  // Flow settings straddle two places in the config: the on/off switches and table
+  // sizes sit in <args>, the timeouts inside <netflow>. Send both, in order.
+  const submitConfigs = async (xmls) => {
+    setSubmit({ state: "sending", msg: "" });
+    try {
+      for (const xmlText of xmls) {
+        const body = new URLSearchParams(); body.set("data", xmlText);
+        const res = await fetch("/grism/task/submit_config", { method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+      }
+      setSubmit({ state: "ok", msg: "" });
+      getConfig(true); setPorts(null); setSys(null); setSvc(null); setHb(null); setLg(null);
+      setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+
   const submitConfig = async (xmlText) => {
     setSubmit({ state: "sending", msg: "" });
     try {
@@ -1160,6 +1621,7 @@ function SettingsTab({ loggedIn, t }) {
         headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
       if (!res.ok) throw new Error("HTTP " + res.status);
       setSubmit({ state: "ok", msg: "" });
+      getConfig(true); setPorts(null); setSys(null); setSvc(null); setHb(null); setLg(null); setViews(null);   // re-read so baselines match
       setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
   };
@@ -1175,9 +1637,30 @@ function SettingsTab({ loggedIn, t }) {
         <div className="sys-controls">
           <div className="set-seg">
             <button className={section === "mgmt" ? "on" : ""} onClick={() => setSection("mgmt")}>{tr("set.mgmtIP")}</button>
+            <button className={section === "ports" ? "on" : ""} onClick={() => setSection("ports")}>{tr("set.interfaces")}</button>
+            <button className={section === "system" ? "on" : ""} onClick={() => setSection("system")}>{tr("set.system")}</button>
+            <button className={section === "packet" ? "on" : ""} onClick={() => setSection("packet")}>{tr("set.packet")}</button>
+            <button className={section === "auth" ? "on" : ""} onClick={() => setSection("auth")}>{tr("set.auth")}</button>
+            <button className={section === "logging" ? "on" : ""} onClick={() => setSection("logging")}>{tr("set.logging")}</button>
+            <button className={section === "heartbeat" ? "on" : ""} onClick={() => setSection("heartbeat")}>{tr("set.heartbeat")}</button>
+            <button className={section === "services" ? "on" : ""} onClick={() => setSection("services")}>{tr("set.services")}</button>
+            <button className={section === "backup" ? "on" : ""} onClick={() => setSection("backup")}>{tr("set.backup")}</button>
+            <button className={section === "firmware" ? "on" : ""} onClick={() => setSection("firmware")}>{tr("set.firmware")}</button>
             <button className={section === "raw" ? "on" : ""} onClick={() => setSection("raw")}>{tr("set.rawXml")}</button>
           </div>
-          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>{state === "loading" ? tr("set.loading") : tr("set.load")}</button>
+          {/* refresh whichever section is on screen — they read different endpoints */}
+          <button className="sys-refresh" disabled={state === "loading"}
+            onClick={() => {
+              getConfig(true);          // refresh means re-read, not reuse the cache
+              if (section === "ports") { setPorts(null); loadPorts(); }
+              else if (section === "system" || section === "packet") { setSys(null); loadSys(); if (section === "system") { setZones([]); loadZones(); } }
+              else if (section === "services") { setSvc(null); loadServices(); }
+              else if (section === "logging") { setLg(null); loadLogging(); }
+              else if (section === "heartbeat") { setHb(null); loadHeartbeat(); }
+              else if (section === "auth") { setViews(null); loadViews(); }
+              else { setEditingRaw(false); load(); }
+            }}>
+            {state === "loading" ? tr("set.loading") : tr("set.load")}</button>
         </div>
       </div>
 
@@ -1213,29 +1696,791 @@ function SettingsTab({ loggedIn, t }) {
         </div>
       )}
 
+      {section === "ports" && (
+        <div className="set-ports">
+          <p className="page-note">{tr("set.portsNote")}</p>
+          {!ports ? <p className="sys-note dim">{tr("set.loading")}</p> : (
+            <>
+              <div className="tf-table-wrap">
+                <table className="tf-table">
+                  <thead><tr>
+                    <th className="tf-num">{tr("set.ifidx")}</th><th>{tr("set.port")}</th>
+                    <th>{tr("tf.link")}</th><th>{tr("tf.speed")}</th>
+                    <th>{tr("tf.desc")}</th><th>{tr("set.enabled")}</th>
+                  </tr></thead>
+                  <tbody>
+                    {ports.map((p, i) => (
+                      <tr key={p.name} className={p.enable ? "" : "port-off"}>
+                        <td className="tf-num mono">{p.ifidx ?? "—"}</td>
+                        <td className="tf-name">{p.name}</td>
+                        <td>{p.linkUp == null ? <span className="dim">—</span>
+                          : <span className={"tf-link " + (p.linkUp ? "up" : "down")}>{p.linkUp ? tr("tf.up") : tr("tf.down")}</span>}</td>
+                        <td className="mono">{p.speed ? fmtSpeed(p.speed) : "—"}</td>
+                        <td>
+                          <input className="port-desc" value={p.description}
+                            placeholder={tr("common.optional")}
+                            onChange={(e) => setPorts((list) => list.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
+                        </td>
+                        <td>
+                          <input type="checkbox" checked={p.enable}
+                            onChange={(e) => setPorts((list) => list.map((x, j) => j === i ? { ...x, enable: e.target.checked } : x))} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="set-actions">
+                <span className="set-changed">{changedPorts(portsBase, ports).length > 0
+                  ? `${changedPorts(portsBase, ports).length} ${tr("set.portsChanged")}` : ""}</span>
+                <button className="copy-btn" disabled={changedPorts(portsBase, ports).length === 0}
+                  onClick={() => setPorts(portsBase)}>{tr("set.revert")}</button>
+                <button className="sys-refresh"
+                  disabled={submit.state === "sending" || changedPorts(portsBase, ports).length === 0}
+                  onClick={() => setConfirm({ kind: "ports" })}>
+                  {submit.state === "sending" ? tr("set.submitting") : tr("set.applyPorts")}</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {section === "system" && (
+        <div className="set-forms">
+          {!sys ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.timeServers")}</h3>
+              <p className="set-hint">{tr("set.timeServersNote")}</p>
+              <div className="set-grid">
+                <label className="ml"><span>{tr("set.primary")}</span>
+                  <input value={sys.timeServer ?? ""} placeholder="216.239.35.0"
+                    onChange={(e) => setSysField("timeServer", e.target.value)} /></label>
+                <label className="ml"><span>{tr("set.secondary")}</span>
+                  <input value={sys.timeServer2 ?? ""} placeholder={tr("common.optional")}
+                    onChange={(e) => setSysField("timeServer2", e.target.value)} /></label>
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh" disabled={submit.state === "sending" || !sysDirty(["timeServer", "timeServer2"])}
+                  onClick={() => setConfirm({ kind: "args", keys: ["timeServer", "timeServer2"] })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.timezone")}</h3>
+              <div className="set-grid">
+                <label className="ml"><span>{tr("set.timezone")}</span>
+                  <select value={zone} onChange={(e) => setZone(e.target.value)}>
+                    {zone === "" && <option value="">{tr("set.pickZone")}</option>}
+                    {zones.map((z) => <option key={z} value={z}>{z}</option>)}
+                  </select></label>
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh" disabled={submit.state === "sending" || !zone || zone === zoneBase}
+                  onClick={() => setConfirm({ kind: "zone" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.nameServers")}</h3>
+              <div className="set-grid">
+                <label className="ml"><span>{tr("set.primary")}</span>
+                  <input value={sys.resolveNameServer ?? ""} placeholder="8.8.8.8"
+                    onChange={(e) => setSysField("resolveNameServer", e.target.value)} /></label>
+                <label className="ml"><span>{tr("set.secondary")}</span>
+                  <input value={sys.resolveNameServer2 ?? ""} placeholder={tr("common.optional")}
+                    onChange={(e) => setSysField("resolveNameServer2", e.target.value)} /></label>
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh" disabled={submit.state === "sending" || !sysDirty(["resolveNameServer", "resolveNameServer2"])}
+                  onClick={() => setConfirm({ kind: "args", keys: ["resolveNameServer", "resolveNameServer2"] })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+            <section className="sys-card danger-card">
+              <h3 className="sys-card-title">{tr("set.power")}</h3>
+              <p className="set-hint">{tr("set.powerNote")}</p>
+              <div className="set-actions">
+                <button className="del" disabled={submit.state === "sending"}
+                  onClick={() => setConfirm({ kind: "reboot" })}>{tr("set.reboot")}</button>
+                <button className="del" disabled={submit.state === "sending"}
+                  onClick={() => setConfirm({ kind: "halt" })}>{tr("set.halt")}</button>
+              </div>
+            </section>
+          </>)}
+        </div>
+      )}
+
+      {section === "packet" && (
+        <div className="set-forms">
+          {!sys ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.flow")}</h3>
+              <p className="set-hint">{tr("set.flowNote")}</p>
+              <div className="set-checks">
+                <label className="set-check"><input type="checkbox" checked={!!sys.flow}
+                  onChange={(e) => setSysField("flow", e.target.checked)} /> {tr("set.flowV4")}</label>
+                <label className="set-check"><input type="checkbox" checked={!!sys.flowv6}
+                  onChange={(e) => setSysField("flowv6", e.target.checked)} /> {tr("set.flowV6")}</label>
+              </div>
+              <div className="set-grid">
+                <label className="ml"><span>{tr("set.flowV4Size")}</span>
+                  <input type="number" min="0" value={sys.flowCacheBaseSize ?? 0}
+                    onChange={(e) => setSysField("flowCacheBaseSize", Number(e.target.value) || 0)} /></label>
+                <label className="ml"><span>{tr("set.flowV6Size")}</span>
+                  <input type="number" min="0" value={sys.flowv6TableSize ?? 0}
+                    onChange={(e) => setSysField("flowv6TableSize", Number(e.target.value) || 0)} /></label>
+              </div>
+              {lg && (<>
+                <div className="oattr-subhead">{tr("set.flowTimeouts")}</div>
+                <p className="set-hint">{tr("set.flowTimeoutsNote")}</p>
+                <div className="set-grid">
+                  {[["active_timeout", "set.lgActive"], ["inactive_timeout", "set.lgInactive"],
+                    ["tcp_fin_rst_timeout", "set.lgFinRst"]].map(([k, lbl]) => (
+                    <label className="ml" style={{ flex: "0 1 170px" }} key={k}><span>{tr(lbl)}</span>
+                      <input type="number" min="0" value={lg.netflow[k]}
+                        onChange={(e) => setLg((o) => ({ ...o, netflow: { ...o.netflow, [k]: Number(e.target.value) || 0 } }))} /></label>
+                  ))}
+                </div>
+              </>)}
+              {flowProblems(sys).length > 0 && (
+                <ul className="problem-list">
+                  {flowProblems(sys).map((p, i) => <li key={i}><code>{p.scope}</code> — {p.msg}</li>)}
+                </ul>
+              )}
+              <div className="set-actions">
+                <button className="sys-refresh"
+                  disabled={submit.state === "sending" || flowProblems(sys).length > 0 || !(sysDirty(FLOW_ARGS) || lgDirty)}
+                  onClick={() => setConfirm({ kind: "flow" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.dedup")}</h3>
+              <p className="set-hint">{tr("set.dedupNote")}</p>
+              <label className="set-check"><input type="checkbox" checked={!!sys.deduplication}
+                onChange={(e) => setSysField("deduplication", e.target.checked)} /> {tr("set.dedupOn")}</label>
+              <div className="set-actions">
+                <button className="sys-refresh" disabled={submit.state === "sending" || !sysDirty(["deduplication"])}
+                  onClick={() => setConfirm({ kind: "args", keys: ["deduplication"] })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.reassembly")}</h3>
+              <p className="set-hint">{tr("set.reassemblyNote")}</p>
+              {[["ipFragmentCorrelation", "set.ipFrag"], ["tcpSegmentDataReassemble", "set.tcpSeg"], ["sctpDataChunkReconstruct", "set.sctpChunk"]].map(([k, lbl]) => (
+                <label className="set-check" key={k}><input type="checkbox" checked={!!sys[k]}
+                  onChange={(e) => setSysField(k, e.target.checked)} /> {tr(lbl)}</label>
+              ))}
+              <div className="set-actions">
+                <button className="sys-refresh"
+                  disabled={submit.state === "sending" || !sysDirty(["ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct"])}
+                  onClick={() => setConfirm({ kind: "args", keys: ["ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct"] })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.liveUpdate")}</h3>
+              <p className="set-hint">{tr("set.liveUpdateNote")}</p>
+              <label className="set-check"><input type="checkbox" checked={!!sys.tryRunXmltoGdp}
+                onChange={(e) => setSysField("tryRunXmltoGdp", e.target.checked)} /> {tr("set.liveUpdateOn")}</label>
+              <div className="set-actions">
+                <button className="sys-refresh" disabled={submit.state === "sending" || !sysDirty(["tryRunXmltoGdp"])}
+                  onClick={() => setConfirm({ kind: "args", keys: ["tryRunXmltoGdp"] })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.inTunnels")}</h3>
+              <p className="set-hint">{tr("set.inTunnelsNote")}</p>
+              <div className="set-checks">
+                {TUNNELS.map((k) => (
+                  <label className="set-check" key={k}><input type="checkbox" checked={!!sys["tun_" + k]}
+                    onChange={(e) => setSysField("tun_" + k, e.target.checked)} /> {k}</label>
+                ))}
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh"
+                  disabled={submit.state === "sending" || !sysDirty(TUNNELS.map((k) => "tun_" + k))}
+                  onClick={() => setConfirm({ kind: "tunnels" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.flowServices")}</h3>
+              <p className="set-hint">{tr("set.flowServicesNote")}</p>
+              {(() => {
+                const list = fsList ?? [];
+                // keep the edited list authoritative and mirror it into the packed
+                // string so the Apply button's dirty check still works
+                const write = (next) => { setFsList(next); setSysField("statisticsFlowService", buildFlowServices(next)); };
+                return (<>
+                  {list.length === 0 && <p className="out-empty">{tr("set.fsNone")}</p>}
+                  {list.map((svc, i) => (
+                    <div className="hb-target" key={i}>
+                      <div className="hb-target-head">
+                        <span className="log-target-name mono">{svc.name || tr("set.fsUnnamed")}</span>
+                        <button className="del" onClick={() => write(list.filter((_, j) => j !== i))}>{tr("common.delete")}</button>
+                      </div>
+                      <div className="set-grid">
+                        <label className="ml"><span>{tr("set.fsName")}</span>
+                          <input value={svc.name} placeholder="HTTPS"
+                            onChange={(e) => write(list.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} /></label>
+                      </div>
+                      <div className="oattr-subhead">{tr("set.fsPorts")}</div>
+                      <div className="fs-ports">
+                        {svc.ports.map((p, k) => (
+                          <span className="fs-port" key={k}>
+                            <select value={p.proto} onChange={(e) => write(list.map((x, j) => j === i
+                              ? { ...x, ports: x.ports.map((y, m) => m === k ? { ...y, proto: e.target.value } : y) } : x))}>
+                              <option value="TCP">TCP</option><option value="UDP">UDP</option><option value="SCTP">SCTP</option>
+                            </select>
+                            <input type="number" min="1" max="65535" value={p.port}
+                              onChange={(e) => write(list.map((x, j) => j === i
+                                ? { ...x, ports: x.ports.map((y, m) => m === k ? { ...y, port: Number(e.target.value) || 0 } : y) } : x))} />
+                            <button className="icon-btn" aria-label={tr("common.delete")}
+                              onClick={() => write(list.map((x, j) => j === i
+                                ? { ...x, ports: x.ports.filter((_, m) => m !== k) } : x))}>✕</button>
+                          </span>
+                        ))}
+                        <button className="add-btn" onClick={() => write(list.map((x, j) => j === i
+                          ? { ...x, ports: [...x.ports, { proto: "TCP", port: 0 }] } : x))}>{tr("set.fsAddPort")}</button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="add-row">
+                    <button className="add-btn" onClick={() => write([...list, mkFlowService()])}>{tr("set.fsAddService")}</button>
+                  </div>
+                  {flowServiceProblems(list).length > 0 && (
+                    <ul className="problem-list">
+                      {flowServiceProblems(list).map((p, i) => <li key={i}><code>{p.scope}</code> — {p.msg}</li>)}
+                    </ul>
+                  )}
+                  <div className="set-actions">
+                    <button className="sys-refresh"
+                      disabled={submit.state === "sending" || !sysDirty(["statisticsFlowService"]) || flowServiceProblems(list).length > 0}
+                      onClick={() => setConfirm({ kind: "args", keys: ["statisticsFlowService"] })}>{tr("set.apply")}</button>
+                  </div>
+                </>);
+              })()}
+            </section>
+          </>)}
+        </div>
+      )}
+
+      {section === "auth" && (
+        <div className="set-forms">
+          {!views ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
+            <p className="page-note">{tr("set.authNote")}</p>
+            {[["radius", "RADIUS", 1812], ["tacacs", "TACACS+", 49]].map(([key, label, defPort]) => (
+              <section className="sys-card" key={key}>
+                <h3 className="sys-card-title">{label}</h3>
+                {/* The device authenticates against one external server, so enabling
+                    one switches the other off rather than leaving both claimed. */}
+                <label className="set-check"><input type="checkbox" checked={!!views[key + "Login"]}
+                  onChange={(e) => setViews((o) => ({ ...o,
+                    radiusLogin: key === "radius" ? e.target.checked : false,
+                    tacacsLogin: key === "tacacs" ? e.target.checked : false }))} />
+                  {tr("set.authUse")} {label}</label>
+                <div className="set-grid">
+                  <label className="ml"><span>{tr("set.authServer")}</span>
+                    <input value={views[key + "Host"]} placeholder="192.168.1.10"
+                      onChange={(e) => setViews((o) => ({ ...o, [key + "Host"]: e.target.value }))} /></label>
+                  <label className="ml" style={{ flex: "0 1 120px" }}><span>{tr("set.bkPort")}</span>
+                    <input type="number" min="1" max="65535" value={views[key + "Port"]}
+                      onChange={(e) => setViews((o) => ({ ...o, [key + "Port"]: Number(e.target.value) || defPort }))} /></label>
+                  <label className="ml"><span>{tr("set.authSecret")}</span>
+                    <input type="password" value={views[key + "Secret"]} placeholder={tr("common.optional")}
+                      onChange={(e) => setViews((o) => ({ ...o, [key + "Secret"]: e.target.value }))} /></label>
+                </div>
+              </section>
+            ))}
+            {viewsProblems(views).length > 0 && (
+              <ul className="problem-list">
+                {viewsProblems(views).map((p, i) => <li key={i}><code>{p.scope}</code> — {p.msg}</li>)}
+              </ul>
+            )}
+            <div className="set-actions">
+              <button className="copy-btn" disabled={JSON.stringify(views) === JSON.stringify(viewsBase)}
+                onClick={() => setViews(viewsBase)}>{tr("set.revert")}</button>
+              <button className="sys-refresh"
+                disabled={submit.state === "sending" || JSON.stringify(views) === JSON.stringify(viewsBase) || viewsProblems(views).length > 0}
+                onClick={() => setConfirm({ kind: "views" })}>{tr("set.apply")}</button>
+            </div>
+          </>)}
+        </div>
+      )}
+
+      {section === "logging" && (
+        <div className="set-forms">
+          {!lg ? <p className="sys-note dim">{tr("set.loading")}</p> : (() => {
+            // adding reuses the first disabled slot, the same way heartbeat targets work
+            const addTo = (path, make) => setLgTargets(path, (l) => insertHeartbeatTarget(l, make()));
+            const patch = (path, i, p) => setLgTargets(path, (l) => l.map((x, j) => j === i ? { ...x, ...p } : x));
+            const drop = (path, i) => setLgTargets(path, (l) => l.map((x, j) => j === i ? { ...x, enable: false } : x));
+            const shown = (l) => (l ?? []).map((x, i) => ({ x, i })).filter(({ x }) => x.enable);
+            const srcPorts = logSourcePorts(rawCfg);
+            const dataPorts = dataPortNames(rawCfg, { includeLoop: true });   // scope may include LOOP
+
+            const exporter = (path, title, note, head, targetExtra) => (
+              <section className="sys-card" key={path}>
+                <h3 className="sys-card-title">{title}
+                  <span className="sys-card-metric">{shown(lg[path]?.targets ?? lg.netflow.targets).length}</span>
+                </h3>
+                {note && <p className="set-hint">{note}</p>}
+                {path !== "netflow" && (
+                  <label className="set-check"><input type="checkbox" checked={!!lg[path].enable}
+                    onChange={(e) => setLg((o) => ({ ...o, [path]: { ...o[path], enable: e.target.checked } }))} />
+                    {tr("set.lgEnable")}</label>
+                )}
+                {head}
+                {shown(path === "netflow" ? lg.netflow.targets : lg[path].targets).length === 0 &&
+                  <p className="out-empty">{tr("set.lgNoTargets")}</p>}
+                {(path === "netflow" ? lg.netflow.targets : lg[path].targets).map((x, i) => x.enable && (
+                  <LogTarget key={i} target={x} tr={tr} dataPorts={dataPorts} filterIds={filterIds}
+                    onPatch={(p) => patch(path, i, p)} onRemove={() => drop(path, i)}
+                    extra={targetExtra?.(x, i)} />
+                ))}
+                <button className="add-btn" onClick={() => addTo(path,
+                  path === "netflow" ? mkNetflowTarget : () => mkLogTarget(514))}>{tr("set.lgAddTarget")}</button>
+              </section>
+            );
+
+            return (<>
+              {exporter("netflow", "NetFlow", tr("set.lgNetflowNote"), (
+                <>
+                <label className="set-check"><input type="checkbox" checked={lg.enable}
+                  onChange={(e) => setLg((o) => ({ ...o, enable: e.target.checked }))} /> {tr("set.lgEnable")}</label>
+                <div className="set-grid">
+                  <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
+                    <PortSelect value={lg.netflow.port} options={srcPorts}
+                      onChange={(v) => setLg((o) => ({ ...o, netflow: { ...o.netflow, port: v } }))} /></label>
+                </div>
+                </>
+              ), (x, i) => (
+                <div className="set-grid">
+                  <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgVersion")}</span>
+                    <select value={x.version} onChange={(e) => patch("netflow", i, { version: Number(e.target.value) })}>
+                      <option value={5}>v5</option><option value={9}>v9</option><option value={10}>IPFIX (v10)</option>
+                    </select></label>
+                </div>
+              ))}
+
+              <section className="sys-card">
+                <h3 className="sys-card-title">{tr("set.lgSyslogTitle")}<span className="sys-card-metric">{shown(lg.syslog.targets).length}</span></h3>
+                <p className="set-hint">{tr("set.lgSyslogNote")}</p>
+                <label className="set-check"><input type="checkbox" checked={lg.syslog.enable}
+                  onChange={(e) => setLg((o) => ({ ...o, syslog: { ...o.syslog, enable: e.target.checked } }))} /> {tr("set.lgEnable")}</label>
+                <div className="set-grid">
+                  <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
+                    <PortSelect value={lg.syslog.port} options={srcPorts}
+                      onChange={(v) => setLg((o) => ({ ...o, syslog: { ...o.syslog, port: v } }))} /></label>
+                </div>
+                {shown(lg.syslog.targets).length === 0 && <p className="out-empty">{tr("set.lgNoTargets")}</p>}
+                {lg.syslog.targets.map((x, i) => x.enable && (
+                  <LogTarget key={i} target={x} tr={tr} dataPorts={dataPorts} filterIds={filterIds}
+                    hideScope={x.type === "system"}
+                    onPatch={(p) => patch("syslog", i, p)} onRemove={() => drop("syslog", i)}
+                    extra={(
+                      <>
+                        <div className="oattr-subhead">{x.type === "system" ? tr("set.lgSystemEvents") : tr("set.lgMatchedFields")}</div>
+                        <div className="set-checks">
+                          {(x.type === "system" ? SYSLOG_SYSTEM_SUBTYPES : SYSLOG_MATCHED_SUBTYPES).map((k) => (
+                            <label className="set-check" key={k}><input type="checkbox" checked={!!x.subtype?.[k]}
+                              onChange={(e) => patch("syslog", i, { subtype: { ...x.subtype, [k]: e.target.checked } })} /> {k}</label>
+                          ))}
+                        </div>
+                      </>
+                    )} />
+                ))}
+                <div className="add-row">
+                  <button className="add-btn" onClick={() => addTo("syslog", () => mkSyslogTarget("system"))}>{tr("set.lgAddSystem")}</button>
+                  <button className="add-btn" onClick={() => addTo("syslog", () => mkSyslogTarget("matched"))}>{tr("set.lgAddMatched")}</button>
+                </div>
+              </section>
+
+              {exporter("dns", tr("set.lgDns"), tr("set.lgDnsNote"), (
+                <div className="set-grid">
+                  <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
+                    <PortSelect value={lg.dns.port} options={srcPorts}
+                      onChange={(v) => setLg((o) => ({ ...o, dns: { ...o.dns, port: v } }))} /></label>
+                  {[["active_timeout", "set.lgActive"], ["inactive_timeout", "set.lgInactive"]].map(([k, lbl]) => (
+                    <label className="ml" style={{ flex: "0 1 150px" }} key={k}><span>{tr(lbl)}</span>
+                      <input type="number" min="0" value={lg.dns[k]}
+                        onChange={(e) => setLg((o) => ({ ...o, dns: { ...o.dns, [k]: Number(e.target.value) || 0 } }))} /></label>
+                  ))}
+                  <label className="set-check"><input type="checkbox" checked={lg.dns.response_only}
+                    onChange={(e) => setLg((o) => ({ ...o, dns: { ...o.dns, response_only: e.target.checked } }))} /> {tr("set.lgResponseOnly")}</label>
+                  <label className="set-check"><input type="checkbox" checked={lg.dns.noerror_only}
+                    onChange={(e) => setLg((o) => ({ ...o, dns: { ...o.dns, noerror_only: e.target.checked } }))} /> {tr("set.lgNoErrorOnly")}</label>
+                </div>
+              ))}
+
+              {exporter("http", tr("set.lgHttp"), tr("set.lgHttpNote"), (
+                <div className="set-grid">
+                  <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
+                    <PortSelect value={lg.http.port} options={srcPorts}
+                      onChange={(v) => setLg((o) => ({ ...o, http: { ...o.http, port: v } }))} /></label>
+                </div>
+              ))}
+
+              {exporter("ssl", tr("set.lgTls"), tr("set.lgTlsNote"), (
+                <div className="set-grid">
+                  <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
+                    <PortSelect value={lg.ssl.port} options={srcPorts}
+                      onChange={(v) => setLg((o) => ({ ...o, ssl: { ...o.ssl, port: v } }))} /></label>
+                  <label className="set-check"><input type="checkbox" checked={lg.ssl.ja3}
+                    onChange={(e) => setLg((o) => ({ ...o, ssl: { ...o.ssl, ja3: e.target.checked } }))} /> JA3</label>
+                  <label className="set-check"><input type="checkbox" checked={lg.ssl.ja4}
+                    onChange={(e) => setLg((o) => ({ ...o, ssl: { ...o.ssl, ja4: e.target.checked } }))} /> JA4</label>
+                </div>
+              ))}
+
+              {loggingProblems(lg).length > 0 && (
+                <ul className="problem-list">
+                  {loggingProblems(lg).map((p, i) => <li key={i}><code>{p.scope}</code> — {p.msg}</li>)}
+                </ul>
+              )}
+              <div className="set-actions">
+                <button className="copy-btn" disabled={!lgDirty} onClick={() => setLg(lgBase)}>{tr("set.revert")}</button>
+                <button className="sys-refresh" disabled={submit.state === "sending" || !lgDirty || loggingProblems(lg).length > 0}
+                  onClick={() => setConfirm({ kind: "logging" })}>{tr("set.apply")}</button>
+              </div>
+            </>);
+          })()}
+        </div>
+      )}
+
+      {section === "heartbeat" && (
+        <div className="set-forms">
+          {!hb ? <p className="sys-note dim">{tr("set.loading")}</p> : (
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.heartbeat")}</h3>
+              <p className="set-hint">{tr("set.heartbeatNote")}</p>
+              <label className="set-check"><input type="checkbox" checked={hb.enable}
+                onChange={(e) => setHbField("enable", e.target.checked)} /> {tr("set.hbEnable")}</label>
+              <div className="set-grid">
+                <label className="ml"><span>{tr("set.hbFrequency")}</span>
+                  <input type="number" min="1" value={hb.frequency}
+                    onChange={(e) => setHbField("frequency", e.target.value)} /></label>
+                <label className="ml"><span>{tr("set.hbTimeouts")}</span>
+                  <input type="number" min="1" value={hb.maxAllowTimeouts}
+                    onChange={(e) => setHbField("maxAllowTimeouts", e.target.value)} /></label>
+              </div>
+
+              <div className="hb-targets">
+                {/* Disabled targets stay in the document (they're still submitted) but
+                    aren't shown — removing one just switches it off. */}
+                <div className="oattr-subhead">{tr("set.hbTargets")} ({hb.targets.filter((t) => t.enable).length})</div>
+                {hb.targets.filter((t) => t.enable).length === 0 && <p className="out-empty">{tr("set.hbNoTargets")}</p>}
+                {hb.targets.map((t, i) => t.enable && (
+                    <div className="hb-target" key={i}>
+                      <div className="hb-target-head">
+                        {(() => {
+                          const row = hbRows.find((r) => r.id === t.id);
+                          return row === undefined
+                            ? <span className="hb-state dim">{tr("set.hbUnknown")}</span>
+                            : <span className={"hb-state " + (row.up ? "up" : "down")}>
+                                <span className="dot" />{row.up ? tr("set.hbUp") : tr("set.hbDown")}</span>;
+                        })()}
+                        <button className="del" onClick={() => setHbTarget(i, { enable: false })}>
+                          {tr("common.delete")}</button>
+                      </div>
+                      <div className="set-grid">
+                        <label className="ml" style={{ flex: "0 1 110px" }}><span>ID</span>
+                          <input type="number" min="0" value={t.id}
+                            onChange={(e) => setHbTarget(i, { id: Number(e.target.value) || 0 })} /></label>
+                        <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.hbSend")}</span>
+                          <PortSelect value={t.sendPort} options={portOptions}
+                            onChange={(v) => setHbTarget(i, { sendPort: v })} invalid={!t.sendPort} /></label>
+                        <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.hbReceive")}</span>
+                          <PortSelect value={t.receivePort} options={portOptions}
+                            onChange={(v) => setHbTarget(i, { receivePort: v })} invalid={!t.receivePort} /></label>
+                        <label className="ml"><span>{tr("tf.desc")}</span>
+                          <input value={t.description} placeholder={tr("common.optional")}
+                            onChange={(e) => setHbTarget(i, { description: e.target.value })} /></label>
+                      </div>
+                      <label className="ml hb-data"><span>{tr("set.hbPacket")}</span>
+                        <textarea value={t.packetData} spellCheck={false} rows={2}
+                          onChange={(e) => setHbTarget(i, { packetData: e.target.value.replace(/\s+/g, "") })} /></label>
+                    </div>
+                ))}
+                {/* a new target takes the slot it will occupy among the enabled ones */}
+                <button className="add-btn" onClick={() => setHb((o) => ({ ...o,
+                  targets: insertHeartbeatTarget(o.targets,
+                    mkHeartbeatTarget(Math.max(0, ...o.targets.map((x) => x.id)) + 1)) }))}>
+                  {tr("set.hbAddTarget")}</button>
+              </div>
+
+              {heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).length > 0 && (
+                <ul className="problem-list">
+                  {heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).map((p, i) => <li key={i}><code>{p.scope}</code> — {p.msg}</li>)}
+                </ul>
+              )}
+              <div className="set-actions">
+                <button className="copy-btn" disabled={!hbDirty} onClick={() => setHb(hbBase)}>{tr("set.revert")}</button>
+                <button className="sys-refresh" disabled={submit.state === "sending" || !hbDirty || heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).length > 0}
+                  onClick={() => setConfirm({ kind: "heartbeat" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
+      {section === "services" && (
+        <div className="set-forms">
+          {!svc ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.services")} <span className="sys-card-metric">{svc.filter((x) => x.enable).length}/{svc.length}</span></h3>
+              <div className="tf-table-wrap">
+                <table className="tf-table">
+                  <thead><tr><th>{tr("set.service")}</th><th>{tr("tf.desc")}</th><th>{tr("set.enabled")}</th></tr></thead>
+                  <tbody>
+                    {svc.map((x, i) => (
+                      <tr key={x.name} className={x.enable ? "" : "port-off"}>
+                        <td className="tf-name mono">{x.name}</td>
+                        <td className="dim">{x.description || "—"}</td>
+                        <td><input type="checkbox" checked={x.enable}
+                          onChange={(e) => setSvc((l) => l.map((y, j) => j === i ? { ...y, enable: e.target.checked } : y))} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="set-actions">
+                <span className="set-changed">{changedServices(svcBase, svc).length > 0 ? `${changedServices(svcBase, svc).length} ${tr("set.portsChanged")}` : ""}</span>
+                <button className="copy-btn" disabled={changedServices(svcBase, svc).length === 0}
+                  onClick={() => setSvc(svcBase)}>{tr("set.revert")}</button>
+                <button className="sys-refresh" disabled={submit.state === "sending" || changedServices(svcBase, svc).length === 0}
+                  onClick={() => setConfirm({ kind: "services" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            {extras && (
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.svcExtras")}</h3>
+              <p className="set-hint">{tr("set.svcExtrasNote")}</p>
+              <label className="set-check"><input type="checkbox" checked={extras.xmlrpc.localhost_only}
+                onChange={(e) => setExtras((o) => ({ ...o, xmlrpc: { localhost_only: e.target.checked } }))} />
+                xmlrpc — {tr("set.localhostOnly")}</label>
+              <div className="oattr-subhead">backup</div>
+              <div className="set-grid">
+                {[["host", "set.bkHost"], ["port", "set.bkPort"], ["user", "set.bkUser"],
+                  ["pass", "set.bkPass"], ["dir", "set.bkDir"], ["crontab", "set.bkCron"]].map(([k, lbl]) => (
+                  <label className="ml" key={k}><span>{tr(lbl)}</span>
+                    <input type={k === "pass" ? "password" : k === "port" ? "number" : "text"}
+                      value={extras.backup[k]} placeholder={k === "crontab" ? "0 0 * * *" : tr("common.optional")}
+                      onChange={(e) => setExtras((o) => ({ ...o, backup: { ...o.backup, [k]: e.target.value } }))} /></label>
+                ))}
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh"
+                  disabled={submit.state === "sending" || JSON.stringify(extras) === JSON.stringify(extrasBase)}
+                  onClick={() => setConfirm({ kind: "extras" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+            )}
+
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.snmp")}</h3>
+              <p className="set-hint">{tr("set.snmpNote")} <a href="/data/PACKETX-MIB.txt" download>PACKETX-MIB.txt</a></p>
+              <div className="set-grid">
+                <label className="ml"><span>{tr("set.readCommunity")}</span>
+                  <input value={community} onChange={(e) => setCommunity(e.target.value)} /></label>
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh" disabled={submit.state === "sending" || !community.trim() || community === communityBase}
+                  onClick={() => setConfirm({ kind: "snmp" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+          </>)}
+        </div>
+      )}
+
+      {section === "backup" && (
+        <div className="set-forms">
+          <p className="page-note">{tr("set.backupNote")}</p>
+
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.bkTake")}</h3>
+            <p className="set-hint">{tr("set.bkTakeNote")}</p>
+            <div className="set-actions">
+              {backupUrl && <a className="copy-btn" href={backupUrl} download>{tr("set.bkDownload")}</a>}
+              <button className="sys-refresh" disabled={submit.state === "sending"}
+                onClick={async () => {
+                  setSubmit({ state: "sending", msg: "" });
+                  try {
+                    const res = await fetch("/grism/task/backup", { method: "POST", credentials: "include" });
+                    if (!res.ok) throw new Error("HTTP " + res.status);
+                    setBackupUrl("/file_manager/preview?download=1&file=/tmp/grism-backup.tgz");
+                    setSubmit({ state: "idle", msg: "" });
+                  } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+                }}>{tr("set.bkCreate")}</button>
+            </div>
+          </section>
+
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.bkRestore")}</h3>
+            <p className="set-hint">{tr("set.bkRestoreNote")}</p>
+            <FilePick accept=".tgz" file={restoreFile} onPick={setRestoreFile} tr={tr} hint="grism-backup.tgz" />
+            <div className="set-actions">
+              <button className="del" disabled={!restoreFile || submit.state === "sending"}
+                onClick={() => setConfirm({ kind: "restoreFile" })}>{tr("set.bkRestoreGo")}</button>
+            </div>
+          </section>
+
+          <section className="sys-card danger-card">
+            <h3 className="sys-card-title">{tr("set.bkFactory")}</h3>
+            <p className="set-hint">{tr("set.bkFactoryNote")}</p>
+            <div className="set-actions">
+              <button className="del" disabled={submit.state === "sending"}
+                onClick={() => setConfirm({ kind: "factory" })}>{tr("set.bkFactoryGo")}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {section === "firmware" && (
+        <div className="set-forms">
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.fwCurrent")}</h3>
+            <div className="sess-figures">
+              <div><span className="sess-k">{tr("ov.model")}</span><span className="sess-v">{fw.model ? "GRISM-" + fw.model : "—"}</span></div>
+              <div><span className="sess-k">{tr("ov.version")}</span><span className="sess-v mono">{fw.version || "—"}</span></div>
+            </div>
+          </section>
+
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.fwManual")}</h3>
+            <p className="set-hint">{tr("set.fwManualNote")}</p>
+            <FilePick accept=".tgz" file={fwFile} onPick={setFwFile} tr={tr} hint="grism-bin.tgz" />
+            <div className="set-actions">
+              <button className="del" disabled={!fwFile || submit.state === "sending"}
+                onClick={() => setConfirm({ kind: "fwUpload" })}>{tr("set.fwUpload")}</button>
+            </div>
+          </section>
+
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.fwOnline")}</h3>
+            <p className="set-hint">{tr("set.fwOnlineNote")}</p>
+            {fwChecking
+              ? <p className="sys-note dim">{tr("set.fwCheckingNote")}</p>
+              : fw.available
+                ? <p className="sys-note">{tr("set.fwFound")} <b className="mono">{fw.available}</b></p>
+                : fw.checked && <p className="sys-note dim">{tr("set.fwUpToDate")}</p>}
+            {dl && (
+              <div className="fw-progress">
+                <div className="apply-bar"><div style={{ width: (dl.ratio * 100).toFixed(1) + "%", animation: "none" }} /></div>
+                <span className="mono">{fmtBytes(dl.done)} / {fmtBytes(dl.total)}</span>
+              </div>
+            )}
+            <div className="set-actions">
+              {/* the device queries the update server, which can take a moment */}
+              <button className="copy-btn" disabled={submit.state === "sending" || fwChecking}
+                onClick={async () => {
+                  setFwChecking(true);
+                  try {
+                    const res = await fetch("/grism/task/update_check", { credentials: "include" });
+                    const v = res.ok ? parseUpdateCheck(await res.text()) : "";
+                    setFw((o) => ({ ...o, available: v, checked: true }));
+                  } catch (e) { warnFetch("update check", e); setFw((o) => ({ ...o, checked: true })); }
+                  finally { setFwChecking(false); }
+                }}>{fwChecking ? tr("set.fwChecking") : tr("set.fwCheck")}</button>
+              {fw.available && !dl?.complete && (
+                <button className="sys-refresh" disabled={submit.state === "sending"}
+                  onClick={() => startDownload(fw.available)}>{tr("set.fwDownload")}</button>
+              )}
+              {dl?.complete && (
+                <button className="sys-refresh" disabled={submit.state === "sending"}
+                  onClick={() => setConfirm({ kind: "fwOnline" })}>{tr("set.fwInstall")}</button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
       {section === "raw" && (
-        <div className="set-raw">
-          <p className="set-note">{tr("set.rawNote")}</p>
-          <textarea className="set-raw-xml" value={raw} spellCheck={false} onChange={(e) => setRaw(e.target.value)} />
-          <div className="set-actions">
-            <button className="copy-btn" disabled={!raw.trim()}
-              onClick={() => { try { setRaw(formatXml(raw)); } catch { /* leave as-is if unbalanced */ } }}>
-              {tr("ex.format")}</button>
-            <button className="sys-refresh" disabled={submit.state === "sending" || !raw.trim()}
-              onClick={() => setConfirm({ kind: "xml" })}>
-              {submit.state === "sending" ? tr("set.submitting") : tr("set.applyXml")}</button>
+        <div className="set-raw xml-box export-main">
+          {/* the same panel the export pane uses: header with the description and
+              the actions, then the XML, all inside one rounded box */}
+          <div className="xb-head">
+            <span className="xb-title xb-title-plain">{tr("set.rawNote")}
+              {editingRaw && <span className="xb-editing"> · {tr("ex.editing")}</span>}</span>
+            <div className="xb-actions">
+              <button className="copy-btn"
+                disabled={!raw.trim()}
+                onClick={() => {
+                  if (editingRaw) { setRaw(rawBase); setEditingRaw(false); }
+                  else { setRawBase(raw); setEditingRaw(true); }
+                }}>{editingRaw ? tr("ex.cancel") : tr("ex.edit")}</button>
+              <button className="copy-btn" disabled={!editingRaw || !raw.trim()}
+                onClick={() => { try { setRaw(formatXml(raw)); } catch { /* indent only; the notice below reports syntax */ } }}>
+                {tr("ex.format")}</button>
+              <button className="copy-btn" disabled={!raw.trim()}
+                onClick={async () => {
+                  try { await navigator.clipboard.writeText(raw); setCopied(true); setTimeout(() => setCopied(false), 1600); }
+                  catch { /* clipboard blocked — the text is still selectable */ }
+                }}>{copied ? tr("ex.copied") : tr("ex.copy")}</button>
+              <button className="submit-btn"
+                disabled={submit.state === "sending" || !raw.trim() || !!rawErr}
+                onClick={() => setConfirm({ kind: "raw" })}>
+                {submit.state === "sending" ? tr("set.submitting") : tr("ex.submit")}</button>
+            </div>
           </div>
+          {rawErr && <div className="sys-err">{tr("set.xmlInvalid")}: {rawErr}</div>}
+          {/* line numbers only matter while editing, so the read-only view is plain */}
+          {editingRaw
+            ? <XmlEditor value={raw} onChange={setRaw} />
+            : <XmlView xml={raw} />}
         </div>
       )}
 
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : tr("set.confirmXmlTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : tr("set.confirmXmlBody")}</p>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             <button className="opt drop" onClick={() => {
-              const xml = confirm.kind === "ip" ? buildMgmtConfigSet(confirm.iface) : raw;
-              setConfirm(null); submitConfig(xml);
+              const k = confirm.kind;
+              setConfirm(null);
+              if (k === "zone") { submitForm("/grism/set_time_zone", "timezone", zone, () => setZoneBase(zone)); return; }
+              if (k === "reboot" || k === "halt") { submitPower(k === "reboot" ? "/grism/task/reboot" : "/grism/task/halt", k); return; }
+              if (k === "restoreFile") {
+                uploadAndWait("/grism/task/restore_from_file", restoreFile, "file", 3,
+                  tr("set.bkRestoring"), tr("set.bkRestoringBody")); return;
+              }
+              if (k === "fwUpload") {
+                uploadAndWait("/grism/task/update", fwFile, "file", 5,
+                  tr("set.fwUpdating"), tr("set.fwUpdatingBody")); return;
+              }
+              if (k === "factory") {
+                fetch("/grism/task/restore", { method: "POST", credentials: "include" }).catch(() => {});
+                setWait({ title: tr("set.bkResetting"), body: tr("set.bkRestoringBody"), left: 180 }); return;
+              }
+              if (k === "fwOnline") {
+                fetch("/grism/task/update_download_update", { method: "POST", credentials: "include" }).catch(() => {});
+                setWait({ title: tr("set.fwUpdating"), body: tr("set.fwUpdatingBody"), left: 300 }); return;
+              }
+              if (k === "flow") {
+                submitConfigs([
+                  buildArgsConfigSet(Object.fromEntries(FLOW_ARGS.map((key) => [key, sys[key]]))),
+                  ...(lg ? [buildLoggingConfigSet(lg)] : []),
+                ]);
+                return;
+              }
+              if (k === "snmp") { submitForm("/grism/set_snmp_read_community", "read_community", community,
+                () => setCommunityBase(community)); return; }
+              const xml =
+                k === "ip" ? buildMgmtConfigSet(confirm.iface)
+                : k === "ports" ? buildPortConfigSet(changedPorts(portsBase, ports))
+                : k === "services" ? buildServicesConfigSet(changedServices(svcBase, svc))
+                : k === "tunnels" ? buildInTunnelsConfigSet(Object.fromEntries(TUNNELS.map((t) => [t, !!sys["tun_" + t]])))
+                : k === "heartbeat" ? buildHeartbeatConfigSet(hb)
+                : k === "logging" ? buildLoggingConfigSet(lg)
+                : k === "views" ? buildViewsConfigSet(views)
+                : k === "extras" ? buildServiceExtrasConfigSet(extras)
+                : k === "args" ? buildArgsConfigSet(Object.fromEntries(confirm.keys.map((key) => [key, sys[key]])))
+                : raw;
+              submitConfig(xml);
             }}>
               <span className="opt-name">{tr("set.confirmApply")}</span>
             </button>
@@ -1287,7 +2532,9 @@ function usePolledJson(url, loggedIn, { transform, defaultSec = 10, prefKey = "r
 }
 
 /* The header every traffic page shares: title, last-updated, interval, refresh. */
-function TrafficHead({ title, tr, poll }) {
+function TrafficHead({ title, tr, poll, onClear }) {
+  const [asking, setAsking] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
   return (
     <div className="sys-head">
       <h2 className="sys-title">{title}</h2>
@@ -1296,12 +2543,37 @@ function TrafficHead({ title, tr, poll }) {
         <label className="tf-interval">{tr("tf.every")}
           <input type="number" min="1" value={poll.refreshSec} onChange={(e) => poll.setRefreshSec(e.target.value)} />
           {tr("tf.seconds")}</label>
+        {onClear && (
+          <button className="del" disabled={busy} onClick={() => setAsking(true)}>
+            {busy ? tr("tf.clearing") : tr("tf.clear")}</button>
+        )}
         <button className="sys-refresh" onClick={poll.reload} disabled={poll.state === "loading"}>
           {poll.state === "loading" ? tr("tf.refreshing") : tr("tf.refresh")}</button>
       </div>
+      {asking && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setAsking(false)}>
+          <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{tr("tf.clearTitle")}</div>
+            <p className="modal-body">{tr("tf.clearBody")}</p>
+            <button className="opt drop" onClick={async () => {
+              setAsking(false); setBusy(true);
+              try { await onClear(); await poll.reload(); } catch { /* reported by the poll */ }
+              finally { setBusy(false); }
+            }}>
+              <span className="opt-name">{tr("tf.clear")}</span>
+              <span className="opt-desc">{tr("tf.clearDesc")}</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setAsking(false)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+/* Counters live on the device, so clearing is a request rather than local state. */
+const clearCounters = (url) => fetch(url, { credentials: "include" })
+  .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); });
 
 /* A compact breakdown table (protocols / ports): busiest first with a share bar. */
 function BreakdownTable({ rows, keyLabel, labelOf, tr, limit = 10 }) {
@@ -1406,16 +2678,10 @@ function TrafficTab({ loggedIn, t }) {
 
   return (
     <div className="sys-wrap">
-      <div className="sys-head">
-        <h2 className="sys-title">{tr("tf.title")}</h2>
-        <div className="sys-controls">
-          {updatedAt && <span className="sys-updated">{tr("tf.updated")} {updatedAt.toLocaleTimeString()}</span>}
-          <label className="tf-interval">{tr("tf.every")}
-            <input type="number" min="1" value={refreshSec} onChange={(e) => setRefreshSec(e.target.value)} />
-            {tr("tf.seconds")}</label>
-          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>{state === "loading" ? tr("tf.refreshing") : tr("tf.refresh")}</button>
-        </div>
-      </div>
+      {/* the same header the statistics pages use, so clearing works identically */}
+      <TrafficHead title={tr("tf.title")} tr={tr}
+        poll={{ updatedAt, refreshSec, setRefreshSec, reload: load, state }}
+        onClear={() => clearCounters("/grism/task/clear_lite_counters")} />
 
       {state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {errMsg}</div>}
 
@@ -1520,10 +2786,13 @@ function TrafficTab({ loggedIn, t }) {
    Traffic → Sessions: session tables, protocol/port breakdowns,
    packet types and filter hit counters
    ============================================================ */
-function TrafficSessionsTab({ loggedIn, t }) {
+function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
   const tr = t || ((k) => k);
   const poll = usePolledJson("/grism/task/get_statistics_json", loggedIn);
   const fPoll = usePolledJson("/grism/task/get_filter_counter", loggedIn, { followSec: poll.refreshSec });
+  // heartbeat: the status rows are positional, so the target list labels them
+  const hbPoll = usePolledJson("/grism/task/get_heartbeat_status", loggedIn, { followSec: poll.refreshSec });
+  const hbCfg = usePolledJson("/grism/task/get_config", loggedIn, { followSec: poll.refreshSec });
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
 
@@ -1531,6 +2800,8 @@ function TrafficSessionsTab({ loggedIn, t }) {
   const v6 = summarizeSessions(poll.data?.sessionsv6, { v6: true });
   const pkts = summarizePacketTypes(poll.data?.packet_type_counter);
   const filters = summarizeFilterCounters(fPoll.data?.filter_counter);
+  const hbTargets = parseHeartbeat(hbCfg.data).targets;
+  const hbRows = heartbeatStatusRows(hbTargets, parseHeartbeatStatus(hbPoll.data));
 
   const family = (info, label, protoLabel) => info && (
     <section className="sys-card">
@@ -1557,7 +2828,8 @@ function TrafficSessionsTab({ loggedIn, t }) {
 
   return (
     <div className="sys-wrap">
-      <TrafficHead title={tr("sess.title")} tr={tr} poll={poll} />
+      <TrafficHead title={tr("sess.title")} tr={tr} poll={poll}
+        onClear={() => clearCounters("/grism/task/clear_counters").then(() => fPoll.reload())} />
       <p className="page-note">{tr("sess.note")}</p>
       {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
 
@@ -1580,12 +2852,38 @@ function TrafficSessionsTab({ loggedIn, t }) {
         </section>
       )}
 
+      {hbRows.length > 0 && (
+        <section className="sys-card">
+          <h3 className="sys-card-title">{tr("set.heartbeat")}
+            <span className="sys-card-metric">{hbRows.filter((r) => r.up).length}/{hbRows.length} {tr("set.hbUp")}</span>
+          </h3>
+          <table className="tf-table">
+            <thead><tr>
+              <th>{tr("set.hbTargets")}</th><th>{tr("set.hbSend")}</th><th>{tr("set.hbReceive")}</th>
+              <th>{tr("tf.desc")}</th><th>{tr("tf.link")}</th>
+            </tr></thead>
+            <tbody>
+              {hbRows.map((r) => (
+                <tr key={r.index}>
+                  <td className="tf-name mono">{r.id == null ? `#${r.index}` : `ID ${r.id}`}</td>
+                  <td className="mono">{r.sendPort || "—"}</td>
+                  <td className="mono">{r.receivePort || "—"}</td>
+                  <td className="dim">{r.description || "—"}</td>
+                  <td><span className={"hb-state " + (r.up ? "up" : "down")}>
+                    <span className="dot" />{r.up ? tr("set.hbUp") : tr("set.hbDown")}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       <section className="sys-card">
         <h3 className="sys-card-title">{tr("sess.filters")} <span className="sys-card-metric">{filters.length}</span></h3>
         {filters.length === 0 ? <p className="sys-note dim">{tr("sess.noFilters")}</p> : (
           <table className="tf-table sess-filter-table">
             <thead><tr>
-              <th>{tr("sess.filterId")}</th><th className="tf-num">{tr("sess.refs")}</th>
+              <th>{tr("sess.filterId")}</th><th>{tr("common.name")}</th><th className="tf-num">{tr("sess.refs")}</th>
               <th className="tf-num">{tr("sess.tried")}</th><th className="tf-num">{tr("sess.matched")}</th>
               <th>{tr("sess.rate")}</th><th className="tf-num">{tr("sess.perSec")}</th>
             </tr></thead>
@@ -1593,6 +2891,7 @@ function TrafficSessionsTab({ loggedIn, t }) {
               {filters.map((f) => (
                 <tr key={f.id}>
                   <td className="tf-name">F{f.id}</td>
+                  <td className="dim">{filterNames?.[f.id] || <span className="dim">—</span>}</td>
                   <td className="tf-num mono">{f.refs}</td>
                   <td className="tf-num mono">{fmtNum(f.tried)}</td>
                   <td className="tf-num mono">{fmtNum(f.matched)}</td>
@@ -1759,6 +3058,497 @@ function TrafficCountriesTab({ loggedIn, t, lang = "en" }) {
             </button>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/* ===================== storage browsing =====================
+   Shared by the capture page and the replay-pcap inputs: list the enabled
+   volumes, the directories inside one, and the files inside that. */
+function useStorageBrowser(loggedIn, { defaultDir = "" } = {}) {
+  const [storages, setStorages] = React.useState([]);
+  const [storage, setStorage] = React.useState("");
+  const [dir, setDir] = React.useState(defaultDir);
+  const [files, setFiles] = React.useState([]);
+
+  React.useEffect(() => {
+    if (!loggedIn) return;
+    (async () => {
+      try {
+        const res = await fetch("/grism/task/get_storages", { credentials: "include" });
+        if (!res.ok) return;
+        const list = parseStorages(await res.json());
+        setStorages(list);
+        setStorage((cur) => cur || list[0]?.name || "");
+      } catch (e) { warnFetch("storage volumes", e); }
+    })();
+  }, [loggedIn]);
+
+  const post = React.useCallback(async (fields) => {
+    const body = new URLSearchParams();
+    Object.entries(fields).forEach(([k, v]) => body.set(k, v));
+    const res = await fetch("/grism/task/get_storage_file_list", { method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+  }, []);
+
+  // Open on the caller's preferred directory when the volume actually has it;
+  // otherwise start at the volume root and let the user walk down from there.
+  React.useEffect(() => {
+    if (!loggedIn || !storage || !defaultDir) return;
+    let alive = true;
+    (async () => {
+      try {
+        const top = parseStorageDirs(await post({ name: storage }));
+        if (alive) setDir(top.includes(defaultDir) ? defaultDir : "");
+      } catch { if (alive) setDir(""); }
+    })();
+    return () => { alive = false; };
+  }, [loggedIn, storage, post, defaultDir]);
+
+  // Listing a volume with no directory gives its root; with one, that directory.
+  const listFiles = React.useCallback(async () => {
+    if (!storage) { setFiles([]); return; }
+    try {
+      const payload = dir ? await post({ name: storage, dir }) : await post({ name: storage });
+      setFiles(parseStorageFiles(payload, { storage, dir }));
+    } catch { setFiles([]); }
+  }, [storage, dir, post]);
+  React.useEffect(() => { if (loggedIn) listFiles(); }, [loggedIn, listFiles]);
+
+  const enterDir = React.useCallback((name) => setDir((cur) => joinDir(cur, name)), []);
+  const goUp = React.useCallback(() => setDir((cur) => parentDir(cur)), []);
+
+  /* Delete one or several files. The device takes one filename per request, so
+     they go in sequence; every failure is collected rather than stopping at the
+     first, so a bad file can't hide the ones that did work. */
+  const removeFiles = React.useCallback(async (names) => {
+    const list = (Array.isArray(names) ? names : [names]).filter(Boolean);
+    const failed = [];
+    for (const name of list) {
+      try {
+        const body = new URLSearchParams();
+        body.set("name", storage); body.set("dir", dir); body.set("filename", name);
+        const res = await fetch("/grism/task/del_storage_file", { method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+      } catch (e) { failed.push(`${name}: ${e.message || e}`); }
+    }
+    await listFiles();
+    if (failed.length) throw new Error(failed.join("; "));
+  }, [storage, dir, listFiles]);
+  const removeFile = React.useCallback((name) => removeFiles([name]), [removeFiles]);
+
+  return { storages, storage, setStorage, dir, setDir, files, listFiles, removeFile, removeFiles,
+    enterDir, goUp, crumbs: dirCrumbs(dir),
+    volume: storages.find((x) => x.name === storage) };
+}
+
+/* The volume and directory selectors both pages share. */
+/* Just the volume: the directory is chosen by walking the breadcrumbs, so a
+   separate dropdown would be a second way to do the same thing. */
+function StoragePickers({ br, tr }) {
+  return (
+    <label className="ml"><span>{tr("cap.storage")}</span>
+      <select value={br.storage} onChange={(e) => br.setStorage(e.target.value)}>
+        {br.storages.length === 0 && <option value="">{tr("cap.noStorage")}</option>}
+        {br.storages.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+      </select></label>
+  );
+}
+
+/* A render error in one tab used to blank the whole application, leaving nothing
+   to diagnose from. Contain it: the rest of the UI keeps working and the failure
+   is shown with its stack so it can be reported. */
+class TabErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("[GRISM Studio] tab render failed:", error, info); }
+  componentDidUpdate(prev) { if (prev.tabKey !== this.props.tabKey && this.state.error) this.setState({ error: null }); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="sys-wrap">
+        <div className="sys-err tab-error">
+          <b>{this.props.label}</b>
+          <p>{String(this.state.error?.message || this.state.error)}</p>
+          <pre>{String(this.state.error?.stack || "").split("\n").slice(0, 6).join("\n")}</pre>
+          <button className="copy-btn" onClick={() => this.setState({ error: null })}>{this.props.retryLabel}</button>
+        </div>
+      </div>
+    );
+  }
+}
+
+/* Tracks which files are ticked for deletion, forgetting the selection whenever
+   the listing changes so a stale name can't be sent. */
+function useFileSelection(files) {
+  const [marked, setMarked] = React.useState([]);
+  const names = files.map((f) => f.name).join("\u0000");
+  // keyed on the listing's contents: when the folder changes, drop names that
+  // are no longer there so a stale selection can't be submitted
+  React.useEffect(() => { setMarked((m) => m.filter((n) => files.some((f) => !f.isDir && f.name === n))); },
+    [names, files]);
+  const deletable = files.filter((f) => !f.isDir);
+  return {
+    marked, setMarked,
+    toggle: (n) => setMarked((m) => (m.includes(n) ? m.filter((x) => x !== n) : [...m, n])),
+    allOn: deletable.length > 0 && marked.length === deletable.length,
+    toggleAll: () => setMarked((m) => (m.length === deletable.length ? [] : deletable.map((f) => f.name))),
+    clear: () => setMarked([]),
+    count: deletable.length,
+  };
+}
+
+/* Where you are in the volume, and a way back out. */
+function StorageCrumbs({ br, tr }) {
+  return (
+    <div className="crumbs">
+      <button className="crumb" disabled={!br.dir} onClick={br.goUp} title={tr("in.up")}>↑</button>
+      <button className={"crumb" + (br.dir ? "" : " on")} onClick={() => br.setDir("")}>
+        {br.storage || tr("cap.storage")}
+      </button>
+      {br.crumbs.map((c, i) => (
+        <React.Fragment key={c.path}>
+          <span className="crumb-sep">/</span>
+          <button className={"crumb" + (i === br.crumbs.length - 1 ? " on" : "")}
+            onClick={() => br.setDir(c.path)}>{c.name}</button>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+/* Choose pcap files straight off the device's storage. Used inline by the
+   replay-pcap input so paths never have to be typed. */
+function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
+  const br = useStorageBrowser(loggedIn, { defaultDir: "in" });
+  const fileRef = React.useRef(null);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [ask, setAsk] = React.useState(null);        // files queued for deletion
+  const sel = useFileSelection(br.files);
+
+  const toggle = (path) => onChange(chosen.includes(path)
+    ? chosen.filter((p) => p !== path)
+    : [...chosen, path].slice(0, max));
+
+  /* Upload one or more pcaps into the selected volume and directory. */
+  const upload = async (list) => {
+    const files = [...(list ?? [])];
+    if (!files.length || !br.storage || !br.dir) return;
+    setBusy(true); setErr("");
+    try {
+      for (const f of files) {
+        const fd = new FormData();
+        fd.append("storage", br.storage);
+        fd.append("dir", br.dir);
+        fd.append("file", f, f.name);
+        const res = await fetch("/grism/task/upload_pcap_file", { method: "POST", credentials: "include", body: fd });
+        if (!res.ok) throw new Error(`${f.name}: HTTP ${res.status}`);
+      }
+      await br.listFiles();
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
+  };
+
+  const remove = async (names) => {
+    setErr("");
+    const list = Array.isArray(names) ? names : [names];
+    try { await br.removeFiles(list); }
+    catch (e) { setErr(String(e.message || e)); }
+    finally {
+      // deleted files can't be replayed, so drop them from the selection too
+      const gone = new Set(list.map((n) => storagePath(br.storage, br.dir, n)));
+      if (chosen.some((p) => gone.has(p))) onChange(chosen.filter((p) => !gone.has(p)));
+      sel.clear();
+    }
+  };
+
+  return (
+    <div className="storage-picker">
+      <div className="set-grid">
+        <StoragePickers br={br} tr={tr} />
+        <button className="copy-btn storage-reload" onClick={br.listFiles}>{tr("sys.refresh")}</button>
+      </div>
+      {br.volume && (
+        <p className="set-hint">{tr("cap.used")} <span className="mono">{fmtKB(br.volume.usage)}</span>
+          {" · "}{tr("cap.free")} <span className="mono">{fmtKB(br.volume.available)}</span></p>
+      )}
+
+      <div className="storage-upload">
+        <input ref={fileRef} type="file" accept=".pcap,.pcapng,.cap" multiple style={{ display: "none" }}
+          onChange={(e) => upload(e.target.files)} />
+        <button className="copy-btn" disabled={busy || !br.storage || !br.dir}
+          onClick={() => fileRef.current?.click()}>
+          {busy ? tr("in.uploading") : tr("in.upload")}</button>
+        <span className="dim">{tr("in.uploadHint")}</span>
+      </div>
+      {err && <div className="sys-err">{err}</div>}
+
+      <StorageCrumbs br={br} tr={tr} />
+      <div className="tf-table-wrap storage-files">
+        <table className="tf-table">
+          <thead><tr>
+            <th>{tr("cap.file")}</th>
+            <th className="tf-num">{tr("sess.bytes")}</th>
+            <th>{tr("cap.modified")}</th>
+            <th className="sel-head" colSpan={2}>
+              <div className="sel-head-in">
+                <button className="del" disabled={sel.marked.length === 0}
+                  onClick={() => setAsk(sel.marked)}>
+                  {tr("cap.delSelected")}{sel.marked.length > 0 ? ` (${sel.marked.length})` : ""}</button>
+                <input type="checkbox" title={tr("cap.selectAll")}
+                  checked={sel.allOn} disabled={sel.count === 0} onChange={sel.toggleAll} />
+              </div>
+            </th>
+          </tr></thead>
+          <tbody>
+            {br.files.length === 0 && (
+              <tr><td colSpan={5} className="dim storage-empty">{tr("cap.noFiles")}</td></tr>
+            )}
+            {br.files.map((f) => {
+              if (f.isDir) return (
+                <tr key={"d:" + f.name} className="cap-dir" onClick={() => br.enterDir(f.name)}>
+                  <td className="mono cap-name"><span className="dir-icon" aria-hidden="true">▸</span> {f.name}</td>
+                  <td className="tf-num dim">{tr("in.folder")}</td>
+                  <td className="mono dim">{f.modified}</td>
+                  <td /><td className="sel-col" />
+                </tr>
+              );
+              const path = storagePath(br.storage, br.dir, f.name);
+              return (
+                <tr key={"f:" + f.name} className={sel.marked.includes(f.name) ? "marked" : ""}>
+                  {/* the name is the control: clicking it queues the file for replay */}
+                  <td className={"mono cap-name pick-name" + (chosen.includes(path) ? " picked" : "")}
+                    onClick={() => toggle(path)} role="button" tabIndex={0}
+                    title={chosen.includes(path) ? tr("in.remove") : tr("in.pickFiles")}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(path); } }}>
+                    <span className="pick-mark" aria-hidden="true">{chosen.includes(path) ? "✓" : ""}</span>
+                    {f.name}
+                  </td>
+                  <td className="tf-num mono">{fmtBytes(f.bytes)}</td>
+                  <td className="mono dim">{f.modified}</td>
+                  <td className="cap-actions">
+                    {isPartialCapture(f.name)
+                      ? <span className="dim file-partial">{tr("cap.writing")}</span>
+                      : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
+                  </td>
+                  <td className="sel-col">
+                    <input type="checkbox" title={tr("cap.markForDelete")}
+                      checked={sel.marked.includes(f.name)} onChange={() => sel.toggle(f.name)} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {ask && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setAsk(null)}>
+          <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{ask.length > 1 ? `${tr("cap.delTitleN")} (${ask.length})` : tr("cap.delTitle")}</div>
+            <p className="modal-body">{tr("cap.delBody")}
+              <br />{ask.map((n) => <code className="cap-del-name" key={n}>{n}</code>)}</p>
+            <button className="opt drop" onClick={() => { const n = ask; setAsk(null); remove(n); }}>
+              <span className="opt-name">{tr("common.delete")}</span>
+              <span className="opt-desc">{tr("cap.delDesc")}</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setAsk(null)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   Traffic → Capture: record packets to a storage volume for a
+   fixed number of seconds, then download the pcap
+   ============================================================ */
+function CaptureTab({ loggedIn, t, ports, filterIds }) {
+  const tr = t || ((k) => k);
+  const [sel, setSel] = React.useState([]);          // ingress ports
+  const [filter, setFilter] = React.useState("");
+  const [stl, setStl] = React.useState(5);
+  const br = useStorageBrowser(loggedIn, { defaultDir: "snapshot" });
+  const { storage, dir, files, listFiles } = br;
+  const [running, setRunning] = React.useState(0);   // seconds left while capturing
+  const [err, setErr] = React.useState("");
+  const [auto, setAuto] = React.useState(true);     // keep the folder listing fresh
+  const [ask, setAsk] = React.useState(null);       // { kind: "start" | "delete", file? }
+  const [applying, setApplying] = React.useState(false);
+  const fileSel = useFileSelection(files);
+
+  // while a capture runs, count down and refresh the folder every second
+  React.useEffect(() => {
+    if (running <= 0) return;
+    const id = setInterval(() => { listFiles(); setRunning((n) => n - 1); }, 1000);
+    return () => clearInterval(id);
+  }, [running, listFiles]);
+  React.useEffect(() => { if (running === 0) listFiles(); }, [running]);  // final refresh
+  React.useEffect(() => {
+    if (!loggedIn || !auto || running > 0) return;   // the capture poll covers the running case
+    const id = setInterval(listFiles, 5000);
+    return () => clearInterval(id);
+  }, [loggedIn, auto, running, listFiles]);
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+
+  const opts = { ports: sel, filter, stl: Number(stl) || 0, storage, dir };
+  const problems = captureProblems(opts);
+
+  const start = async () => {
+    setErr("");
+    try {
+      const body = new URLSearchParams(); body.set("data", buildInstantCapture(opts));
+      const res = await fetch("/grism/task/submit_instant", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      // The device needs a moment to apply the configuration. Counting down from
+      // the submit would start the clock before the capture does, so wait until
+      // it reports it has finished loading.
+      setApplying(true);
+      await new Promise((r) => setTimeout(r, 1000));
+      for (let i = 0; i < 60; i++) {
+        try {
+          const st = await fetch("/grism/task/get_status", { credentials: "include" });
+          if (st.ok) {
+            const body = await st.json().catch(() => null);
+            if (body && body.loading === false) break;
+          }
+        } catch { /* keep waiting */ }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      setApplying(false);
+      setRunning(Number(stl) || 0);
+    } catch (e) { setApplying(false); setErr(String(e.message || e)); }
+  };
+
+  return (
+    <div className="sys-wrap">
+      <div className="sys-head"><h2 className="sys-title">{tr("cap.title")}</h2></div>
+      <p className="page-note">{tr("cap.note")}</p>
+
+      <section className="sys-card">
+        <div className="set-grid">
+          <InterfacePicker value={sel.length === ports.length ? "all" : sel.join(",")} ports={ports} tr={tr}
+            hideBulk onChange={(v) => setSel(interfacesToList(v, ports))} />
+          <label className="ml"><span>{tr("set.lgFilter")}</span>
+            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="">{tr("set.lgAllTraffic")}</option>
+              {filterIds.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select></label>
+          <label className="ml" style={{ flex: "0 1 150px" }}><span>{tr("cap.stl")}</span>
+            <input type="number" min="1" max="3600" value={stl}
+              onChange={(e) => setStl(e.target.value)} /></label>
+          <StoragePickers br={br} tr={tr} />
+        </div>
+        <p className="set-hint">
+          {tr("cap.writesTo")} <code className="mono">{storagePath(storage, dir) || storage || "—"}</code>
+          {br.volume && <> {" · "}{tr("cap.used")} <span className="mono">{fmtKB(br.volume.usage)}</span>
+            {" · "}{tr("cap.free")} <span className="mono">{fmtKB(br.volume.available)}</span></>}
+        </p>
+        {problems.length > 0 && (
+          <ul className="problem-list">{problems.map((p, i) => <li key={i}>{p.msg}</li>)}</ul>
+        )}
+        {err && <div className="sys-err">{err}</div>}
+        <div className="set-actions">
+          <button className="sys-refresh" disabled={problems.length > 0 || running > 0 || applying}
+            onClick={() => setAsk({ kind: "start" })}>
+            {running > 0 ? tr("cap.running") : tr("cap.start")}</button>
+        </div>
+      </section>
+
+      <section className="sys-card">
+        <h3 className="sys-card-title">{tr("cap.files")}
+          <span className="sys-card-metric">{files.length}</span>
+          <label className="tf-interval cap-refresh"><input type="checkbox" checked={auto}
+            onChange={(e) => setAuto(e.target.checked)} /> {tr("cap.auto")}</label>
+          <button className="copy-btn" onClick={listFiles}>{tr("sys.refresh")}</button>
+        </h3>
+        <StorageCrumbs br={br} tr={tr} />
+        {files.length === 0 ? <p className="sys-note dim">{tr("cap.noFiles")}</p> : (
+          <div className="tf-table-wrap">
+            <table className="tf-table">
+              <thead><tr>
+                <th>{tr("cap.file")}</th><th className="tf-num">{tr("sess.bytes")}</th>
+                <th>{tr("cap.modified")}</th>
+                <th className="sel-head" colSpan={2}>
+                  <div className="sel-head-in">
+                    {/* always shown, so the tick boxes on the right have an obvious purpose */}
+                    <button className="del" disabled={fileSel.marked.length === 0}
+                      onClick={() => setAsk({ kind: "delete", files: fileSel.marked })}>
+                      {tr("cap.delSelected")}{fileSel.marked.length > 0 ? ` (${fileSel.marked.length})` : ""}</button>
+                    <input type="checkbox" title={tr("cap.selectAll")}
+                      checked={fileSel.allOn} disabled={fileSel.count === 0} onChange={fileSel.toggleAll} />
+                  </div>
+                </th>
+              </tr></thead>
+              <tbody>
+                {files.map((f) => f.isDir ? (
+                  <tr key={"d:" + f.name} className="cap-dir" onClick={() => br.enterDir(f.name)}>
+                    <td className="mono cap-name"><span className="dir-icon" aria-hidden="true">▸</span> {f.name}</td>
+                    <td className="tf-num dim">{tr("in.folder")}</td>
+                    <td className="mono dim">{f.modified}</td>
+                    <td /><td />
+                  </tr>
+                ) : (
+                  <tr key={"f:" + f.name} className={fileSel.marked.includes(f.name) ? "marked" : ""}>
+                    <td className="mono cap-name">{f.name}</td>
+                    <td className="tf-num mono">{fmtBytes(f.bytes)}</td>
+                    <td className="mono dim">{f.modified}</td>
+                    <td className="cap-actions">
+                      {isPartialCapture(f.name)
+                        ? <span className="dim file-partial">{tr("cap.writing")}</span>
+                        : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
+                    </td>
+                    <td className="sel-col"><input type="checkbox" title={tr("cap.markForDelete")}
+                      checked={fileSel.marked.includes(f.name)} onChange={() => fileSel.toggle(f.name)} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {ask && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setAsk(null)}>
+          <div className={"modal" + (ask.kind === "delete" ? " modal-warn" : "")} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">
+              {ask.kind === "start" ? tr("cap.confirmTitle")
+                : ask.files.length > 1 ? `${tr("cap.delTitleN")} (${ask.files.length})` : tr("cap.delTitle")}
+            </div>
+            <p className="modal-body">
+              {ask.kind === "start" ? tr("cap.confirmBody") : tr("cap.delBody")}
+              {ask.kind === "delete" && <><br />{ask.files.map((n) => <code className="cap-del-name" key={n}>{n}</code>)}</>}
+            </p>
+            <button className={"opt" + (ask.kind === "delete" ? " drop" : "")} onClick={() => {
+              const a = ask; setAsk(null);
+              if (a.kind === "start") { start(); return; }
+                br.removeFiles(a.files).catch((e) => setErr(String(e.message || e))).finally(() => fileSel.clear());
+            }}>
+              <span className="opt-name">{ask.kind === "start" ? tr("cap.start") : tr("common.delete")}</span>
+              <span className="opt-desc">{ask.kind === "start" ? tr("cap.confirmDesc") : tr("cap.delDesc")}</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setAsk(null)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
+
+      {(applying || running > 0) && (
+        <div className="apply-lock" role="alertdialog" aria-busy="true">
+          <div className="apply-lock-box">
+            <div className="apply-bar"><div /></div>
+            <div className="apply-lock-title">{applying ? tr("cap.applying") : tr("cap.capturing")}</div>
+            <div className="apply-lock-body">{applying ? tr("cap.applyingBody") : tr("cap.capturingBody")}</div>
+            {!applying && <div className="apply-countdown mono">{running}s</div>}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2257,6 +4047,16 @@ function PortSelect({ value, options, onChange, invalid }) {
 }
 
 function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, touched }) {
+  const [showPicked, setShowPicked] = React.useState(false);
+  const [portMacs, setPortMacs] = React.useState(null);
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/grism/task/get_port_mac", { credentials: "include" });
+        if (res.ok) setPortMacs(await res.json());
+      } catch { /* defaults simply omit the MACs */ }
+    })();
+  }, []);
   const tr = t || ((k) => k);
   const inputs = doc.inputs ?? [];
   const inp = inputs.find((x) => x.id === activeInput) || inputs[0];
@@ -2275,9 +4075,6 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
   const patch = (p) => setDoc((d) => ({ ...d, inputs: d.inputs.map((x) => x.id === inp.id ? { ...x, ...p } : x) }));
   const setField = (k, v) => patch({ fields: { ...(inp.fields ?? {}), [k]: v } });
   const setScanAttr = (k, v) => patch({ scanAttrs: { ...(inp.scanAttrs ?? {}), [k]: v } });
-  const setFilepath = (i, v) => { const arr = [...(inp.filepaths ?? [])]; arr[i] = v; patch({ filepaths: arr }); };
-  const addFilepath = () => { const arr = [...(inp.filepaths ?? [])]; if (arr.length >= 100) return; arr.push(""); patch({ filepaths: arr }); };
-  const removeFilepath = (i) => { const arr = (inp.filepaths ?? []).filter((_, k) => k !== i); patch({ filepaths: arr.length ? arr : [""] }); };
 
   if (!inp) return (
     <div className="empty-pane">
@@ -2337,7 +4134,18 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
               onChange={(e) => { const k = inp.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
               placeholder={tr("common.optional")} /></label>
           <label className="ml"><span>{tr("common.type")}</span>
-            <select value={inp.type} onChange={(e) => patch({ type: e.target.value })}>
+            <select value={inp.type} onChange={(e) => {
+              const type = e.target.value;
+              if (type !== "traffic-gen") { patch({ type }); return; }
+              // Generator settings live under `fields`, not on the input itself.
+              // Seed only the ones still empty so existing values survive a
+              // round trip through the type selector.
+              const seed = trafficGenDefaults(portMacs);
+              const cur = inp.fields ?? {};
+              const fill = Object.fromEntries(
+                Object.entries(seed).filter(([k]) => !String(cur[k] ?? "").trim()));
+              patch({ type, fields: { ...cur, ...fill } });
+            }}>
               <option value="replayPcap">replayPcap</option>
               <option value="traffic-gen">traffic-gen</option>
             </select></label>
@@ -2362,21 +4170,40 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
               </select>
             </div>
 
-            {(inp.pcapMode || "files") === "files" && <div className="filepath-list">
-              {(inp.filepaths ?? [""]).map((fp, i) => (
-                <div className="mod-row" key={i}>
-                  <span className="mod-key">{i === 0 ? tr("in.filePaths") : ""}</span>
-                  <input className="mod-val" value={fp} placeholder="H1/in/sample.pcap" onChange={(e) => setFilepath(i, e.target.value)} />
-                  <button className="fp-del" title={tr("in.remove")} aria-label={tr("in.remove")} onClick={() => removeFilepath(i)}>✕</button>
-                </div>
-              ))}
-              <div className="mod-row">
-                <span className="mod-key" />
-                <button className="fp-add" disabled={(inp.filepaths ?? []).length >= 100} onClick={addFilepath}>
-                  + {tr("in.filePath")} {(inp.filepaths ?? []).length >= 100 ? tr("in.maxFiles") : `(${(inp.filepaths ?? []).length}/100)`}
-                </button>
+            {(inp.pcapMode || "files") === "files" && (
+              <div className="filepath-list">
+                {(() => {
+                  const picked = (inp.filepaths ?? []).filter(Boolean);
+                  return (<>
+                    <div className="mod-row">
+                      <span className="mod-key">{tr("in.filePaths")}</span>
+                      {/* the count alone hides which files are queued — let it open */}
+                      <button className="picked-toggle" disabled={picked.length === 0}
+                        onClick={() => setShowPicked((v) => !v)} aria-expanded={showPicked}>
+                        {picked.length}/100
+                        {picked.length === 0
+                          ? ` — ${tr("in.pickFiles")}`
+                          : <span className="picked-caret" aria-hidden="true">{showPicked ? " ▲" : " ▼"}</span>}
+                      </button>
+                    </div>
+                    {showPicked && picked.length > 0 && (
+                      <ol className="picked-list">
+                        {picked.map((p, i) => (
+                          <li key={p}>
+                            <span className="picked-idx mono">{i + 1}</span>
+                            <code className="picked-path">{p}</code>
+                            <button className="fp-del" title={tr("in.remove")} aria-label={tr("in.remove")}
+                              onClick={() => patch({ filepaths: picked.filter((x) => x !== p) })}>✕</button>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </>);
+                })()}
+                <StorageFilePicker tr={tr} loggedIn chosen={(inp.filepaths ?? []).filter(Boolean)}
+                  onChange={(paths) => patch({ filepaths: paths.length ? paths : [""] })} />
               </div>
-            </div>}
+            )}
 
             {(inp.pcapMode || "files") === "scandir" && <>
               <div className="mod-row">
@@ -2863,7 +4690,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const knownNames = useMemo(() => Object.fromEntries(doc.filters.map((f) => ["F" + f.id, f.name])), [doc.filters]);
   // alt labels keyed by reference id, for the chain node captions
   const filterAlt = useMemo(() => Object.fromEntries(doc.filters.map((f) => { const lbl = f.name || f.alt || ""; return lbl ? ["F" + f.id, lbl] : null; }).filter(Boolean)), [doc.filters]);
-  const outputAlt = useMemo(() => Object.fromEntries((doc.outputs ?? []).map((o) => { const lbl = o.name || o.alt || ""; return lbl ? ["O" + o.id, lbl] : null; }).filter(Boolean)), [doc.outputs]);
+  const outputAlt = useMemo(() => Object.fromEntries((doc.outputs ?? []).map((o) => { const lbl = outputLabel(o); return lbl ? ["O" + o.id, lbl] : null; }).filter(Boolean)), [doc.outputs]);
   // build a caption from all referenced filters, joined by the node's and/or:
   //   "F1,!F3" (op=and) → "is https AND NOT blocked geo"
   //   a filter with no alt shows its id (e.g. "is https AND F2")
@@ -3143,8 +4970,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
           {sel && sel.t === "branch" && <>
             <label className="fld2"><span>{tr("ch.filters")}</span>
               <input value={sel.fids} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fids: e.target.value }))} /><em>e.g. F1 or F1,!F3</em></label>
-            <label className="fld2"><span>{tr("ch.combine")}</span>
-              <select value={sel.fidOp} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fidOp: e.target.value }))}><option value="or">or</option><option value="and">and</option></select></label>
+            {/* and/or only means something once two or more filters are referenced */}
+            {toks(sel.fids) > 1 && (
+              <label className="fld2"><span>{tr("ch.combine")}</span>
+                <select value={sel.fidOp} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fidOp: e.target.value }))}><option value="or">or</option><option value="and">and</option></select></label>
+            )}
             <CheckAccordion
               label={tr("ch.definedFilters")}
               items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"), on: fidsHas(sel.fids, "F" + f.id) }))}
@@ -3173,12 +5003,15 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
               {(doc.outputs?.length ?? 0) > 0 && <CheckAccordion
                 label={tr("ch.definedOutputs")}
-                items={doc.outputs.map((o) => ({ id: "O" + o.id, b: "O" + o.id, sub: o.name || o.port, on: listHas(sel.ports, "O" + o.id) }))}
+                items={doc.outputs.map((o) => ({ id: "O" + o.id, b: "O" + o.id, sub: outputLabel(o), on: listHas(sel.ports, "O" + o.id) }))}
                 onToggle={(oid) => toggleOutPort(sel.id, sel.ports, oid)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), on)}
                 onSetOne={(oid) => setOneOutPort(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), oid)} />}
-              <label className="fld2"><span>{tr("ch.mode")}</span><select value={sel.mode} onChange={(e) => mutate(sel.id, (n) => ({ ...n, mode: e.target.value }))}><option value="duplicate">duplicate</option><option value="loadBalance">load balance</option></select></label>
-              {sel.mode === "loadBalance" && <label className="fld2"><span>{tr("ch.balanceBy")}</span><select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>{["session","5thash","rr","sip","dip"].map((o) => <option key={o} value={o}>{o}</option>)}</select></label>}
+              {/* duplicate vs load balance only applies when traffic goes to several ports */}
+              {toks(sel.ports) > 1 && (
+                <label className="fld2"><span>{tr("ch.mode")}</span><select value={sel.mode} onChange={(e) => mutate(sel.id, (n) => ({ ...n, mode: e.target.value }))}><option value="duplicate">duplicate</option><option value="loadBalance">load balance</option></select></label>
+              )}
+              {toks(sel.ports) > 1 && sel.mode === "loadBalance" && <label className="fld2"><span>{tr("ch.balanceBy")}</span><select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>{["session","5thash","rr","sip","dip"].map((o) => <option key={o} value={o}>{o}</option>)}</select></label>}
               <CollapseSection label={tr("ch.advancedOp")} active={!!sel.vlantype}>
                 <label className="fld2"><span>{tr("ch.vlanOp")}</span>
                   <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
@@ -3274,10 +5107,40 @@ function highlightXmlLine(line, keyBase) {
   if (last < line.length) push("xt-text", line.slice(last));
   return nodes;
 }
+/* The XML editor used by both the export pane and the device-settings page: a
+   highlighted copy under a transparent textarea, with a gutter of line numbers.
+   All three layers share the same metrics so the text lines up exactly. */
+function XmlEditor({ value, onChange, readOnly = false, className = "" }) {
+  const taRef = React.useRef(null);
+  const hlRef = React.useRef(null);
+  const gutRef = React.useRef(null);
+  const lineCount = React.useMemo(() => String(value ?? "").split("\n").length, [value]);
+  const sync = (e) => {
+    const { scrollTop, scrollLeft } = e.currentTarget;
+    if (hlRef.current) { hlRef.current.scrollTop = scrollTop; hlRef.current.scrollLeft = scrollLeft; }
+    if (gutRef.current) gutRef.current.scrollTop = scrollTop;
+  };
+  return (
+    <div className={"xml-editor" + (readOnly ? "" : " editing") + (className ? " " + className : "")}>
+      <pre className="xml-gutter" ref={gutRef} aria-hidden="true"><code>
+        {Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n")}
+      </code></pre>
+      <div className="xml-editor-main">
+        <pre className="xml-hl" ref={hlRef} aria-hidden="true"><code>
+          {tokenizeXml(value).map((t, i) => <span key={i} className={"x-" + t.type}>{t.text}</span>)}
+          {"\n"}
+        </code></pre>
+        <textarea ref={taRef} className="set-raw-xml" value={value} spellCheck={false} readOnly={readOnly}
+          onChange={(e) => onChange?.(e.target.value)} onScroll={sync} />
+      </div>
+    </div>
+  );
+}
+
 function XmlView({ xml }) {
   const lines = xml.split("\n");
   return (
-    <pre className="xml xml-hl"><code>{lines.map((ln, i) => (
+    <pre className="xml"><code>{lines.map((ln, i) => (
       <span key={i} className="xt-line">{highlightXmlLine(ln, i)}{"\n"}</span>
     ))}</code></pre>
   );
@@ -4043,9 +5906,14 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
   const startEdit = () => { setEdit(runXml); setApplyErr(""); setApplyWarn([]); };
   const cancelEdit = () => { setEdit(null); setApplyErr(""); setApplyWarn([]); };
   const formatEdit = () => {
-    try { setEdit(formatXml(edit)); setApplyErr(""); }
-    catch (e) { setApplyErr(`can't format — ${e.message}`); }
+    try { setEdit(formatXml(edit)); } catch { /* indent only; editErr reports syntax */ }
   };
+
+  /* Checked as you type: a mistake shows up immediately rather than when a button
+     is pressed, and the GRISM checks only run once the XML itself parses. */
+  const editErr = React.useMemo(() => (edit && edit.trim() ? xmlError(edit) : ""), [edit]);
+  const editIssues = React.useMemo(
+    () => (edit && edit.trim() && !editErr ? grismXmlProblems(edit) : []), [edit, editErr]);
   const applyEdit = () => {
     try {
       const warnings = onApplyXml(edit);
@@ -4158,24 +6026,26 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
         <div className="xb-head">
           <span className="xb-title">{tr("ex.completeRun")}{editing && <span className="xb-editing"> · {tr("ex.editing")}</span>}</span>
           <div className="xb-actions">
-            {!editing && <>
-              <button className="copy-btn" onClick={startEdit}>{tr("ex.edit")}</button>
-              <button className="copy-btn" disabled={problems.length > 0} onClick={copy}>{copied ? tr("ex.copied") : problems.length ? tr("ex.fixToCopy") : tr("ex.copy")}</button>
-              {loggedIn && (
+            {/* same button order in both states, and the same order the device
+                settings page uses: edit/cancel · format · copy · primary action */}
+            <button className="copy-btn" onClick={editing ? cancelEdit : startEdit}>
+              {editing ? tr("ex.cancel") : tr("ex.edit")}</button>
+            <button className="copy-btn" disabled={!editing} onClick={formatEdit}>{tr("ex.format")}</button>
+            <button className="copy-btn" disabled={!editing && problems.length > 0}
+              onClick={() => { if (editing) { navigator.clipboard?.writeText(edit); setCopied(true); setTimeout(() => setCopied(false), 1400); } else copy(); }}>
+              {copied ? tr("ex.copied") : (!editing && problems.length) ? tr("ex.fixToCopy") : tr("ex.copy")}</button>
+            {editing
+              ? <button className="submit-btn" disabled={!!editErr} onClick={applyEdit}>{tr("ex.applyChanges")}</button>
+              : loggedIn && (
                 <button className={"submit-btn" + (submit.state === "error" ? " err" : submit.state === "ok" ? " ok" : "")}
                   disabled={problems.length > 0 || submit.state === "sending" || apply.active} onClick={() => setConfirmSubmit(true)}>{submitLabel}</button>
               )}
-            </>}
-            {editing && <>
-              <button className="copy-btn" onClick={formatEdit}>{tr("ex.format")}</button>
-              <button className="copy-btn" onClick={cancelEdit}>{tr("ex.cancel")}</button>
-              <button className="submit-btn" onClick={applyEdit}>{tr("ex.applyChanges")}</button>
-            </>}
           </div>
         </div>
         {editing
-          ? <textarea className="xml-edit" value={edit} spellCheck={false}
-              onChange={(e) => setEdit(e.target.value)} />
+          ? (
+            <XmlEditor value={edit} onChange={setEdit} className="xml-editor-flex" />
+          )
           : <XmlView xml={runXml} />}
       </div>
       <aside className="export-side">
@@ -4184,6 +6054,13 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
         </div>}
         {editing && <div className="edit-help">
           <p>{tr("ex.editHelp")}</p>
+          {/* live feedback while typing: syntax first, then the GRISM checks */}
+          {editErr && <p className="submit-note err">{tr("set.xmlInvalid")}: {editErr}</p>}
+          {!editErr && editIssues.length > 0 && (
+            <p className="submit-note warn">{editIssues.length} {editIssues.length > 1 ? tr("ex.issues") : tr("ex.issue")}:{" "}
+              {editIssues.slice(0, 3).map((p) => `${p.scope} — ${p.msg}`).join("; ")}{editIssues.length > 3 ? "…" : ""}</p>
+          )}
+          {!editErr && editIssues.length === 0 && <p className="submit-note ok">{tr("ex.xmlOk")}</p>}
           {applyErr && <p className="submit-note err">{tr("ex.cantApply")}: {applyErr}. {tr("ex.fixTryAgain")}</p>}
         </div>}
         {!editing && applyWarn.length > 0 && <p className="submit-note warn">{tr("ex.appliedWith")} {applyWarn.length} {applyWarn.length>1?tr("ex.warningsWord"):tr("ex.warningWord")}: {applyWarn.slice(0,3).join("; ")}{applyWarn.length>3?"…":""}</p>}

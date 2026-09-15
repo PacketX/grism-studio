@@ -95,6 +95,11 @@ group("chain serialisation");
   const lb = C.serializeChain({ ...chain, tree: { ...chain.tree,
     match: { id: "m", t: "out", ports: "P1,P2", mode: "loadBalance", lb: "5thash" } } });
   check("loadBalance attrs emitted", lb.includes('type="loadBalance"') && lb.includes('lbtype="5thash"'));
+  // a single destination port has nothing to balance between
+  const lb1 = C.serializeChain({ ...chain, tree: { ...chain.tree,
+    match: { id: "m", t: "out", ports: "P1", mode: "loadBalance", lb: "5thash" } } });
+  check("single-port loadBalance not emitted", !lb1.includes('type="loadBalance"'));
+  check("single-port out still serialised", lb1.includes("<out>P1</out>"));
 }
 
 /* ---------- chain problems / refs ---------- */
@@ -299,6 +304,533 @@ group("system status");
   check("uptime zero", C.fmtUptime(0) === "0s");
 }
 
+/* ---------- system / packet / service settings ---------- */
+group("settings builders");
+{
+  const t = C.buildArgsConfigSet({ timeServer: "216.239.35.0", timeServer2: "" });
+  check("args wrapper", t.includes('<configSet reboot="no">') && t.includes("<args>"));
+  check("time servers written", t.includes("<timeServer>216.239.35.0</timeServer>"));
+  check("empty value still written", t.includes("<timeServer2></timeServer2>"));
+  check("booleans become True/False", C.buildArgsConfigSet({ deduplication: true }).includes("<deduplication>True</deduplication>"));
+  check("false booleans too", C.buildArgsConfigSet({ deduplication: false }).includes("<deduplication>False</deduplication>"));
+  check("values escaped", C.buildArgsConfigSet({ resolveNameServer: "a&b" }).includes("a&amp;b"));
+  const fr = C.buildArgsConfigSet({ ipFragmentCorrelation: true, tcpSegmentDataReassemble: false, sctpDataChunkReconstruct: true });
+  check("all three reassembly flags", fr.includes("<ipFragmentCorrelation>True") && fr.includes("<tcpSegmentDataReassemble>False") && fr.includes("<sctpDataChunkReconstruct>True"));
+
+  const tun = C.buildInTunnelsConfigSet({ GTP: false, GRE: true, VXLAN: false });
+  check("in-tunnels nested under filters", tun.includes("<filters>") && tun.includes("<in-tunnels>"));
+  check("tunnel flags written", tun.includes("<GTP>False</GTP>") && tun.includes("<GRE>True</GRE>"));
+
+  const cfg = { services: [{ name: "sshd", description: "SSHD Service", enable: true },
+    { name: "lldpd", description: "LLDPD Service", enable: false }] };
+  const svc = C.parseServices(cfg);
+  check("services parsed", svc.length === 2 && svc[0].name === "sshd");
+  // internal daemons are not offered as toggles
+  const withHidden = C.parseServices({ services: [{ name: "grism" }, { name: "bsem_wd_feed" },
+    { name: "telnetd" }, { name: "sshd" }, { name: "ftpd" },
+    { name: "packetx_trap_dispatcher" }, { name: "statistics_backup" }] });
+  check("internal services hidden", withHidden.map((x) => x.name).join() === "grism,sshd");
+  check("service enable read", svc[0].enable === true && svc[1].enable === false);
+  check("description read", svc[0].description === "SSHD Service");
+  const toggled = svc.map((x) => x.name === "lldpd" ? { ...x, enable: true } : x);
+  check("toggled service detected", C.changedServices(svc, toggled).map((x) => x.name).join() === "lldpd");
+  check("no toggles means nothing to send", C.changedServices(svc, svc).length === 0);
+  const sx = C.buildServicesConfigSet([{ name: "lldpd", enable: true }]);
+  check("service targeted by name", sx.includes('<find name="lldpd">'));
+  check("service enable written", sx.includes("<enable>True</enable>"));
+
+  const zones = C.parseTimezones({ timezone: [{ None: 0 }, { "Africa/Abidjan": 0 }, { "Asia/Taipei": 0 }] });
+  check("timezones flattened", zones.length === 3 && zones[2] === "Asia/Taipei");
+  check("missing timezone payload tolerated", C.parseTimezones(undefined).length === 0);
+  // the entry flagged with 1 is the zone in use
+  const tzp = { timezone: [{ None: 0 }, { "Africa/Abidjan": 0 }, { "Asia/Taipei": 1 }] };
+  check("active timezone detected", C.currentTimezone(tzp) === "Asia/Taipei");
+  check("list still holds every zone", C.parseTimezones(tzp).length === 3);
+  check("nothing flagged yields empty", C.currentTimezone({ timezone: [{ None: 0 }] }) === "");
+  check("missing payload yields empty", C.currentTimezone(undefined) === "");
+}
+
+group("xml highlighting");
+{
+  const src = '<find name="P8"><enable>True</enable></find>';
+  const toks = C.tokenizeXml(src);
+  check("tokens reconstruct the input exactly", toks.map((t) => t.text).join("") === src);
+  check("tag names identified", toks.some((t) => t.type === "tag" && t.text === "find"));
+  check("attribute names identified", toks.some((t) => t.type === "attr" && t.text === "name"));
+  check("attribute values identified", toks.some((t) => t.type === "value" && t.text === '"P8"'));
+  check("element text identified", toks.some((t) => t.type === "text" && t.text === "True"));
+  const c2 = C.tokenizeXml("<!-- note --><a/>");
+  check("comments identified", c2.some((t) => t.type === "comment" && t.text === "<!-- note -->"));
+  check("self-closing tags handled", c2.map((t) => t.text).join("") === "<!-- note --><a/>");
+  check("empty input yields nothing", C.tokenizeXml("").length === 0);
+  const big = C.tokenizeXml('<configSet reboot="no">\n  <args><a>1</a></args>\n</configSet>');
+  check("whitespace preserved", big.map((t) => t.text).join("").includes("\n  "));
+}
+
+/* ---------- traffic generator defaults ---------- */
+group("traffic generator defaults");
+{
+  const macs = { port_mac: [[0, "40:60:5a:02:df:66", "P0"], [1, "40:60:5a:02:df:67", "P1"],
+    [2, "40:60:5a:02:df:68", "P2"]],
+    management_port_mac: [[0, "40:60:5a:02:df:62", "M0"]] };
+  const parsed = C.parsePortMacs(macs);
+  check("port macs parsed", parsed.length === 3 && parsed[0].port === "P0");
+  check("management macs are not included", !parsed.some((r) => r.port.startsWith("M")));
+  const d = C.trafficGenDefaults(macs);
+  check("packet size default", d.packet_size === "512");
+  check("payload default", d.payload_text === "packetx");
+  check("first two macs used", d.src_mac === "40:60:5a:02:df:66" && d.dest_mac === "40:60:5a:02:df:67");
+  check("ip defaults", d.src_ip === "10.0.1.99" && d.dest_ip === "10.0.1.100");
+  check("port defaults", d.src_port === "5000" && d.dest_port === "5001");
+  check("macs omitted when unavailable", C.trafficGenDefaults(undefined).src_mac === undefined);
+  check("defaults still usable without macs", C.trafficGenDefaults({}).packet_size === "512");
+  check("every default names a real field",
+    Object.keys(d).every((k) => C.INPUT_FIELD_INDEX[k] || k === "protocol"));
+}
+
+/* ---------- output and filter labels ---------- */
+group("xml validation");
+{
+  check("well-formed xml passes", C.xmlError('<configSet reboot="no"><args><a>1</a></args></configSet>') === "");
+  check("self-closing tags pass", C.xmlError("<a><b/></a>") === "");
+  check("empty input is reported", /empty/.test(C.xmlError("")));
+  check("whitespace-only input is reported", /empty/.test(C.xmlError("   \n  ")));
+  check("text that isn't xml is reported", /start with/.test(C.xmlError("plain text")));
+  check("mismatched tags are reported", C.xmlError("<a><b></a>") !== "");
+  check("unclosed tags are reported", C.xmlError("<a><b/>") !== "");
+  check("a valid document formats cleanly",
+    C.formatXml("<a><b/></a>") === "<a>\n  <b/>\n</a>" && C.xmlError("<a><b/></a>") === "");
+}
+
+group("grism document validation");
+{
+  const good = '<run><output id="1"><port>P1</port></output><chain><in>P0</in><out>O1</out></chain></run>';
+  check("a valid run has no problems", C.grismXmlProblems(good).length === 0);
+  check("a non-run document is reported", C.grismXmlProblems("<notrun/>").some((p) => /run/.test(p.msg)));
+  check("unparseable input is reported", C.grismXmlProblems("<a><b></a>").length > 0);
+  check("problems carry a scope", C.grismXmlProblems("<notrun/>")[0].scope !== undefined);
+  check("an empty run is accepted", C.grismXmlProblems("<run></run>").length === 0);
+  check("malformed xml is reported before any document checks",
+    C.grismXmlProblems("<run><chain>").length > 0);
+}
+
+group("labels");
+{
+  check("custom output shows name and port", C.outputLabel({ id: 1, name: "to IDS", port: "P4" }) === "to IDS · P4");
+  check("unnamed output falls back to its port", C.outputLabel({ id: 1, port: "P4" }) === "P4");
+  check("alt is used when there is no name", C.outputLabel({ id: 1, alt: "mirror", port: "P2" }) === "mirror · P2");
+  check("a nameless portless output yields nothing", C.outputLabel({ id: 1 }) === "");
+  check("storage outputs read the same way", C.outputLabel({ id: 777, name: "capture", port: "H1" }) === "capture · H1");
+  check("named filter shows its name", C.filterLabel({ id: 12, name: "web" }) === "F12 — web");
+  check("unnamed filter shows just the id", C.filterLabel({ id: 3 }) === "F3");
+  check("filter alt is used as a name", C.filterLabel({ id: 4, alt: "dns" }) === "F4 — dns");
+}
+
+/* ---------- packet capture ---------- */
+group("packet capture");
+{
+  const xml = C.buildInstantCapture({ ports: ["P1"], filter: "F1", stl: 5, storage: "H1", dir: "snapshot" });
+  check("matches the instant-capture shape",
+    xml === '<run><output id="777" stl="5"><port>H1</port><dir>snapshot</dir></output>' +
+            '<chain><in>P1</in><fid>F1</fid><out>O777</out></chain></run>');
+  check("several ingress ports are joined",
+    C.buildInstantCapture({ ports: ["P1", "P2"], stl: 5, storage: "H1", dir: "snapshot" }).includes("<in>P1,P2</in>"));
+  check("no filter means no fid element",
+    !C.buildInstantCapture({ ports: ["P1"], filter: "", stl: 5, storage: "H1", dir: "snapshot" }).includes("<fid>"));
+  check("seconds to live written as an attribute",
+    C.buildInstantCapture({ ports: ["P1"], stl: 30, storage: "H1", dir: "d" }).includes('stl="30"'));
+  check("storage and directory written",
+    C.buildInstantCapture({ ports: ["P1"], stl: 5, storage: "H2", dir: "caps" }).includes("<port>H2</port>"));
+
+  check("a complete request is clean",
+    C.captureProblems({ ports: ["P1"], stl: 5, storage: "H1", dir: "snapshot" }).length === 0);
+  check("no interfaces reported", C.captureProblems({ ports: [], stl: 5, storage: "H1", dir: "d" }).length > 0);
+  check("no storage reported", C.captureProblems({ ports: ["P1"], stl: 5, storage: "", dir: "d" }).length > 0);
+  check("zero seconds reported", C.captureProblems({ ports: ["P1"], stl: 0, storage: "H1", dir: "d" }).length > 0);
+
+  const st = C.parseStorages({ storages: [{ name: "H1", enable: true, usage: 100, available: 900 },
+    { name: "H2", enable: false }] });
+  check("only enabled volumes offered", st.length === 1 && st[0].name === "H1");
+  check("usage figures read", st[0].usage === 100 && st[0].available === 900);
+
+  const files = C.parseStorageFiles({ file_list: [
+    [1, "raw_20260914162733_20260914162740_761484.pcap", 2001, "2026-09-14 16:27:38"]] },
+    { storage: "H1", dir: "snapshot" });
+  check("file row parsed", files[0].name.endsWith(".pcap") && files[0].bytes === 2001);
+  check("modified time kept", files[0].modified === "2026-09-14 16:27:38");
+  check("download link built",
+    files[0].href === "/file_manager/preview?download=1&file=/H1/snapshot/raw_20260914162733_20260914162740_761484.pcap");
+  check("newest file first", C.parseStorageFiles({ file_list: [
+    [1, "a.pcap", 1, "2026-09-14 10:00:00"], [2, "b.pcap", 1, "2026-09-14 11:00:00"]] })[0].name === "b.pcap");
+  check("empty listing tolerated", C.parseStorageFiles({}).length === 0);
+  // a .tmp file is mid-write and must not be offered for download
+  check("tmp files flagged as partial", C.isPartialCapture("raw_2026.pcap.tmp") === true);
+  check("uppercase extension flagged", C.isPartialCapture("raw.PCAP.TMP") === true);
+  check("finished captures are not flagged", C.isPartialCapture("raw_2026.pcap") === false);
+  check("tmp inside the name is not flagged", C.isPartialCapture("tmp_capture.pcap") === false);
+  check("blank names tolerated", C.isPartialCapture("") === false && C.isPartialCapture(undefined) === false);
+  // listing a volume without a directory answers a bare array of directories
+  const dirRows = [[0, "in", 40, "2026-09-13 16:31:34"], [0, "out", 40, "2026-09-13 16:31:34"],
+    [0, "snapshot", 80, "2026-09-14 18:40:41"]];
+  check("bare arrays are accepted", C.parseStorageFiles(dirRows).length === 3);
+  // the first field is a kind flag: 0 for a directory, 1 for a file
+  const mixed = C.parseStorageFiles({ file_list: [
+    [1, "b.pcap", 10, "2026-09-14 10:00:00"], [0, "sub", 40, "2026-09-13 16:31:34"],
+    [1, "a.pcap", 10, "2026-09-14 11:00:00"]] }, { storage: "H1", dir: "in" });
+  check("directories are flagged", mixed.find((r) => r.name === "sub").isDir === true);
+  check("files are not flagged", mixed.find((r) => r.name === "a.pcap").isDir === false);
+  check("directories sort before files", mixed[0].name === "sub");
+  check("files stay newest first", mixed[1].name === "a.pcap");
+  check("directories have no download link", mixed[0].href === "");
+  check("only directories are offered as dirs", C.parseStorageDirs({ file_list: [
+    [1, "x.pcap", 1, "t"], [0, "sub", 1, "t"]] }).join() === "sub");
+  // walking in and out of directories
+  check("entering appends to the path", C.joinDir("in", "sub") === "in/sub");
+  check("entering from the root", C.joinDir("", "in") === "in");
+  check("going up drops the last segment", C.parentDir("in/sub") === "in");
+  check("going up from the top reaches the root", C.parentDir("in") === "");
+  check("crumbs walk the path", C.dirCrumbs("in/sub").map((c) => c.path).join() === "in,in/sub");
+  check("the root has no crumbs", C.dirCrumbs("").length === 0);
+  check("directory names extracted and sorted", C.parseStorageDirs(dirRows).join() === "in,out,snapshot");
+  check("missing directory listing tolerated", C.parseStorageDirs(undefined).length === 0);
+  check("storage paths joined", C.storagePath("H1", "in", "a.pcap") === "H1/in/a.pcap");
+  check("storage paths tolerate stray slashes", C.storagePath("/H1/", "/in/", "a.pcap") === "H1/in/a.pcap");
+  check("slashes are not doubled in the link",
+    C.captureFileHref("/H1/", "/snapshot/", "x.pcap") === "/file_manager/preview?download=1&file=/H1/snapshot/x.pcap");
+}
+
+/* ---------- firmware update ---------- */
+group("firmware update");
+{
+  const p = C.parseDownloadProgress("37404672,81382331");
+  check("byte counts parsed", p.done === 37404672 && p.total === 81382331);
+  check("ratio computed", Math.abs(p.ratio - 37404672 / 81382331) < 1e-9);
+  check("partial download is not complete", p.complete === false);
+  check("matching counts mean complete", C.parseDownloadProgress("81382331,81382331").complete === true);
+  check("a zero total is never complete", C.parseDownloadProgress("0,0").complete === false);
+  check("ratio is safe when the total is zero", C.parseDownloadProgress("0,0").ratio === 0);
+  check("ratio never exceeds one", C.parseDownloadProgress("200,100").ratio === 1);
+  check("junk input is tolerated", C.parseDownloadProgress("").total === 0);
+
+  check("a version string is an available update", C.parseUpdateCheck("6.5.260715") === "6.5.260715");
+  check("blank means no update", C.parseUpdateCheck("") === "");
+  check("non-version replies mean no update", C.parseUpdateCheck("no update available") === "");
+  check("surrounding whitespace tolerated", C.parseUpdateCheck("  6.5.1  ") === "6.5.1");
+}
+
+/* ---------- flow service catalogue ---------- */
+group("flow service catalogue");
+{
+  const src = "TCP/443,UDP/443,HTTPS;TCP/80,UDP/80,HTTP;UDP/53,TCP/53,DNS;TCP/22,SSH";
+  const svc = C.parseFlowServices(src);
+  check("every service parsed", svc.length === 4);
+  check("name taken from the last field", svc[0].name === "HTTPS");
+  check("protocol/port pairs parsed", svc[0].ports.map((p) => p.proto + "/" + p.port).join() === "TCP/443,UDP/443");
+  check("single-port services work", svc[3].name === "SSH" && svc[3].ports.length === 1);
+  check("round trip is exact", C.buildFlowServices(svc) === src);
+  check("blank input yields nothing", C.parseFlowServices("").length === 0);
+  check("incomplete services are dropped on write",
+    C.buildFlowServices([{ name: "", ports: [{ proto: "TCP", port: 1 }] }, { name: "X", ports: [] }]) === "");
+  check("unnamed service reported", C.flowServiceProblems([{ name: " ", ports: [{ proto: "TCP", port: 80 }] }]).length > 0);
+  check("service without ports reported", C.flowServiceProblems([{ name: "X", ports: [] }]).length > 0);
+  check("invalid port reported", C.flowServiceProblems([{ name: "X", ports: [{ proto: "TCP", port: 70000 }] }]).length > 0);
+  check("a valid catalogue is clean", C.flowServiceProblems(svc).length === 0);
+  // a freshly added service must be usable, not rejected on sight
+  check("new service starts on a valid port", C.mkFlowService().ports[0].port === 80);
+  check("new service only needs a name", C.flowServiceProblems([{ ...C.mkFlowService(), name: "X" }]).length === 0);
+}
+
+/* ---------- login authentication ---------- */
+group("login authentication");
+{
+  const cfg = { views: { radiusLogin: false, radiusHost: " ", radiusPort: 1812, radiusSecret: " ",
+    tacacsLogin: false, tacacsHost: " ", tacacsPort: 49, tacacsSecret: " " } };
+  const v = C.parseViews(cfg);
+  check("blank hosts trimmed", v.radiusHost === "" && v.tacacsHost === "");
+  check("ports read", v.radiusPort === 1812 && v.tacacsPort === 49);
+  check("switches read", v.radiusLogin === false && v.tacacsLogin === false);
+  check("missing views default sensibly", C.parseViews({}).radiusPort === 1812 && C.parseViews({}).tacacsPort === 49);
+
+  const xml = C.buildViewsConfigSet(v);
+  check("views block emitted", xml.includes("<views>") && xml.includes("</views>"));
+  check("all eight fields written",
+    ["radiusLogin", "radiusHost", "radiusPort", "radiusSecret",
+     "tacacsLogin", "tacacsHost", "tacacsPort", "tacacsSecret"].every((k) => xml.includes("<" + k + ">")));
+  check("booleans written as True/False", xml.includes("<radiusLogin>False</radiusLogin>"));
+  check("secrets escaped", C.buildViewsConfigSet({ ...v, radiusSecret: "a&b" }).includes("a&amp;b"));
+
+  check("disabled servers are not validated", C.viewsProblems(v).length === 0);
+  check("enabled server needs an address",
+    C.viewsProblems({ ...v, radiusLogin: true }).some((p) => /address/.test(p.msg)));
+  check("hostnames are accepted",
+    C.viewsProblems({ ...v, radiusLogin: true, radiusHost: "radius.example.com" }).length === 0);
+  check("IP addresses are accepted",
+    C.viewsProblems({ ...v, tacacsLogin: true, tacacsHost: "10.0.0.1" }).length === 0);
+  check("invalid port reported",
+    C.viewsProblems({ ...v, radiusLogin: true, radiusHost: "10.0.0.1", radiusPort: 70000 }).length > 0);
+  // the device authenticates against one external server at a time
+  check("enabling both is reported", C.viewsProblems({ ...v, radiusLogin: true, radiusHost: "1.1.1.1",
+    tacacsLogin: true, tacacsHost: "2.2.2.2" }).some((p) => /not both/.test(p.msg)));
+  check("either one alone is fine", C.viewsProblems({ ...v, tacacsLogin: true, tacacsHost: "2.2.2.2" }).length === 0);
+}
+
+/* ---------- flow engine ---------- */
+group("flow settings");
+{
+  const cfg = { args: { flow: true, flowv6: true, flowCacheBaseSize: 150000, flowv6TableSize: 500000 } };
+  const f = C.parseFlowArgs(cfg);
+  check("flow switches read", f.flow === true && f.flowv6 === true);
+  check("table sizes read", f.flowCacheBaseSize === 150000 && f.flowv6TableSize === 500000);
+  check("missing args default off", C.parseFlowArgs({}).flow === false);
+  check("missing sizes default to zero", C.parseFlowArgs({}).flowCacheBaseSize === 0);
+
+  const xml = C.buildArgsConfigSet(Object.fromEntries(C.FLOW_ARGS.map((k) => [k, f[k]])));
+  check("flow args written as booleans", xml.includes("<flow>True</flow>") && xml.includes("<flowv6>True</flowv6>"));
+  check("table sizes written", xml.includes("<flowCacheBaseSize>150000</flowCacheBaseSize>"));
+  check("v6 table size written", xml.includes("<flowv6TableSize>500000</flowv6TableSize>"));
+  check("only flow args are sent", !xml.includes("deduplication") && !xml.includes("timeServer"));
+
+  check("a valid flow config is clean", C.flowProblems(f).length === 0);
+  check("tracking with a zero table is reported", C.flowProblems({ flow: true, flowCacheBaseSize: 0 }).length > 0);
+  check("v6 table checked independently",
+    C.flowProblems({ flowv6: true, flowv6TableSize: 0 }).some((p) => /IPv6/.test(p.msg)));
+  check("sizes are ignored when tracking is off", C.flowProblems({ flow: false, flowCacheBaseSize: 0 }).length === 0);
+  // the timeouts still belong to <netflow> on the wire even though the UI groups
+  // them with the flow settings
+  check("timeouts stay inside the netflow block",
+    C.FLOW_TIMEOUTS.every((k) => C.buildLoggingConfigSet(C.parseLogging({})).includes("<" + k + ">")));
+}
+
+/* ---------- logging (NetFlow / syslog / DPI) ---------- */
+group("logging");
+{
+  const cfg = { log: { enable: true, type: "netflow",
+    netflow: { port: "M0", engine_type: 0, engine_id: 0, active_timeout: 7200, inactive_timeout: 60,
+      tcp_fin_rst_timeout: 5, target: [{ enable: false, version: 9, dip: " ", dport: 9995, interfaces: "all", filter: " " }] },
+    syslog: { enable: false, port: "M0", target: [
+      { type: "system", enable: false, dip: " ", dport: 514, interfaces: "all", filter: " ", subtype: { common: true } },
+      { type: "matched", enable: true, dip: "10.0.0.1", dport: 514, interfaces: "all", filter: "", subtype: { sip: true, dip: true } }] } },
+    dpidnslog: { enable: true, syslog: { port: "M0", active_timeout: 30, inactive_timeout: 10,
+      response_only: false, noerror_only: false,
+      target: [{ enable: true, dip: "192.168.1.12", dport: 514, interfaces: "P1,P14", filter: "F1001" }] } },
+    dpihttplog: { enable: false, syslog: { port: "M0", target: [{ enable: false, dip: " ", dport: 514, interfaces: "all", filter: " " }] } },
+    dpissllog: { enable: false, syslog: { port: "M0", ja3: false, ja4: true,
+      target: [{ enable: false, dip: " ", dport: 514, interfaces: "all", filter: " " }] } } };
+  const L = C.parseLogging(cfg);
+  check("flow export globals read", L.enable === true && L.type === "netflow");
+  check("blank values trimmed", L.netflow.targets[0].dip === "" && L.netflow.targets[0].filter === "");
+  check("netflow timeouts read", L.netflow.active_timeout === 7200 && L.netflow.tcp_fin_rst_timeout === 5);
+  check("netflow version read", L.netflow.targets[0].version === 9);
+  check("syslog target types read", L.syslog.targets.map((t) => t.type).join() === "system,matched");
+  check("system subtypes read", L.syslog.targets[0].subtype.common === true);
+  check("matched subtypes read", L.syslog.targets[1].subtype.sip === true);
+  check("subtype keys match the target type",
+    Object.keys(L.syslog.targets[0].subtype).join() === C.SYSLOG_SYSTEM_SUBTYPES.join());
+  check("dns settings read", L.dns.enable === true && L.dns.active_timeout === 30);
+  check("dns target read", L.dns.targets[0].dip === "192.168.1.12" && L.dns.targets[0].interfaces === "P1,P14");
+  check("tls fingerprints read", L.ssl.ja3 === false && L.ssl.ja4 === true);
+  check("missing logging tolerated", C.parseLogging({}).netflow.targets.length === 0);
+
+  const xml = C.buildLoggingConfigSet(L);
+  check("every block emitted", ["<log>", "<netflow>", "<dpidnslog>", "<dpihttplog>", "<dpissllog>"].every((tg) => xml.includes(tg)));
+  check("helper log is not emitted", !xml.includes("dpihelplog"));
+  check("udp and inline-file are not emitted", !xml.includes("<udp>") && !xml.includes("inline-file"));
+  check("netflow target written", xml.includes("<dport>9995</dport>") && xml.includes("<version>9</version>"));
+  check("syslog target type written", xml.includes("<type>system</type>") && xml.includes("<type>matched</type>"));
+  check("system subtypes written", xml.includes("<alert_power_failure>False</alert_power_failure>"));
+  check("matched subtypes written", xml.includes("<find_content>False</find_content>"));
+  check("dns extras written", xml.includes("<response_only>False</response_only>") && xml.includes("<noerror_only>False</noerror_only>"));
+  check("tls fingerprints written", xml.includes("<ja3>False</ja3>") && xml.includes("<ja4>True</ja4>"));
+  check("dns values preserved", xml.includes("<dip>192.168.1.12</dip>") && xml.includes("<filter>F1001</filter>"));
+
+  check("a valid configuration is clean", C.loggingProblems(L).length === 0);
+  check("enabled target without an address is reported", C.loggingProblems({
+    netflow: { targets: [{ enable: true, dip: "", dport: 9995 }] } }).length > 0);
+  check("bad collector address is reported", C.loggingProblems({
+    netflow: { targets: [{ enable: true, dip: "999.1.1.1", dport: 9995 }] } }).length > 0);
+  check("disabled targets are not validated", C.loggingProblems({
+    netflow: { targets: [{ enable: false, dip: "", dport: 0 }] } }).length === 0);
+  check("new targets carry sensible defaults",
+    C.mkNetflowTarget().dport === 9995 && C.mkLogTarget().dport === 514);
+  check("new syslog target gets its subtype keys",
+    Object.keys(C.mkSyslogTarget("matched").subtype).join() === C.SYSLOG_MATCHED_SUBTYPES.join());
+  // a new target should carry something useful straight away
+  check("new matched target has every field on",
+    C.SYSLOG_MATCHED_SUBTYPES.every((k) => C.mkSyslogTarget("matched").subtype[k] === true));
+  check("new system target reports the usual events", (() => {
+    const st = C.mkSyslogTarget("system").subtype;
+    return st.common && st.alert_heartbeat_miss && st.alert_dropped_packets;
+  })());
+  check("new system target reports every event",
+    C.SYSLOG_SYSTEM_SUBTYPES.every((k) => C.mkSyslogTarget("system").subtype[k] === true));
+}
+
+group("log source and scope");
+{
+  const cfg = { interfaces: [
+      { type: "XFI", ports: [{ name: "P8" }, { name: "P9" }] },
+      { type: "LOOP", ports: [{ name: "P12" }, { name: "P13" }] },
+      { type: "VPORT", ports: [{ name: "V0" }] }],
+    ifcfgs: [{ role: "management", name: "M0", enable: true },
+      { role: "management1", name: "M1", enable: false },
+      { role: "management2", name: "M2", enable: true },
+      { role: "ft", name: "P1", enable: false }] };
+  check("LOOP ports are not data ports", C.dataPortNames(cfg).join() === "V0,P8,P9");
+  check("LOOP ports can be included for scoping",
+    C.dataPortNames(cfg, { includeLoop: true }).join() === "V0,P8,P9,P12,P13");
+  check("source ports never include LOOP", !C.logSourcePorts(cfg).includes("P12"));
+  check("only enabled management interfaces offered", C.managementPortNames(cfg).join() === "M0,M2");
+  check("source ports are management then data", C.logSourcePorts(cfg).join() === "M0,M2,V0,P8,P9");
+  check("ft roles are not management", !C.managementPortNames(cfg).includes("P1"));
+
+  const all = C.dataPortNames(cfg);
+  check("'all' expands to every data port", C.interfacesToList("all", all).join() === "V0,P8,P9");
+  // blank means nothing chosen; only the literal "all" expands to every port
+  check("blank expands to nothing", C.interfacesToList("", all).length === 0);
+  check("clear then reselect round trips",
+    C.listToInterfaces(C.interfacesToList("", all), all) === "");
+  check("a list is parsed", C.interfacesToList("P8,P9", all).join() === "P8,P9");
+  check("selecting every port collapses to all", C.listToInterfaces(all, all) === "all");
+  check("selecting none is not the same as all", C.listToInterfaces([], all) === "");
+  check("an enabled target with no interfaces is reported", C.loggingProblems({
+    netflow: { targets: [{ enable: true, dip: "1.1.1.1", dport: 514, interfaces: "" }] } })
+    .some((p) => /interface/.test(p.msg)));
+  check("a subset is written as a list", C.listToInterfaces(["P9", "P8"], all) === "P8,P9");
+  check("unknown ports are dropped", C.listToInterfaces(["P8", "P99"], all) === "P8");
+  check("round trip is stable", C.listToInterfaces(C.interfacesToList("P8", all), all) === "P8");
+}
+
+/* ---------- heartbeat ---------- */
+group("heartbeat");
+{
+  const cfg = { heartbeat: { enable: true, frequency: 500, maxAllowTimeouts: 3, target: [
+    { enable: true, sendPort: "P13", receivePort: "P13", packetData: "000d48", description: "test", id: 3 },
+    { enable: false, sendPort: "P3", receivePort: "P3", packetData: "000d48", description: "", id: 2 }] } };
+  const hb = C.parseHeartbeat(cfg);
+  check("heartbeat globals read", hb.enable === true && hb.frequency === 500 && hb.maxAllowTimeouts === 3);
+  check("targets parsed", hb.targets.length === 2);
+  check("target fields read", hb.targets[0].sendPort === "P13" && hb.targets[0].id === 3);
+  check("target enable read", hb.targets[0].enable === true && hb.targets[1].enable === false);
+  check("missing heartbeat tolerated", C.parseHeartbeat({}).targets.length === 0);
+
+  const xml = C.buildHeartbeatConfigSet(hb);
+  check("heartbeat block written", xml.includes("<heartbeat>") && xml.includes("</heartbeat>"));
+  check("globals written", xml.includes("<enable>true</enable>") && xml.includes("<frequency>500</frequency>"));
+  check("every target written", (xml.match(/<target>/g) || []).length === 2);
+  check("target id written", xml.includes("<id>3</id>"));
+  check("removing a target drops it", (C.buildHeartbeatConfigSet({ ...hb, targets: hb.targets.slice(0, 1) })
+    .match(/<target>/g) || []).length === 1);
+  check("adding a target includes it", (C.buildHeartbeatConfigSet({ ...hb, targets: [...hb.targets, C.mkHeartbeatTarget(9)] })
+    .match(/<target>/g) || []).length === 3);
+  check("new target gets the next id", C.mkHeartbeatTarget(9).id === 9);
+  check("descriptions escaped", C.buildHeartbeatConfigSet({ ...hb,
+    targets: [{ ...hb.targets[0], description: "a&b" }] }).includes("a&amp;b"));
+
+  // the first field is the position among ENABLED targets, not the target id
+  const st = C.parseHeartbeatStatus({ heartbeat_status: [[0, true], [1, false]] });
+  check("status rows keep their order", st.length === 2 && st[0].index === 0 && st[0].up === true);
+  check("missing status payload tolerated", C.parseHeartbeatStatus(undefined).length === 0);
+  const lined = C.heartbeatStatusRows([{ id: 3, enable: true, description: "a", sendPort: "P1", receivePort: "P1" },
+    { id: 2, enable: false, description: "b" },
+    { id: 7, enable: true, description: "c", sendPort: "P2", receivePort: "P2" }], st);
+  check("position 0 is the first enabled target", lined[0].id === 3);
+  check("disabled targets are skipped when counting", lined[1].id === 7);
+  check("labels come from the target", lined[0].description === "a" && lined[0].sendPort === "P1");
+  check("status beyond the target list is tolerated",
+    C.heartbeatStatusRows([], [{ index: 5, up: true }])[0].id === null);
+
+  // The list is a fixed set of slots: adding reuses the first disabled slot rather
+  // than growing the list, and removing just switches that slot off.
+  const slots = (l) => l.map((t) => t.id + (t.enable ? "+" : "-")).join(" ");
+  const start = [{ id: 1, enable: true }, { id: 2, enable: false }, { id: 3, enable: false }];
+  const added = C.insertHeartbeatTarget(start, { id: 9, enable: true });
+  check("add reuses the first disabled slot", slots(added) === "1+ 9+ 3-");
+  check("add does not grow the list", added.length === start.length);
+  const removed = added.map((t) => t.id === 9 ? { ...t, enable: false } : t);
+  check("remove switches the slot off and keeps its id", slots(removed) === "1+ 9- 3-");
+  check("with every slot in use the list extends",
+    slots(C.insertHeartbeatTarget([{ id: 1, enable: true }], { id: 9, enable: true })) === "1+ 9+");
+  check("first target on an empty list", slots(C.insertHeartbeatTarget([], { id: 9, enable: true })) === "9+");
+  check("the original list is not mutated", slots(start) === "1+ 2- 3-");
+
+  // a new target starts from the device's stock probe frame
+  check("new target carries the default packet", C.mkHeartbeatTarget(2).packetData === C.DEFAULT_HEARTBEAT_PACKET);
+  check("default packet is valid hex", /^[0-9a-f]+$/.test(C.DEFAULT_HEARTBEAT_PACKET));
+  check("default packet has whole bytes", C.DEFAULT_HEARTBEAT_PACKET.length % 2 === 0);
+  check("a fresh target validates", C.heartbeatProblems({ targets: [{ ...C.mkHeartbeatTarget(1), sendPort: "P1", receivePort: "P1" }] }).length === 0);
+
+  check("missing ports reported", C.heartbeatProblems({ targets: [{ id: 1, sendPort: "", receivePort: "P1" }] }).length > 0);
+  check("non-hex packet data reported", C.heartbeatProblems({ targets: [{ id: 1, sendPort: "P1", receivePort: "P1", packetData: "zz" }] }).length > 0);
+  // the device's own configs repeat ids, so duplicates must not be flagged
+  check("duplicate ids allowed", C.heartbeatProblems({ targets: [
+    { id: 3, sendPort: "P1", receivePort: "P1", packetData: "" },
+    { id: 3, sendPort: "P2", receivePort: "P2", packetData: "" }] }).length === 0);
+  check("odd-length packet data reported", C.heartbeatProblems({ targets: [
+    { id: 1, sendPort: "P1", receivePort: "P1", packetData: "abc" }] }).some((p) => /even/.test(p.msg)));
+  check("a valid target is clean", C.heartbeatProblems({ targets: [{ id: 1, sendPort: "P1", receivePort: "P2", packetData: "00ff" }] }).length === 0);
+}
+
+group("service options");
+{
+  const cfg = { services: [
+    { name: "xmlrpc", enable: true, localhost_only: true },
+    { name: "backup", enable: false, host: "h", port: 21, user: "u", pass: "p", dir: "/d", crontab: "0 0 * * *" }] };
+  const ex = C.parseServiceExtras(cfg);
+  check("xmlrpc option read", ex.xmlrpc.localhost_only === true);
+  check("backup fields read", ex.backup.host === "h" && ex.backup.crontab === "0 0 * * *");
+  check("defaults when absent", C.parseServiceExtras({}).backup.port === 21);
+  const xml = C.buildServiceExtrasConfigSet(ex);
+  check("xmlrpc option written", xml.includes("<localhost_only>True</localhost_only>"));
+  check("backup targeted by name", xml.includes('<find name="backup">'));
+  check("backup fields written", xml.includes("<host>h</host>") && xml.includes("<crontab>0 0 * * *</crontab>"));
+}
+
+/* ---------- interface (port) settings ---------- */
+group("interface settings");
+{
+  const cfg = { interfaces: [
+    { name: "qlm2", type: "XFI", ports: [
+      { name: "P8", description: "", enable: true }, { name: "P9", description: "uplink", enable: false }] },
+    { type: "LOOP", ports: [{ name: "P12", description: "LOOP", enable: true }] },
+    { type: "VPORT", ports: [{ name: "V0", description: "", port: "P6,P7", vlanid: 100 }] }] };
+  const ports = C.parseInterfacePorts(cfg);
+  check("all ports flattened", ports.length === 4);
+  check("virtual ports sort first", ports[0].name === "V0");
+  check("physical ports sort numerically", ports.map((p) => p.name).join(",") === "V0,P8,P9,P12");
+  check("parent interface kept", ports.find((p) => p.name === "P8").ifaceName === "qlm2");
+  check("interface type kept", ports.find((p) => p.name === "P12").type === "LOOP");
+  check("description read", ports.find((p) => p.name === "P9").description === "uplink");
+  check("enable read", ports.find((p) => p.name === "P9").enable === false);
+  check("enable defaults to true", ports.find((p) => p.name === "V0").enable === true);
+  const v0 = ports.find((p) => p.name === "V0");
+  check("virtual flagged", v0.virtual === true);
+  check("vport members and vlan read", v0.memberPorts === "P6,P7" && v0.vlanid === 100);
+  check("physical ports have no vlan fields", ports.find((p) => p.name === "P8").memberPorts === undefined);
+
+  const merged = C.mergePortStats(ports, [{ name: "P8", ifidx: 9, linkStatus: 1, speed: 10000 },
+    { name: "P9", ifidx: 10, linkStatus: 0, speed: 10000 }]);
+  check("live index merged", merged.find((p) => p.name === "P8").ifidx === 9);
+  check("link up detected", merged.find((p) => p.name === "P8").linkUp === true);
+  check("link down detected", merged.find((p) => p.name === "P9").linkUp === false);
+  check("speed merged", merged.find((p) => p.name === "P8").speed === 10000);
+  check("ports missing from stats stay null", merged.find((p) => p.name === "V0").linkUp === null);
+
+  const edited = ports.map((p) => p.name === "P8" ? { ...p, description: "wan" } : p);
+  check("description change detected", C.changedPorts(ports, edited).map((p) => p.name).join() === "P8");
+  const toggled = ports.map((p) => p.name === "P12" ? { ...p, enable: false } : p);
+  check("enable change detected", C.changedPorts(ports, toggled).map((p) => p.name).join() === "P12");
+  check("no edits means nothing to submit", C.changedPorts(ports, ports).length === 0);
+
+  const xml = C.buildPortConfigSet([{ name: "P8", description: "wan", enable: true },
+    { name: "P9", description: "", enable: false }]);
+  check("configSet wrapper", xml.startsWith('<configSet reboot="no">'));
+  check("port targeted by name", xml.includes('<find name="P8">'));
+  check("description written", xml.includes("<description>wan</description>"));
+  check("enable written as True/False", xml.includes("<enable>True</enable>") && xml.includes("<enable>False</enable>"));
+  check("only description and enable submitted", !xml.includes("<speed>") && !xml.includes("<hash>"));
+  check("values are escaped", C.buildPortConfigSet([{ name: "P0", description: "a<b&c", enable: true }]).includes("a&lt;b&amp;c"));
+}
+
 /* ---------- device settings ---------- */
 group("device settings");
 {
@@ -352,6 +884,16 @@ group("i18n");
 check("english lookup", makeT("en")("tab.filters") === "Filters");
 check("chinese lookup", makeT("zh-TW")("tab.filters") === "篩選器");
 check("missing key returns the key", makeT("en")("nope.nope") === "nope.nope");
+// A key can exist in both dictionaries yet still hold the English text — that
+// slips past a key-only comparison, so compare the values as well.
+check("no Chinese entry is left in English", (() => {
+  const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
+    "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow"]);
+  const same = Object.keys(I18N.en).filter((k) =>
+    I18N["zh-TW"][k] === I18N.en[k] && !shared.has(I18N.en[k]) && /[A-Za-z]{4,}/.test(I18N.en[k]));
+  if (same.length) console.log("    untranslated:", same.join(", "));
+  return same.length === 0;
+})());
 check("both dictionaries cover the same keys", (() => {
   const en = Object.keys(I18N.en), zh = Object.keys(I18N["zh-TW"]);
   const missing = en.filter((k) => !zh.includes(k));
@@ -443,6 +985,38 @@ group("traffic statistics");
 /* ---------- change tracking ---------- */
 group("change tracking");
 {
+  // Re-parsing the same XML hands out fresh cid/node ids; those are editor
+  // handles, not configuration, and must not read as edits.
+  const xml = '<run><filter id="1" name="a"><find><ip>1.1.1.1</ip></find></filter>' +
+    '<output id="1"><port>P1</port></output><chain><in>P0</in><fid>F1</fid><out>O1</out></chain></run>';
+  const p1 = C.parseRun(xml); const a = C.normalizeDoc(p1.doc ?? p1);
+  const p2 = C.parseRun(C.serializeRun(a)); const b = C.normalizeDoc(p2.doc ?? p2);
+  check("a no-op round trip reports no changes", C.diffDoc(a, b).total === 0);
+  check("filters are not marked touched", C.diffDoc(a, b).filters.touched.size === 0);
+  check("chains are not marked touched", C.diffDoc(a, b).chains.touched.size === 0);
+  // every section, including the advanced ones, must survive a round trip clean
+  const full = '<run><filter id="1" name="a"><find><ip>1.1.1.1</ip></find></filter>' +
+    '<input type="replayPcap"><port>P3</port><filepath>H1/a.pcap</filepath></input>' +
+    '<output id="1" name="o"><port>P1</port></output>' +
+    '<action type="input-packet-process"><port>P2</port></action>' +
+    '<chain><in>P0</in><fid>F1</fid><out>O1</out></chain></run>';
+  const f1 = C.parseRun(full); const fa = C.normalizeDoc(f1.doc ?? f1);
+  const f2 = C.parseRun(C.serializeRun(fa)); const fb = C.normalizeDoc(f2.doc ?? f2);
+  const fd = C.diffDoc(fa, fb);
+  check("inputs survive a round trip clean", fd.inputs.count === 0);
+  check("outputs survive a round trip clean", fd.outputs.count === 0);
+  check("actions survive a round trip clean", fd.actions.count === 0);
+  check("a real output edit is still detected", (() => {
+    const e = structuredClone(fb); e.outputs[0].port = "P9";
+    return C.diffDoc(fa, e).outputs.count === 1;
+  })());
+  const renamed = structuredClone(b); renamed.filters[0].name = "changed";
+  check("a real filter edit is still detected", C.diffDoc(a, renamed).filters.count === 1);
+  const rechained = structuredClone(b); rechained.chains[0].ports = "P9";
+  check("a real chain edit is still detected", C.diffDoc(a, rechained).chains.count > 0);
+}
+
+{
   const base = { filters: [{ id: 1, name: "a" }, { id: 2, name: "b" }],
                  chains: [{ cid: "c1", ports: "P0" }], inputs: [], outputs: [], actions: [] };
   const cur = { filters: [{ id: 1, name: "a" }, { id: 2, name: "EDITED" }, { id: 3, name: "new" }],
@@ -457,7 +1031,13 @@ group("change tracking");
   const removed = C.diffDoc(base, { ...base, filters: [{ id: 1, name: "a" }] });
   check("removed item detected", removed.filters.removed.length === 1 && removed.filters.removed[0] === 2);
   check("identical docs report no change", C.diffDoc(base, base).total === 0);
-  check("chains match on cid", C.diffDoc(base, { ...base, chains: [{ cid: "c1", ports: "P9" }] }).chains.changed[0] === "c1");
+  // chains carry no stable id, so they are matched on content: an edited chain
+  // reads as one removed and one added, and its row is still badged
+  const chEdit = C.diffDoc(base, { ...base, chains: [{ cid: "c1", ports: "P9" }] });
+  check("an edited chain is detected", chEdit.chains.count > 0);
+  check("the edited chain's row is badged", chEdit.chains.touched.has("c1"));
+  check("a chain with a new cid but identical content is unchanged",
+    C.diffDoc(base, { ...base, chains: base.chains.map((c) => ({ ...c, cid: "fresh" })) }).chains.count === 0);
   check("sectionChanged helper", C.sectionChanged(d, "filters") && !C.sectionChanged(d, "chains"));
   check("missing sections tolerated", C.diffDoc({}, {}).total === 0);
 }
@@ -510,6 +1090,21 @@ group("module wiring");
     new RegExp("(?<![\\w.$])" + n.replace(/[$]/g, "\\$&") + "(?![\\w$])").test(jsx));
   if (missing.length) console.log("    not imported:", missing.join(", "));
   check("every core name used in the JSX is imported", missing.length === 0);
+}
+
+/* ---------- lint (catches what the suite cannot) ---------- */
+group("lint");
+{
+  // A reference to a name that doesn't exist throws at render and blanks the whole
+  // page — invisible to unit tests, so the linter checks for it here.
+  const { execFileSync } = await import("node:child_process");
+  let out = "", failed = false;
+  try {
+    execFileSync("npx", ["eslint", "GrismStudio.jsx", "grism-core.js", "i18n.js", "test.js"],
+      { cwd: new URL(".", import.meta.url).pathname, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) { failed = true; out = String(e.stdout || "") + String(e.stderr || ""); }
+  if (failed) console.log(out.split("\n").filter((l) => l.trim()).slice(0, 12).join("\n"));
+  check("no undefined references or duplicate keys", !failed);
 }
 
 /* ---------- results ---------- */
