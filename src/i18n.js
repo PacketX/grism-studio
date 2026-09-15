@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.17.1";
+export const STUDIO_VERSION = "2.18.0";
 
 export const I18N = {
   en: {
