@@ -14,7 +14,7 @@ Everything below lives in `src/`.
 | `GrismStudio.jsx` | Every React component, one file. ~6100 lines |
 | `GrismStudio.css` | All styling, light + dark themes via CSS variables |
 | `i18n.js` | `en` / `zh-TW` dictionaries, `makeT`, `STUDIO_VERSION` |
-| `test.js` | 532 assertions across 45 groups. Imports the real modules |
+| `test.js` | 549 assertions across 45 groups. Imports the real modules |
 | `eslint.config.js` | Deliberately minimal — see "The linter earns its keep" |
 
 ## Commands
@@ -53,8 +53,12 @@ same body and the effect can re-fire mid-flight, so it caches the in-flight
 promise. Pass `getConfig(true)` after applying anything.
 
 **The find-field catalogue is a copy.** `FIELDS` in `grism-core.js` mirrors
-`g_ftype[]` in the firmware's `tools/common/fc.c`. Adding a field to the device
-does not add it here; both have to be edited. (A third copy under
+`g_ftype[]` in the firmware's `tools/common/fc.c` — that array is the only
+authority. Adding a field to the device does not add it here; both have to be
+edited, and six `g_ftype[]` entries are deliberately absent (see the note on
+`FIELDS`). `FIELDS` was originally transcribed from a field table in the
+firmware's `doc/filter.md`, which had drifted and listed names the device never
+accepted; that table is gone now, so transcribe from `fc.c`. (A third copy under
 `tools/www/GRISM-T_console-v3/` is legacy — leave it alone.)
 
 ## Conventions
