@@ -150,6 +150,14 @@ export const FIELDS = [
     { v: "ssl.handshake.type", label: "TLS handshake type", kind: "bit" },
     { v: "ssl.ja3_digest", label: "TLS JA3 digest", kind: "str" },
     { v: "ssl.ja3s_digest", label: "TLS JA3S digest", kind: "str" },
+    { v: "tls.handshake.ja4", label: "TLS JA4 (client hello)", kind: "ja4" },
+    { v: "tls.handshake.ja4_a", label: "TLS JA4 a (prefix)", kind: "ja4part" },
+    { v: "tls.handshake.ja4_b", label: "TLS JA4 b (cipher hash)", kind: "ja4part" },
+    { v: "tls.handshake.ja4_c", label: "TLS JA4 c (extension hash)", kind: "ja4part" },
+    { v: "tls.handshake.ja4s", label: "TLS JA4S (server hello)", kind: "ja4s" },
+    { v: "tls.handshake.ja4s_a", label: "TLS JA4S a (prefix)", kind: "ja4part" },
+    { v: "tls.handshake.ja4s_b", label: "TLS JA4S b (cipher)", kind: "ja4part" },
+    { v: "tls.handshake.ja4s_c", label: "TLS JA4S c (extension hash)", kind: "ja4part" },
   ]},
   { g: "ARP / FTP", items: [
     { v: "arp", label: "is ARP", kind: "exists" },
@@ -205,6 +213,14 @@ export const VAL = {
   grismport: (s) => /^[A-Z]\d+$/.test(s) ? null : "Port, e.g. P0",
   fidref: (s) => /^F\d+$/.test(s) ? null : "Filter id, e.g. F1",
   tuple: (s) => s.trim().split(/\s+/).length === 5 ? null : "5 fields: sip dip proto sp dp (- = any)",
+  // JA4  = a_b_c, a = proto + tls ver + sni + cipher/ext counts + alpn (10), b/c = 12 hex
+  ja4: (s) => /^[tqd][a-z0-9]{2}[di]\d{4}[a-z0-9]{2}_[0-9a-f]{12}_[0-9a-f]{12}$/.test(s)
+    ? null : "JA4, e.g. t13d1516h2_8daaf6152771_02713d6af862",
+  // JA4S = a_b_c, a = proto + tls ver + ext count + alpn (7), b = 4 hex cipher, c = 12 hex
+  ja4s: (s) => /^[tqd][a-z0-9]{2}\d{2}[a-z0-9]{2}_[0-9a-f]{4}_[0-9a-f]{12}$/.test(s)
+    ? null : "JA4S, e.g. t130200_1301_234ea6891581",
+  // a single a/b/c segment — the device compares one segment, so "_" can never match
+  ja4part: (s) => /^[0-9a-z]+$/.test(s) ? null : "One JA4 part, no _",
   str: (s) => s && s.length ? null : "Required",
   regex: (s) => s && s.length ? null : "Pattern required",
   exists: () => null,
@@ -212,7 +228,9 @@ export const VAL = {
 export const validate = (k, v) => (VAL[k] ?? VAL.str)(v ?? "");
 export const ph = (k) => ({ ip:"8.8.8.8", ipv6:"2001:db8::1", mac:"12:34:56:78:9a:bc", port:"443",
   vlan:"100", uint8:"6", uint16:"2048", uint24:"1", bit:"1", country:"TW", num:"500",
-  grismport:"P0", fidref:"F1", tuple:"- 192.168.1.203 - - 443", regex:"\\x08facebook\\x03com" }[k] ?? "value");
+  grismport:"P0", fidref:"F1", tuple:"- 192.168.1.203 - - 443", regex:"\\x08facebook\\x03com",
+  ja4:"t13d1516h2_8daaf6152771_02713d6af862", ja4s:"t130200_1301_234ea6891581",
+  ja4part:"8daaf6152771" }[k] ?? "value");
 
 /* ===================== filter (boolean tree) model ===================== */
 export const mkFind = () => ({ id: nid(), t: "find", field: "ip.addr", rel: "==", val: "" });
@@ -1183,8 +1201,11 @@ export function parseRun(xmlText) {
     }
     if (parsed && comment != null) parsed._comment = comment;
   });
-  if (!chains.length) chains.push(mkChain("P0"));
-  if (!filters.length) filters.push({ id: 1, name: "", sessionBase: "no", blockifempty: "no", root: { id: nid(), t: "or", children: [mkFind()] } });
+  // A parser must not invent content. Loading a device config that has no
+  // <chain> once produced a default P0→F1→P1 here, which serialised straight
+  // back out on the next Export/Submit and silently added forwarding the device
+  // never had. Both tabs render their own empty state, so return what the XML
+  // actually said and let the UI offer the "+ New" button.
   return { doc: { filters, inputs, outputs, actions, chains }, warnings };
 }
 

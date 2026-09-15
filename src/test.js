@@ -27,6 +27,14 @@ check("S1AP CellIdentity present", !!C.FIELD_INDEX["gtp.data.by.s1ap.CellIdentit
 check("S1AP CellIdentity is integer", C.FIELD_INDEX["gtp.data.by.s1ap.CellIdentity"].kind === "num");
 check("S1AP SubscriberProfileIDforRFP is integer", C.FIELD_INDEX["gtp.data.by.s1ap.SubscriberProfileIDforRFP"]?.kind === "num");
 check("num kind has comparison relations", C.relationsFor("num").includes(">=") && C.relationsFor("num").includes("<="));
+const JA4_FIELDS = ["tls.handshake.ja4", "tls.handshake.ja4_a", "tls.handshake.ja4_b", "tls.handshake.ja4_c",
+                    "tls.handshake.ja4s", "tls.handshake.ja4s_a", "tls.handshake.ja4s_b", "tls.handshake.ja4s_c"];
+check("all 8 JA4/JA4S fields present", JA4_FIELDS.every((f) => !!C.FIELD_INDEX[f]));
+check("JA4 fields sit in the TLS / SSL group",
+  JA4_FIELDS.every((f) => C.FIELDS.find((g) => g.g === "TLS / SSL").items.some((i) => i.v === f)));
+// the device only implements R_EQ / R_NOTEQ for these, so no >= / <= must be offered
+check("JA4 fields offer only == and !=",
+  JA4_FIELDS.every((f) => JSON.stringify(C.relationsFor(C.FIELD_INDEX[f].kind)) === JSON.stringify(["==", "!="])));
 
 /* ---------- validation ---------- */
 group("value validation");
@@ -39,6 +47,14 @@ check("valid MAC accepted", C.validate("mac", "12:34:56:78:9a:bc") === null);
 check("integer accepted", C.validate("num", "12345") === null);
 check("non-integer rejected", C.validate("num", "1.5") !== null);
 check("VLAN range enforced", C.validate("vlan", "4095") !== null && C.validate("vlan", "100") === null);
+check("valid JA4 accepted", C.validate("ja4", "t13d1516h2_8daaf6152771_02713d6af862") === null);
+check("JA4 with wrong digest length rejected", C.validate("ja4", "t13d1516h2_8daaf615277_02713d6af862") !== null);
+check("JA4S not accepted as JA4", C.validate("ja4", "t130200_1301_234ea6891581") !== null);
+check("valid JA4S accepted", C.validate("ja4s", "t130200_1301_234ea6891581") === null);
+check("JA4S with 12-hex cipher rejected", C.validate("ja4s", "t130200_8daaf6152771_234ea6891581") !== null);
+check("JA4 part accepted", C.validate("ja4part", "8daaf6152771") === null && C.validate("ja4part", "t13d1516h2") === null);
+check("JA4 part with _ rejected", C.validate("ja4part", "8daaf6152771_02713d6af862") !== null);
+check("empty JA4 part rejected", C.validate("ja4part", "") !== null);
 
 /* ---------- filter serialisation ---------- */
 group("filter serialisation");
@@ -137,6 +153,23 @@ group("run round trip");
   check("chain count preserved", back.chains.length === doc.chains.length);
   const again = C.serializeRun(C.normalizeDoc(back));
   check("serialise → parse → serialise is stable", again === xml);
+}
+{
+  // A device config with filters but no <chain> must come back with no chain.
+  // parseRun used to invent P0→F1→P1 here, which serialised straight back out
+  // and silently added forwarding the device never had.
+  const noChain = `<run>
+  <filter id="1" sessionBase="no"><and><find name="ip.src" relation="==" content="10.0.0.1" /></and></filter>
+</run>`;
+  const { doc: d, warnings: w } = C.parseRun(noChain);
+  check("no <chain> in, no chain invented", d.chains.length === 0);
+  check("chainless config parses without warnings", w.length === 0);
+  check("chainless config does not grow a <chain> on re-serialise", !C.serializeRun(d).includes("<chain"));
+  check("chainless round trip is byte-stable", C.serializeRun(C.parseRun(C.serializeRun(d)).doc) === C.serializeRun(d));
+  // and an empty document stays empty rather than sprouting a starter filter
+  const { doc: e } = C.parseRun("<run>\n</run>");
+  check("empty run invents no filter", e.filters.length === 0);
+  check("empty run invents no chain", e.chains.length === 0);
 }
 
 /* ---------- every template is valid and round trips ---------- */
