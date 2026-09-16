@@ -389,6 +389,11 @@
 @keyframes apply-spin{to{transform:rotate(360deg);}}
 .apply-msg{font-size:14px; color:var(--txt); font-weight:600; text-align:center;}
 .apply-sub{font-size:12px; color:var(--txt-dim); text-align:center;}
+/* Live phase on the firmware/restore hold: what the device is actually doing,
+   rather than a clock that would only ever be guessing. */
+.apply-phase{font-size:13px; font-weight:600; color:var(--accent); text-align:center;}
+.apply-phase.ok{color:var(--match);}
+.apply-tick{font-size:28px; line-height:1; color:var(--match);}
 .export-main{display:flex; flex-direction:column; min-height:0; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); overflow:hidden;}
 .xb-head{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--line);}
 .xb-title{font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--txt-dim);}

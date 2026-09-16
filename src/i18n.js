@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.18.1";
+export const STUDIO_VERSION = "2.19.0";
 
 export const I18N = {
   en: {
@@ -142,6 +142,8 @@ export const I18N = {
     "set.fwUploadBody": "The device installs the image and reboots. Traffic stops for several minutes — do not power it off.",
     "set.fwOnlineTitle": "Install the downloaded update?",
     "set.fwOnlineBody": "The device installs the image and reboots. Traffic stops for several minutes — do not power it off.",
+    "set.fwPhase.updating": "Installing — device still responding", "set.fwPhase.rebooting": "Restarting — device is offline",
+    "set.fwPhase.done": "Update complete", "set.fwReload": "Reload page",
     "set.fwUpdating": "Updating firmware",
     "set.fwUpdatingBody": "The device is installing the image and will restart. Do not power it off; reload this page once it is back.",
     "set.auth": "Login authentication", "set.authUse": "Authenticate with",
@@ -536,6 +538,8 @@ export const I18N = {
     "set.fwUploadBody": "裝置會安裝映像檔並重新開機,流量中斷數分鐘,期間請勿關閉電源。",
     "set.fwOnlineTitle": "安裝已下載的更新?",
     "set.fwOnlineBody": "裝置會安裝映像檔並重新開機,流量中斷數分鐘,期間請勿關閉電源。",
+    "set.fwPhase.updating": "更新中 — 裝置仍可連線", "set.fwPhase.rebooting": "重開機中 — 裝置已離線",
+    "set.fwPhase.done": "更新完成", "set.fwReload": "重新載入頁面",
     "set.fwUpdating": "韌體更新中",
     "set.fwUpdatingBody": "裝置正在安裝映像檔並即將重新啟動。請勿關閉電源,完成後重新整理此頁。",
     "set.auth": "登入驗證", "set.authUse": "使用此伺服器驗證:",

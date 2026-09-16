@@ -1570,23 +1570,56 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
   // The device stops responding as it powers down, so a network error here is the
   // expected outcome rather than a failure to report.
   const [powered, setPowered] = React.useState(null);   // "reboot" | "halt" once requested
-  const [wait, setWait] = React.useState(null);         // { title, body, left } while the device reboots
+  // { title, body, phase } while the device installs and restarts.
+  // A clock would only ever be a guess: how long an image takes to apply varies,
+  // and the number keeps counting after the device is already back. Report what
+  // we can actually observe instead — whether the device answers.
+  //   updating  : still reachable, so it is applying the image
+  //   rebooting : stopped answering, so it is on its way down or coming back up
+  //   done      : answering again, but only after we saw it go away
+  const [wait, setWait] = React.useState(null);
+  const waitPhase = wait?.phase;
   React.useEffect(() => {
-    if (!wait) return;
-    if (wait.left <= 0) { setWait(null); return; }
-    const id = setTimeout(() => setWait((w) => (w ? { ...w, left: w.left - 1 } : null)), 1000);
-    return () => clearTimeout(id);
-  }, [wait]);
+    if (!waitPhase || waitPhase === "done") return;
+    let alive = true;
+    const ping = async () => {
+      let up = false;
+      try {
+        // no-store: a cached 200 would read as "back up" while it is still down
+        const res = await fetch("/grism/task/get_version", { credentials: "include", cache: "no-store" });
+        up = res.ok;
+      } catch { up = false; }
+      if (!alive) return;
+      setWait((w) => {
+        if (!w || w.phase === "done") return w;
+        if (!up) return w.phase === "rebooting" ? w : { ...w, phase: "rebooting" };
+        // Reachable only means finished if it had gone away first. The device is
+        // still answering for the first moments of an update, and treating that
+        // as success would flash "complete" before anything had happened.
+        return w.phase === "rebooting" ? { ...w, phase: "done" } : w;
+      });
+    };
+    ping();
+    const id = setInterval(ping, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [waitPhase]);
 
   /* POST a file and then hold the page while the device restarts. */
-  const uploadAndWait = async (url, file, field, minutes, title, body) => {
+  const uploadAndWait = async (url, file, field, title, body) => {
     setSubmit({ state: "sending", msg: "" });
+    // Hold the page from the moment the upload starts, not after it returns. A
+    // firmware image is tens of megabytes: waiting for the POST left the UI live
+    // for the whole transfer, and a device that closed the connection while
+    // applying landed in the catch below, so the overlay never appeared at all.
+    setWait({ title, body, phase: "updating" });
     try {
       const fd = new FormData(); fd.append(field, file, file.name);
       const res = await fetch(url, { method: "POST", credentials: "include", body: fd });
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      // A real HTTP status means the device answered and refused: drop the hold
+      // and show why. A thrown fetch means the connection went away, which for
+      // these endpoints usually means it is already restarting — keep holding.
+      if (!res.ok) { setWait(null); throw new Error("HTTP " + res.status); }
       setSubmit({ state: "idle", msg: "" });
-      setWait({ title, body, left: minutes * 60 });
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
   };
   const submitPower = async (url, kind) => {
@@ -2445,20 +2478,20 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
               if (k === "zone") { submitForm("/grism/set_time_zone", "timezone", zone, () => setZoneBase(zone)); return; }
               if (k === "reboot" || k === "halt") { submitPower(k === "reboot" ? "/grism/task/reboot" : "/grism/task/halt", k); return; }
               if (k === "restoreFile") {
-                uploadAndWait("/grism/task/restore_from_file", restoreFile, "file", 3,
+                uploadAndWait("/grism/task/restore_from_file", restoreFile, "file",
                   tr("set.bkRestoring"), tr("set.bkRestoringBody")); return;
               }
               if (k === "fwUpload") {
-                uploadAndWait("/grism/task/update", fwFile, "file", 5,
+                uploadAndWait("/grism/task/update", fwFile, "file",
                   tr("set.fwUpdating"), tr("set.fwUpdatingBody")); return;
               }
               if (k === "factory") {
                 fetch("/grism/task/restore", { method: "POST", credentials: "include" }).catch(() => {});
-                setWait({ title: tr("set.bkResetting"), body: tr("set.bkRestoringBody"), left: 180 }); return;
+                setWait({ title: tr("set.bkResetting"), body: tr("set.bkRestoringBody"), phase: "updating" }); return;
               }
               if (k === "fwOnline") {
                 fetch("/grism/task/update_download_update", { method: "POST", credentials: "include" }).catch(() => {});
-                setWait({ title: tr("set.fwUpdating"), body: tr("set.fwUpdatingBody"), left: 300 }); return;
+                setWait({ title: tr("set.fwUpdating"), body: tr("set.fwUpdatingBody"), phase: "updating" }); return;
               }
               if (k === "flow") {
                 submitConfigs([
@@ -2485,6 +2518,38 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
               <span className="opt-name">{tr("set.confirmApply")}</span>
             </button>
             <button className="opt-cancel" onClick={() => setConfirm(null)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Firmware update, restore and factory reset take the device away for
+          minutes. Hold the page so nothing else is submitted meanwhile and the
+          user can see how long is left. setWait/setPowered had been setting this
+          state, and the countdown effect had been ticking it down, but nothing
+          ever rendered it — so every one of those flows looked like it had done
+          nothing at all. */}
+      {wait && (
+        <div className="apply-overlay">
+          <div className="apply-card">
+            {wait.phase === "done" ? <div className="apply-tick">✓</div> : <div className="apply-spinner" />}
+            <div className="apply-msg">{wait.title}</div>
+            <div className="apply-sub">{wait.body}</div>
+            <div className={"apply-phase" + (wait.phase === "done" ? " ok" : "")}>
+              {tr("set.fwPhase." + wait.phase)}
+            </div>
+            {/* The device may now be serving a different build of this page, so
+                offer a reload rather than dropping the user back into the old one. */}
+            {wait.phase === "done" &&
+              <button className="primary" onClick={() => window.location.reload()}>{tr("set.fwReload")}</button>}
+          </div>
+        </div>
+      )}
+      {powered && (
+        <div className="apply-overlay">
+          <div className="apply-card">
+            <div className="apply-spinner" />
+            <div className="apply-msg">{tr(powered === "reboot" ? "set.rebooting" : "set.halting")}</div>
+            <div className="apply-sub">{tr(powered === "reboot" ? "set.rebootingBody" : "set.haltingBody")}</div>
           </div>
         </div>
       )}
