@@ -323,6 +323,22 @@ group("formatXml");
 }
 
 /* ---------- system status ---------- */
+group("factory reset");
+check("factory management address is the documented one", C.FACTORY_MGMT_IP === "192.168.1.150");
+check("it is a bare address, not a URL", /^\d+\.\d+\.\d+\.\d+$/.test(C.FACTORY_MGMT_IP));
+// the address is composed into the UI, so it must not be duplicated in the
+// translations - a second copy is one that can drift
+for (const lang of ["en", "zh-TW"])
+  check(`${lang} strings do not hardcode the address`,
+    !Object.values(I18N[lang]).some((v) => typeof v === "string" && v.includes(C.FACTORY_MGMT_IP)));
+// the reset takes the address with it, so the restore wording ("reload this
+// page") would be wrong here; factory gets its own body
+for (const lang of ["en", "zh-TW"])
+  check(`${lang} has a factory-specific wait body`,
+    !!I18N[lang]["set.factoryResetBody"] && I18N[lang]["set.factoryResetBody"] !== I18N[lang]["set.bkRestoringBody"]);
+for (const lang of ["en", "zh-TW"])
+  check(`${lang} has the factory address label`, !!I18N[lang]["set.factoryIp"]);
+
 group("system status");
 {
   const s = { uname: "Linux GRISM-HL1 5.15.72-mb5500-release-v1.1.2 #1 SMP PREEMPT Wed Aug 5 03:09:28 UTC 2026 aarch64",

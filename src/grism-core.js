@@ -2294,6 +2294,13 @@ export function parseUpdateCheck(text) {
   return /^\d+(\.\d+)+$/.test(v) ? v : "";
 }
 
+/* Where the device answers after a factory reset. Every other setting is
+   discarded, so whatever management address it is reachable on now is gone and
+   the session dies with it — the UI has to say this before the reset, not after,
+   and say where to continue. Kept here rather than inside the translations so
+   the address appears once. */
+export const FACTORY_MGMT_IP = "192.168.1.150";
+
 /* ===================== instant packet capture =====================
    A short-lived capture: one output writing to a storage volume, and one chain
    feeding it from the chosen ingress ports. It is submitted as a complete <run>

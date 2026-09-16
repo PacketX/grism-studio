@@ -16,7 +16,7 @@ import {
   parseHeartbeatStatus, parseServiceExtras,
   parseServices, parseTimezones, tokenizeXml,
   mergePortStats, parseInterfacePorts, cloneForDup, collectRefs, describeDoc, filterProblems,
-  fmtBytes, fmtKB, fmtNum, fmtSpeed, formatXml, inferIntent,
+  FACTORY_MGMT_IP, fmtBytes, fmtKB, fmtNum, fmtSpeed, formatXml, inferIntent,
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
   mkAction, mkActionMod, mkChain, mkDrop, mkFind, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
@@ -2364,6 +2364,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
           <section className="sys-card danger-card">
             <h3 className="sys-card-title">{tr("set.bkFactory")}</h3>
             <p className="set-hint">{tr("set.bkFactoryNote")}</p>
+            <p className="set-hint">{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></p>
             <div className="set-actions">
               <button className="del" disabled={submit.state === "sending"}
                 onClick={() => setConfirm({ kind: "factory" })}>{tr("set.bkFactoryGo")}</button>
@@ -2472,6 +2473,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
             <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
             <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            {/* The reset takes the management address with it, so this session
+                ends the moment it is confirmed. Say where to continue while the
+                user can still choose not to. */}
+            {confirm.kind === "factory" &&
+              <p className="modal-body"><strong>{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></strong></p>}
             <button className="opt drop" onClick={() => {
               const k = confirm.kind;
               setConfirm(null);
@@ -2487,7 +2493,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
               }
               if (k === "factory") {
                 fetch("/grism/task/restore", { method: "POST", credentials: "include" }).catch(() => {});
-                setWait({ title: tr("set.bkResetting"), body: tr("set.bkRestoringBody"), phase: "updating" }); return;
+                // not bkRestoringBody: that one says to reload this page, which is
+                // exactly what will not work once the address has moved
+                setWait({ title: tr("set.bkResetting"), body: tr("set.factoryResetBody"),
+                          phase: "updating", factory: true }); return;
               }
               if (k === "fwOnline") {
                 fetch("/grism/task/update_download_update", { method: "POST", credentials: "include" }).catch(() => {});
@@ -2537,10 +2546,18 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
             <div className={"apply-phase" + (wait.phase === "done" ? " ok" : "")}>
               {tr("set.fwPhase." + wait.phase)}
             </div>
-            {/* The device may now be serving a different build of this page, so
-                offer a reload rather than dropping the user back into the old one. */}
-            {wait.phase === "done" &&
-              <button className="primary" onClick={() => window.location.reload()}>{tr("set.fwReload")}</button>}
+            {/* A factory reset never reaches "done": the device comes back on its
+                factory address, so the poll against this one can only ever see it
+                offline. Send the user there instead of waiting for a completion
+                that cannot arrive. Reloading this page would not help either. */}
+            {wait.factory
+              ? <a className="primary" href={`https://${FACTORY_MGMT_IP}/grism-studio/`}>
+                  {tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span>
+                </a>
+              : wait.phase === "done" &&
+                /* The device may now be serving a different build of this page, so
+                   offer a reload rather than dropping the user back into the old one. */
+                <button className="primary" onClick={() => window.location.reload()}>{tr("set.fwReload")}</button>}
           </div>
         </div>
       )}
