@@ -378,6 +378,78 @@ group("device request methods");
   check("update_download_update is not POSTed", !!call && !/method:\s*"POST"/.test(call[0]));
 }
 
+group("internal accounts");
+// the device's own account, taken straight from its /list_user answer
+check("sha256Hex matches the device's hash for packetx",
+  (await C.sha256Hex("packetx")) === "5ba7ad93c78984d6afe97b5e053865165019fd10e1faaec2e5831731ded3a30c");
+check("sha256Hex is lowercase hex of the right length",
+  /^[0-9a-f]{64}$/.test(await C.sha256Hex("anything")));
+check("sha256Hex of the empty string is the known digest",
+  (await C.sha256Hex("")) === "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+// GET /list_user answers with pairs: {"user_list":[["packetx","admin"], ...]}
+{
+  const real = '{"user_list":[["packetx","admin"],["guest","view"],["heartbeat","admin"]]}';
+  const u = C.parseUserList(real);
+  check("parses the device's real payload", u.length === 3 && u[0].name === "packetx" && u[0].role === "admin");
+  check("accepts an already-parsed object", C.parseUserList(JSON.parse(real)).length === 3);
+  check("drops malformed rows rather than rendering undefined",
+    C.parseUserList('{"user_list":[["ok","admin"],[],["",""],null,["fine"]]}')
+      .every((x) => typeof x.name === "string" && x.name && typeof x.role === "string"));
+  check("survives junk", C.parseUserList("not json").length === 0 && C.parseUserList({}).length === 0);
+}
+
+// Changing your own password ends the session on the device, so the reply can be
+// a success or an Unauthorized for the same outcome. Both mean it worked.
+for (const lang of ["en", "zh-TW"])
+  check(`${lang} says the password change signs you out`, !!I18N[lang]["set.acctChangedSignOut"]);
+
+check("packetx is the account the device refuses to delete", C.UNDELETABLE_USER === "packetx");
+
+{
+  const have = [{ name: "packetx", role: "admin" }];
+  check("a new account needs a name", !!C.newUserProblem("", "p", "p", have));
+  check("a new account needs a password", !!C.newUserProblem("bob", "", "", have));
+  check("passwords must match", !!C.newUserProblem("bob", "a", "b", have));
+  check("duplicate names are refused, case-insensitively", !!C.newUserProblem("PacketX", "a", "a", have));
+  check("odd characters are refused", !!C.newUserProblem("bob smith", "a", "a", have));
+  check("a good account passes", C.newUserProblem("bob.smith-1_x", "a", "a", have) === null);
+}
+{
+  const me = "guest";
+  check("changing a password needs the current one", !!C.changePasswordProblem("", "new", "new", me));
+  check("and a new one", !!C.changePasswordProblem("old", "", "", me));
+  check("which must be confirmed", !!C.changePasswordProblem("old", "a", "b", me));
+  check("and must actually differ", !!C.changePasswordProblem("same", "same", "same", me));
+  check("a good change passes", C.changePasswordProblem("old", "new", "new", me) === null);
+  // The X-PacketX-Username cookie is HttpOnly, so document.cookie never sees it.
+  // Reading it there and defaulting to packetx aimed every password change at
+  // that account instead of the user's own. Without a name, refuse outright.
+  for (const bad of [undefined, null, "", "   "])
+    check(`no account name (${JSON.stringify(bad)}) blocks the change`,
+      !!C.changePasswordProblem("old", "new", "new", bad));
+}
+// with RADIUS or TACACS+ on, these accounts are only a fallback - the UI says so
+check("no note when only internal auth is used", C.internalAccountsNoteKey({}) === null);
+// One wording whichever is on: naming the server, and a separate "both" variant,
+// read as though internal and remote accounts worked side by side.
+for (const on of [{ radiusLogin: true }, { tacacsLogin: true }, { radiusLogin: true, tacacsLogin: true }])
+  check(`remote auth ${JSON.stringify(on)} gets the single note`,
+    C.internalAccountsNoteKey(on) === "set.acctFallbackOnly");
+for (const lang of ["en", "zh-TW"]) {
+  for (const k of ["set.acctFallbackOnly", "set.acctSignIn"]) check(`${lang} has ${k}`, !!I18N[lang][k]);
+  for (const k of ["set.acctFallbackRadius", "set.acctFallbackTacacs", "set.acctFallbackBoth"])
+    check(`${lang} no longer carries ${k}`, !I18N[lang][k]);
+}
+// The device answers an unauthenticated account request with 404, not 401. That
+// was once read as "this firmware has no account management", which turned a
+// lapsed session into a message saying the feature did not exist.
+check("404 means sign in again, not unsupported", C.accountsErrorKey(404) === "set.acctSignIn");
+check("401 likewise", C.accountsErrorKey(401) === "set.acctSignIn");
+check("other statuses report themselves", C.accountsErrorKey(500) === null && C.accountsErrorKey(503) === null);
+for (const lang of ["en", "zh-TW"])
+  check(`${lang} no longer claims the feature is unsupported`, !I18N[lang]["set.acctUnsupported"]);
+
 group("system status");
 {
   const s = { uname: "Linux GRISM-HL1 5.15.72-mb5500-release-v1.1.2 #1 SMP PREEMPT Wed Aug 5 03:09:28 UTC 2026 aarch64",

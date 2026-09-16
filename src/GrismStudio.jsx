@@ -23,7 +23,8 @@ import {
   buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
   dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
-  summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty,
+  summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
+  UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -201,6 +202,9 @@ export default function GrismStudio() {
   const t = useMemo(() => makeT(lang), [lang]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
+  // Why the session ended, when something other than the logout button ended it.
+  // Set as the tab that triggered it unmounts, so it has to live out here.
+  const [signedOutNotice, setSignedOutNotice] = useState("");
   const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
@@ -417,6 +421,7 @@ export default function GrismStudio() {
         credentials: "include",
       });
       if (!res.ok) throw new Error(`login failed (${res.status})`);
+      setSignedOutNotice("");
       setLogin((l) => ({ ...l, busy: false, ok: true, pass: "", open: false, who: username }));
       setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
       loadDevicePorts();   // interface/port list for the pickers
@@ -457,7 +462,8 @@ export default function GrismStudio() {
     return () => { cancelled = true; };
   }, [loadDevicePorts, doLoadRunning, fetchCurrentUser]);
 
-  const doLogout = useCallback(async () => {
+  const doLogout = useCallback(async (notice = "") => {
+    setSignedOutNotice(notice);
     try {
       await fetch("/logout", { method: "POST", credentials: "include" });
     } catch { /* clear local session regardless of network result */ }
@@ -704,6 +710,7 @@ export default function GrismStudio() {
           )}
         </div>
       </header>
+      {signedOutNotice && <div className="load-banner">{signedOutNotice}</div>}
       {load.state === "error" && <div className="load-banner err">{t("banner.loadFailed")}: {load.msg}.{" "}
         {load.cleared ? t("banner.clearedNotDevice") : t("banner.checkSignedIn")}</div>}
       {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — {t("banner.someUnrecognised")}</div>}
@@ -784,7 +791,7 @@ export default function GrismStudio() {
           <SystemLogTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "settings" && (
-          <SettingsTab loggedIn={!!login.who} t={t} portOptions={devicePorts ?? DEFAULT_PORTS}
+          <SettingsTab loggedIn={!!login.who} t={t} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
         {tab === "trafficPorts" && (
@@ -1338,7 +1345,7 @@ function SystemLogTab({ loggedIn, t }) {
   );
 }
 
-function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] }) {
+function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut }) {
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
   const [ifaces, setIfaces] = React.useState([]);
@@ -1597,6 +1604,83 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
   //   updating  : still reachable, so it is applying the image
   //   rebooting : stopped answering, so it is on its way down or coming back up
   //   done      : answering again, but only after we saw it go away
+  /* Internal accounts. Only some firmware serves these endpoints — a 404 puts the
+     card into an unsupported state rather than showing controls that cannot work. */
+  const [users, setUsers] = React.useState(null);          // null = not loaded yet
+  const [acctErr, setAcctErr] = React.useState("");
+  const [acctOk, setAcctOk] = React.useState("");
+  const [newUser, setNewUser] = React.useState({ name: "", pass: "", confirm: "" });
+  const [pw, setPw] = React.useState({ old: "", next: "", confirm: "" });
+  const [acctBusy, setAcctBusy] = React.useState(false);
+  /* Who the device says we are. The X-PacketX-Username cookie is HttpOnly, so
+     document.cookie cannot see it — ask the endpoint instead. Null means unknown,
+     and the password form stays disabled rather than guessing an account. */
+  const [me, setMe] = React.useState(null);
+
+  /* Changing your own password ends the session on the device, so the reply can
+     be a success or an Unauthorized for the very same outcome — the credentials
+     the request was authenticated with stopped being valid partway through.
+     Either way the password changed and this session is gone, so sign out here
+     instead of leaving a page whose every later call will fail. */
+  const changeOwnPassword = async (oldPass, nextPass) => {
+    setAcctBusy(true); setAcctErr(""); setAcctOk("");
+    try {
+      const res = await fetch("/change_password", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          Username: me,
+          OldPasswordHash: await sha256Hex(oldPass),
+          NewPasswordHash: await sha256Hex(nextPass),
+        }),
+      });
+      const text = (await res.text().catch(() => "")).trim();
+      const sessionEnded = res.status === 401 || /unauthor/i.test(text);
+      if (!res.ok && !sessionEnded) throw new Error(text.slice(0, 120) || "HTTP " + res.status);
+      onSignedOut?.(tr("set.acctChangedSignOut"));
+    } catch (e) { setAcctErr(String(e.message || e)); }
+    finally { setAcctBusy(false); }
+  };
+
+  const loadUsers = React.useCallback(async () => {
+    setAcctErr("");
+    try {
+      const res = await fetch("/list_user", { credentials: "include" });
+      if (!res.ok) {
+        const key = accountsErrorKey(res.status);
+        throw new Error(key ? tr(key) : "HTTP " + res.status);
+      }
+      setUsers(parseUserList(await res.text()));
+      try {
+        const who = await fetch("/grism/task/get_current_user", { credentials: "include" });
+        setMe(who.ok ? (extractUsername(await who.text()) || null) : null);
+      } catch { setMe(null); }
+    } catch (e) { setUsers([]); setAcctErr(String(e.message || e)); }
+  }, []);
+
+  /* Each account call posts JSON; on success reload the list rather than patching
+     it here, so what is shown is what the device actually holds. */
+  const acctPost = async (url, body, okKey) => {
+    setAcctBusy(true); setAcctErr(""); setAcctOk("");
+    try {
+      const res = await fetch(url, { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) throw new Error(text.trim().slice(0, 120) || "HTTP " + res.status);
+      setAcctOk(tr(okKey));
+      setTimeout(() => setAcctOk(""), 4000);
+      await loadUsers();
+      return true;
+    } catch (e) { setAcctErr(String(e.message || e)); return false; }
+    finally { setAcctBusy(false); }
+  };
+
+  // Below the state, not beside loadViews: the dependency array reads `users`,
+  // which render evaluates in place — declared later, that is a TDZ error and the
+  // whole Settings tab fails to render.
+  React.useEffect(() => { if (loggedIn && section === "auth" && users === null) loadUsers(); },
+    [loggedIn, section, users, loadUsers]);
+
   const [wait, setWait] = React.useState(null);
   const waitPhase = wait?.phase;
   React.useEffect(() => {
@@ -2024,6 +2108,81 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
         <div className="set-forms">
           {!views ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
             <p className="page-note">{tr("set.authNote")}</p>
+
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.acct")}</h3>
+            <p className="set-hint">{tr("set.acctNote")}</p>
+            {/* With remote auth on these accounts are only a fallback. Say so here,
+                or someone creates one and cannot work out why it is refused. */}
+            {internalAccountsNoteKey(views) &&
+              <p className="set-hint warn">{tr(internalAccountsNoteKey(views))}</p>}
+
+              {users === null ? <p className="sys-note dim">{tr("set.loading")}</p> : (
+                <table className="acct-table">
+                  <thead><tr><th>{tr("set.acctUser")}</th><th>{tr("set.acctRole")}</th><th /></tr></thead>
+                  <tbody>
+                    {users.length === 0 && <tr><td colSpan={3} className="dim">{tr("set.acctNone")}</td></tr>}
+                    {users.map((u) => (
+                      <tr key={u.name}>
+                        <td className="mono">{u.name}</td>
+                        <td>{u.role}</td>
+                        <td className="acct-act">
+                          {u.name === UNDELETABLE_USER
+                            ? <span className="dim">{tr("set.acctNoDelete")}</span>
+                            : <button className="del" disabled={acctBusy}
+                                onClick={() => setConfirm({ kind: "delUser", name: u.name })}>{tr("set.acctDelete")}</button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              <div className="set-grid">
+                <label className="set-field"><span>{tr("set.acctUser")}</span>
+                  <input value={newUser.name} autoComplete="off"
+                    onChange={(e) => setNewUser((o) => ({ ...o, name: e.target.value }))} /></label>
+                <label className="set-field"><span>{tr("set.acctPassword")}</span>
+                  <input type="password" value={newUser.pass} autoComplete="new-password"
+                    onChange={(e) => setNewUser((o) => ({ ...o, pass: e.target.value }))} /></label>
+                <label className="set-field"><span>{tr("set.acctConfirm")}</span>
+                  <input type="password" value={newUser.confirm} autoComplete="new-password"
+                    onChange={(e) => setNewUser((o) => ({ ...o, confirm: e.target.value }))} /></label>
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh"
+                  disabled={acctBusy || !!newUserProblem(newUser.name, newUser.pass, newUser.confirm, users ?? [])}
+                  onClick={async () => {
+                    if (await acctPost("/create_user",
+                      { Username: newUser.name.trim(), PasswordHash: await sha256Hex(newUser.pass) }, "set.acctCreated"))
+                      setNewUser({ name: "", pass: "", confirm: "" });
+                  }}>{tr("set.acctAdd")}</button>
+              </div>
+
+              <h3 className="sys-card-title">{tr("set.acctChangePw")}</h3>
+            {!me && <p className="set-hint warn">{tr("set.acctWhoUnknown")}</p>}
+              <div className="set-grid">
+                <label className="set-field"><span>{tr("set.acctOldPassword")}</span>
+                  <input type="password" value={pw.old} autoComplete="current-password"
+                    onChange={(e) => setPw((o) => ({ ...o, old: e.target.value }))} /></label>
+                <label className="set-field"><span>{tr("set.acctNewPassword")}</span>
+                  <input type="password" value={pw.next} autoComplete="new-password"
+                    onChange={(e) => setPw((o) => ({ ...o, next: e.target.value }))} /></label>
+                <label className="set-field"><span>{tr("set.acctConfirm")}</span>
+                  <input type="password" value={pw.confirm} autoComplete="new-password"
+                    onChange={(e) => setPw((o) => ({ ...o, confirm: e.target.value }))} /></label>
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh"
+                  disabled={acctBusy || !!changePasswordProblem(pw.old, pw.next, pw.confirm, me)}
+                  onClick={async () => {
+                    setPw({ old: "", next: "", confirm: "" });
+                    await changeOwnPassword(pw.old, pw.next);
+                  }}>{tr("set.acctChangePwGo")}</button>
+              </div>
+            {acctErr && <p className="set-hint err">{acctErr}</p>}
+            {acctOk && <p className="set-hint ok">{acctOk}</p>}
+          </section>
             {[["radius", "RADIUS", 1812], ["tacacs", "TACACS+", 49]].map(([key, label, defPort]) => (
               <section className="sys-card" key={key}>
                 <h3 className="sys-card-title">{label}</h3>
@@ -2491,8 +2650,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -2510,6 +2669,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
               if (k === "fwUpload") {
                 uploadAndWait("/grism/task/update", fwFile, "file",
                   tr("set.fwUpdating"), tr("set.fwUpdatingBody")); return;
+              }
+              if (k === "delUser") {
+                acctPost("/delete_user2", { Username: confirm.name, PasswordHash: "" }, "set.acctDeleted");
+                return;
               }
               if (k === "factory") {
                 fetch("/grism/task/restore", { method: "POST", credentials: "include" }).catch(() => {});

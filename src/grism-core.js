@@ -2321,6 +2321,85 @@ export function parseUpdateCheck(text) {
    the address appears once. */
 export const FACTORY_MGMT_IP = "192.168.1.150";
 
+/* ===================== internal accounts =====================
+   The device stores password hashes, never the password: every account call
+   sends a plain SHA-256 hex digest of it, unsalted. Web Crypto is async, so is
+   this. Available in the browser and under Node, so it can be tested.
+
+   Verified against the device's own account: sha256("packetx") is
+   5ba7ad93c78984d6afe97b5e053865165019fd10e1faaec2e5831731ded3a30c. */
+export async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(String(text ?? ""));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/* The device answers an unauthenticated request to the account endpoints with
+   404, not 401. Reading that as "this firmware has no account management" was
+   wrong — every device tested serves them once signed in — and it turned a
+   lapsed session into a message telling the user the feature did not exist.
+   Treat both as "sign in again"; anything else reports its status. */
+export function accountsErrorKey(status) {
+  return (status === 404 || status === 401) ? "set.acctSignIn" : null;
+}
+
+/* This account is the device's own and the server refuses to delete it; say so
+   in the UI rather than offering a button that cannot work. */
+export const UNDELETABLE_USER = "packetx";
+
+/* GET /list_user answers {"user_list":[["packetx","admin"], ...]} — pairs, not
+   objects. Anything malformed is dropped rather than rendered as "undefined". */
+export function parseUserList(payload) {
+  let data = payload;
+  if (typeof data === "string") { try { data = JSON.parse(data); } catch { return []; } }
+  const rows = data?.user_list;
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r) => Array.isArray(r) && typeof r[0] === "string" && r[0].trim())
+    .map((r) => ({ name: r[0].trim(), role: typeof r[1] === "string" ? r[1] : "" }));
+}
+
+/* Why a new account cannot be created, or null when it can. Checked here so the
+   button can stay disabled instead of relying on the server to say no. */
+export function newUserProblem(name, pass, confirm, existing = []) {
+  const n = String(name ?? "").trim();
+  if (!n) return "name required";
+  if (!/^[A-Za-z0-9._-]+$/.test(n)) return "letters, digits, . _ - only";
+  if (existing.some((u) => u.name.toLowerCase() === n.toLowerCase())) return "already exists";
+  if (!pass) return "password required";
+  if (pass !== confirm) return "passwords do not match";
+  return null;
+}
+
+/* With RADIUS or TACACS+ login enabled the device authenticates against that
+   server, and these local accounts only get a look in when it cannot be reached.
+   Creating one and finding it rejected is a confusing way to learn that, so the
+   UI says it up front. */
+export function internalAccountsNoteKey({ radiusLogin, tacacsLogin } = {}) {
+  // One message whichever is on. Naming the server, and having a separate
+  // wording for "both", read as though internal and remote accounts worked side
+  // by side. They do not: remote auth takes over entirely and these are only
+  // reachable when it is not.
+  return (radiusLogin || tacacsLogin) ? "set.acctFallbackOnly" : null;
+}
+
+/* Same, for changing the signed-in account's own password.
+
+   `username` must be the account the device says is signed in. The cookie that
+   carries it is HttpOnly, so document.cookie cannot see it — reading it there
+   and falling back to a default meant every password change was aimed at that
+   default account instead of the user's own. Without a name, refuse. */
+export function changePasswordProblem(oldPass, next, confirm, username) {
+  if (!String(username ?? "").trim()) return "signed-in account unknown";
+  if (!oldPass) return "current password required";
+  if (!next) return "new password required";
+  if (next !== confirm) return "passwords do not match";
+  if (next === oldPass) return "new password matches the old one";
+  return null;
+}
+
+
+
 /* ===================== instant packet capture =====================
    A short-lived capture: one output writing to a storage volume, and one chain
    feeding it from the chosen ingress ports. It is submitted as a complete <run>
