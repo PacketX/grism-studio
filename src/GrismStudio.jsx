@@ -2519,7 +2519,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [] 
                           phase: "updating", factory: true }); return;
               }
               if (k === "fwOnline") {
-                fetch("/grism/task/update_download_update", { method: "POST", credentials: "include" }).catch(() => {});
+                // GET, like every other update endpoint. This one is a Django view
+                // and its route is not wrapped in csrf_exempt, unlike the POST
+                // routes next to it in urls.py — so a POST without a token was
+                // rejected by CsrfViewMiddleware before the handler ever ran, and
+                // the install silently never started. The handler reads nothing
+                // from the request and does not check the method.
+                fetch("/grism/task/update_download_update", { credentials: "include" }).catch(() => {});
                 setWait({ title: tr("set.fwUpdating"), body: tr("set.fwUpdatingBody"), phase: "updating" }); return;
               }
               if (k === "flow") {

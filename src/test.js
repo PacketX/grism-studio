@@ -13,6 +13,7 @@ import * as C from "./grism-core.js";
 import { DOMParser as XmlDomParser } from "linkedom";
 C.setDomParser(XmlDomParser);   // browsers have DOMParser; Node needs one injected
 import { I18N, makeT } from "./i18n.js";
+import { readFileSync } from "node:fs";
 
 let _pass = 0, _fail = 0;
 const check = (name, cond) => { if (cond) { _pass++; } else { _fail++; console.log("  FAIL:", name); } };
@@ -363,6 +364,19 @@ for (const lang of ["en", "zh-TW"])
     !!I18N[lang]["set.factoryResetBody"] && I18N[lang]["set.factoryResetBody"] !== I18N[lang]["set.bkRestoringBody"]);
 for (const lang of ["en", "zh-TW"])
   check(`${lang} has the factory address label`, !!I18N[lang]["set.factoryIp"]);
+
+group("device request methods");
+{
+  // The device's Django routes are individually wrapped in csrf_exempt in
+  // urls.py. update_download_update is not, so a POST to it is rejected by
+  // CsrfViewMiddleware before the handler runs and the install never starts.
+  // Its siblings (update_check, update_download, update_download_check) are all
+  // plain GETs; this one has to be too.
+  const jsx = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+  const call = jsx.match(/fetch\("\/grism\/task\/update_download_update"[^)]*\)/);
+  check("update_download_update is still called", !!call);
+  check("update_download_update is not POSTed", !!call && !/method:\s*"POST"/.test(call[0]));
+}
 
 group("system status");
 {
