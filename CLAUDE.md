@@ -32,6 +32,53 @@ Dev deps: `linkedom eslint globals`, all declared in `package.json`, so a fresh
 `test.js` injects linkedom's `DOMParser` into core via `setDomParser()`, so the
 same parsing code runs under Node as in the browser.
 
+## Branches and where a build goes
+
+`master` holds the source. `site` carries no source at all — just `docs/`, the
+built app as GitHub Pages serves it at `packetx.github.io/grism-studio/`.
+Publishing is replacing `docs/` with a fresh `dist/` and committing on `site`;
+neither branch has a workflow that does it.
+
+Bump `STUDIO_VERSION`, `npm run build`, then either or both of:
+
+```bash
+# onto a device, beside the firmware's copy
+tar -C dist -czf grism-studio.tgz .
+scp grism-studio.tgz root@<device>:/tmp/
+ssh root@<device> 'tar -C /usr/local/www/var/www/grism-studio -xzf /tmp/grism-studio.tgz'
+
+# onto the published site
+git switch site && git rm -rq docs && cp -a dist docs && git add docs
+```
+
+Asset filenames are content-hashed, so unpacking over a device leaves every
+previous build behind — 5.8 MB of dead bundles had accumulated before anyone
+noticed. Delete whatever `index.html` no longer references, deriving the keep-list
+from the file rather than hardcoding it, and bail out if that list comes back
+empty.
+
+The same `dist/` is also packaged into the firmware: `grism-studio.tgz` in the
+GRISM repo root, unpacked by its `build.sh`. A hand-deployed bundle is replaced
+the next time that firmware is flashed, so anything meant to last has to be
+rebuilt into the firmware too.
+
+## Verifying in a browser
+
+The suite covers `grism-core.js`; anything about rendering, layout or a device
+flow needs a real browser. Chrome plus `puppeteer-core` driving it is enough, and
+catches what the suite structurally cannot — a state that is set but never
+rendered, a field too narrow for its content, an overlay that does not actually
+block clicks.
+
+Neither is a declared dependency; install them where you need them
+(`npm i -D puppeteer-core`, and a Chrome binary for `executablePath`).
+
+Two things worth copying from past checks: serve `dist/` under a `/grism-studio/`
+prefix and 404 everything else, which is what reveals path bugs that the device's
+nginx would paper over; and intercept `/grism/**` so device flows can be driven
+without a device — including failure, by aborting the requests to simulate one
+going away.
+
 ## How the pieces fit
 
 **Document model.** `doc = { filters, inputs, outputs, actions, chains }`.
@@ -61,6 +108,14 @@ firmware's `doc/filter.md`, which had drifted and listed names the device never
 accepted; that table is gone now, so transcribe from `fc.c`. (A third copy under
 `tools/www/GRISM-T_console-v3/` is legacy — leave it alone.)
 
+Offering a name the device does not implement is worse than omitting it: the
+device logs `filter find type unsupport`, drops that `<find>`, and runs a filter
+with one fewer condition than the UI showed — matching more traffic than asked,
+invisibly. `gtp.imsi` sat in the list that way for a long time. Check `g_ftype[]`
+before adding anything, and note that being *in* `g_ftype[]` is not sufficient
+either: six entries are there but unusable from XML, and the note on `FIELDS`
+records which and why. The firmware repo's own CLAUDE.md covers that side.
+
 ## Conventions
 
 - Logic goes in `grism-core.js` and gets a test. The JSX composes, it doesn't compute.
@@ -78,6 +133,33 @@ Loading a device config that legitimately has no `<chain>`, then exporting or
 submitting, silently added forwarding the device never had. Both tabs already
 render their own empty state, so the parser now returns exactly what the XML
 said. Tests guard the round trip.
+
+**State that is set and ticking is not state that is shown.** The firmware
+update, restore and factory-reset flows set a `wait` state and ran a countdown
+effect on it for a long time, and `powered` likewise for reboot and shutdown —
+but no JSX ever rendered either, so every one of those flows looked like it had
+done nothing at all. `no-undef` cannot see this: the names are defined and are
+read by the effect. Only opening the page does.
+
+**A hold has to start before the slow part, not after it.** `uploadAndWait` only
+reached `setWait` once the POST resolved, and only on success. A firmware image
+is tens of megabytes, so the page stayed live for the whole transfer, and a
+device that dropped the connection while applying landed in the catch, where the
+hold never appeared. It now holds from the first byte and lets go only on a real
+HTTP status, which means the device answered and refused.
+
+**Report what you can observe, not a guess.** That same overlay used to promise a
+five-minute countdown. How long an image takes to apply varies, and the clock
+kept counting after the device was already back. It now polls `get_version` and
+reports installing / restarting / complete — reaching complete only after having
+seen the device go away, since it still answers for the first seconds of an
+update and would otherwise flash success before anything had happened.
+
+**Paths must be relative to the Vite base.** `index.html` referenced
+`/data/favicon-*.ico`, which only the device's nginx serves; on Pages that
+resolves against the domain root and 404s. The `site` branch even carried a
+`docs/data/` copy that the published path could never reach. Reference bundled
+assets as `./…` so they resolve under `/grism-studio/` wherever it is served.
 
 **`cid` and node ids are not configuration.** They're React keys, regenerated on
 every parse. `diffDoc` therefore compares each item's *serialised XML*, not its
