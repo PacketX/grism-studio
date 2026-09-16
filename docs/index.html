@@ -2,14 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="/data/favicon-32.ico" sizes="32x32" type="image/vnd.microsoft.icon" />
-    <link rel="icon" href="/data/favicon-48.ico" sizes="48x48" type="image/vnd.microsoft.icon" />
-    <link rel="icon" href="/data/favicon-96.ico" sizes="96x96" type="image/vnd.microsoft.icon" />
-    <link rel="icon" href="/data/favicon-128.ico" sizes="128x128" type="image/vnd.microsoft.icon" />
+    <!-- Bundled and referenced relative to the Vite base, so the icons resolve
+         both on the device and on the standalone GitHub Pages build. They used
+         to point at an absolute /data/... served only by the device's nginx,
+         which 404s everywhere else. -->
+    <link rel="icon" href="./favicon-32.ico" sizes="32x32" type="image/vnd.microsoft.icon" />
+    <link rel="icon" href="./favicon-48.ico" sizes="48x48" type="image/vnd.microsoft.icon" />
+    <link rel="icon" href="./favicon-96.ico" sizes="96x96" type="image/vnd.microsoft.icon" />
+    <link rel="icon" href="./favicon-128.ico" sizes="128x128" type="image/vnd.microsoft.icon" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GRISM Studio</title>
-    <script type="module" crossorigin src="/grism-studio/assets/index-C1fV7J4y.js"></script>
-    <link rel="stylesheet" crossorigin href="/grism-studio/assets/index-CD3yP6_9.css">
+    <script type="module" crossorigin src="/grism-studio/assets/index-D5X2kkC8.js"></script>
+    <link rel="stylesheet" crossorigin href="/grism-studio/assets/index-vWE8axlp.css">
   </head>
   <body>
     <div id="root"></div>
