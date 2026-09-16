@@ -1235,6 +1235,26 @@ export function parseRun(xmlText) {
   return { doc: { filters, inputs, outputs, actions, chains }, warnings };
 }
 
+/* A device that was never configured has no run.xml at all — the web server
+   answers 404 — and one whose configuration was cleared serves an empty body or
+   a bare <run></run>. None of those is an error, and none of them should leave
+   the previous document on screen: that is the starter template on a fresh page,
+   which would then be what Export and Submit act on. All three mean the same
+   thing, so say so once, here, and let the caller render an empty document.
+
+   `empty` is also true for a well-formed <run> that simply holds nothing, so the
+   UI can tell "the device has no configuration" apart from "loaded 12 filters". */
+export function parseRunOrEmpty(text) {
+  const blank = { filters: [], inputs: [], outputs: [], actions: [], chains: [] };
+  if (!String(text ?? "").trim())
+    return { doc: blank, warnings: [], empty: true };
+  const parsed = parseRun(text);
+  const d = parsed.doc;
+  const empty = ["filters", "inputs", "outputs", "actions", "chains"]
+    .every((k) => (d[k]?.length ?? 0) === 0);
+  return { ...parsed, empty };
+}
+
 /* ===================== XML formatter (pure text re-indent) =====================
    Beautifies XML by recomputing indentation from tag open/close, WITHOUT
    parsing into the model — so every element is preserved, including ones the

@@ -192,6 +192,31 @@ group("run round trip");
 }
 
 /* ---------- every template is valid and round trips ---------- */
+group("empty device config");
+// A device that was never configured 404s; one that was cleared serves an empty
+// body. Neither must leave the starter template on screen as if it came from the
+// device -- Export and Submit would then act on the template.
+for (const [label, text] of [["404 (no body)", ""], ["empty body", "   \n\t "],
+                             ["bare run", "<run></run>"], ["self-closing run", "<run/>"]]) {
+  const r = C.parseRunOrEmpty(text);
+  check(`${label} yields an empty document`,
+    r.empty === true && r.doc.filters.length === 0 && r.doc.chains.length === 0 &&
+    r.doc.inputs.length === 0 && r.doc.outputs.length === 0 && r.doc.actions.length === 0);
+  check(`${label} is not an error`, Array.isArray(r.warnings));
+}
+check("parseRun still throws on empty input, so the guard has to be parseRunOrEmpty",
+  (() => { try { C.parseRun(""); return false; } catch { return true; } })());
+{
+  const real = `<run><filter id="1" sessionBase="no"><and>` +
+               `<find name="ip.src" relation="==" content="10.0.0.1" /></and></filter></run>`;
+  const r = C.parseRunOrEmpty(real);
+  check("a real config is not flagged empty", r.empty === false && r.doc.filters.length === 1);
+}
+check("an empty document serialises to an empty run",
+  !C.serializeRun(C.parseRunOrEmpty("").doc).includes("<filter"));
+check("and stays empty through a round trip",
+  C.parseRunOrEmpty(C.serializeRun(C.parseRunOrEmpty("").doc)).empty === true);
+
 group("templates");
 for (const tpl of C.TEMPLATES) {
   const doc = C.normalizeDoc(tpl.make());

@@ -23,7 +23,7 @@ import {
   buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
   dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
-  summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun,
+  summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -300,9 +300,13 @@ export default function GrismStudio() {
     setLoad({ state: "loading", msg: "" });
     try {
       const res = await fetch("/grism/task/get_running_file?filename=run.xml", { credentials: "include" });
-      if (!res.ok) throw new Error(`device responded ${res.status}`);
-      const text = await res.text();
-      const { doc: parsed, warnings } = parseRun(text);
+      // 404 means the device has no run.xml, which is a state, not a failure.
+      // Anything else really is one. (If a device were ever to lack the endpoint
+      // entirely it would read as "no configuration" here — still better than
+      // leaving the starter template on screen as if it came from the device.)
+      if (!res.ok && res.status !== 404) throw new Error(`device responded ${res.status}`);
+      const text = res.ok ? await res.text() : "";
+      const { doc: parsed, warnings, empty } = parseRunOrEmpty(text);
       const normalized = normalizeDoc(parsed);
       docRef.current = normalized; setDocRaw(normalized);
       resetHistory();                          // the load itself is not undoable
@@ -312,9 +316,21 @@ export default function GrismStudio() {
       setActiveOutput(parsed.outputs[0]?.id ?? 1);
       setActiveAction(parsed.actions[0]?.id ?? 1);
       setActiveChain(parsed.chains[0]?.cid ?? null);
-      setLoad({ state: "ok", msg: warnings.length ? `loaded with ${warnings.length} warning${warnings.length>1?"s":""}` : "loaded running config", warnings });
+      setLoad({ state: "ok", empty, msg: warnings.length ? `loaded with ${warnings.length} warning${warnings.length>1?"s":""}` : "loaded running config", warnings });
     } catch (e) {
-      setLoad({ state: "error", msg: e.message || "load failed" });
+      // The device answered with something unreadable — truncated, not XML at
+      // all, "XML is not well-formed". Whatever it is, it is not the starter
+      // template, and leaving that on screen makes it what Export and Submit
+      // would act on. Clear to an empty document instead. The banner keeps the
+      // failure visible and warns that the device's own configuration was not
+      // read, so submitting from here would replace whatever is still on it.
+      const blank = normalizeDoc({ filters: [], inputs: [], outputs: [], actions: [], chains: [] });
+      docRef.current = blank; setDocRaw(blank);
+      resetHistory();
+      setDocSource("new");
+      setBaseline(serializeRun(blank)); setBaselineDoc(blank);
+      setActiveFilter(null); setActiveOutput(null); setActiveAction(null); setActiveChain(null);
+      setLoad({ state: "error", cleared: true, msg: e.message || "load failed" });
     }
   }, [resetHistory]);
   // whether the current document has unsaved edits worth confirming before we
@@ -688,8 +704,12 @@ export default function GrismStudio() {
           )}
         </div>
       </header>
-      {load.state === "error" && <div className="load-banner err">{t("banner.loadFailed")}: {load.msg}. {t("banner.checkSignedIn")}</div>}
+      {load.state === "error" && <div className="load-banner err">{t("banner.loadFailed")}: {load.msg}.{" "}
+        {load.cleared ? t("banner.clearedNotDevice") : t("banner.checkSignedIn")}</div>}
       {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — {t("banner.someUnrecognised")}</div>}
+      {/* An empty canvas right after signing in is ambiguous — say the device has
+          nothing configured, so it does not read as a load that silently failed. */}
+      {load.state === "ok" && load.empty && <div className="load-banner">{t("banner.deviceEmpty")}</div>}
 
       {login.open && (
         <div className="tmpl-scrim" onClick={() => setLogin((l) => ({ ...l, open: false }))}>

@@ -342,7 +342,9 @@ export const I18N = {
     "confirm.replaceRunning": "Replace everything with the device's running config.",
     "confirm.replaceTemplate": "Replace everything with the template.",
     "banner.loadFailed": "Couldn't load running config",
+    "banner.clearedNotDevice": "Showing an empty document rather than the template you had. The device was not read, so it may still be running a configuration — submitting from here would replace it.",
     "banner.checkSignedIn": "Check you're signed in to the device.",
+    "banner.deviceEmpty": "The device has no configuration — this is an empty document, not a failed load.",
     "banner.someUnrecognised": "some elements weren't recognised and may need review.",
     "tmpl.modalTitle": "Start from a template",
     // filter editor
@@ -740,7 +742,9 @@ export const I18N = {
     "confirm.replaceRunning": "以裝置執行中的設定取代全部。",
     "confirm.replaceTemplate": "以範本取代全部。",
     "banner.loadFailed": "無法載入執行中設定",
+    "banner.clearedNotDevice": "目前顯示的是空白文件,不是原本的範本。裝置的設定並未讀取成功,它上面可能仍有設定 — 從這裡送出會覆蓋掉。",
     "banner.checkSignedIn": "請確認已登入裝置。",
+    "banner.deviceEmpty": "裝置上沒有任何設定 — 這是一份空白文件,不是載入失敗。",
     "banner.someUnrecognised": "部分元素無法辨識,可能需要檢查。",
     "tmpl.modalTitle": "從範本開始",
     // filter editor
