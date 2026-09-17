@@ -1296,6 +1296,14 @@ group("extra running-config files");
             { name: "run2.xml", size: 94 }, { name: "common.js", size: 4890 }] };
   const listed = C.extraRunFilesFrom(payload);
   check("keeps only the extra xml files", listed.length === 2 && listed[0].name === "run1.xml");
+  // the device lists alphabetically, which puts run10 between run1 and run2
+  check("orders by number, not alphabetically",
+    C.extraRunFilesFrom({ files: [{ name: "run10.xml", size: 1 }, { name: "run2.xml", size: 1 },
+                                  { name: "run1.xml", size: 1 }, { name: "run15.xml", size: 1 }] })
+      .map((f) => f.name).join() === "run1.xml,run2.xml,run10.xml,run15.xml");
+  check("orders an older device's listing too",
+    C.extraRunFilesFrom({ file_list: ["run10.xml", "run2.xml"] })
+      .map((f) => f.name).join() === "run2.xml,run10.xml");
   check("carries the sizes through", listed[0].size === 2230654 && listed[1].size === 94);
   const legacy = C.extraRunFilesFrom({ file_list: ["run1.xml", "run.xml"] });
   check("an older device without sizes still lists", legacy.length === 1 && legacy[0].size === null);

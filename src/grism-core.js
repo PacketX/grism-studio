@@ -2628,15 +2628,22 @@ export const EXTRA_RUN_FILE_EDIT_LIMIT = 1024 * 1024;
    as {name, size}. Newer devices send a files array carrying the sizes; older
    ones only send file_list, and a missing size shows as unknown rather than
    pretending the file is empty. */
+export const extraRunFileIndex = (name) => {
+  const m = /^run(\d{1,2})\.xml$/.exec(String(name ?? "").trim());
+  return m ? Number(m[1]) : 0;
+};
+
 export const extraRunFilesFrom = (payload) => {
   const withSizes = Array.isArray(payload?.files) ? payload.files : null;
-  if (withSizes) {
-    return withSizes
-      .filter((f) => isExtraRunFile(f?.name))
-      .map((f) => ({ name: String(f.name).trim(), size: Number.isFinite(Number(f.size)) ? Number(f.size) : null }));
-  }
-  const list = Array.isArray(payload?.file_list) ? payload.file_list : [];
-  return list.filter(isExtraRunFile).map((name) => ({ name, size: null }));
+  const files = withSizes
+    ? withSizes
+        .filter((f) => isExtraRunFile(f?.name))
+        .map((f) => ({ name: String(f.name).trim(), size: Number.isFinite(Number(f.size)) ? Number(f.size) : null }))
+    : (Array.isArray(payload?.file_list) ? payload.file_list : [])
+        .filter(isExtraRunFile).map((name) => ({ name, size: null }));
+  // The device lists names alphabetically, which puts run10 between run1 and
+  // run2. Order by the number so the pane reads run1…run15.
+  return files.sort((a, b) => extraRunFileIndex(a.name) - extraRunFileIndex(b.name));
 };
 
 /* Too big to open, or size unknown so we must not guess. */

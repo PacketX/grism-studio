@@ -5343,6 +5343,37 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
 }
 
 
+/* Poll /grism/task/get_status once a second until the device reports it has
+   finished applying. Shared by the run.xml submit and the extra-files pane so
+   both hold the screen the same way and neither can spin forever. Resolves to
+   a warning to show the user, or "" when it completed cleanly. */
+async function waitForDeviceApply(onProgress) {
+  const POLL_MS = 1000, TIMEOUT_MS = 90000, MAX_FAILS = 5;
+  const started = Date.now();
+  let fails = 0;
+  // small initial delay before the first status check
+  await new Promise((r) => setTimeout(r, POLL_MS));
+  while (true) {
+    if (Date.now() - started > TIMEOUT_MS) {
+      return "Apply timed out — the device is still working or unreachable. Check its status directly.";
+    }
+    try {
+      const res = await fetch("/grism/task/get_status", { credentials: "include" });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = await res.json();
+      fails = 0;
+      if (!data.loading) return "";
+      onProgress?.(data.message || "applying configuration…");
+    } catch {
+      fails += 1;
+      if (fails >= MAX_FAILS) {
+        return "Lost contact with the device while applying. Check that you're signed in and the device is reachable.";
+      }
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+}
+
 /* ============================================================
    Other config files (run1.xml … run15.xml)
 
@@ -5357,7 +5388,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
    ============================================================ */
 function OtherConfigFiles({ t }) {
   const tr = t || ((k) => k);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);   // visible on arrival; still collapsible
   const [files, setFiles] = useState(null);      // null until first load
   const [listErr, setListErr] = useState(false);
   const [busy, setBusy] = useState("");          // name currently being read
@@ -5365,6 +5396,7 @@ function OtherConfigFiles({ t }) {
   const [state, setState] = useState({ kind: "idle", msg: "" });
   const [adding, setAdding] = useState(null);    // chosen name while adding
   const [confirmDel, setConfirmDel] = useState(null);
+  const [apply, setApply] = useState({ active: false, msg: "", warn: "" });
 
   const fetchList = async () => {
     const res = await fetch("/grism/task/get_running_filelist", { credentials: "include" });
@@ -5426,10 +5458,15 @@ function OtherConfigFiles({ t }) {
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       setEditing(null); setAdding(null);
+      // the device applies the file the same way it applies run.xml, so hold
+      // the screen until it says it has finished
+      setApply({ active: true, msg: tr("ex.applying"), warn: "" });
+      const warn = await waitForDeviceApply((msg) => setApply({ active: true, msg, warn: "" }));
+      setApply({ active: false, msg: "", warn });
       setState({ kind: "sending", msg: "" });
       await loadUntilPresent(name);
-      setState({ kind: "ok", msg: tr("xf.saved") });
-      setTimeout(() => setState({ kind: "idle", msg: "" }), 2500);
+      setState(warn ? { kind: "err", msg: warn } : { kind: "ok", msg: tr("xf.saved") });
+      if (!warn) setTimeout(() => setState({ kind: "idle", msg: "" }), 2500);
     } catch (e) {
       setState({ kind: "err", msg: tr("xf.submitFailed") + ": " + (e.message || e) });
     }
@@ -5458,6 +5495,15 @@ function OtherConfigFiles({ t }) {
 
   return (
     <section className="xfiles">
+      {apply.active && (
+        <div className="apply-overlay">
+          <div className="apply-card">
+            <div className="apply-spinner" />
+            <div className="apply-msg">{apply.msg}</div>
+            <div className="apply-sub">{tr("ex.applyingToDevice")}</div>
+          </div>
+        </div>
+      )}
       <button className="xf-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
         {tr("xf.title")}
         {files && files.length > 0 && <span className="xf-count">{files.length}</span>}
@@ -6425,43 +6471,16 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
     }
   };
 
-  // Poll /grism/task/get_status once a second until loading is false.
   // Locks the screen with an overlay; unlocks on completion, timeout, or
   // repeated request failure so the UI can never get stuck.
   const pollApplyStatus = async () => {
-    const POLL_MS = 1000, TIMEOUT_MS = 90000, MAX_FAILS = 5;
     setApply({ active: true, msg: "applying configuration…", warn: "" });
-    const started = Date.now();
-    let fails = 0;
-    // small initial delay before the first status check
-    await new Promise((r) => setTimeout(r, POLL_MS));
-    while (true) {
-      if (Date.now() - started > TIMEOUT_MS) {
-        setApply({ active: false, msg: "", warn: "Apply timed out — the device is still working or unreachable. Check its status directly." });
-        return;
-      }
-      try {
-        const res = await fetch("/grism/task/get_status", { credentials: "include" });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = await res.json();
-        fails = 0;
-        if (!data.loading) { // done
-          setApply({ active: false, msg: "", warn: "" });
-          setSubmit({ state: "ok", msg: "applied" });
-          onApplied?.(); // config is now live on the device → clear dirty state
-          setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
-          return;
-        }
-        setApply({ active: true, msg: data.message || "applying configuration…", warn: "" });
-      } catch {
-        fails += 1;
-        if (fails >= MAX_FAILS) {
-          setApply({ active: false, msg: "", warn: "Lost contact with the device while applying. Check that you're signed in and the device is reachable." });
-          return;
-        }
-      }
-      await new Promise((r) => setTimeout(r, POLL_MS));
-    }
+    const warn = await waitForDeviceApply((msg) => setApply({ active: true, msg, warn: "" }));
+    setApply({ active: false, msg: "", warn });
+    if (warn) return;
+    setSubmit({ state: "ok", msg: "applied" });
+    onApplied?.(); // config is now live on the device → clear dirty state
+    setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
   };
 
   const submitLabel = problems.length ? tr("ex.fixToSubmit")
