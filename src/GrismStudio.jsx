@@ -5454,9 +5454,11 @@ async function waitForDeviceApply(onProgress) {
    Loading one replaces the whole working configuration, so it goes through a
    confirmation the same way submitting does.
    ============================================================ */
-function SavedConfigs({ runXml, onLoadXml, lang, t }) {
+/* Opened from the Export command row, so the caller owns "open" -- the panel
+   sits with edit/format/copy/submit rather than as a strip at the foot of the
+   page. */
+function SavedConfigs({ runXml, onLoadXml, lang, open, t }) {
   const tr = t || ((k) => k);
-  const [open, setOpen] = useState(false);
   const [files, setFiles] = useState(null);
   const [listErr, setListErr] = useState(false);
   const [state, setState] = useState({ kind: "idle", msg: "" });
@@ -5545,14 +5547,10 @@ function SavedConfigs({ runXml, onLoadXml, lang, t }) {
     } catch (e) { setState({ kind: "err", msg: tr("sv.loadFailed") + ": " + (e.message || e) }); }
   };
 
+  if (!open) return null;
   return (
-    <section className="xfiles saved">
-      <button className="xf-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
-        {tr("sv.title")}
-        {files && files.length > 0 && <span className="xf-count">{files.length}</span>}
-        <span className="xf-chev">{open ? tr("xf.hide") : tr("xf.show")}</span>
-      </button>
-      {open && (
+    <section className="xfiles saved open">
+      {true && (
         <div className="xf-body">
           <p className="xf-note">{tr("sv.note")}</p>
           {listErr && <p className="submit-note err">{tr("sv.listFailed")}</p>}
@@ -6712,6 +6710,7 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
   const [apply, setApply] = useState({ active: false, msg: "", warn: "" }); // device-side apply polling
   const [edit, setEdit] = useState(null); // null = read-only; string = editing draft
   const [applyErr, setApplyErr] = useState("");
+  const [showSaved, setShowSaved] = useState(false);
   const [applyWarn, setApplyWarn] = useState([]);
   const copy = () => { if (problems.length) return; navigator.clipboard?.writeText(runXml); setCopied(true); setTimeout(() => setCopied(false), 1400); };
 
@@ -6823,12 +6822,15 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
           <div className="xb-actions">
             {/* same button order in both states, and the same order the device
                 settings page uses: edit/cancel · format · copy · primary action */}
+            <button className={"copy-btn" + (showSaved ? " on" : "")}
+              onClick={() => setShowSaved((v) => !v)}>{tr("sv.title")}</button>
             <button className="copy-btn" onClick={editing ? cancelEdit : startEdit}>
               {editing ? tr("ex.cancel") : tr("ex.edit")}</button>
             <button className="copy-btn" disabled={!editing} onClick={formatEdit}>{tr("ex.format")}</button>
             <button className="copy-btn" disabled={!editing && problems.length > 0}
               onClick={() => { if (editing) { navigator.clipboard?.writeText(edit); setCopied(true); setTimeout(() => setCopied(false), 1400); } else copy(); }}>
               {copied ? tr("ex.copied") : (!editing && problems.length) ? tr("ex.fixToCopy") : tr("ex.copy")}</button>
+            {loggedIn && <SavedConfigs runXml={runXml} onLoadXml={onApplyXml} lang={lang} open={showSaved} t={t} />}
             {editing
               ? <button className="submit-btn" disabled={!!editErr} onClick={applyEdit}>{tr("ex.applyChanges")}</button>
               : loggedIn && (
@@ -6871,7 +6873,6 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
         </ul>}
         {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">{tr("ex.allValidate")}</p>}
       </aside>
-      {loggedIn && <SavedConfigs runXml={runXml} onLoadXml={onApplyXml} lang={lang} t={t} />}
       {loggedIn && <OtherConfigFiles t={t} />}
     </div>
   );

@@ -293,7 +293,12 @@
 .add-filter-group{margin-top:8px; padding:10px; background:var(--panel); border:1px solid var(--line-2); border-radius:8px;}
 .add-filter-label{display:block; font-size:10.5px; color:var(--txt-dim); margin-bottom:7px;}
 .add-filter-btns{display:flex; flex-direction:column; gap:6px;}
-.add-filter-btns .primary{width:100%; font-size:11.5px;}
+/* Inserting a filter is an ordinary edit, not the page's main action. Filled
+   green made two of them shout louder than "submit to device" ever does, so
+   they are outlined in the accent instead. */
+.add-filter-btns .primary{width:100%; font-size:11.5px; background:transparent;
+  border:1px solid var(--accent); color:var(--accent); font-weight:600;}
+.add-filter-btns .primary:hover{background:rgba(var(--accent-rgb),.12); border-color:var(--accent);}
 .undo-btn{background:var(--panel); border:1px solid var(--line-2); color:var(--txt-dim); border-radius:6px; padding:4px 10px; font-size:13px; font-family:var(--mono); line-height:1;}
 .undo-btn:hover:not(:disabled){border-color:var(--accent); color:var(--accent);}
 .undo-btn:disabled{opacity:.35; cursor:not-allowed;}
@@ -405,7 +410,10 @@
 .rule-note b.match{color:var(--match);} .rule-note b.notmatch{color:var(--notmatch);}
 
 /* ---- export ---- */
-.export-layout{flex:1; display:grid; grid-template-columns:1fr 340px; min-height:0; position:relative; gap:16px; padding:20px 24px; box-sizing:border-box;}
+/* overflow-y:auto because the saved-config and other-file sections are extra
+   rows: without it they sat below the fold with no way to reach them. */
+.export-layout{flex:1; display:grid; grid-template-columns:1fr 340px; min-height:0; position:relative;
+  gap:16px; padding:20px 24px; box-sizing:border-box; overflow-y:auto;}
 .apply-overlay{position:fixed; inset:0; z-index:50; background:rgba(5,8,11,.78); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center;}
 .gs-root.light .apply-overlay{background:rgba(40,55,70,.55);}
 .apply-card{display:flex; flex-direction:column; align-items:center; gap:14px; background:var(--panel); border:1px solid var(--line-2); border-radius:14px; padding:32px 40px; box-shadow:0 24px 60px -20px rgba(0,0,0,.6);}
@@ -1264,3 +1272,13 @@ a.copy-btn{display:inline-block; text-decoration:none; line-height:1.7;}
 .sv-desc-input{flex:1; min-width:12ch; background:var(--panel-2); color:var(--txt);
   border:1px solid var(--line-2); border-radius:6px; padding:3px 7px; font-family:inherit; font-size:12px;}
 .sv-list .xf-size{flex:0 0 auto; white-space:nowrap;}
+
+/* Saved configurations, opened from the command row rather than a strip at the
+   foot of the page. Bounded height so a long list cannot push the XML off
+   screen. */
+.xfiles.saved.open{grid-column:auto; border:none; border-bottom:1px solid var(--line);
+  padding:0; margin:0; background:var(--panel-2);}
+.xfiles.saved.open .xf-body{padding:10px 14px 12px; max-height:38vh; overflow:auto;}
+.copy-btn.on{border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),.12);}
+/* the other-files editor is the tall one; keep it inside the scrolling pane */
+.xf-edit .xml-editor{height:min(38vh, 340px);}
