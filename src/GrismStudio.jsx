@@ -6847,8 +6847,8 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
           <div className="xb-actions">
             {/* same button order in both states, and the same order the device
                 settings page uses: edit/cancel · format · copy · primary action */}
-            <button className={"copy-btn" + (showSaved ? " on" : "")}
-              onClick={() => setShowSaved((v) => !v)}>{tr("sv.title")}</button>
+            {loggedIn && <button className={"copy-btn" + (showSaved ? " on" : "")}
+              onClick={() => setShowSaved((v) => !v)}>{tr("sv.title")}</button>}
             <button className="copy-btn" onClick={editing ? cancelEdit : startEdit}>
               {editing ? tr("ex.cancel") : tr("ex.edit")}</button>
             <button className="copy-btn" disabled={!editing} onClick={formatEdit}>{tr("ex.format")}</button>
