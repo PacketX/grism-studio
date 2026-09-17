@@ -5388,7 +5388,7 @@ async function waitForDeviceApply(onProgress) {
    ============================================================ */
 function OtherConfigFiles({ t }) {
   const tr = t || ((k) => k);
-  const [open, setOpen] = useState(true);   // visible on arrival; still collapsible
+  const [open, setOpen] = useState(false);   // the strip is visible; the list unfolds on demand
   const [files, setFiles] = useState(null);      // null until first load
   const [listErr, setListErr] = useState(false);
   const [busy, setBusy] = useState("");          // name currently being read
@@ -5487,11 +5487,17 @@ function OtherConfigFiles({ t }) {
     }
   };
 
+  const formatEditing = () => {
+    try { setEditing({ ...editing, text: formatXml(editing.text) }); }
+    catch { /* indent only; editErr reports the syntax itself */ }
+  };
+
   const taken = (files ?? []).map((f) => f.name);
   const free = freeExtraRunFileNames(taken);
   const addProblem = adding === null ? "" : newExtraRunFileProblem(adding, taken);
   // Same live checking the run.xml editor does: syntax first, then GRISM rules.
   const editErr = editing && editing.text.trim() ? xmlError(editing.text) : "";
+  const editIssues = editing && editing.text.trim() && !editErr ? grismXmlProblems(editing.text) : [];
 
   return (
     <section className="xfiles">
@@ -5559,6 +5565,7 @@ function OtherConfigFiles({ t }) {
                 <span className="xb-title"><code>{editing.name}</code></span>
                 <div className="xb-actions">
                   <button className="copy-btn" onClick={() => setEditing(null)}>{tr("xf.cancel")}</button>
+                  <button className="copy-btn" onClick={formatEditing}>{tr("ex.format")}</button>
                   <button className="submit-btn" disabled={!!editErr || state.kind === "sending"}
                     onClick={() => submitFile(editing.name, editing.text)}>
                     {state.kind === "sending" ? tr("xf.submitting") : tr("xf.submit")}</button>
@@ -5566,7 +5573,17 @@ function OtherConfigFiles({ t }) {
               </div>
               <p className="xf-note">{tr("xf.editingNote")}</p>
               <XmlEditor value={editing.text} onChange={(v) => setEditing({ ...editing, text: v })} />
+              {/* syntax first -- a file that will not parse cannot be submitted --
+                  then the GRISM field checks, which inform without blocking: these
+                  files are fragments and may reference things run.xml defines. */}
               {editErr && <p className="submit-note err">{tr("set.xmlInvalid")}: {editErr}</p>}
+              {!editErr && editIssues.length > 0 && (
+                <p className="submit-note warn">
+                  {editIssues.length} {editIssues.length > 1 ? tr("ex.issues") : tr("ex.issue")}:{" "}
+                  {editIssues.slice(0, 3).map((p) => `${p.scope ?? ""} ${p.label ?? ""} — ${p.msg}`.trim()).join("; ")}
+                  {editIssues.length > 3 ? "…" : ""}</p>
+              )}
+              {!editErr && editIssues.length === 0 && <p className="submit-note ok">{tr("ex.xmlOk")}</p>}
             </div>
           )}
 

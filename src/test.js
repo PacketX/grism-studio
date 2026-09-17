@@ -1271,6 +1271,27 @@ group("module wiring");
   check("every core name used in the JSX is imported", missing.length === 0);
 }
 
+/* ---------- grismXmlProblems actually checks ---------- */
+group("grismXmlProblems");
+{
+  // It read .filters off parseRun's {doc, warnings} wrapper and handed each
+  // filter object to filterProblems, which wants the tree at .root. Both were
+  // undefined, so every well-formed document passed and the editor's "XML is
+  // valid" meant nothing.
+  const bad = (xml) => C.grismXmlProblems(xml);
+  check("catches a malformed address",
+    bad('<run><filter id="2"><or><find name="ip.src" content="999.1.1.1"/></or></filter></run>').length === 1);
+  check("catches a malformed ja4",
+    bad('<run><filter id="3"><or><find name="tls.handshake.ja4" content="nope"/></or></filter></run>').length === 1);
+  check("names which filter the problem is in",
+    bad('<run><filter id="7"><or><find name="ip.src" content="999.1.1.1"/></or></filter></run>')[0].scope === "F7");
+  check("passes a valid ja4",
+    bad('<run><filter id="4"><or><find name="tls.handshake.ja4" content="t13d1516h2_8daaf6152771_b186095e22b6"/></or></filter></run>').length === 0);
+  check("passes an empty blacklist shell",
+    bad('<run><filter id="778" blockifempty="yes"><or></or></filter></run>').length === 0);
+  check("still reports unbalanced tags", bad("<run><unclosed>").length === 1);
+}
+
 /* ---------- extra running-config files (run1.xml…run15.xml) ---------- */
 group("extra running-config files");
 {

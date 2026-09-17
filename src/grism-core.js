@@ -2578,10 +2578,15 @@ export function grismXmlProblems(xmlText) {
   const bad = xmlError(xmlText);
   if (bad) return [{ scope: "xml", msg: bad }];
   let doc;
-  try { doc = parseRun(xmlText); }
+  // parseRun answers {doc, warnings}; reading .filters off the wrapper left
+  // every list undefined, so these checks quietly passed anything well-formed.
+  try { doc = parseRun(xmlText).doc; }
   catch (e) { return [{ scope: "run", msg: String(e.message || e) }]; }
 
-  (doc.filters ?? []).forEach((f) => filterProblems(f, out));
+  // filterProblems walks a filter's tree, so it needs .root -- handing it the
+  // filter itself found no .t, fell through to .children, and checked nothing.
+  (doc.filters ?? []).forEach((f) =>
+    filterProblems(f.root, []).forEach((p) => out.push({ ...p, scope: `F${f.id}` })));
   (doc.inputs ?? []).forEach((i) => inputProblems(i, out));
   (doc.outputs ?? []).forEach((o) => outputProblems(o, out));
   (doc.actions ?? []).forEach((a) => actionProblems(a, out));
