@@ -516,11 +516,13 @@ export default function GrismStudio() {
                       // the row's width -- and every tab's position -- change as the
                       // sections filled up.
                       //
-                      // Being on one of them keeps the group open, since folding would
-                      // hide the tab being looked at. Merely having content in one does
-                      // not: the folded label carries the count instead, so the group
-                      // can be put away and still say what is in there.
+                      // Being on one of them keeps the group open. Folding from there
+                      // is allowed -- it moves to chains, since staying on a tab that
+                      // is no longer in the row would leave nothing selected. The
+                      // folded label carries the count, so putting the group away does
+                      // not hide that there is anything in it.
                       const onAdvTab = advKeys.includes(tab);
+                      const foldAdv = () => { setAdvOpen(false); if (onAdvTab) setTab("chain"); };
                       const shown = (advOpen || onAdvTab) ? advKeys : [];
                       const advCount = advKeys.reduce((sum, k) => sum + (counts[k] || 0), 0);
                   const hidden = advKeys.length - shown.length;
@@ -548,12 +550,8 @@ export default function GrismStudio() {
                             {advCount > 0 && <span className="tab-badge">{advCount}</span>}
                             <span className="tab-group-caret" aria-hidden="true">▼</span>
                           </button>
-                        ) : onAdvTab ? (
-                          /* nothing to fold to without moving the user off the tab
-                             they are on, so no control here */
-                          <span className="tab-group-label">{t("nav.advanced")}</span>
                         ) : (
-                          <button className="tab-group-label as-button" onClick={() => setAdvOpen(false)}
+                          <button className="tab-group-label as-button" onClick={foldAdv}
                             title={t("nav.advancedHide")} aria-label={t("nav.advancedHide")} aria-expanded={true}>
                             {t("nav.advanced")}
                             <span className="tab-group-caret" aria-hidden="true">▲</span>
