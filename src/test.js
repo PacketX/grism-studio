@@ -1439,6 +1439,55 @@ for (const lang of Object.keys(I18N)) {
   check(`${lang} prompts for a port`, !!I18N[lang]["flt.pickPort"]);
 }
 
+/* ---------- saved configurations ---------- */
+group("saved configurations");
+{
+  const NAME = "map.0_4.0_1752200689747.0_dGVzdDEy.0_1313.xml";
+  const p = C.parseSaveXmlName(NAME);
+  check("reads the slot, time, description and size",
+    p.slot === 4 && p.saved === 1752200689747 && p.description === "test12" && p.size === 1313);
+  check("round-trips a name",
+    C.buildSaveXmlName({ description: p.description, slot: p.slot, timestamp: p.saved, size: p.size }) === NAME);
+  check("survives a name in none of the known shapes",
+    C.parseSaveXmlName("whatever.xml").slot === null && C.parseSaveXmlName("").description === "");
+  check("decodes an empty description slot",
+    C.parseSaveXmlName("map.0_1.0_100.0_.0_5.xml").description === "");
+
+  // btoa cannot encode this, which is why descriptions moved beside the files
+  const cjk = String.fromCharCode(0x6e2c, 0x8a66);
+  const named = C.buildSaveXmlName({ description: cjk, slot: 2, timestamp: 5, size: 7 });
+  check("leaves the name's description empty when it cannot be encoded",
+    named === "map.0_2.0_5.0_.0_7.xml" && C.parseSaveXmlName(named).description === "");
+  check("still encodes one the old console can read",
+    C.parseSaveXmlName(C.buildSaveXmlName({ description: "abc", slot: 1, timestamp: 2, size: 3 })).description === "abc");
+
+  const payload = { files: [
+    { name: "map.0_1.0_100.0_.0_5.xml", description: "one", size: 5, mtime: 10, slot: 1, saved: 100 },
+    { name: "map.0_2.0_300.0_.0_7.xml", description: "two", size: 7, mtime: 30, slot: 2, saved: 300 }] };
+  check("newest first", C.savedConfigsFrom(payload).map((f) => f.slot).join() === "2,1");
+  check("carries description, size and time",
+    C.savedConfigsFrom(payload)[0].description === "two" && C.savedConfigsFrom(payload)[0].mtime === 30);
+  // an older device answers names only, and everything has to come from them
+  const legacy = C.savedConfigsFrom({ save_xml_list: ["map.0_3.0_200.0_Mw==.0_9.xml"] });
+  check("falls back to the name on an older device",
+    legacy.length === 1 && legacy[0].description === "3" && legacy[0].size === 9 && legacy[0].mtime === null);
+  check("a junk payload lists nothing",
+    C.savedConfigsFrom(null).length === 0 && C.savedConfigsFrom({}).length === 0);
+
+  check("reuses the lowest free slot", C.nextSaveSlot([{ slot: 1 }, { slot: 3 }]) === 2);
+  check("starts at one", C.nextSaveSlot([]) === 1 && C.nextSaveSlot(null) === 1);
+  check("ignores rows with no slot", C.nextSaveSlot([{ slot: null }, { slot: 1 }]) === 2);
+
+  check("formats a time", /\d/.test(C.formatSavedTime(1752200745, "en")));
+  check("says nothing for a missing time",
+    C.formatSavedTime(0) === "" && C.formatSavedTime(null) === "" && C.formatSavedTime("x") === "");
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} names the saved configurations`, !!I18N[lang]["sv.title"]);
+  check(`${lang} warns that loading replaces the screen`, !!I18N[lang]["sv.loadBody"]);
+}
+
 /* ---------- extra running-config files (run1.xml…run15.xml) ---------- */
 group("extra running-config files");
 {

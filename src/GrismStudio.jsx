@@ -29,6 +29,7 @@ import {
   isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError, problemLine,
   parseXsd, validateAgainstXsd, xsdProblemLine,
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
+  savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -848,7 +849,7 @@ export default function GrismStudio() {
             simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped} />
         )}
         {tab === "export" && (
-          <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} t={t}
+          <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
             onApplied={() => { setBaseline(runXml); setBaselineDoc(doc); }}
             onApplyXml={(xmlText) => {
               const { doc: parsed, warnings } = parseRun(xmlText); // throws on malformed → caught in ExportTab
@@ -5432,6 +5433,199 @@ async function waitForDeviceApply(onProgress) {
   }
 }
 
+
+/* ============================================================
+   Saved configurations
+
+   Snapshots of run.xml kept on the device. Sits under the Export pane beside
+   the other-files strip: save what is on screen, bring an earlier one back
+   into the editor, retitle it, or drop it.
+
+   Loading one replaces the whole working configuration, so it goes through a
+   confirmation the same way submitting does.
+   ============================================================ */
+function SavedConfigs({ runXml, onLoadXml, lang, t }) {
+  const tr = t || ((k) => k);
+  const [open, setOpen] = useState(false);
+  const [files, setFiles] = useState(null);
+  const [listErr, setListErr] = useState(false);
+  const [state, setState] = useState({ kind: "idle", msg: "" });
+  const [saving, setSaving] = useState(null);      // description being typed for a new save
+  const [renaming, setRenaming] = useState(null);  // { name, description }
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [confirmLoad, setConfirmLoad] = useState(null);
+
+  const fetchList = async () => {
+    const res = await fetch("/grism/task/get_save_xml_list", { credentials: "include" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return savedConfigsFrom(await res.json());
+  };
+  const load = useCallback(async () => {
+    try { setFiles(await fetchList()); setListErr(false); }
+    catch { setFiles([]); setListErr(true); }
+  }, []);
+  useEffect(() => { if (open && files === null) load(); }, [open, files, load]);
+
+  const post = async (path, fields) => {
+    const body = new URLSearchParams();
+    Object.entries(fields).forEach(([k, v]) => body.set(k, v));
+    const res = await fetch("/grism/task/" + path, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+  };
+
+  const doSave = async (description) => {
+    setState({ kind: "sending", msg: "" });
+    try {
+      const name = buildSaveXmlName({
+        description,
+        slot: nextSaveSlot(files ?? []),
+        timestamp: Date.now(),
+        size: new TextEncoder().encode(runXml).length,
+      });
+      await post("save_xml", { name, data: runXml, description });
+      setSaving(null);
+      await load();
+      setState({ kind: "ok", msg: tr("sv.saved") });
+      setTimeout(() => setState({ kind: "idle", msg: "" }), 2500);
+    } catch (e) { setState({ kind: "err", msg: tr("sv.saveFailed") + ": " + (e.message || e) }); }
+  };
+
+  const doRename = async (name, description) => {
+    setState({ kind: "sending", msg: "" });
+    try {
+      await post("set_xml_description", { name, description });
+      setRenaming(null);
+      await load();
+      setState({ kind: "ok", msg: tr("sv.renamed") });
+      setTimeout(() => setState({ kind: "idle", msg: "" }), 2500);
+    } catch { setState({ kind: "err", msg: tr("sv.renameFailed") }); }
+  };
+
+  const doDelete = async (name) => {
+    setConfirmDel(null);
+    setState({ kind: "sending", msg: "" });
+    try {
+      await post("del_xml", { name });
+      await load();
+      setState({ kind: "ok", msg: tr("sv.deleted") });
+      setTimeout(() => setState({ kind: "idle", msg: "" }), 2500);
+    } catch { setState({ kind: "err", msg: tr("sv.deleteFailed") }); }
+  };
+
+  const doLoad = async (name) => {
+    setConfirmLoad(null);
+    setState({ kind: "sending", msg: "" });
+    try {
+      const body = new URLSearchParams(); body.set("name", name);
+      const res = await fetch("/grism/task/get_save_xml", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const xml = await res.text();
+      if (!xml.trim()) throw new Error(tr("sv.empty"));
+      onLoadXml(xml);                              // throws if it will not parse
+      setState({ kind: "ok", msg: tr("sv.loaded") });
+      setTimeout(() => setState({ kind: "idle", msg: "" }), 2500);
+    } catch (e) { setState({ kind: "err", msg: tr("sv.loadFailed") + ": " + (e.message || e) }); }
+  };
+
+  return (
+    <section className="xfiles saved">
+      <button className="xf-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {tr("sv.title")}
+        {files && files.length > 0 && <span className="xf-count">{files.length}</span>}
+        <span className="xf-chev">{open ? tr("xf.hide") : tr("xf.show")}</span>
+      </button>
+      {open && (
+        <div className="xf-body">
+          <p className="xf-note">{tr("sv.note")}</p>
+          {listErr && <p className="submit-note err">{tr("sv.listFailed")}</p>}
+          {files !== null && files.length === 0 && !listErr && <p className="xf-empty">{tr("sv.none")}</p>}
+          {files !== null && files.length > 0 && (
+            <ul className="xf-list sv-list">
+              {files.map((f) => (
+                <li key={f.name}>
+                  {renaming?.name === f.name
+                    ? <>
+                        <input className="sv-desc-input" value={renaming.description} autoFocus
+                          placeholder={tr("sv.describePlaceholder")}
+                          onChange={(e) => setRenaming({ ...renaming, description: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === "Enter") doRename(f.name, renaming.description); }} />
+                        <button className="copy-btn" onClick={() => doRename(f.name, renaming.description)}>{tr("sv.save")}</button>
+                        <button className="copy-btn" onClick={() => setRenaming(null)}>{tr("xf.cancel")}</button>
+                      </>
+                    : <>
+                        <span className="sv-desc" title={f.name}>
+                          {f.description || <em className="sv-nodesc">{tr("sv.noDescription")}</em>}
+                        </span>
+                        <span className="xf-size">
+                          {f.size === null ? "" : formatFileSize(f.size)}
+                          {f.mtime ? " · " + formatSavedTime(f.mtime, lang) : ""}
+                        </span>
+                        <button className="copy-btn" onClick={() => setConfirmLoad(f)}>{tr("sv.load")}</button>
+                        <button className="copy-btn" onClick={() => setRenaming({ name: f.name, description: f.description })}>{tr("sv.describe")}</button>
+                        <button className="copy-btn xf-del" onClick={() => setConfirmDel(f)}>{tr("xf.delete")}</button>
+                      </>}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {saving === null
+            ? <button className="xf-add" onClick={() => setSaving("")}>{tr("sv.saveCurrent")}</button>
+            : (
+              <div className="xf-new">
+                <label>{tr("sv.description")}
+                  <input className="sv-desc-input" value={saving} autoFocus placeholder={tr("sv.describePlaceholder")}
+                    onChange={(e) => setSaving(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") doSave(saving); }} />
+                </label>
+                <button className="copy-btn" disabled={state.kind === "sending"} onClick={() => doSave(saving)}>{tr("sv.save")}</button>
+                <button className="copy-btn" onClick={() => setSaving(null)}>{tr("xf.cancel")}</button>
+              </div>
+            )}
+
+          {state.kind === "err" && <p className="submit-note err">{state.msg}</p>}
+          {state.kind === "ok" && <p className="submit-note ok">{state.msg}</p>}
+
+          {confirmDel && (
+            <div className="modal-scrim" onClick={() => setConfirmDel(null)}>
+              <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-title">{tr("sv.deleteTitle")}</div>
+                <p className="modal-body">{confirmDel.description || confirmDel.name} — {tr("sv.deleteBody")}</p>
+                <button className="opt drop" onClick={() => doDelete(confirmDel.name)}>
+                  <span className="opt-name">{tr("xf.deleteConfirm")}</span>
+                  <span className="opt-desc">{tr("sv.deleteBody")}</span>
+                </button>
+                <button className="opt-cancel" onClick={() => setConfirmDel(null)}>{tr("xf.cancel")}</button>
+              </div>
+            </div>
+          )}
+          {confirmLoad && (
+            <div className="modal-scrim" onClick={() => setConfirmLoad(null)}>
+              <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-title">{tr("sv.loadTitle")}</div>
+                <p className="modal-body">{confirmLoad.description || confirmLoad.name} — {tr("sv.loadBody")}</p>
+                <button className="opt drop" onClick={() => doLoad(confirmLoad.name)}>
+                  <span className="opt-name">{tr("sv.loadConfirm")}</span>
+                  <span className="opt-desc">{tr("sv.loadBody")}</span>
+                </button>
+                <button className="opt-cancel" onClick={() => setConfirmLoad(null)}>{tr("xf.cancel")}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ============================================================
    Other config files (run1.xml … run15.xml)
 
@@ -6500,7 +6694,7 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   );
 }
 
-function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, t }) {
+function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t }) {
   const tr = t || ((k) => k);
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
@@ -6667,6 +6861,7 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
         </ul>}
         {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">{tr("ex.allValidate")}</p>}
       </aside>
+      {loggedIn && <SavedConfigs runXml={runXml} onLoadXml={onApplyXml} lang={lang} t={t} />}
       {loggedIn && <OtherConfigFiles t={t} />}
     </div>
   );

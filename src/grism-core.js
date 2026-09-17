@@ -3039,3 +3039,93 @@ export const portOptionsForField = (field, dataPorts, mgmtPorts) => [
   ...(dataPorts ?? []),
   ...(MGMT_PORT_FIELDS.has(field) ? (mgmtPorts ?? []) : []),
 ];
+
+
+/* ============================================================
+   Saved configurations (etc/save-config)
+
+   A snapshot of run.xml kept on the device, listed by
+   /grism/task/get_save_xml_list, read with get_save_xml, written with
+   save_xml and removed with del_xml.
+   ============================================================ */
+
+/* The name the device has always used:
+     <type>.0_<slot>.0_<epoch ms>.0_<base64 description>.0_<size>.xml
+   The separator cannot occur inside base64, whose alphabet has no "." or "_". */
+const SAVE_XML_SEP = ".0_";
+export const SAVE_XML_TYPE = "map";
+
+/* Descriptions are stored beside the files now, because this encoding cannot
+   carry most of them: btoa throws on anything outside latin-1, so a Chinese
+   description was never expressible. The name still gets one when it happens
+   to fit, so the older console keeps showing something; anything else leaves
+   the slot empty and the sidecar carries it. */
+const latin1Base64 = (text) => {
+  const s = String(text ?? "");
+  if (!s || /[^\x20-\xff]/.test(s)) return "";
+  try { return btoa(s); } catch { return ""; }
+};
+
+export function buildSaveXmlName({ description = "", slot = 1, timestamp = 0, size = 0 } = {}) {
+  return [SAVE_XML_TYPE, String(slot), String(timestamp), latin1Base64(description), String(size)]
+    .join(SAVE_XML_SEP) + ".xml";
+}
+
+export function parseSaveXmlName(name) {
+  const out = { type: "", slot: null, saved: null, description: "", size: null };
+  const raw = String(name ?? "");
+  const stem = /\.xml$/i.test(raw) ? raw.slice(0, -4) : raw;
+  const parts = stem.split(SAVE_XML_SEP);
+  if (parts.length < 2) return out;
+  out.type = parts[0];
+  const num = (s) => { const n = parseInt(s, 10); return Number.isNaN(n) ? null : n; };
+  if (parts.length >= 5) out.size = num(parts[4]);
+  if (parts.length >= 3) { out.slot = num(parts[1]); out.saved = num(parts[2]); }
+  const encoded = parts.length >= 4 ? parts[3] : (parts.length === 2 ? parts[1] : "");
+  if (encoded) { try { out.description = atob(encoded); } catch { out.description = ""; } }
+  return out;
+}
+
+/* Normalise whatever the device sent. Newer firmware answers a files array
+   with the description, size and modification time already resolved; older
+   firmware only lists names, and then everything has to come from the name. */
+export function savedConfigsFrom(payload) {
+  const rows = Array.isArray(payload?.files) ? payload.files : null;
+  const num = (v, fallback = null) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
+  const list = rows
+    ? rows.map((f) => ({
+        name: String(f?.name ?? ""),
+        description: String(f?.description ?? ""),
+        size: num(f?.size),
+        mtime: num(f?.mtime),
+        slot: num(f?.slot, parseSaveXmlName(f?.name).slot),
+        saved: num(f?.saved, parseSaveXmlName(f?.name).saved),
+      }))
+    : (Array.isArray(payload?.save_xml_list) ? payload.save_xml_list : []).map((name) => {
+        const m = parseSaveXmlName(name);
+        return { name: String(name), description: m.description, size: m.size, mtime: null, slot: m.slot, saved: m.saved };
+      });
+  return list.filter((f) => f.name)
+    .sort((a, b) => (b.saved ?? 0) - (a.saved ?? 0) || a.name.localeCompare(b.name));
+}
+
+/* Lowest slot not already taken, so names stay tidy as saves come and go
+   rather than climbing forever. */
+export const nextSaveSlot = (files) => {
+  const taken = new Set((files ?? []).map((f) => f.slot).filter((n) => Number.isFinite(n)));
+  let n = 1;
+  while (taken.has(n)) n += 1;
+  return n;
+};
+
+/* Epoch seconds as something readable, in the viewer's own timezone. */
+export const formatSavedTime = (epochSeconds, lang = "en") => {
+  const n = Number(epochSeconds);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  try {
+    return new Date(n * 1000).toLocaleString(lang, {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+  } catch { return ""; }
+};
