@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffect } from "react";
 import "./GrismStudio.css";
 import { STUDIO_VERSION, makeT } from "./i18n.js";
+import { PacketxLogo } from "./PacketxLogo.jsx";
 import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
@@ -997,6 +998,9 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
       )}
 
       <footer className="ov-footer">
+        <a className="ov-logo" href="http://www.packetx.biz/" target="_blank" rel="noreferrer">
+          <PacketxLogo />
+        </a>
         <p>{tr("ov.copyright")}</p>
         <p>{tr("ov.website")}: <a href="http://www.packetx.biz/" target="_blank" rel="noreferrer">http://packetx.biz/</a></p>
         <p className="ov-build">GRISM Studio build {STUDIO_VERSION}</p>
@@ -5454,10 +5458,11 @@ async function waitForDeviceApply(onProgress) {
    Loading one replaces the whole working configuration, so it goes through a
    confirmation the same way submitting does.
    ============================================================ */
-/* Opened from the Export command row, so the caller owns "open" -- the panel
-   sits with edit/format/copy/submit rather than as a strip at the foot of the
-   page. */
-function SavedConfigs({ runXml, onLoadXml, lang, open, t }) {
+/* Opened from the Export command row, as a card over the page rather than an
+   inline section: the list, its rename fields and its confirmations are a task
+   of their own, and unfolding them in the middle of the XML pushed everything
+   else around. The caller owns "open". */
+function SavedConfigs({ runXml, onLoadXml, lang, open, onClose, t }) {
   const tr = t || ((k) => k);
   const [files, setFiles] = useState(null);
   const [listErr, setListErr] = useState(false);
@@ -5549,7 +5554,13 @@ function SavedConfigs({ runXml, onLoadXml, lang, open, t }) {
 
   if (!open) return null;
   return (
-    <section className="xfiles saved open">
+    <div className="modal-scrim saved-scrim" onClick={onClose}>
+      <section className="saved-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="saved-head">
+          <span className="saved-title">{tr("sv.title")}
+            {files && files.length > 0 && <span className="xf-count">{files.length}</span>}</span>
+          <button className="tmpl-close" onClick={onClose} aria-label={tr("xf.cancel")}>✕</button>
+        </div>
       {true && (
         <div className="xf-body">
           <p className="xf-note">{tr("sv.note")}</p>
@@ -5630,7 +5641,8 @@ function SavedConfigs({ runXml, onLoadXml, lang, open, t }) {
           )}
         </div>
       )}
-    </section>
+      </section>
+    </div>
   );
 }
 
@@ -6830,7 +6842,8 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
             <button className="copy-btn" disabled={!editing && problems.length > 0}
               onClick={() => { if (editing) { navigator.clipboard?.writeText(edit); setCopied(true); setTimeout(() => setCopied(false), 1400); } else copy(); }}>
               {copied ? tr("ex.copied") : (!editing && problems.length) ? tr("ex.fixToCopy") : tr("ex.copy")}</button>
-            {loggedIn && <SavedConfigs runXml={runXml} onLoadXml={onApplyXml} lang={lang} open={showSaved} t={t} />}
+            {loggedIn && <SavedConfigs runXml={runXml} onLoadXml={onApplyXml} lang={lang}
+              open={showSaved} onClose={() => setShowSaved(false)} t={t} />}
             {editing
               ? <button className="submit-btn" disabled={!!editErr} onClick={applyEdit}>{tr("ex.applyChanges")}</button>
               : loggedIn && (
