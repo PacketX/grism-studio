@@ -26,7 +26,8 @@ import {
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
   extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize,
-  isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError,
+  isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError, problemLine,
+  parseXsd, validateAgainstXsd, xsdProblemLine,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -5345,6 +5346,30 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
 }
 
 
+/* The device serves the schema it was built with at /data/run.xsd, so a config
+   can be checked against the same firmware it is going to. Fetched once and
+   remembered; if it cannot be had -- an older image, or the tool opened away
+   from a device -- the editors fall back to their own checks rather than
+   refusing everything. */
+let _runSchema;                  // undefined = not tried, null = unavailable
+let _runSchemaPending = null;
+async function loadRunSchema() {
+  if (_runSchema !== undefined) return _runSchema;
+  if (!_runSchemaPending) {
+    _runSchemaPending = (async () => {
+      try {
+        const res = await fetch("/data/run.xsd", { credentials: "include" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        _runSchema = parseXsd(await res.text());
+      } catch {
+        _runSchema = null;
+      }
+      return _runSchema;
+    })();
+  }
+  return _runSchemaPending;
+}
+
 /* Poll /grism/task/get_status once a second until the device reports it has
    finished applying. Shared by the run.xml submit and the extra-files pane so
    both hold the screen the same way and neither can spin forever. Resolves to
@@ -5399,6 +5424,9 @@ function OtherConfigFiles({ t }) {
   const [adding, setAdding] = useState(null);    // chosen name while adding
   const [confirmDel, setConfirmDel] = useState(null);
   const [apply, setApply] = useState({ active: false, msg: "", warn: "" });
+  const [schema, setSchema] = useState(undefined);   // undefined = still loading
+
+  useEffect(() => { if (open) loadRunSchema().then(setSchema); }, [open]);
 
   const fetchList = async () => {
     const res = await fetch("/grism/task/get_running_filelist", { credentials: "include" });
@@ -5497,11 +5525,14 @@ function OtherConfigFiles({ t }) {
   const taken = (files ?? []).map((f) => f.name);
   const free = freeExtraRunFileNames(taken);
   const addProblem = adding === null ? "" : newExtraRunFileProblem(adding, taken);
-  /* Two layers, and only the first refuses the submit. A document that is not
-     well-formed, or has no <run> in it, is not something the device can take.
-     A questionable field value is worth saying out loud but not worth
-     blocking: these files are fragments and may lean on what run.xml defines. */
-  const editErr = editing ? grismStructureError(editing.text) : "";
+  /* Checked against the device's own run.xsd, so the vocabulary is whatever
+     this firmware actually understands -- a schema failure refuses the submit.
+     Without a schema to check against, fall back to the structural check so a
+     device too old to serve one is still usable. Field-value complaints stay
+     advisory: these files are fragments and may lean on what run.xml defines. */
+  const structErr = editing ? grismStructureError(editing.text) : "";
+  const xsdProblems = editing && !structErr && schema ? validateAgainstXsd(editing.text, schema) : [];
+  const editErr = structErr || (xsdProblems.length ? xsdProblemLine(xsdProblems[0]) : "");
   const editIssues = editing && !editErr ? grismXmlProblems(editing.text) : [];
 
   return (
@@ -5581,11 +5612,12 @@ function OtherConfigFiles({ t }) {
               {/* syntax first -- a file that will not parse cannot be submitted --
                   then the GRISM field checks, which inform without blocking: these
                   files are fragments and may reference things run.xml defines. */}
-              {editErr && <p className="submit-note err">{tr("set.xmlInvalid")}: {editErr}</p>}
+              {editErr && <p className="submit-note err">{tr("set.xmlInvalid")}: {editErr}
+                {xsdProblems.length > 1 && <> ({xsdProblems.length} {tr("ex.issues")})</>}</p>}
               {!editErr && editIssues.length > 0 && (
                 <p className="submit-note warn">
                   {editIssues.length} {editIssues.length > 1 ? tr("ex.issues") : tr("ex.issue")}:{" "}
-                  {editIssues.slice(0, 3).map((p) => `${p.scope ?? ""} ${p.label ?? ""} — ${p.msg}`.trim()).join("; ")}
+                  {editIssues.slice(0, 3).map(problemLine).join("; ")}
                   {editIssues.length > 3 ? "…" : ""}</p>
               )}
               {!editErr && editIssues.length === 0 && <p className="submit-note ok">{tr("ex.xmlOk")}</p>}
@@ -6458,7 +6490,15 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
      is pressed, and the GRISM checks only run once the XML itself parses. */
   /* Structure, not just syntax: a well-formed document with no <run> in it
      used to leave "apply changes" enabled, and only failed once pressed. */
-  const editErr = React.useMemo(() => (edit && edit.trim() ? grismStructureError(edit) : ""), [edit]);
+  const [schema, setSchema] = useState(undefined);
+  useEffect(() => { loadRunSchema().then(setSchema); }, []);
+  const xsdProblems = React.useMemo(
+    () => (edit && edit.trim() && schema && !grismStructureError(edit) ? validateAgainstXsd(edit, schema) : []),
+    [edit, schema]);
+  const editErr = React.useMemo(
+    () => (edit && edit.trim()
+      ? grismStructureError(edit) || (xsdProblems.length ? xsdProblemLine(xsdProblems[0]) : "")
+      : ""), [edit, xsdProblems]);
   const editIssues = React.useMemo(
     () => (edit && edit.trim() && !editErr ? grismXmlProblems(edit) : []), [edit, editErr]);
   const applyEdit = () => {
@@ -6575,10 +6615,11 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
         {editing && <div className="edit-help">
           <p>{tr("ex.editHelp")}</p>
           {/* live feedback while typing: syntax first, then the GRISM checks */}
-          {editErr && <p className="submit-note err">{tr("set.xmlInvalid")}: {editErr}</p>}
+          {editErr && <p className="submit-note err">{tr("set.xmlInvalid")}: {editErr}
+            {xsdProblems.length > 1 && <> ({xsdProblems.length} {tr("ex.issues")})</>}</p>}
           {!editErr && editIssues.length > 0 && (
             <p className="submit-note warn">{editIssues.length} {editIssues.length > 1 ? tr("ex.issues") : tr("ex.issue")}:{" "}
-              {editIssues.slice(0, 3).map((p) => `${p.scope} — ${p.msg}`).join("; ")}{editIssues.length > 3 ? "…" : ""}</p>
+              {editIssues.slice(0, 3).map(problemLine).join("; ")}{editIssues.length > 3 ? "…" : ""}</p>
           )}
           {!editErr && editIssues.length === 0 && <p className="submit-note ok">{tr("ex.xmlOk")}</p>}
           {applyErr && <p className="submit-note err">{tr("ex.cantApply")}: {applyErr}. {tr("ex.fixTryAgain")}</p>}

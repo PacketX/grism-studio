@@ -1290,6 +1290,33 @@ group("grismXmlProblems");
   check("passes an empty blacklist shell",
     bad('<run><filter id="778" blockifempty="yes"><or></or></filter></run>').length === 0);
   check("still reports unbalanced tags", bad("<run><unclosed>").length === 1);
+
+  // parseRun already spots these; grismXmlProblems was dropping its warnings,
+  // so a typo read as a clean document and the editor said "XML is valid"
+  // vocabulary complaints are reported but must not block: this build's FIELDS
+  // list can lag a firmware that knows a newer field
+  check("an unknown field does not block submitting",
+    C.grismStructureError('<run><filter id="1"><or><find name="nosuch.field" content="x"/></or></filter></run>') === "");
+  check("a misspelled element does not block either",
+    C.grismStructureError('<run><filtr id="1"><or></or></filtr></run>') === "");
+  check("reads without a filter or field to name",
+    C.problemLine({ scope: "vocab", msg: 'unknown find field "x"' }) === 'unknown find field "x"');
+  check("names the filter and field when it has them",
+    C.problemLine({ scope: "F7", label: "Source IP", msg: "IPv4 or CIDR" }) === "F7 Source IP — IPv4 or CIDR");
+  check("reports an unknown field name",
+    bad('<run><filter id="1"><or><find name="nosuch.field" content="x"/></or></filter></run>')
+      .some((p) => /unknown find field/.test(p.msg)));
+  check("reports a misspelled element",
+    bad('<run><filtr id="1"><or></or></filtr></run>').some((p) => /unexpected top-level/.test(p.msg)));
+  check("reports a stray tag inside a filter",
+    bad('<run><filter id="1"><or><bogus/></or></filter></run>')
+      .some((p) => /unexpected element/.test(p.msg)));
+  check("reports junk at the top level",
+    bad("<run><nonsense/></run>").some((p) => /unexpected top-level/.test(p.msg)));
+  // and none of that may fire on a real configuration
+  check("a real blacklist shell stays clean",
+    bad('<run><filter id="778" blockifempty="yes"><or></or></filter></run>').length === 0);
+  check("an empty run is clean", bad("<run></run>").length === 0);
 }
 
 /* ---------- what may be submitted ---------- */
@@ -1321,6 +1348,47 @@ group("root element check");
   check("refuses an unrelated document", !!C.rootElementError("<foo/>", "configSet"));
   check("reports syntax first", C.rootElementError("<configSet><unclosed>", "configSet") === "tags aren't balanced");
   check("refuses an empty box", !!C.rootElementError("", "configSet"));
+}
+
+/* ---------- validation against the device's run.xsd ---------- */
+group("run.xsd validation");
+{
+  const { readFileSync, existsSync } = await import("node:fs");
+  const XSD = "/data/Grism/doc/run.xsd";
+  const schema = existsSync(XSD) ? C.parseXsd(readFileSync(XSD, "utf8")) : null;
+  check("reads the shipped schema", !!schema);
+  if (schema) {
+    check("knows what may sit inside run",
+      ["filter", "input", "action", "output", "chain"].every((n) => schema.elements.run.inline.children.has(n)));
+    check("carries the field vocabulary", schema.simpleTypes.fieldType?.enums?.size >= 116);
+    check("the vocabulary includes the JA4 fields",
+      ["tls.handshake.ja4", "tls.handshake.ja4s_c"].every((f) => schema.simpleTypes.fieldType.enums.has(f)));
+
+    const v = (xml) => C.validateAgainstXsd(xml, schema);
+    check("accepts a plain filter", v('<run><filter id="1"><or></or></filter></run>').length === 0);
+    check("accepts a JA4 filter",
+      v('<run><filter id="1"><or><find name="tls.handshake.ja4" content="t13d1516h2_8daaf6152771_b186095e22b6"/></or></filter></run>').length === 0);
+    // <f> is declared substitutionGroup="find" and stands wherever find does
+    check("accepts the shorthand form", v('<run><filter id="1"><or><f n="ip.src" c="1.1.1.1"/></or></filter></run>').length === 0);
+
+    check("rejects a misspelled element", v('<run><filtr id="1"><or></or></filtr></run>').length === 1);
+    check("rejects junk at the top level", v("<run><nonsense/></run>").length === 1);
+    check("rejects a stray tag inside a filter",
+      v('<run><filter id="1"><or><bogus/></or></filter></run>').length === 1);
+    check("rejects an undeclared attribute",
+      v('<run><filter id="1" bogusattr="x"><or></or></filter></run>').length === 1);
+    check("rejects a field name the firmware does not have",
+      v('<run><filter id="1"><or><find name="nosuch.field" content="x"/></or></filter></run>').length === 1);
+    check("rejects a relation the schema does not allow",
+      v('<run><filter id="1"><or><find name="ip.src" relation="~~" content="1.1.1.1"/></or></filter></run>').length === 1);
+    check("says where the problem sits",
+      /filter > or > find/.test(C.xsdProblemLine(
+        v('<run><filter id="1"><or><find name="nosuch.field" content="x"/></or></filter></run>')[0])));
+    check("rejects a document that is not a run", v("<foo/>").length === 1);
+    // no schema to check against must not mean everything is wrong
+    check("passes everything when there is no schema", C.validateAgainstXsd("<run><anything/></run>", null).length === 0);
+    check("a schema it cannot read comes back null", C.parseXsd("<notaschema/>") === null && C.parseXsd("") === null);
+  }
 }
 
 /* ---------- extra running-config files (run1.xml…run15.xml) ---------- */

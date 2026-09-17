@@ -2577,11 +2577,25 @@ export function grismXmlProblems(xmlText) {
   // relying on parseRun to fail would give different answers in different hosts.
   const bad = xmlError(xmlText);
   if (bad) return [{ scope: "xml", msg: bad }];
-  let doc;
+  let doc, parseWarnings = [];
   // parseRun answers {doc, warnings}; reading .filters off the wrapper left
   // every list undefined, so these checks quietly passed anything well-formed.
-  try { doc = parseRun(xmlText).doc; }
-  catch (e) { return [{ scope: "run", msg: String(e.message || e) }]; }
+  try {
+    const parsed = parseRun(xmlText);
+    doc = parsed.doc;
+    parseWarnings = parsed.warnings ?? [];
+  } catch (e) { return [{ scope: "run", msg: String(e.message || e) }]; }
+
+  // parseRun already notices an unknown field name, a stray element inside a
+  // filter, or an unexpected top-level tag. Those were being dropped, so a
+  // typo like <filtr> or name="nosuch.field" read as a clean document.
+  //
+  // Reported under their own scope, not "run": these say the vocabulary is
+  // unfamiliar, which is usually a typo but can also mean the firmware knows a
+  // field this build's FIELDS list has not caught up with. Worth saying loudly,
+  // not worth refusing to submit over -- that would strand a legitimate file
+  // with no way out but sftp.
+  parseWarnings.forEach((msg) => out.push({ scope: "vocab", msg }));
 
   // filterProblems walks a filter's tree, so it needs .root -- handing it the
   // filter itself found no .t, fell through to .children, and checked nothing.
@@ -2664,6 +2678,13 @@ export const formatFileSize = (bytes) => {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+/* One line for a problem from grismXmlProblems. Vocabulary complaints carry no
+   filter or field to name, so they read as the message alone. */
+export const problemLine = (p) =>
+  p.scope === "vocab" || p.scope === "run" || p.scope === "xml"
+    ? String(p.msg)
+    : `${[p.scope, p.label].filter(Boolean).join(" ")} — ${p.msg}`;
+
 /* Why this text is not an XML document rooted at the expected element, or ""
    when it is. Well-formed is not the same as being the right document: pasting
    a run.xml into the device-settings box, or anything else entirely, parses
@@ -2702,3 +2723,249 @@ export const newExtraRunFileProblem = (name, existing) => {
   if ((existing ?? []).some((e) => String(e).trim() === n)) return "set.xfNameTaken";
   return "";
 };
+
+/* ============================================================
+   Validation against the device's own run.xsd
+
+   The device serves its schema at /data/run.xsd (build.sh puts doc/run.xsd
+   there), so the check is against the same firmware the config is going to --
+   no second copy of the vocabulary to keep in step.
+
+   Not a complete XSD implementation. It reads the parts that catch what goes
+   wrong in practice: which elements may appear where, which attributes each
+   element declares, and which values an enumerated type allows. Anything the
+   schema does not pin down is left alone rather than guessed at.
+   ============================================================ */
+
+const XSD_NS = "http://www.w3.org/2001/XMLSchema";
+
+/* Read run.xsd into {elements, complexTypes, simpleTypes} that validateAgainstXsd
+   can walk. Returns null if the text is not a schema we can read, so callers can
+   fall back rather than reject everything. */
+export function parseXsd(xsdText) {
+  let dom;
+  try { dom = parseXml(String(xsdText ?? "")); } catch { return null; }
+  if (!dom?.documentElement || dom.querySelector("parsererror")) return null;
+
+  const local = (el) => String(el.tagName || "").replace(/^.*:/, "");
+  const kids = (el, name) => [...el.children].filter((c) => local(c) === name);
+  const deep = (el, name) => {
+    const out = [];
+    const walk = (n) => [...n.children].forEach((c) => { if (local(c) === name) out.push(c); walk(c); });
+    walk(el);
+    return out;
+  };
+
+  const root = dom.documentElement;
+  if (local(root) !== "schema") return null;
+
+  const simpleTypes = {};   // name -> {enums: Set|null}
+  const complexTypes = {};  // name -> {children, attrs, anyChildren}
+  const elements = {};      // name -> {typeName, inline, substitutes}
+  const groups = {};        // name -> element (resolved lazily)
+
+  const readSimple = (el) => {
+    const enums = deep(el, "enumeration").map((e) => e.getAttribute("value"));
+    return { enums: enums.length ? new Set(enums) : null };
+  };
+
+  /* Which element names may appear inside, which attributes are declared, and
+     how to descend into each child. Walks the content model -- sequence, choice,
+     group -- but stops at an element declaration rather than recursing into its
+     own type, or a filter would appear to allow everything nested anywhere
+     beneath it and nothing would ever be reported.
+
+     minOccurs/maxOccurs and ordering are not enforced: a config that lists its
+     criteria in an unexpected order still works on the device, and refusing it
+     would be worse than letting it through. */
+  const readComplex = (el) => {
+    const children = new Set();
+    const childDefs = {};
+    const attrs = {};
+    let anyChildren = false;
+    const walkModel = (node) => {
+      [...node.children].forEach((c) => {
+        const t = local(c);
+        if (t === "element") {
+          const name = c.getAttribute("name") || c.getAttribute("ref");
+          if (!name) return;
+          children.add(name);
+          if (c.getAttribute("name")) {
+            const nested = kids(c, "complexType")[0];
+            childDefs[name] = { typeName: c.getAttribute("type") || "", inline: nested ? readComplex(nested) : null };
+          }
+          return;   // do not descend: the child's own type is its business
+        }
+        if (t === "any") { anyChildren = true; return; }
+        if (t === "group") {
+          const ref = c.getAttribute("ref");
+          if (ref) children.add("@group:" + ref); else walkModel(c);
+          return;
+        }
+        if (t === "attribute") {
+          const n = c.getAttribute("name");
+          if (n) attrs[n] = { type: c.getAttribute("type") || "", required: c.getAttribute("use") === "required" };
+          return;
+        }
+        // sequence, choice, all, simpleContent, extension, complexContent
+        walkModel(c);
+      });
+    };
+    walkModel(el);
+    const ext = deep(el, "extension")[0];
+    return {
+      children, childDefs, attrs, anyChildren,
+      textType: ext ? ext.getAttribute("base") || "" : "",
+      hasSimpleContent: !!kids(el, "simpleContent").length,
+    };
+  };
+
+  kids(root, "simpleType").forEach((el) => {
+    const n = el.getAttribute("name"); if (n) simpleTypes[n] = readSimple(el);
+  });
+  kids(root, "complexType").forEach((el) => {
+    const n = el.getAttribute("name"); if (n) complexTypes[n] = readComplex(el);
+  });
+  kids(root, "group").forEach((el) => {
+    const n = el.getAttribute("name"); if (n) groups[n] = readComplex(el);
+  });
+  kids(root, "element").forEach((el) => {
+    const n = el.getAttribute("name"); if (!n) return;
+    const inlineComplex = kids(el, "complexType")[0];
+    elements[n] = {
+      typeName: el.getAttribute("type") || "",
+      inline: inlineComplex ? readComplex(inlineComplex) : null,
+      substitutes: el.getAttribute("substitutionGroup") || "",
+    };
+  });
+
+  // <f substitutionGroup="find"/> is <find> under another name
+  Object.entries(elements).forEach(([name, e]) => {
+    if (e.substitutes && elements[e.substitutes] && !e.typeName && !e.inline) {
+      elements[name] = { ...elements[e.substitutes], substitutes: e.substitutes };
+    }
+  });
+
+  // fold group refs into the child sets that reference them
+  const fold = (t, seen = new Set()) => {
+    const out = new Set();
+    t.children.forEach((n) => {
+      if (!n.startsWith("@group:")) { out.add(n); return; }
+      const g = n.slice(7);
+      if (seen.has(g) || !groups[g]) return;
+      seen.add(g);
+      const inner = fold(groups[g], seen);
+      inner.forEach((x) => out.add(x));
+      Object.assign(t.childDefs, groups[g].childDefs);
+    });
+    t.children = out;
+    return out;
+  };
+  // Collect every type once -- inline child types nest arbitrarily deep, and a
+  // type can be reached by more than one path, so walk with a seen set.
+  const allTypes = [];
+  const collect = (t, seen) => {
+    if (!t || seen.has(t)) return;
+    seen.add(t);
+    allTypes.push(t);
+    Object.values(t.childDefs || {}).forEach((d) => collect(d.inline, seen));
+  };
+  const seen = new Set();
+  Object.values(complexTypes).forEach((t) => collect(t, seen));
+  Object.values(groups).forEach((t) => collect(t, seen));
+  Object.values(elements).forEach((e) => collect(e.inline, seen));
+  allTypes.forEach((t) => fold(t));
+
+  if (!elements.run) return null;
+  return { elements, complexTypes, simpleTypes };
+}
+
+/* Check a run.xml against a schema from parseXsd. Returns a list of
+   {scope, msg} -- empty when the document satisfies what the schema pins down.
+
+   Only reports what the schema is explicit about. An element whose type the
+   schema does not name is walked no further rather than guessed at, so a gap in
+   the schema never turns into a false complaint about a working config. */
+export function validateAgainstXsd(xmlText, schema) {
+  if (!schema) return [];
+  const bad = xmlError(xmlText);
+  if (bad) return [{ scope: "xml", msg: bad }];
+
+  let dom;
+  try { dom = parseXml(String(xmlText).trim()); } catch { return [{ scope: "xml", msg: "the XML could not be parsed" }]; }
+  const root = dom.documentElement;
+  if (!root) return [{ scope: "xml", msg: "the XML has no root element" }];
+  const rootName = String(root.tagName).replace(/^.*:/, "");
+  if (rootName !== "run") return [{ scope: "run", msg: `expected a <run> document, found <${rootName}>` }];
+
+  const out = [];
+  const MAX = 50;                       // a truncated list still tells the author what to fix
+  const typeOf = (def) => {
+    if (!def) return null;
+    if (def.inline) return def.inline;
+    if (def.typeName && schema.complexTypes[def.typeName]) return schema.complexTypes[def.typeName];
+    return null;
+  };
+  const enumsFor = (typeName) => schema.simpleTypes[typeName]?.enums ?? null;
+
+  const where = (path) => path.join(" > ");
+
+  const visit = (el, def, path) => {
+    if (out.length >= MAX) return;
+    const type = typeOf(def);
+    const name = String(el.tagName).replace(/^.*:/, "");
+
+    if (type) {
+      // attributes the schema does not declare
+      for (const attr of [...el.attributes]) {
+        const an = String(attr.name).replace(/^.*:/, "");
+        if (an.startsWith("xmlns")) continue;
+        const spec = type.attrs[an];
+        if (!spec) {
+          out.push({ scope: "xsd", msg: `<${name}> has no attribute "${an}"`, at: where(path) });
+          continue;
+        }
+        const allowed = enumsFor(spec.type);
+        if (allowed && attr.value !== "" && !allowed.has(attr.value)) {
+          out.push({ scope: "xsd", msg: `<${name} ${an}="${attr.value}"> is not a value the schema allows`, at: where(path) });
+        }
+      }
+      for (const [an, spec] of Object.entries(type.attrs)) {
+        if (spec.required && !el.hasAttribute(an)) {
+          out.push({ scope: "xsd", msg: `<${name}> is missing the required attribute "${an}"`, at: where(path) });
+        }
+      }
+      // text content against an enumerated simpleContent base
+      if (type.hasSimpleContent) {
+        const allowed = enumsFor(type.textType);
+        const text = (el.textContent || "").trim();
+        if (allowed && text && !allowed.has(text)) {
+          out.push({ scope: "xsd", msg: `<${name}> does not allow the content "${text.slice(0, 40)}"`, at: where(path) });
+        }
+      }
+    }
+
+    for (const child of [...el.children]) {
+      if (out.length >= MAX) return;
+      const cn = String(child.tagName).replace(/^.*:/, "");
+      if (!type) { continue; }                 // schema says nothing about this branch
+      if (type.anyChildren) continue;
+      // <f> is declared with substitutionGroup="find", so it stands wherever
+      // find does; without this the shorthand form reads as an illegal element
+      const head = schema.elements[cn]?.substitutes || "";
+      if (!type.children.has(cn) && !(head && type.children.has(head))) {
+        out.push({ scope: "xsd", msg: `<${cn}> is not allowed inside <${name}>`, at: where(path) });
+        continue;
+      }
+      // a nested declaration wins; otherwise it is a reference to a global element
+      const cdef = type.childDefs[cn] ?? schema.elements[cn] ?? (head ? schema.elements[head] : null) ?? null;
+      visit(child, cdef, [...path, cn]);
+    }
+  };
+
+  visit(root, schema.elements.run, ["run"]);
+  return out;
+}
+
+/* One line for a validateAgainstXsd finding, naming where it sits. */
+export const xsdProblemLine = (p) => (p.at ? `${p.at}: ${p.msg}` : p.msg);
