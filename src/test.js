@@ -1391,6 +1391,27 @@ group("run.xsd validation");
   }
 }
 
+/* ---------- a new chain ---------- */
+group("new chain");
+{
+  // it used to start as a branch on F1 with one side unspecified, which had to
+  // be taken apart whenever the chain was not about filtering
+  const c = C.mkChain("P3", "P7");
+  check("is ingress to output, with no branch", c.tree.t === "out" && c.ports === "P3");
+  check("sends to the port it was given", c.tree.ports === "P7");
+  check("has no filter on it", c.tree.fids === undefined);
+  check("takes the first two ports", C.firstTwoPorts(["P0", "P1", "P2"]).join() === "P0,P1");
+  check("copes with one port", C.firstTwoPorts(["P5"]).join() === "P5,P5");
+  check("copes with none", C.firstTwoPorts([]).join() === "P0,P1" && C.firstTwoPorts(null).join() === "P0,P1");
+  check("ignores blanks", C.firstTwoPorts(["", "V1", "V2"]).join() === "V1,V2");
+  check("a chain still validates", C.chainProblems(C.mkChain("P0", "P1").tree, []).length === 0);
+  // grismXmlProblems handed chainProblems the chain instead of its tree, and
+  // doc instead of the list to fill, so chain faults were never reported
+  check("a branch with no filter chosen is reported",
+    C.grismXmlProblems('<run><chain><in>P0</in><fid></fid><match><out>P1</out></match></chain></run>')
+      .some((p) => /filter/.test(p.msg)));
+}
+
 /* ---------- filter condition pickers ---------- */
 group("filter condition pickers");
 {

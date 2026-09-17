@@ -496,7 +496,19 @@ export const setSide = (node, bid, side, val) => cUpdate(node, bid, (b) => ({ ..
 // identified by its <in> port. Templates may still return a single `chain`;
 // normalizeDoc upgrades that to a `chains` array so the rest of the app only
 // ever deals with the plural form.
-export const mkChain = (ports = "P0") => ({ cid: nid(), ports, tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } });
+/* A new chain is the simplest thing that does something: everything arriving on
+   the first port leaves on the second. No filter and no branch -- those are
+   added deliberately, and starting with one meant deleting it whenever the
+   chain was not about filtering. */
+export const mkChain = (ingress = "P0", egress = "P1") => ({
+  cid: nid(), ports: ingress, tree: mkOut(egress),
+});
+
+/* The first two ports the device offers, which is what a new chain starts from. */
+export const firstTwoPorts = (ports) => {
+  const list = (ports ?? []).filter(Boolean);
+  return [list[0] ?? "P0", list[1] ?? list[0] ?? "P1"];
+};
 export function normalizeDoc(d) {
   if (d.chains) return { ...d, chains: d.chains.map((c) => c.cid ? c : { ...c, cid: nid() }) };
   const { chain, ...rest } = d;
@@ -2620,7 +2632,11 @@ export function grismXmlProblems(xmlText) {
   (doc.inputs ?? []).forEach((i) => inputProblems(i, out));
   (doc.outputs ?? []).forEach((o) => outputProblems(o, out));
   (doc.actions ?? []).forEach((a) => actionProblems(a, out));
-  (doc.chains ?? []).forEach((c) => chainProblems(c, doc, out));
+  // chainProblems walks a chain's tree and pushes into its second argument;
+  // passing the chain and then doc meant it walked an object with no .t, found
+  // nothing, and would have pushed into doc had it found anything.
+  (doc.chains ?? []).forEach((c, i) =>
+    chainProblems(c.tree, []).forEach((p) => out.push({ ...p, scope: `chain ${c.id ?? i + 1}` })));
   return out;
 }
 

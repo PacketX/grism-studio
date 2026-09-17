@@ -18,7 +18,7 @@ import {
   mergePortStats, parseInterfacePorts, cloneForDup, collectRefs, describeDoc, filterProblems,
   FACTORY_MGMT_IP, fmtBytes, fmtKB, fmtNum, fmtSpeed, formatXml, inferIntent,
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
-  mkAction, mkActionMod, mkChain, mkDrop, mkFind, lastFindField, mkGroup,
+  mkAction, mkActionMod, mkChain, firstTwoPorts, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
   dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
@@ -71,7 +71,7 @@ export default function GrismStudio() {
   // holds device status pages. Future feature pages become new workspaces.
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
-    { id: "pipeline", tabs: ["filters", "inputs", "outputs", "actions", "chain", "simulate", "export", "capture"] },
+    { id: "pipeline", tabs: ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
     { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries"] },
     { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
@@ -5088,7 +5088,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const setInVlan = (patch) => setDoc((d) => ({ ...d, chains: d.chains.map((c) => c.cid === cid ? { ...c, inVlan: { ...(c.inVlan ?? {}), ...patch } } : c) }));
 
   const addChain = () => {
-    const c = mkChain("P0");
+    const [ingress, egress] = firstTwoPorts(portOptions);
+    const c = mkChain(ingress, egress);
     setDoc((d) => ({ ...d, chains: [...d.chains, c] }));
     setActiveChain(c.cid); setSelId(null);
   };
@@ -5151,8 +5152,10 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const insertFilterAbove = (id, keepSide) => {
     const otherSide = keepSide === "match" ? "notmatch" : "match";
     const newId = nid();
-    const wrap = (node) => ({ id: newId, t: "branch", fids: "", fidOp: "or",
-      [keepSide]: node, [otherSide]: mkOut("") });
+    // the side not being kept is left unspecified rather than an output with no
+      // port: an empty <out> is an error, "unspecified" is a decision still to make
+      const wrap = (node) => ({ id: newId, t: "branch", fids: "", fidOp: "or",
+      [keepSide]: node, [otherSide]: mkUnset() });
     setChainTreeFor(cid, (tree) => tree.id === id ? wrap(tree) : cUpdate(tree, id, wrap));
     setSelId(newId);
   };
@@ -5167,7 +5170,14 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     setChainTreeFor(cid, (tree) => setSide(tree, confirm.branchId, confirm.side, intent === "drop" ? mkDrop() : mkUnset()));
     setSelId(null); setConfirm(null);
   };
-  const restoreSide = (nid2) => { const o = ownerOf(nid2); if (!o) return; setChainTreeFor(cid, (tree) => setSide(tree, o.branchId, o.side, mkOut("P1"))); };
+  /* Turning an unspecified side into a real route drops the user on the output
+     with nothing chosen, rather than guessing a port for them. */
+  const restoreSide = (nid2) => {
+    const o = ownerOf(nid2); if (!o) return;
+    const out = mkOut("");
+    setChainTreeFor(cid, (tree) => setSide(tree, o.branchId, o.side, out));
+    setSelId(out.id);
+  };
 
   const PAD = 40, svgW = totalW + PAD * 2, svgH = totalH + PAD * 2;
   const center = (n) => ({ x: n._x + NODE_W / 2 + PAD, y: n._y + PAD });
