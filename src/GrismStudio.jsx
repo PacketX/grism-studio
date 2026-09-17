@@ -18,7 +18,7 @@ import {
   mergePortStats, parseInterfacePorts, cloneForDup, collectRefs, describeDoc, filterProblems,
   FACTORY_MGMT_IP, fmtBytes, fmtKB, fmtNum, fmtSpeed, formatXml, inferIntent,
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
-  mkAction, mkActionMod, mkChain, mkDrop, mkFind, mkGroup,
+  mkAction, mkActionMod, mkChain, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
   dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
@@ -28,6 +28,7 @@ import {
   extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize,
   isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError, problemLine,
   parseXsd, validateAgainstXsd, xsdProblemLine,
+  countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -209,6 +210,7 @@ export default function GrismStudio() {
   // Set as the tab that triggered it unmounts, so it has to live out here.
   const [signedOutNotice, setSignedOutNotice] = useState("");
   const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
+  const [mgmtPorts, setMgmtPorts] = useState([]);       // management interfaces, e.g. M0
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
   const [loopPorts, setLoopPorts] = useState([]); // ports on a LOOP-type interface (out returns in on the same port)
@@ -392,7 +394,10 @@ export default function GrismStudio() {
       setHbTargets(targets);
       const storages = (cfg.storages ?? []).filter((s) => s.enable).map((s) => s.name).filter(Boolean);
       setDeviceStorages([...new Set(storages)]);
-    } catch { setDevicePorts(null); setHbTargets([]); setDeviceStorages([]); setLoopPorts([]); } // keep defaults
+      // grism.port.linkdown can name a management interface as well as a data
+      // port, and those live in ifcfgs rather than interfaces
+      setMgmtPorts([...new Set(mgmtPortNames(cfg))]);
+    } catch { setDevicePorts(null); setHbTargets([]); setDeviceStorages([]); setLoopPorts([]); setMgmtPorts([]); } // keep defaults
   }, []);
 
   // set the sync baseline from the device's running config WITHOUT replacing the
@@ -470,7 +475,7 @@ export default function GrismStudio() {
     try {
       await fetch("/logout", { method: "POST", credentials: "include" });
     } catch { /* clear local session regardless of network result */ }
-    setDevicePorts(null); // fall back to default port list
+    setDevicePorts(null); setMgmtPorts([]); // fall back to default port list
     setHbTargets([]);
     setDeviceStorages([]);
     setLoopPorts([]);
@@ -819,6 +824,7 @@ export default function GrismStudio() {
             doc={doc} setDoc={setDoc}
             activeFilter={activeFilter} setActiveFilter={setActiveFilter}
             setFilterRoot={setFilterRoot} hbTargets={hbTargets} t={t} touched={changes?.filters?.touched}
+            portOptions={devicePorts ?? DEFAULT_PORTS} mgmtPorts={mgmtPorts} lang={lang}
           />
         )}
         {tab === "inputs" && (
@@ -4063,7 +4069,7 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
   );
 }
 
-function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, t, touched }) {
+function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, portOptions, mgmtPorts, lang, t, touched }) {
   const tr = t || ((k) => k);
   const [attrsOpen, setAttrsOpen] = useState(false);   // advanced attributes panel
   const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
@@ -4099,7 +4105,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
     return { ...n, t: op };
   });
   const onChangeFind = (id, patch) => mutate(id, (n) => ({ ...n, ...patch }));
-  const onAddCond = (id) => mutate(id, (n) => ({ ...n, children: [...(n.children ?? []), mkFind()] }));
+  const onAddCond = (id) => mutate(id, (n) => ({ ...n, children: [...(n.children ?? []), mkFind(lastFindField(n))] }));
   const onAddGroup = (id) => mutate(id, (n) => ({ ...n, children: [...(n.children ?? []), mkGroup("or")] }));
   const onAddNot = (id) => mutate(id, (n) => ({ ...n, children: [...(n.children ?? []), mkNot()] }));
   const onRemove = (id) => setFilterRoot(f.id, (root) => tRemove(root, id));
@@ -4191,7 +4197,8 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
         )}
 
         <div className="tree-scroll">
-          <CritNode node={f.root} depth={0} canRemove={false} isRoot={true} hbTargets={hbTargets} t={tr}
+          <CritNode node={f.root} depth={0} canRemove={false} isRoot={true} hbTargets={hbTargets}
+            portOptions={portOptions} mgmtPorts={mgmtPorts} lang={lang} t={tr}
             onChangeOp={onChangeOp} onChangeFind={onChangeFind}
             onAddCond={onAddCond} onAddGroup={onAddGroup} onAddNot={onAddNot} onRemove={onRemove} />
         </div>
@@ -4224,7 +4231,8 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
 const RAILS = ["#5eead4", "#7dd3fc", "#c4b5fd", "#fda4af", "#fcd34d"];
 function CritNode(props) {
   const { node, depth, isRoot } = props;
-  if (node.t === "find") return <FindRow node={node} onChange={props.onChangeFind} onRemove={props.onRemove} canRemove={props.canRemove} hbTargets={props.hbTargets} t={props.t} />;
+  if (node.t === "find") return <FindRow node={node} onChange={props.onChangeFind} onRemove={props.onRemove} canRemove={props.canRemove}
+    hbTargets={props.hbTargets} portOptions={props.portOptions} mgmtPorts={props.mgmtPorts} lang={props.lang} t={props.t} />;
   const isNot = node.t === "not";
   const rail = RAILS[depth % RAILS.length];
   return (
@@ -4263,13 +4271,22 @@ function CritNode(props) {
     </div>
   );
 }
-function FindRow({ node, onChange, onRemove, canRemove, hbTargets, t }) {
+function FindRow({ node, onChange, onRemove, canRemove, hbTargets, portOptions, mgmtPorts, lang, t }) {
   const tr = t || ((k) => k);
   const f = FIELD_INDEX[node.field]; const kind = f?.kind ?? "str";
   const rels = relationsFor(kind); const isEx = kind === "exists";
   const err = isEx ? null : validate(kind, node.val);
   const isHbId = node.field === "heartbeat.target.miss.id";
   const targets = hbTargets ?? [];
+  /* Fields whose value comes from a known set get a picker rather than a text
+     box. A value outside the set is still offered, so a config written
+     elsewhere never silently loses what it had. */
+  const isCountry = kind === "country";
+  const isPort = PORT_PICKER_FIELDS.has(node.field);
+  const countries = isCountry ? countryOptions(lang) : [];
+  const ports = isPort ? portOptionsForField(node.field, portOptions, mgmtPorts) : [];
+  const listed = isCountry ? countries.some((c) => c.code === node.val)
+    : isPort ? ports.includes(node.val) : true;
   // when the current value isn't among fetched targets, still show it so it's not lost
   const hbHasVal = !node.val || targets.some((t) => String(t.id) === String(node.val));
   return (
@@ -4293,6 +4310,20 @@ function FindRow({ node, onChange, onRemove, canRemove, hbTargets, t }) {
                 </select>
               : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder={tr("flt.signInList")}
                   onChange={(e) => onChange(node.id, { val: e.target.value })} />)
+          : isCountry && countries.length > 0
+            ? <select className={"val" + (err ? " invalid" : "")} value={node.val}
+                onChange={(e) => onChange(node.id, { val: e.target.value })}>
+                {!node.val && <option value="">{tr("flt.pickCountry")}</option>}
+                {!listed && node.val && <option value={node.val}>{node.val}</option>}
+                {countries.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+              </select>
+          : isPort && ports.length > 0
+            ? <select className={"val" + (err ? " invalid" : "")} value={node.val}
+                onChange={(e) => onChange(node.id, { val: e.target.value })}>
+                {!node.val && <option value="">{tr("flt.pickPort")}</option>}
+                {!listed && node.val && <option value={node.val}>{node.val} {tr("flt.notOnDevice")}</option>}
+                {ports.map((pn) => <option key={pn} value={pn}>{pn}</option>)}
+              </select>
           : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder={ph(kind)}
               onChange={(e) => onChange(node.id, { val: e.target.value })} />}
       <div className="spacer" />

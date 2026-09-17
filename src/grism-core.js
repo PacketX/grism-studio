@@ -259,7 +259,23 @@ export const ph = (k) => ({ ip:"8.8.8.8", ipv6:"2001:db8::1", mac:"12:34:56:78:9
   ja4part:"8daaf6152771", quictag:"CHLO" }[k] ?? "value");
 
 /* ===================== filter (boolean tree) model ===================== */
-export const mkFind = () => ({ id: nid(), t: "find", field: "ip.addr", rel: "==", val: "" });
+/* A new condition starts on the same field as the one before it: conditions in
+   a group are nearly always about the same thing, so repeating the previous
+   choice saves picking it again. Falls back to ip.addr for the first one. */
+export const mkFind = (field = "ip.addr") => {
+  const f = FIELD_INDEX[field] ? field : "ip.addr";
+  const rels = relationsFor(FIELD_INDEX[f]?.kind ?? "str");
+  return { id: nid(), t: "find", field: f, rel: rels[0] ?? "==", val: "" };
+};
+
+/* The field the next condition added to this group should start on. */
+export const lastFindField = (node) => {
+  const kids = node?.children ?? [];
+  for (let i = kids.length - 1; i >= 0; i--) {
+    if (kids[i]?.t === "find" && kids[i].field) return kids[i].field;
+  }
+  return "ip.addr";
+};
 export const mkGroup = (op) => ({ id: nid(), t: op, children: [mkFind()] });
 export const mkNot = () => ({ id: nid(), t: "not", children: [mkFind()] });
 
@@ -2969,3 +2985,57 @@ export function validateAgainstXsd(xmlText, schema) {
 
 /* One line for a validateAgainstXsd finding, naming where it sits. */
 export const xsdProblemLine = (p) => (p.at ? `${p.at}: ${p.msg}` : p.msg);
+
+/* ============================================================
+   Pickers for filter conditions
+   ============================================================ */
+
+/* Every two-letter region the platform can name, derived rather than written
+   out: Intl already carries the ISO 3166-1 list, and a copy here would be one
+   more thing to keep current. EXTRA_REGIONS covers the non-ISO codes the
+   device's database also emits. */
+let _countryOptions = new Map();
+export function countryOptions(lang = "en") {
+  if (_countryOptions.has(lang)) return _countryOptions.get(lang);
+  const out = [];
+  try {
+    const names = new Intl.DisplayNames([lang], { type: "region", fallback: "none" });
+    for (let a = 65; a <= 90; a++) {
+      for (let b = 65; b <= 90; b++) {
+        const code = String.fromCharCode(a, b);
+        let name;
+        try { name = names.of(code); } catch { name = undefined; }
+        if (name) out.push({ code, name });
+      }
+    }
+  } catch { /* no Intl data: the field stays a plain text box */ }
+  Object.entries(EXTRA_REGIONS).forEach(([code, name]) => {
+    if (!out.some((o) => o.code === code)) out.push({ code, name });
+  });
+  // by code, not by name: the codes are what the config stores and what the
+  // user is looking for, and sorting by name reorders the whole list the
+  // moment the interface language changes.
+  out.sort((x, y) => x.code.localeCompare(y.code));
+  _countryOptions.set(lang, out);
+  return out;
+}
+
+/* Management interface names from the device config, e.g. M0.
+
+   grism.port.linkdown accepts these as well as the data ports: the firmware's
+   port-name lookup falls back to 1000 + N for anything starting with M, so a
+   management interface going down is something a filter can match on. */
+export const mgmtPortNames = (cfg) =>
+  (cfg?.ifcfgs ?? [])
+    .filter((i) => String(i?.role ?? "").toLowerCase() === "management" && i?.name)
+    .map((i) => String(i.name));
+
+/* Which fields the firmware resolves through that same port-name lookup, and
+   which of them a management interface makes sense for. */
+export const PORT_PICKER_FIELDS = new Set(["grism.srcport", "grism.port.linkdown", "flowtable.inport"]);
+export const MGMT_PORT_FIELDS = new Set(["grism.port.linkdown"]);
+
+export const portOptionsForField = (field, dataPorts, mgmtPorts) => [
+  ...(dataPorts ?? []),
+  ...(MGMT_PORT_FIELDS.has(field) ? (mgmtPorts ?? []) : []),
+];

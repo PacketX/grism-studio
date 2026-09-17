@@ -1391,6 +1391,54 @@ group("run.xsd validation");
   }
 }
 
+/* ---------- filter condition pickers ---------- */
+group("filter condition pickers");
+{
+  // a new condition starts on the field the previous one used
+  check("inherits the previous field",
+    C.lastFindField({ children: [{ t: "find", field: "ip.src" }, { t: "find", field: "country.iso_code" }] })
+      === "country.iso_code");
+  check("skips groups when looking back",
+    C.lastFindField({ children: [{ t: "find", field: "tcp.port" }, { t: "or", children: [] }] }) === "tcp.port");
+  check("falls back for the first condition",
+    C.lastFindField({ children: [] }) === "ip.addr" && C.lastFindField(null) === "ip.addr");
+  check("mkFind honours the field", C.mkFind("country.iso_code").field === "country.iso_code");
+  check("mkFind refuses a field that does not exist", C.mkFind("nope.field").field === "ip.addr");
+  check("mkFind picks a relation the field allows",
+    C.relationsFor(C.FIELD_INDEX[C.mkFind("country.iso_code").field].kind).includes(C.mkFind("country.iso_code").rel));
+
+  const cs = C.countryOptions("en");
+  check("lists the world", cs.length > 200);
+  check("carries code and name", cs.find((c) => c.code === "TW")?.name === "Taiwan");
+  // sorted by code: the name order changes with the interface language
+  check("ordered by code", cs.map((c) => c.code).join() === cs.map((c) => c.code).sort().join());
+  check("includes the non-ISO regions the device emits",
+    ["EU", "ZZ"].every((c) => cs.some((o) => o.code === c)));
+  check("follows the interface language", C.countryOptions("zh-TW").find((c) => c.code === "TW")?.name !== "Taiwan");
+
+  const cfg = { ifcfgs: [{ role: "management", name: "M0" }, { role: "data", name: "X" }, { role: "Management", name: "M1" }] };
+  check("finds the management interfaces", C.mgmtPortNames(cfg).join() === "M0,M1");
+  check("ignores anything else", !C.mgmtPortNames(cfg).includes("X"));
+  check("survives a config without ifcfgs", C.mgmtPortNames({}).length === 0 && C.mgmtPortNames(null).length === 0);
+
+  // the firmware resolves all three through the same port-name lookup, but a
+  // management interface only makes sense for link-down
+  check("ingress port lists the data ports only",
+    C.portOptionsForField("grism.srcport", ["P0", "P1"], ["M0"]).join() === "P0,P1");
+  check("link down also lists the management interfaces",
+    C.portOptionsForField("grism.port.linkdown", ["P0", "P1"], ["M0"]).join() === "P0,P1,M0");
+  check("flow ingress port is data only",
+    C.portOptionsForField("flowtable.inport", ["P0"], ["M0"]).join() === "P0");
+  check("knows which fields get a port picker",
+    C.PORT_PICKER_FIELDS.has("grism.srcport") && C.PORT_PICKER_FIELDS.has("grism.port.linkdown") &&
+    !C.PORT_PICKER_FIELDS.has("ip.src"));
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} prompts for a country`, !!I18N[lang]["flt.pickCountry"]);
+  check(`${lang} prompts for a port`, !!I18N[lang]["flt.pickPort"]);
+}
+
 /* ---------- extra running-config files (run1.xml…run15.xml) ---------- */
 group("extra running-config files");
 {

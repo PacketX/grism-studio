@@ -311,6 +311,8 @@ export const I18N = {
     "ex.appliedWith": "Applied with", "ex.warningWord": "warning", "ex.warningsWord": "warnings",
     "ex.submitFailed": "Submit failed", "ex.checkSignedIn": "Check that you're signed in to the device and try again.",
     "ex.appliedLive": "Configuration applied — the device is now running",
+    "flt.pickCountry": "— pick a country —", "flt.pickPort": "— pick a port —",
+    "flt.notOnDevice": "(not on this device)",
     /* Extra running-config files (run1.xml…run15.xml). Deliberately quiet: the
        intended workflow is run.xml, and these are the exception. */
     "xf.title": "Other config files", "xf.none": "No other files on this device.",
@@ -744,6 +746,8 @@ export const I18N = {
     "ex.appliedWith": "套用完成,含", "ex.warningWord": "個警告", "ex.warningsWord": "個警告",
     "ex.submitFailed": "提交失敗", "ex.checkSignedIn": "確認已登入裝置後再試。",
     "ex.appliedLive": "設定已套用 — 裝置現在執行的是",
+    "flt.pickCountry": "— 選擇國家 —", "flt.pickPort": "— 選擇連接埠 —",
+    "flt.notOnDevice": "(此裝置沒有)",
     "xf.title": "其他設定檔", "xf.none": "此裝置沒有其他設定檔。",
     "xf.show": "顯示", "xf.hide": "隱藏",
     "xf.note": "裝置上額外的 run*.xml,通常是透過 SFTP 放入的過濾黑名單。run.xml 本身在上方編輯。",
