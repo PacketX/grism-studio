@@ -1325,3 +1325,7 @@ a.copy-btn{display:inline-block; text-decoration:none; line-height:1.7;}
 .tf-bypass{margin-left:8px; font-family:var(--mono); font-size:10px; line-height:1;
   padding:2px 6px; border-radius:99px; border:1px solid var(--warn); color:var(--warn);
   vertical-align:middle;}
+
+/* a bypass-capable port whose relay is currently open: worth labelling, not
+   worth the amber that means "traffic is going around the device right now" */
+.tf-bypass.idle{border-color:var(--line-2); color:var(--txt-dim);}

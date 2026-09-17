@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.28.1";
+export const STUDIO_VERSION = "2.28.2";
 
 export const I18N = {
   en: {
@@ -75,6 +75,8 @@ export const I18N = {
     "set.load": "Reload from device", "set.loading": "loading…", "set.loadFailed": "Couldn't load config",
     "set.mgmtIP": "Management interfaces", "set.rawXml": "Raw configuration",
     "set.bypass": "LAN bypass",
+    "set.bypassPair": "bypass pair",
+    "set.bypassPairTip": "Wired through a bypass relay. The relay is open, so traffic on this port reaches the device normally.",
     "set.bypassNote": "These port pairs are wired through relays. In bypass the two ports are joined directly, so traffic keeps flowing while the device is not forwarding it — nothing is filtered or captured until you switch back.",
     "set.bypassOn": "bypassed", "set.bypassOff": "normal", "set.bypassUnknown": "unknown",
     "set.bypassToBypass": "switch to bypass", "set.bypassToNormal": "switch to normal",
@@ -534,6 +536,8 @@ export const I18N = {
     "set.load": "從裝置重新載入", "set.loading": "載入中…", "set.loadFailed": "無法載入設定",
     "set.mgmtIP": "管理介面", "set.rawXml": "原始設定",
     "set.bypass": "LAN Bypass",
+    "set.bypassPair": "bypass 埠對",
+    "set.bypassPairTip": "此埠接有 bypass 繼電器。目前繼電器是斷開的,流量正常進入本機。",
     "set.bypassNote": "這些埠對之間接有繼電器。進入 bypass 後兩個埠直接對接,流量會繼續通過而不經過本機處理——在切回之前不會做任何過濾或擷取。",
     "set.bypassOn": "已 bypass", "set.bypassOff": "正常", "set.bypassUnknown": "無法取得",
     "set.bypassToBypass": "切換為 bypass", "set.bypassToNormal": "切換為正常",

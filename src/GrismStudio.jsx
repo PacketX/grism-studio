@@ -1414,6 +1414,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
      so asking here costs nothing. */
   const [devModel, setDevModel] = React.useState("");
   const bypassHw = React.useMemo(() => bypassSupport(devModel), [devModel]);
+  // port name -> the pair it is wired into, so the interfaces table can say so
+  const bypassPairOf = React.useMemo(() => {
+    const map = {};
+    (bypassHw?.pairs ?? []).forEach((pair) => pair.ports.forEach((n) => { map[n] = pair.n; }));
+    return map;
+  }, [bypassHw]);
 
   const loadBypass = React.useCallback(async (hw) => {
     if (!hw) return;
@@ -1752,8 +1758,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     getConfig().then((cfg) => setDevModel(String((cfg.args && cfg.args.model) || cfg.model || "")))
       .catch(() => setDevModel(""));
   }, [loggedIn, getConfig]);
-  React.useEffect(() => { if (loggedIn && section === "bypass" && bypassHw) loadBypass(bypassHw); },
-    [loggedIn, section, bypassHw, loadBypass]);
+  // read the relays once when either section opens; they do not move on their own
+  React.useEffect(() => {
+    if (loggedIn && bypassHw && (section === "bypass" || section === "ports")) loadBypass(bypassHw);
+  }, [loggedIn, section, bypassHw, loadBypass]);
   React.useEffect(() => { if (loggedIn && section === "auth" && users === null) loadUsers(); },
     [loggedIn, section, users, loadUsers]);
 
@@ -1926,7 +1934,16 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                     {ports.map((p, i) => (
                       <tr key={p.name} className={p.enable ? "" : "port-off"}>
                         <td className="tf-num mono">{p.ifidx ?? "—"}</td>
-                        <td className="tf-name">{p.name}</td>
+                        <td className="tf-name">{p.name}
+                          {bypassPairOf[p.name] && (
+                            <span className={"tf-bypass" + (bypass[bypassPairOf[p.name]] === true ? "" : " idle")}
+                              title={bypass[bypassPairOf[p.name]] === true ? tr("tf.bypassTip") : tr("set.bypassPairTip")}>
+                              {bypass[bypassPairOf[p.name]] === true
+                                ? tr("tf.bypass")
+                                : tr("set.bypassPair") + " " + bypassPairOf[p.name]}
+                            </span>
+                          )}
+                        </td>
                         <td>{p.linkUp == null ? <span className="dim">—</span>
                           : <span className={"tf-link " + (p.linkUp ? "up" : "down")}>{p.linkUp ? tr("tf.up") : tr("tf.down")}</span>}</td>
                         <td className="mono">{p.speed ? fmtSpeed(p.speed) : "—"}</td>
