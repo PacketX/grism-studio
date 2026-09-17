@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.26.0";
+export const STUDIO_VERSION = "2.26.1";
 
 export const I18N = {
   en: {
@@ -230,6 +230,7 @@ export const I18N = {
     "tf.d.inOversizeCrcErrorPackets": "Oversize CRC errors",
     "nav.advanced": "Advanced",
     "nav.advancedTip": "Inputs, outputs and actions — hover to reveal",
+    "nav.advancedHide": "Fold these away",
     "ov.tmplBannerTitle": "You're viewing a template",
     "ov.tmplBannerBody": "This is an example configuration, not the one running on a device. Sign in to load the running configuration.",
     "ov.tmplBannerBtn": "Browse templates", "btn.templates": "Templates", "btn.template_current": "Template",
@@ -657,7 +658,7 @@ export const I18N = {
     "tf.clearTitle": "清除計數?",
     "tf.clearBody": "裝置會將這些統計歸零並重新開始計算,不影響實際流量。",
     "tf.clearDesc": "目前累計的數據會消失", "tf.refreshing": "整理中…", "tf.loadFailed": "無法載入統計", "tf.every": "每", "tf.seconds": "秒",
-    "tf.updated": "更新於", "tf.iface": "介面", "tf.link": "連線", "tf.up": "up", "tf.down": "斷線",
+    "tf.updated": "更新於", "tf.iface": "介面", "tf.link": "連線", "tf.up": "up", "tf.down": "down",
     "tf.speed": "速率", "tf.inRate": "入", "tf.outRate": "出",
     "tf.inPkts": "入封包", "tf.outPkts": "出封包", "tf.inBytes": "入位元組", "tf.outBytes": "出位元組",
     "tf.errors": "錯誤", "tf.pps": "pps",
@@ -680,6 +681,7 @@ export const I18N = {
     "tf.d.inOversizeCrcErrorPackets": "超長 CRC 錯誤",
     "nav.advanced": "進階",
     "nav.advancedTip": "Inputs、outputs 與 actions — 滑鼠移過即展開",
+    "nav.advancedHide": "收回",
     "ov.tmplBannerTitle": "目前顯示的是範本",
     "ov.tmplBannerBody": "這是示範用的設定,不是裝置上執行中的設定。登入後即可載入執行中的設定。",
     "ov.tmplBannerBtn": "瀏覽範本", "btn.templates": "範本", "btn.template_current": "範本",

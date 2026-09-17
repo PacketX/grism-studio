@@ -512,11 +512,17 @@ export default function GrismStudio() {
                 {open && w.id === "pipeline" && (() => {
                   const counts = { inputs: doc.inputs?.length ?? 0, outputs: doc.outputs?.length ?? 0, actions: doc.actions?.length ?? 0 };
                   const advKeys = ["inputs", "outputs", "actions"];
-                  // All-or-nothing: once any advanced section is in use (or the user is
-                  // on one), show all three. Showing a subset made the row's width — and
-                  // therefore every tab's position — change as sections filled up.
-                  const inUse = advKeys.some((k) => counts[k] > 0 || tab === k);
-                  const shown = (inUse || advOpen) ? advKeys : [];
+                      // All-or-nothing: show all three or none. Showing a subset made
+                      // the row's width -- and every tab's position -- change as the
+                      // sections filled up.
+                      //
+                      // Being on one of them keeps the group open, since folding would
+                      // hide the tab being looked at. Merely having content in one does
+                      // not: the folded label carries the count instead, so the group
+                      // can be put away and still say what is in there.
+                      const onAdvTab = advKeys.includes(tab);
+                      const shown = (advOpen || onAdvTab) ? advKeys : [];
+                      const advCount = advKeys.reduce((sum, k) => sum + (counts[k] || 0), 0);
                   const hidden = advKeys.length - shown.length;
                   // a tab shows a dot when its section differs from the loaded config
                   const TAB_SECTION = { filters: "filters", inputs: "inputs", outputs: "outputs", actions: "actions", chain: "chains" };
@@ -539,10 +545,19 @@ export default function GrismStudio() {
                           <button className="tab-group-label as-button" onClick={() => setAdvOpen(true)}
                             title={t("nav.advancedTip")} aria-label={t("nav.advancedTip")} aria-expanded={false}>
                             {t("nav.advanced")}
+                            {advCount > 0 && <span className="tab-badge">{advCount}</span>}
                             <span className="tab-group-caret" aria-hidden="true">▼</span>
                           </button>
-                        ) : (
+                        ) : onAdvTab ? (
+                          /* nothing to fold to without moving the user off the tab
+                             they are on, so no control here */
                           <span className="tab-group-label">{t("nav.advanced")}</span>
+                        ) : (
+                          <button className="tab-group-label as-button" onClick={() => setAdvOpen(false)}
+                            title={t("nav.advancedHide")} aria-label={t("nav.advancedHide")} aria-expanded={true}>
+                            {t("nav.advanced")}
+                            <span className="tab-group-caret" aria-hidden="true">▲</span>
+                          </button>
                         )}
                         {shown.map(tabBtn)}
                       </span>
