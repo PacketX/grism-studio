@@ -683,8 +683,20 @@
 .sim-out-out{color:var(--match);} .sim-out-drop{color:var(--txt-dim);} .sim-out-default{color:var(--unset);}
 
 @media (max-width:900px){
-  .filters-layout{grid-template-columns:1fr;} .filter-list{display:none;}
-  .chain-layout,.chain-layout3,.export-layout{grid-template-columns:1fr;} .chain-list,.chain-rail,.export-side{display:none;}
+  /* One column, with the side panels stacked under the main pane rather than
+     hidden. On a phone they were the only way to pick a filter or edit the
+     selected node, and display:none left no way to reach either. */
+  /* align-content:start, or the grid stretches its rows to fill the column and
+     each card gets a slice too short for what is in it -- the new-chain button
+     was cut in half. Sized by content, with the page doing the scrolling. */
+  .filters-layout,.chain-layout,.chain-layout3,.export-layout{grid-template-columns:1fr;
+    grid-auto-rows:min-content; align-content:start; overflow-y:auto;}
+  .filter-list,.chain-list{display:flex; max-height:34vh;}
+  /* the grid row used to give these their height; standing alone they need
+     to grow with their content instead of scrolling inside a box */
+  .chain-rail{display:flex; overflow:visible;}
+  .export-side{display:block;}
+  .canvas-wrap{height:46vh;}
   .sim-layout{grid-template-columns:1fr;}
   /* tighter page padding so the cards keep their width on small screens */
   .filters-layout,.chain-layout,.chain-layout3,.export-layout,.sim-page{padding:12px;}
