@@ -31,6 +31,7 @@ import {
   parseXsd, validateAgainstXsd, xsdProblemLine,
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
   savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
+  bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -1402,6 +1403,45 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const [lg, setLg] = React.useState(null);        // NetFlow / syslog / DPI logging
   const [lgBase, setLgBase] = React.useState(null);
   const [rawCfg, setRawCfg] = React.useState(null);   // for the port pickers
+  // LAN bypass: only some models have the relays, so the section appears only
+  // when the config says so. null = not read yet, true/false = the relay state.
+  const [bypass, setBypass] = React.useState({});     // pair number -> true | false | null
+  const [bypassBusy, setBypassBusy] = React.useState(0);
+  const [bypassErr, setBypassErr] = React.useState("");
+  /* The model decides whether this device has bypass relays at all, and the
+     nav entry has to be right before any section is opened -- rawCfg is only
+     filled once one of the sections that needs it has loaded. getConfig caches,
+     so asking here costs nothing. */
+  const [devModel, setDevModel] = React.useState("");
+  const bypassHw = React.useMemo(() => bypassSupport(devModel), [devModel]);
+
+  const loadBypass = React.useCallback(async (hw) => {
+    if (!hw) return;
+    const next = {};
+    for (const pair of hw.pairs) {
+      try {
+        const res = await fetch(bypassStatusUrl(hw.key, pair.n), { credentials: "include" });
+        next[pair.n] = res.ok ? parseBypassStatus(await res.text()) : null;
+      } catch { next[pair.n] = null; }
+    }
+    setBypass(next);
+  }, []);
+
+  const setBypassMode = async (hw, pair, on) => {
+    setBypassBusy(pair.n); setBypassErr("");
+    try {
+      const body = new URLSearchParams(); body.set("data", on ? "1" : "0");
+      const res = await fetch(bypassModeUrl(hw.key, pair.n), {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      // read it back rather than assuming: the relay is what matters, not the
+      // request, and on a T12S the two can differ
+      await loadBypass(hw);
+    } catch (e) {
+      setBypassErr(String(e.message || e));
+    } finally { setBypassBusy(0); }
+  };
   const [views, setViews] = React.useState(null);     // RADIUS / TACACS+ login
   const [viewsBase, setViewsBase] = React.useState(null);
   const [fsList, setFsList] = React.useState(null);   // traffic service catalogue
@@ -1707,6 +1747,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   // Below the state, not beside loadViews: the dependency array reads `users`,
   // which render evaluates in place — declared later, that is a TDZ error and the
   // whole Settings tab fails to render.
+  React.useEffect(() => {
+    if (!loggedIn) { setDevModel(""); return; }
+    getConfig().then((cfg) => setDevModel(String((cfg.args && cfg.args.model) || cfg.model || "")))
+      .catch(() => setDevModel(""));
+  }, [loggedIn, getConfig]);
+  React.useEffect(() => { if (loggedIn && section === "bypass" && bypassHw) loadBypass(bypassHw); },
+    [loggedIn, section, bypassHw, loadBypass]);
   React.useEffect(() => { if (loggedIn && section === "auth" && users === null) loadUsers(); },
     [loggedIn, section, users, loadUsers]);
 
@@ -1811,6 +1858,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <button className={section === "heartbeat" ? "on" : ""} onClick={() => setSection("heartbeat")}>{tr("set.heartbeat")}</button>
             <button className={section === "services" ? "on" : ""} onClick={() => setSection("services")}>{tr("set.services")}</button>
             <button className={section === "backup" ? "on" : ""} onClick={() => setSection("backup")}>{tr("set.backup")}</button>
+            {bypassHw && <button className={section === "bypass" ? "on" : ""} onClick={() => setSection("bypass")}>{tr("set.bypass")}</button>}
             <button className={section === "firmware" ? "on" : ""} onClick={() => setSection("firmware")}>{tr("set.firmware")}</button>
             <button className={section === "raw" ? "on" : ""} onClick={() => setSection("raw")}>{tr("set.rawXml")}</button>
           </div>
@@ -2640,6 +2688,34 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         </div>
       )}
 
+      {section === "bypass" && bypassHw && (
+        <div className="set-grid">
+          <section className="set-card">
+            <div className="set-card-head"><h3>{tr("set.bypass")} <span className="set-card-sub">{bypassHw.model}</span></h3></div>
+            <p className="set-hint">{tr("set.bypassNote")}</p>
+            <ul className="bp-list">
+              {bypassHw.pairs.map((pair) => {
+                const on = bypass[pair.n];
+                const busy = bypassBusy === pair.n;
+                return (
+                  <li key={pair.n} className={on === true ? "bypassed" : ""}>
+                    <span className="bp-ports">{pair.ports.join(" · ")}</span>
+                    <span className={"bp-state" + (on === true ? " on" : on === false ? " off" : " unknown")}>
+                      {on === true ? tr("set.bypassOn") : on === false ? tr("set.bypassOff") : tr("set.bypassUnknown")}
+                    </span>
+                    <button className="copy-btn" disabled={busy || on === null}
+                      onClick={() => setBypassMode(bypassHw, pair, !on)}>
+                      {busy ? tr("set.bypassWorking") : on === true ? tr("set.bypassToNormal") : tr("set.bypassToBypass")}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {bypassErr && <p className="set-hint err">{tr("set.bypassFailed")}: {bypassErr}</p>}
+            <p className="set-note">{tr("set.bypassWarn")}</p>
+          </section>
+        </div>
+      )}
       {section === "raw" && (
         <div className="set-raw xml-box export-main">
           {/* the same panel the export pane uses: header with the description and

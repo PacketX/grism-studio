@@ -1462,6 +1462,43 @@ for (const lang of Object.keys(I18N)) {
   check(`${lang} prompts for a port`, !!I18N[lang]["flt.pickPort"]);
 }
 
+/* ---------- LAN bypass ---------- */
+group("LAN bypass");
+{
+  // the model reads "G8S" in the config and "GRISM-G8S" on screen, so the match
+  // has to be a substring
+  check("recognises a G8S", C.bypassSupport("G8S")?.model === "G8S" &&
+    C.bypassSupport("GRISM-G8S")?.model === "G8S");
+  check("recognises a T12S", C.bypassSupport("T12S")?.model === "T12S" &&
+    C.bypassSupport("GRISM-T12S")?.model === "T12S");
+  check("says nothing for a model without the relays",
+    C.bypassSupport("HL1") === null && C.bypassSupport("KOB3400") === null &&
+    C.bypassSupport("") === null && C.bypassSupport(null) === null);
+  // T12S must not match the G8S rule by accident
+  check("the two do not overlap", C.bypassSupport("T12S").model === "T12S");
+
+  check("G8S pairs are P0/P1 and P4/P5",
+    C.bypassSupport("G8S").pairs.map((p) => p.ports.join("/")).join() === "P0/P1,P4/P5");
+  check("T12S pairs are P8/P9 and P10/P11",
+    C.bypassSupport("T12S").pairs.map((p) => p.ports.join("/")).join() === "P8/P9,P10/P11");
+
+  check("endpoints are named after the model",
+    C.bypassStatusUrl("g8s", 1) === "/grism/task/get_g8s_hwbypass1_status" &&
+    C.bypassModeUrl("t12s", 2) === "/grism/task/set_t12s_hwbypass2_mode");
+
+  check("reads the device's answer", C.parseBypassStatus("1") === true &&
+    C.parseBypassStatus("0") === false && C.parseBypassStatus(" 1 ") === true);
+  // a relay whose state could not be read must not be drawn as normal
+  check("an unreadable relay is unknown, not normal",
+    C.parseBypassStatus("") === null && C.parseBypassStatus("oops") === null &&
+    C.parseBypassStatus(null) === null);
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} names the bypass section`, !!I18N[lang]["set.bypass"]);
+  check(`${lang} warns that the relay moves at once`, !!I18N[lang]["set.bypassWarn"]);
+}
+
 /* ---------- saved configurations ---------- */
 group("saved configurations");
 {

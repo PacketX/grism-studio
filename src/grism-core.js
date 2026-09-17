@@ -3145,3 +3145,38 @@ export const formatSavedTime = (epochSeconds, lang = "en") => {
     });
   } catch { return ""; }
 };
+
+
+/* ============================================================
+   LAN bypass (G8S and T12S)
+
+   Both carry relay pairs that close when the box stops forwarding, so traffic
+   keeps flowing through it. Which pair covers which ports is fixed by the
+   hardware, and the endpoints are named after the model.
+   ============================================================ */
+
+export const BYPASS_MODELS = {
+  G8S:  { key: "g8s",  pairs: [{ n: 1, ports: ["P0", "P1"] }, { n: 2, ports: ["P4", "P5"] }] },
+  T12S: { key: "t12s", pairs: [{ n: 1, ports: ["P8", "P9"] }, { n: 2, ports: ["P10", "P11"] }] },
+};
+
+/* The bypass hardware this model has, or null. Matched as a substring because
+   the model reads "G8S" in the config and "GRISM-G8S" on screen. */
+export function bypassSupport(model) {
+  const m = String(model ?? "").toUpperCase();
+  for (const [name, spec] of Object.entries(BYPASS_MODELS)) {
+    if (m.includes(name)) return { model: name, ...spec };
+  }
+  return null;
+}
+
+export const bypassStatusUrl = (key, n) => `/grism/task/get_${key}_hwbypass${n}_status`;
+export const bypassModeUrl = (key, n) => `/grism/task/set_${key}_hwbypass${n}_mode`;
+
+/* The device answers "1" for bypassed and "0" for normal. Anything else is a
+   device that could not tell us, which is not the same as "normal" -- a relay
+   whose state is unknown must not be drawn as though it were closed. */
+export const parseBypassStatus = (text) => {
+  const t = String(text ?? "").trim();
+  return t === "1" ? true : t === "0" ? false : null;
+};

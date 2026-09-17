@@ -1306,3 +1306,17 @@ a.copy-btn{display:inline-block; text-decoration:none; line-height:1.7;}
 .ov-logo{display:inline-block; margin:0 auto 14px; line-height:0; opacity:.92; transition:opacity .15s;}
 .ov-logo:hover{opacity:1;}
 .pxlogo{height:26px; width:auto; display:block;}
+
+/* ---- LAN bypass ---- */
+.bp-list{list-style:none; margin:0 0 12px; padding:0; display:flex; flex-direction:column; gap:8px;}
+.bp-list li{display:flex; align-items:center; gap:12px; padding:9px 12px; border:1px solid var(--line);
+  border-radius:8px; background:var(--panel-2);}
+/* a closed relay is the thing you want to notice from across the room */
+.bp-list li.bypassed{border-color:var(--warn);}
+.bp-ports{font-family:var(--mono); font-size:13px; color:var(--txt); min-width:11ch;}
+.bp-state{flex:1; font-size:12.5px;}
+.bp-state.on{color:var(--warn); font-weight:600;}
+.bp-state.off{color:var(--match);}
+.bp-state.unknown{color:var(--txt-dim); font-style:italic;}
+.set-hint.err{color:var(--notmatch);}
+.set-card-sub{font-family:var(--mono); font-size:11.5px; color:var(--txt-dim); font-weight:400;}
