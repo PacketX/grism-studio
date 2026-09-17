@@ -2588,3 +2588,78 @@ export function grismXmlProblems(xmlText) {
   (doc.chains ?? []).forEach((c) => chainProblems(c, doc, out));
   return out;
 }
+
+/* ============================================================
+   Extra running-config files (run1.xml … run15.xml)
+
+   Besides run.xml a device can carry up to fifteen more xml files, usually
+   filter blacklists dropped in over sftp. They are listed by
+   /grism/task/get_running_filelist, read with /grism/task/get_running_file,
+   written with /grism/task/submitxml and removed with /grism/task/del_running.
+   ============================================================ */
+
+/* The device accepts any run*.xml, but the UI offers only this range so the
+   names stay predictable and a typo cannot invent a file nobody expects. */
+export const EXTRA_RUN_FILE_MAX = 15;
+
+export const extraRunFileNames = () =>
+  Array.from({ length: EXTRA_RUN_FILE_MAX }, (_, i) => `run${i + 1}.xml`);
+
+/* run.xml itself is edited on the Export pane and is deliberately not one of
+   these; js files belong to the older console and are ignored here. */
+export const isExtraRunFile = (name) => {
+  const m = /^run(\d{1,2})\.xml$/.exec(String(name ?? "").trim());
+  if (!m) return false;
+  const n = Number(m[1]);
+  return n >= 1 && n <= EXTRA_RUN_FILE_MAX;
+};
+
+/* Names still free, in run1…run15 order, for the "add a file" picker. */
+export const freeExtraRunFileNames = (existing) => {
+  const taken = new Set((existing ?? []).map((n) => String(n).trim()));
+  return extraRunFileNames().filter((n) => !taken.has(n));
+};
+
+/* Anything past this is offered as a download instead of being opened: these
+   run to tens of megabytes and would wedge a textarea. */
+export const EXTRA_RUN_FILE_EDIT_LIMIT = 1024 * 1024;
+
+/* What the listing endpoint returns, reduced to the files this pane manages,
+   as {name, size}. Newer devices send a files array carrying the sizes; older
+   ones only send file_list, and a missing size shows as unknown rather than
+   pretending the file is empty. */
+export const extraRunFilesFrom = (payload) => {
+  const withSizes = Array.isArray(payload?.files) ? payload.files : null;
+  if (withSizes) {
+    return withSizes
+      .filter((f) => isExtraRunFile(f?.name))
+      .map((f) => ({ name: String(f.name).trim(), size: Number.isFinite(Number(f.size)) ? Number(f.size) : null }));
+  }
+  const list = Array.isArray(payload?.file_list) ? payload.file_list : [];
+  return list.filter(isExtraRunFile).map((name) => ({ name, size: null }));
+};
+
+/* Too big to open, or size unknown so we must not guess. */
+export const isExtraRunFileEditable = (size) =>
+  typeof size === "number" && Number.isFinite(size) &&
+  size >= 0 && size <= EXTRA_RUN_FILE_EDIT_LIMIT;
+
+export const formatFileSize = (bytes) => {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n < 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+export const extraRunFileHref = (name) =>
+  `/grism/task/get_running_file?filename=${encodeURIComponent(name)}`;
+
+/* Why a new file cannot be created, or "" when it can. */
+export const newExtraRunFileProblem = (name, existing) => {
+  const n = String(name ?? "").trim();
+  if (!n) return "set.xfNamePick";
+  if (!isExtraRunFile(n)) return "set.xfNameRange";
+  if ((existing ?? []).some((e) => String(e).trim() === n)) return "set.xfNameTaken";
+  return "";
+};

@@ -1271,6 +1271,63 @@ group("module wiring");
   check("every core name used in the JSX is imported", missing.length === 0);
 }
 
+/* ---------- extra running-config files (run1.xml…run15.xml) ---------- */
+group("extra running-config files");
+{
+  check("offers exactly run1…run15", C.extraRunFileNames().length === 15 &&
+    C.extraRunFileNames()[0] === "run1.xml" && C.extraRunFileNames()[14] === "run15.xml");
+  check("accepts the whole range", C.extraRunFileNames().every((n) => C.isExtraRunFile(n)));
+  check("rejects run16.xml", !C.isExtraRunFile("run16.xml"));
+  check("rejects run0.xml", !C.isExtraRunFile("run0.xml"));
+  // run.xml is edited on the export pane itself, so it must not appear in this list
+  check("rejects run.xml", !C.isExtraRunFile("run.xml"));
+  // the user asked for js files to be left out entirely
+  check("rejects common.js", !C.isExtraRunFile("common.js") && !C.isExtraRunFile("mec.js"));
+  check("rejects a traversing name", !C.isExtraRunFile("../run1.xml"));
+
+  check("free names skip the taken ones",
+    C.freeExtraRunFileNames(["run1.xml", "run3.xml"]).slice(0, 3).join() === "run2.xml,run4.xml,run5.xml");
+  check("free names run out when all fifteen exist",
+    C.freeExtraRunFileNames(C.extraRunFileNames()).length === 0);
+
+  // the device sends both shapes; sizes come from the newer one
+  const payload = { file_list: ["run.xml", "run1.xml", "run2.xml", "common.js"],
+    files: [{ name: "run.xml", size: 3307 }, { name: "run1.xml", size: 2230654 },
+            { name: "run2.xml", size: 94 }, { name: "common.js", size: 4890 }] };
+  const listed = C.extraRunFilesFrom(payload);
+  check("keeps only the extra xml files", listed.length === 2 && listed[0].name === "run1.xml");
+  check("carries the sizes through", listed[0].size === 2230654 && listed[1].size === 94);
+  const legacy = C.extraRunFilesFrom({ file_list: ["run1.xml", "run.xml"] });
+  check("an older device without sizes still lists", legacy.length === 1 && legacy[0].size === null);
+  check("a junk payload lists nothing", C.extraRunFilesFrom(null).length === 0 &&
+    C.extraRunFilesFrom({}).length === 0);
+
+  check("a small file is editable", C.isExtraRunFileEditable(94));
+  check("the limit itself is editable", C.isExtraRunFileEditable(C.EXTRA_RUN_FILE_EDIT_LIMIT));
+  check("one byte over is not", !C.isExtraRunFileEditable(C.EXTRA_RUN_FILE_EDIT_LIMIT + 1));
+  // Number(null) is 0, which would read as "small enough" -- unknown must not guess
+  check("an unknown size is not editable", !C.isExtraRunFileEditable(null) &&
+    !C.isExtraRunFileEditable(undefined));
+
+  check("names the new file problems", C.newExtraRunFileProblem("", []) === "set.xfNamePick" &&
+    C.newExtraRunFileProblem("run16.xml", []) === "set.xfNameRange" &&
+    C.newExtraRunFileProblem("run2.xml", ["run2.xml"]) === "set.xfNameTaken");
+  check("a free name in range is accepted", C.newExtraRunFileProblem("run2.xml", ["run1.xml"]) === "");
+
+  check("the href escapes the name",
+    C.extraRunFileHref("run1.xml") === "/grism/task/get_running_file?filename=run1.xml");
+
+  check("sizes read in sensible units", C.formatFileSize(94) === "94 B" &&
+    C.formatFileSize(4890).endsWith("KB") && C.formatFileSize(7320705).endsWith("MB"));
+  check("a bad size formats to nothing", C.formatFileSize("x") === "" && C.formatFileSize(-1) === "");
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} names the run1-run15 limit`, /run1\.xml/.test(I18N[lang]["set.xfNameRange"] || ""));
+  check(`${lang} has the other-files heading`, !!I18N[lang]["xf.title"]);
+  check(`${lang} explains why a big file cannot be edited`, !!I18N[lang]["xf.tooBig"]);
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {

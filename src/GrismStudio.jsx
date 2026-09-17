@@ -25,6 +25,8 @@ import {
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
+  extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize,
+  isExtraRunFileEditable, newExtraRunFileProblem,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -5340,6 +5342,210 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   );
 }
 
+
+/* ============================================================
+   Other config files (run1.xml … run15.xml)
+
+   Deliberately understated: the intended workflow is run.xml on the pane
+   above, and these are the exception -- extra filter lists, usually dropped
+   in over sftp. Collapsed by default, and it says nothing at all when the
+   device has none.
+
+   Small files open in the same editor run.xml uses and submit through
+   submitxml. Past the size limit the core sets, a file is download-only:
+   these reach tens of megabytes and would wedge a textarea.
+   ============================================================ */
+function OtherConfigFiles({ t }) {
+  const tr = t || ((k) => k);
+  const [open, setOpen] = useState(false);
+  const [files, setFiles] = useState(null);      // null until first load
+  const [listErr, setListErr] = useState(false);
+  const [busy, setBusy] = useState("");          // name currently being read
+  const [editing, setEditing] = useState(null);  // { name, text, dirty }
+  const [state, setState] = useState({ kind: "idle", msg: "" });
+  const [adding, setAdding] = useState(null);    // chosen name while adding
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const fetchList = async () => {
+    const res = await fetch("/grism/task/get_running_filelist", { credentials: "include" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return extraRunFilesFrom(await res.json());
+  };
+
+  const load = useCallback(async () => {
+    try {
+      setFiles(await fetchList());
+      setListErr(false);
+    } catch {
+      setFiles([]);
+      // a flag, not the message: translating here would tie this callback to
+      // tr, which is a new function on every render
+      setListErr(true);
+    }
+  }, []);
+
+  /* submitxml writes the file to ftproot and drops a .ok next to it; the device
+     moves it into running-config a moment later. Reloading straight away shows
+     a list without the file in it, so wait for it to turn up -- and give up
+     rather than spin if it never does. */
+  const loadUntilPresent = async (name) => {
+    for (let i = 0; i < 12; i++) {
+      try {
+        const listed = await fetchList();
+        setFiles(listed); setListErr(false);
+        if (listed.some((f) => f.name === name)) return;
+      } catch { /* keep trying; the final load() reports a lasting failure */ }
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    await load();
+  };
+
+  useEffect(() => { if (open && files === null) load(); }, [open, files, load]);
+
+  const openFile = async (name) => {
+    setBusy(name); setState({ kind: "idle", msg: "" });
+    try {
+      const res = await fetch(extraRunFileHref(name), { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setEditing({ name, text: await res.text() });
+    } catch {
+      setState({ kind: "err", msg: tr("xf.loadFailed") });
+    } finally { setBusy(""); }
+  };
+
+  const submitFile = async (name, text) => {
+    setState({ kind: "sending", msg: "" });
+    try {
+      const body = new URLSearchParams();
+      body.set("filename", name);
+      body.set("data", text);
+      const res = await fetch("/grism/task/submitxml", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setEditing(null); setAdding(null);
+      setState({ kind: "sending", msg: "" });
+      await loadUntilPresent(name);
+      setState({ kind: "ok", msg: tr("xf.saved") });
+      setTimeout(() => setState({ kind: "idle", msg: "" }), 2500);
+    } catch (e) {
+      setState({ kind: "err", msg: tr("xf.submitFailed") + ": " + (e.message || e) });
+    }
+  };
+
+  const deleteFile = async (name) => {
+    setConfirmDel(null);
+    setState({ kind: "sending", msg: "" });
+    try {
+      const res = await fetch("/grism/task/del_running?name=" + encodeURIComponent(name), { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setState({ kind: "ok", msg: tr("xf.deleted") });
+      if (editing?.name === name) setEditing(null);
+      await load();
+      setTimeout(() => setState({ kind: "idle", msg: "" }), 2500);
+    } catch {
+      setState({ kind: "err", msg: tr("xf.deleteFailed") });
+    }
+  };
+
+  const taken = (files ?? []).map((f) => f.name);
+  const free = freeExtraRunFileNames(taken);
+  const addProblem = adding === null ? "" : newExtraRunFileProblem(adding, taken);
+  // Same live checking the run.xml editor does: syntax first, then GRISM rules.
+  const editErr = editing && editing.text.trim() ? xmlError(editing.text) : "";
+
+  return (
+    <section className="xfiles">
+      <button className="xf-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {tr("xf.title")}
+        {files && files.length > 0 && <span className="xf-count">{files.length}</span>}
+        <span className="xf-chev">{open ? tr("xf.hide") : tr("xf.show")}</span>
+      </button>
+      {open && (
+        <div className="xf-body">
+          <p className="xf-note">{tr("xf.note")}</p>
+          {listErr && <p className="submit-note err">{tr("xf.listFailed")}</p>}
+          {files !== null && files.length === 0 && !listErr && <p className="xf-empty">{tr("xf.none")}</p>}
+          {files !== null && files.length > 0 && (
+            <ul className="xf-list">
+              {files.map((f) => {
+                const editable = isExtraRunFileEditable(f.size);
+                return (
+                  <li key={f.name} className={editing?.name === f.name ? "on" : ""}>
+                    <code className="xf-name">{f.name}</code>
+                    <span className="xf-size">
+                      {f.size === null ? tr("xf.unknownSize") : formatFileSize(f.size)}
+                      {!editable && f.size !== null && <span className="xf-big"> · {tr("xf.tooBig")}</span>}
+                    </span>
+                    {editable
+                      ? <button className="copy-btn" disabled={busy === f.name} onClick={() => openFile(f.name)}>
+                          {busy === f.name ? tr("xf.loading") : tr("xf.open")}</button>
+                      : <a className="copy-btn" href={extraRunFileHref(f.name)} download={f.name}>{tr("xf.download")}</a>}
+                    <button className="copy-btn xf-del" onClick={() => setConfirmDel(f.name)}>{tr("xf.delete")}</button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {adding === null
+            ? free.length > 0 && <button className="xf-add" onClick={() => setAdding(free[0])}>{tr("xf.add")}</button>
+            : (
+              <div className="xf-new">
+                <label>{tr("xf.namePick")}
+                  <select value={adding} onChange={(e) => setAdding(e.target.value)}>
+                    {free.map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+                <button className="copy-btn" disabled={!!addProblem}
+                  onClick={() => { setEditing({ name: adding, text: "<run>\n</run>" }); setAdding(null); }}>
+                  {tr("xf.create")}</button>
+                <button className="copy-btn" onClick={() => setAdding(null)}>{tr("xf.cancel")}</button>
+                {addProblem && <span className="submit-note err">{tr(addProblem)}</span>}
+              </div>
+            )}
+
+          {editing && (
+            <div className="xf-edit">
+              <div className="xb-head">
+                <span className="xb-title"><code>{editing.name}</code></span>
+                <div className="xb-actions">
+                  <button className="copy-btn" onClick={() => setEditing(null)}>{tr("xf.cancel")}</button>
+                  <button className="submit-btn" disabled={!!editErr || state.kind === "sending"}
+                    onClick={() => submitFile(editing.name, editing.text)}>
+                    {state.kind === "sending" ? tr("xf.submitting") : tr("xf.submit")}</button>
+                </div>
+              </div>
+              <p className="xf-note">{tr("xf.editingNote")}</p>
+              <XmlEditor value={editing.text} onChange={(v) => setEditing({ ...editing, text: v })} />
+              {editErr && <p className="submit-note err">{tr("set.xmlInvalid")}: {editErr}</p>}
+            </div>
+          )}
+
+          {state.kind === "err" && <p className="submit-note err">{state.msg}</p>}
+          {state.kind === "ok" && <p className="submit-note ok">{state.msg}</p>}
+
+          {confirmDel && (
+            <div className="modal-scrim" onClick={() => setConfirmDel(null)}>
+              <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-title">{tr("xf.deleteTitle")}</div>
+                <p className="modal-body"><code>{confirmDel}</code> — {tr("xf.deleteBody")}</p>
+                <button className="opt drop" onClick={() => deleteFile(confirmDel)}>
+                  <span className="opt-name">{tr("xf.deleteConfirm")}</span>
+                  <span className="opt-desc">{tr("xf.deleteBody")}</span>
+                </button>
+                <button className="opt-cancel" onClick={() => setConfirmDel(null)}>{tr("xf.cancel")}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ============================================================
    Export tab
    ============================================================ */
@@ -6346,6 +6552,7 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
         </ul>}
         {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">{tr("ex.allValidate")}</p>}
       </aside>
+      {loggedIn && <OtherConfigFiles t={t} />}
     </div>
   );
 }

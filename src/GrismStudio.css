@@ -1193,3 +1193,40 @@ tr.marked{background:rgba(251,113,133,.09);}
 .tmpl-banner-text b{font-size:13.5px; color:var(--txt);}
 .tmpl-banner-text span{font-size:12px; line-height:1.6; color:var(--txt-dim);}
 .tmpl-banner .tmpl-btn{flex:0 0 auto;}
+
+/* ---- Other config files (run1.xml … run15.xml) -------------------------
+   Spans both export columns as a quiet footer strip. Collapsed it is one
+   small line, so the pane still reads as being about run.xml. */
+.xfiles{grid-column:1 / -1; border-top:1px solid var(--line); padding-top:10px; margin-top:2px;}
+.xf-toggle{display:flex; align-items:center; gap:8px; background:none; border:0; padding:2px 0;
+  color:var(--txt-dim); font-size:12px; font-family:inherit; cursor:pointer;}
+.xf-toggle:hover{color:var(--txt);}
+.xf-count{min-width:17px; height:17px; padding:0 5px; border-radius:9px; background:var(--line-2);
+  color:var(--txt); font-size:11px; line-height:17px; text-align:center;}
+.xf-chev{color:var(--accent); font-size:11px;}
+.xf-body{padding:10px 0 4px;}
+.xf-note{margin:0 0 10px; font-size:12px; color:var(--txt-dim); max-width:72ch;}
+.xf-empty{margin:0; font-size:12px; color:var(--txt-dim);}
+.xf-list{list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:4px;}
+.xf-list li{display:flex; align-items:center; gap:10px; padding:5px 8px; border:1px solid var(--line);
+  border-radius:7px; background:var(--panel-2);}
+.xf-list li.on{border-color:var(--accent);}
+.xf-name{font-size:12px; color:var(--txt); min-width:11ch;}
+.xf-size{flex:1; font-size:11px; color:var(--txt-dim);}
+.xf-big{color:var(--warn);}
+.xf-list .copy-btn{padding:2px 9px; font-size:11px;}
+/* the download affordance is an anchor, so it needs the button's box back */
+a.copy-btn{display:inline-block; text-decoration:none; line-height:1.7;}
+.xf-del:hover{border-color:var(--bad); color:var(--bad);}
+.xf-add{background:none; border:0; padding:0; color:var(--accent); font-size:12px;
+  font-family:inherit; cursor:pointer;}
+.xf-add:hover{text-decoration:underline;}
+.xf-new{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--txt-dim);}
+.xf-new label{display:flex; align-items:center; gap:6px;}
+.xf-new select{background:var(--panel-2); color:var(--txt); border:1px solid var(--line-2);
+  border-radius:6px; padding:3px 6px; font-family:inherit; font-size:12px;}
+.xf-edit{margin-top:12px; border:1px solid var(--line-2); border-radius:9px; overflow:hidden;}
+.xf-edit .xb-head{padding:7px 10px;}
+.xf-edit .xf-note{margin:0; padding:0 10px 8px;}
+.xf-edit .xml-editor{height:min(46vh, 420px);}
+.xf-edit .submit-note{margin:0; padding:6px 10px;}
