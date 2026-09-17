@@ -540,8 +540,8 @@ export default function GrismStudio() {
                   );
                   return (
                     <nav className="tabs ws-tabs">
-                      {tabBtn("filters")}
                       {tabBtn("chain")}
+                      {tabBtn("filters")}
                       <span className={"tab-group" + (hidden > 0 ? " collapsed" : "")}>
                         {hidden > 0 ? (
                           <button className="tab-group-label as-button" onClick={() => setAdvOpen(true)}
