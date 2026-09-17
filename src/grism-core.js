@@ -2664,6 +2664,33 @@ export const formatFileSize = (bytes) => {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+/* Why this text is not an XML document rooted at the expected element, or ""
+   when it is. Well-formed is not the same as being the right document: pasting
+   a run.xml into the device-settings box, or anything else entirely, parses
+   perfectly well and would otherwise be sent to the device as-is. */
+export const rootElementError = (xmlText, expected) => {
+  const bad = xmlError(xmlText);
+  if (bad) return bad;
+  let root = "";
+  try { root = parseXml(String(xmlText).trim()).documentElement?.nodeName ?? ""; }
+  catch { return "the XML could not be parsed"; }
+  return root === expected ? "" : `expected a <${expected}> document, found <${root}>`;
+};
+
+/* Why this text is not a usable GRISM config at all, or "" when it is.
+
+   Distinct from the per-field checks: a bad address in a filter is worth
+   showing but not worth refusing, since these files are fragments. A document
+   with no <run> in it is not a config the device can take, so submitting it
+   should be refused outright. */
+export const grismStructureError = (xmlText) => {
+  const bad = xmlError(xmlText);
+  if (bad) return bad;
+  const structural = grismXmlProblems(xmlText)
+    .find((p) => p.scope === "run" || p.scope === "xml");
+  return structural ? structural.msg : "";
+};
+
 export const extraRunFileHref = (name) =>
   `/grism/task/get_running_file?filename=${encodeURIComponent(name)}`;
 

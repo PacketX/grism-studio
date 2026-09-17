@@ -26,7 +26,7 @@ import {
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
   extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize,
-  isExtraRunFileEditable, newExtraRunFileProblem,
+  isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
 } from "./grism-core.js";
@@ -1384,7 +1384,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const [editingRaw, setEditingRaw] = React.useState(false);
   const [rawBase, setRawBase] = React.useState("");   // text as it was before editing
   // checked as you type, so a mistake is visible before you reach for a button
-  const rawErr = React.useMemo(() => (raw.trim() ? xmlError(raw) : ""), [raw]);
+  // submit_config takes a <configSet>; a run.xml pasted in here is well-formed
+  // and would otherwise have been sent to the device unchanged.
+  const rawErr = React.useMemo(() => (raw.trim() ? rootElementError(raw, "configSet") : ""), [raw]);
   const [backupUrl, setBackupUrl] = React.useState("");
   const [restoreFile, setRestoreFile] = React.useState(null);
   const [fwFile, setFwFile] = React.useState(null);
@@ -5495,9 +5497,12 @@ function OtherConfigFiles({ t }) {
   const taken = (files ?? []).map((f) => f.name);
   const free = freeExtraRunFileNames(taken);
   const addProblem = adding === null ? "" : newExtraRunFileProblem(adding, taken);
-  // Same live checking the run.xml editor does: syntax first, then GRISM rules.
-  const editErr = editing && editing.text.trim() ? xmlError(editing.text) : "";
-  const editIssues = editing && editing.text.trim() && !editErr ? grismXmlProblems(editing.text) : [];
+  /* Two layers, and only the first refuses the submit. A document that is not
+     well-formed, or has no <run> in it, is not something the device can take.
+     A questionable field value is worth saying out loud but not worth
+     blocking: these files are fragments and may lean on what run.xml defines. */
+  const editErr = editing ? grismStructureError(editing.text) : "";
+  const editIssues = editing && !editErr ? grismXmlProblems(editing.text) : [];
 
   return (
     <section className="xfiles">
@@ -6451,7 +6456,9 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
 
   /* Checked as you type: a mistake shows up immediately rather than when a button
      is pressed, and the GRISM checks only run once the XML itself parses. */
-  const editErr = React.useMemo(() => (edit && edit.trim() ? xmlError(edit) : ""), [edit]);
+  /* Structure, not just syntax: a well-formed document with no <run> in it
+     used to leave "apply changes" enabled, and only failed once pressed. */
+  const editErr = React.useMemo(() => (edit && edit.trim() ? grismStructureError(edit) : ""), [edit]);
   const editIssues = React.useMemo(
     () => (edit && edit.trim() && !editErr ? grismXmlProblems(edit) : []), [edit, editErr]);
   const applyEdit = () => {

@@ -1292,6 +1292,37 @@ group("grismXmlProblems");
   check("still reports unbalanced tags", bad("<run><unclosed>").length === 1);
 }
 
+/* ---------- what may be submitted ---------- */
+group("grism structure check");
+{
+  // A well-formed but non-GRISM document used to pass the editor's only gate
+  // and could be sent to the device.
+  check("refuses a document with no <run>",
+    C.grismStructureError("<foo><bar/></foo>") === "no <run> element found");
+  check("refuses unbalanced tags", !!C.grismStructureError("<run><unclosed>"));
+  check("refuses an empty file", !!C.grismStructureError(""));
+  check("refuses plain text", !!C.grismStructureError("hello world"));
+  // a fragment with a questionable value is reported but still submittable
+  check("allows a fragment with a bad field value",
+    C.grismStructureError('<run><filter id="2"><or><find name="ip.src" content="999.1.1.1"/></or></filter></run>') === "" &&
+    C.grismXmlProblems('<run><filter id="2"><or><find name="ip.src" content="999.1.1.1"/></or></filter></run>').length === 1);
+  check("allows a valid fragment",
+    C.grismStructureError('<run><filter id="1"><or></or></filter></run>') === "");
+}
+
+/* ---------- the right document in the right box ---------- */
+group("root element check");
+{
+  check("accepts a configSet", C.rootElementError('<configSet reboot="no"><ifcfgs/></configSet>', "configSet") === "");
+  // the device-settings box posts to submit_config, which wants a configSet
+  check("refuses a run.xml pasted into the settings box",
+    C.rootElementError('<run><filter id="1"><or></or></filter></run>', "configSet")
+      === "expected a <configSet> document, found <run>");
+  check("refuses an unrelated document", !!C.rootElementError("<foo/>", "configSet"));
+  check("reports syntax first", C.rootElementError("<configSet><unclosed>", "configSet") === "tags aren't balanced");
+  check("refuses an empty box", !!C.rootElementError("", "configSet"));
+}
+
 /* ---------- extra running-config files (run1.xml…run15.xml) ---------- */
 group("extra running-config files");
 {
