@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.28.0";
+export const STUDIO_VERSION = "2.28.1";
 
 export const I18N = {
   en: {
@@ -214,6 +214,8 @@ export const I18N = {
     "tf.clearBody": "The device resets these statistics to zero and starts counting again. Traffic itself is not affected.",
     "tf.clearDesc": "Figures collected so far are lost", "tf.refreshing": "refreshing…", "tf.loadFailed": "Couldn't load statistics", "tf.every": "every", "tf.seconds": "s",
     "tf.updated": "Updated", "tf.iface": "Interface", "tf.link": "Link", "tf.up": "up", "tf.down": "down",
+    "tf.bypass": "bypass",
+    "tf.bypassTip": "This pair is joined by its relay — traffic crosses it without reaching the device, so these counters do not see it.",
     "tf.speed": "Speed", "tf.inRate": "In", "tf.outRate": "Out",
     "tf.inPkts": "In packets", "tf.outPkts": "Out packets", "tf.inBytes": "In bytes", "tf.outBytes": "Out bytes",
     "tf.errors": "Errors", "tf.pps": "pps",
@@ -671,6 +673,8 @@ export const I18N = {
     "tf.clearBody": "裝置會將這些統計歸零並重新開始計算,不影響實際流量。",
     "tf.clearDesc": "目前累計的數據會消失", "tf.refreshing": "整理中…", "tf.loadFailed": "無法載入統計", "tf.every": "每", "tf.seconds": "秒",
     "tf.updated": "更新於", "tf.iface": "介面", "tf.link": "連線", "tf.up": "up", "tf.down": "down",
+    "tf.bypass": "bypass",
+    "tf.bypassTip": "此埠對正由繼電器直接對接,流量不會進入本機,因此這裡的計數看不到它。",
     "tf.speed": "速率", "tf.inRate": "入", "tf.outRate": "出",
     "tf.inPkts": "入封包", "tf.outPkts": "出封包", "tf.inBytes": "入位元組", "tf.outBytes": "出位元組",
     "tf.errors": "錯誤", "tf.pps": "pps",

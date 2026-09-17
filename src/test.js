@@ -1069,7 +1069,7 @@ check("no Chinese entry is left in English", (() => {
   // "down" joins these as a link state shown verbatim; "up" already was, and
   // only escaped this check for being shorter than the four-letter threshold.
   const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
-    "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down"]);
+    "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass"]);
   const same = Object.keys(I18N.en).filter((k) =>
     I18N["zh-TW"][k] === I18N.en[k] && !shared.has(I18N.en[k]) && /[A-Za-z]{4,}/.test(I18N.en[k]));
   if (same.length) console.log("    untranslated:", same.join(", "));

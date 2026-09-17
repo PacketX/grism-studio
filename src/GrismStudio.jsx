@@ -2996,6 +2996,30 @@ function TrafficTab({ loggedIn, t }) {
   React.useEffect(() => { writePref("refreshSec", refreshSec); }, [refreshSec]);
   const [expanded, setExpanded] = React.useState(null); // idx of the open detail row
   const [showPhys, setShowPhys] = React.useState(false); // when V-ports exist, also show physical
+  /* Which ports sit behind a closed bypass relay. Read once when the page opens
+     and not again: a relay only moves when somebody moves it, so polling it
+     alongside the counters would be several ssh round trips a second on a T12S
+     for a value that does not change. */
+  const [bypassed, setBypassed] = React.useState(new Set());
+
+  React.useEffect(() => {
+    if (!loggedIn) { setBypassed(new Set()); return; }
+    let live = true;
+    (async () => {
+      try {
+        const cfg = await (await fetch("/grism/task/get_config", { credentials: "include" })).json();
+        const hw = bypassSupport((cfg.args && cfg.args.model) || cfg.model || "");
+        if (!hw) return;
+        const out = new Set();
+        for (const pair of hw.pairs) {
+          const res = await fetch(bypassStatusUrl(hw.key, pair.n), { credentials: "include" });
+          if (res.ok && parseBypassStatus(await res.text()) === true) pair.ports.forEach((n) => out.add(n));
+        }
+        if (live) setBypassed(out);
+      } catch { /* a device that cannot say leaves the column unmarked */ }
+    })();
+    return () => { live = false; };
+  }, [loggedIn]);
 
   const load = React.useCallback(async () => {
     setState((s) => (s === "ok" ? "ok" : "loading"));
@@ -3098,7 +3122,10 @@ function TrafficTab({ loggedIn, t }) {
                   <React.Fragment key={r.idx}>
                     <tr className={"tf-row" + (open ? " open" : "")} onClick={() => setExpanded(open ? null : r.idx)}>
                       <td className="tf-expander"><span className="tf-caret" aria-hidden="true">{open ? "▾" : "▸"}</span></td>
-                      <td className="tf-name">{r.name}</td>
+                      <td className="tf-name">{r.name}
+                        {bypassed.has(r.name) &&
+                          <span className="tf-bypass" title={tr("tf.bypassTip")}>{tr("tf.bypass")}</span>}
+                      </td>
                       <td className="tf-desc">{descs[r.name] || "—"}</td>
                       <td><span className={"tf-link " + (up ? "up" : "down")}>{up ? tr("tf.up") : tr("tf.down")}</span></td>
                       <td className="mono">{r.speed ? fmtSpeed(r.speed) : "—"}</td>
