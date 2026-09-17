@@ -1,11 +1,18 @@
 .gs-root{
   /* dark theme (also the fallback) */
-  --bg:#0b0f14; --panel:#111820; --panel-2:#0d141b; --line:#1e2b38; --line-2:#26384a;
-  --txt:#dbe7f0; --txt-dim:#7d94a8; --txt-faint:#4f6377; --accent:#5eead4; --accent-2:#38bdf8;
-  --match:#34d399; --notmatch:#fb7185; --unset:#5a6b7a;
-  --code-bg:#070b10; --code-txt:#e6edf3; --code-tag:#7dd3fc; --code-attr:#5eead4;
-  --code-val:#fbbf77; --code-punct:#5b6b7c; --topbar-grad-a:#0e151d; --topbar-grad-b:#0b0f14; --accent-ink:#062018; --notmatch-ink:#2a0d12;
-  --warn:#e0b24a; --warn-dim:#d4a94e; --warn-deep:#c99a3e;
+  /* Neutrals, semantic colours and syntax follow GitHub Primer, which is tuned
+     for exactly this: dense text that has to stay readable, and borders that
+     actually separate one surface from the next. The borders in particular are
+     much more visible than what was here before. */
+  --bg:#0d1117; --panel:#161b22; --panel-2:#0d1117; --line:#30363d; --line-2:#3d444d;
+  --txt:#e6edf3; --txt-dim:#9198a1; --txt-faint:#6e7681; --accent:#58a6ff; --accent-2:#79c0ff;
+  --match:#3fb950; --notmatch:#f85149; --unset:#6e7681;
+  --code-bg:#010409; --code-txt:#e6edf3; --code-tag:#7ee787; --code-attr:#79c0ff;
+  --code-val:#a5d6ff; --code-punct:#8b949e; --topbar-grad-a:#161b22; --topbar-grad-b:#0d1117; --accent-ink:#0d1117; --notmatch-ink:#0d1117;
+  --warn:#d29922; --warn-dim:#bb8009; --warn-deep:#9e6a03;
+  /* The primary action is green and everything else is not, so "the button
+     that does the thing" is never in doubt. */
+  --primary:#238636; --primary-hover:#2ea043; --primary-ink:#ffffff;
   --canvas-dot:rgba(125,148,168,.10); --hover:rgba(255,255,255,.04); --hover-faint:rgba(255,255,255,.012);
   /* chain SVG nodes */
   --node-in-fill:#0f2028; --node-in-stroke:var(--accent-2); --node-in-txt:#bfe0f0;
@@ -20,12 +27,13 @@
   font-family:var(--sans); font-size:14px; display:flex; flex-direction:column; overflow:hidden;
 }
 .gs-root.light{
-  --bg:#f4f6f8; --panel:#ffffff; --panel-2:#eef1f4; --line:#d8dee6; --line-2:#c2ccd6;
-  --txt:#1b2733; --txt-dim:#546374; --txt-faint:#8695a6; --accent:#0d9488; --accent-2:#0284c7;
-  --match:#059669; --notmatch:#e11d48; --unset:#94a3b8;
-  --code-bg:#f6f8fa; --code-txt:#1b2733; --code-tag:#0550ae; --code-attr:#0f766e;
-  --code-val:#9a5b00; --code-punct:#8695a6; --topbar-grad-a:#ffffff; --topbar-grad-b:#eef1f4; --accent-ink:#ffffff; --notmatch-ink:#ffffff;
-  --warn:#b45309; --warn-dim:#b45309; --warn-deep:#92400e;
+  --bg:#f6f8fa; --panel:#ffffff; --panel-2:#f6f8fa; --line:#d1d9e0; --line-2:#afb8c1;
+  --txt:#1f2328; --txt-dim:#59636e; --txt-faint:#818b98; --accent:#0969da; --accent-2:#0550ae;
+  --match:#1a7f37; --notmatch:#d1242f; --unset:#818b98;
+  --code-bg:#f6f8fa; --code-txt:#1f2328; --code-tag:#0550ae; --code-attr:#953800;
+  --code-val:#0a3069; --code-punct:#59636e; --topbar-grad-a:#ffffff; --topbar-grad-b:#f6f8fa; --accent-ink:#ffffff; --notmatch-ink:#ffffff;
+  --warn:#9a6700; --warn-dim:#7d4e00; --warn-deep:#633c01;
+  --primary:#1f883d; --primary-hover:#1a7f37; --primary-ink:#ffffff;
   --canvas-dot:rgba(70,90,110,.12); --hover:rgba(20,40,60,.05); --hover-faint:rgba(20,40,60,.02);
   --node-in-fill:#e0f2fe; --node-in-stroke:#0284c7; --node-in-txt:#075985;
   --node-branch-fill:#dcfce7; --node-branch-stroke:#16a34a; --node-branch-txt:#166534;
@@ -346,8 +354,8 @@
 .coll-head.open::after{transform:rotate(180deg); color:var(--accent);}
 .coll-dot{width:7px; height:7px; border-radius:99px; background:var(--accent); box-shadow:0 0 6px var(--accent); flex:0 0 auto;}
 .coll-body{margin-top:10px;}
-.primary{width:100%; background:var(--accent); border:none; color:var(--accent-ink); font-weight:650; border-radius:7px; padding:9px; font-size:13px; margin-top:4px;}
-.primary:hover{filter:brightness(1.08);}
+.primary{width:100%; background:var(--primary); border:1px solid var(--primary); color:var(--primary-ink); font-weight:650; border-radius:7px; padding:9px; font-size:13px; margin-top:4px;}
+.primary:hover{background:var(--primary-hover); border-color:var(--primary-hover);}
 .danger{width:100%; background:transparent; border:1px solid var(--line-2); color:var(--notmatch); border-radius:7px; padding:8px; font-size:13px; margin-top:8px;}
 .danger:hover{border-color:var(--notmatch); background:rgba(251,113,133,.08);}
 .refs{padding:12px 16px; border-top:1px solid var(--line); flex:0 0 auto; max-height:38%; overflow:auto;}
@@ -412,8 +420,8 @@
 .copy-btn{background:transparent; border:1px solid var(--line-2); color:var(--txt-dim); border-radius:6px; padding:4px 12px; font-size:12px; font-family:var(--mono);}
 .copy-btn:hover:not(:disabled){border-color:var(--accent); color:var(--accent);} .copy-btn:disabled{opacity:.4; cursor:not-allowed;}
 .xb-actions{display:flex; align-items:center; gap:8px;}
-.submit-btn{background:var(--accent); border:1px solid var(--accent); color:var(--accent-ink); border-radius:6px; padding:4px 14px; font-size:12px; font-family:var(--mono); font-weight:600;}
-.submit-btn:hover:not(:disabled){filter:brightness(1.08);}
+.submit-btn{background:var(--primary); border:1px solid var(--primary); color:var(--primary-ink); border-radius:6px; padding:4px 14px; font-size:12px; font-family:var(--mono); font-weight:600;}
+.submit-btn:hover:not(:disabled){background:var(--primary-hover); border-color:var(--primary-hover);}
 .submit-btn:disabled{opacity:.4; cursor:not-allowed;}
 .submit-btn.ok{background:var(--match); border-color:var(--match);}
 .submit-btn.err{background:transparent; border-color:var(--notmatch); color:var(--notmatch);}
