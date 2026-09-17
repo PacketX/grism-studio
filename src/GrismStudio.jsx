@@ -1760,7 +1760,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   }, [loggedIn, getConfig]);
   // read the relays once when either section opens; they do not move on their own
   React.useEffect(() => {
-    if (loggedIn && bypassHw && (section === "bypass" || section === "ports")) loadBypass(bypassHw);
+    if (loggedIn && bypassHw && section === "ports") loadBypass(bypassHw);
   }, [loggedIn, section, bypassHw, loadBypass]);
   React.useEffect(() => { if (loggedIn && section === "auth" && users === null) loadUsers(); },
     [loggedIn, section, users, loadUsers]);
@@ -1866,7 +1866,6 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <button className={section === "heartbeat" ? "on" : ""} onClick={() => setSection("heartbeat")}>{tr("set.heartbeat")}</button>
             <button className={section === "services" ? "on" : ""} onClick={() => setSection("services")}>{tr("set.services")}</button>
             <button className={section === "backup" ? "on" : ""} onClick={() => setSection("backup")}>{tr("set.backup")}</button>
-            {bypassHw && <button className={section === "bypass" ? "on" : ""} onClick={() => setSection("bypass")}>{tr("set.bypass")}</button>}
             <button className={section === "firmware" ? "on" : ""} onClick={() => setSection("firmware")}>{tr("set.firmware")}</button>
             <button className={section === "raw" ? "on" : ""} onClick={() => setSection("raw")}>{tr("set.rawXml")}</button>
           </div>
@@ -1935,14 +1934,24 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                       <tr key={p.name} className={p.enable ? "" : "port-off"}>
                         <td className="tf-num mono">{p.ifidx ?? "—"}</td>
                         <td className="tf-name">{p.name}
-                          {bypassPairOf[p.name] && (
-                            <span className={"tf-bypass" + (bypass[bypassPairOf[p.name]] === true ? "" : " idle")}
-                              title={bypass[bypassPairOf[p.name]] === true ? tr("tf.bypassTip") : tr("set.bypassPairTip")}>
-                              {bypass[bypassPairOf[p.name]] === true
-                                ? tr("tf.bypass")
-                                : tr("set.bypassPair") + " " + bypassPairOf[p.name]}
-                            </span>
-                          )}
+                          {bypassPairOf[p.name] && (() => {
+                            const pair = bypassHw.pairs.find((x) => x.n === bypassPairOf[p.name]);
+                            const on = bypass[pair.n];
+                            /* A button, not one of the staged fields beside it: every other control
+                               on this page waits for Apply, and this one moves a relay as soon as it
+                               is confirmed. */
+                            return (
+                              <button className={"tf-bypass as-toggle" + (on === true ? "" : " idle")}
+                                disabled={on === null || bypassBusy === pair.n}
+                                title={on === true ? tr("tf.bypassTip") : tr("set.bypassPairTip")}
+                                onClick={() => setConfirm({ kind: "bypass", pair, on })}>
+                                {bypassBusy === pair.n ? tr("set.bypassWorking")
+                                  : on === true ? tr("tf.bypass")
+                                  : on === null ? tr("set.bypassUnknown")
+                                  : tr("set.bypassPair") + " " + pair.n}
+                              </button>
+                            );
+                          })()}
                         </td>
                         <td>{p.linkUp == null ? <span className="dim">—</span>
                           : <span className={"tf-link " + (p.linkUp ? "up" : "down")}>{p.linkUp ? tr("tf.up") : tr("tf.down")}</span>}</td>
@@ -2705,34 +2714,6 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         </div>
       )}
 
-      {section === "bypass" && bypassHw && (
-        <div className="set-grid">
-          <section className="set-card">
-            <div className="set-card-head"><h3>{tr("set.bypass")} <span className="set-card-sub">{bypassHw.model}</span></h3></div>
-            <p className="set-hint">{tr("set.bypassNote")}</p>
-            <ul className="bp-list">
-              {bypassHw.pairs.map((pair) => {
-                const on = bypass[pair.n];
-                const busy = bypassBusy === pair.n;
-                return (
-                  <li key={pair.n} className={on === true ? "bypassed" : ""}>
-                    <span className="bp-ports">{pair.ports.join(" · ")}</span>
-                    <span className={"bp-state" + (on === true ? " on" : on === false ? " off" : " unknown")}>
-                      {on === true ? tr("set.bypassOn") : on === false ? tr("set.bypassOff") : tr("set.bypassUnknown")}
-                    </span>
-                    <button className="copy-btn" disabled={busy || on === null}
-                      onClick={() => setBypassMode(bypassHw, pair, !on)}>
-                      {busy ? tr("set.bypassWorking") : on === true ? tr("set.bypassToNormal") : tr("set.bypassToBypass")}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            {bypassErr && <p className="set-hint err">{tr("set.bypassFailed")}: {bypassErr}</p>}
-            <p className="set-note">{tr("set.bypassWarn")}</p>
-          </section>
-        </div>
-      )}
       {section === "raw" && (
         <div className="set-raw xml-box export-main">
           {/* the same panel the export pane uses: header with the description and
@@ -2772,11 +2753,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
+            {confirm.kind === "bypass" &&
+              <p className="modal-body"><strong>{tr("set.bypassConfirmNow")}</strong></p>}
             {confirm.kind === "factory" &&
               <p className="modal-body"><strong>{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></strong></p>}
             <button className="opt drop" onClick={() => {
@@ -2791,6 +2774,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               if (k === "fwUpload") {
                 uploadAndWait("/grism/task/update", fwFile, "file",
                   tr("set.fwUpdating"), tr("set.fwUpdatingBody")); return;
+              }
+              if (k === "bypass") {
+                setBypassMode(bypassHw, confirm.pair, !confirm.on);
+                return;
               }
               if (k === "delUser") {
                 acctPost("/delete_user2", { Username: confirm.name, PasswordHash: "" }, "set.acctDeleted");

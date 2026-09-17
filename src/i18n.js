@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.28.2";
+export const STUDIO_VERSION = "2.29.0";
 
 export const I18N = {
   en: {
@@ -74,14 +74,13 @@ export const I18N = {
     "set.title": "Device settings", "set.needLogin": "Sign in to the device to view and change settings.",
     "set.load": "Reload from device", "set.loading": "loading…", "set.loadFailed": "Couldn't load config",
     "set.mgmtIP": "Management interfaces", "set.rawXml": "Raw configuration",
-    "set.bypass": "LAN bypass",
     "set.bypassPair": "bypass pair",
-    "set.bypassPairTip": "Wired through a bypass relay. The relay is open, so traffic on this port reaches the device normally.",
-    "set.bypassNote": "These port pairs are wired through relays. In bypass the two ports are joined directly, so traffic keeps flowing while the device is not forwarding it — nothing is filtered or captured until you switch back.",
-    "set.bypassOn": "bypassed", "set.bypassOff": "normal", "set.bypassUnknown": "unknown",
-    "set.bypassToBypass": "switch to bypass", "set.bypassToNormal": "switch to normal",
-    "set.bypassWorking": "switching…", "set.bypassFailed": "Couldn't switch",
-    "set.bypassWarn": "The relay changes as soon as you press. Traffic on the pair is interrupted for a moment either way.",
+    "set.bypassConfirmTitle": "Move this bypass relay?",
+    "set.bypassConfirmOn": "Joins the two ports directly. Traffic keeps flowing but stops reaching the device, so nothing is filtered or captured until you switch back.",
+    "set.bypassConfirmOff": "Brings the pair back through the device. Traffic is filtered again.",
+    "set.bypassConfirmNow": "This takes effect immediately — it does not wait for Apply, and the pair is interrupted for a moment either way.",
+    "set.bypassPairTip": "Wired through a bypass relay. The relay is open, so traffic on this port reaches the device normally.", "set.bypassUnknown": "unknown",
+    "set.bypassWorking": "switching…",
     "set.system": "System", "set.packet": "Packet handling", "set.services": "Services",
     "set.applying": "Applying…", "set.applyingBody": "Writing the configuration to the device. Please wait.",
     "set.power": "Power", "set.reboot": "Reboot", "set.halt": "Shut down",
@@ -535,14 +534,13 @@ export const I18N = {
     "set.title": "裝置設定", "set.needLogin": "登入裝置以檢視與變更設定。",
     "set.load": "從裝置重新載入", "set.loading": "載入中…", "set.loadFailed": "無法載入設定",
     "set.mgmtIP": "管理介面", "set.rawXml": "原始設定",
-    "set.bypass": "LAN Bypass",
     "set.bypassPair": "bypass 埠對",
-    "set.bypassPairTip": "此埠接有 bypass 繼電器。目前繼電器是斷開的,流量正常進入本機。",
-    "set.bypassNote": "這些埠對之間接有繼電器。進入 bypass 後兩個埠直接對接,流量會繼續通過而不經過本機處理——在切回之前不會做任何過濾或擷取。",
-    "set.bypassOn": "已 bypass", "set.bypassOff": "正常", "set.bypassUnknown": "無法取得",
-    "set.bypassToBypass": "切換為 bypass", "set.bypassToNormal": "切換為正常",
-    "set.bypassWorking": "切換中…", "set.bypassFailed": "切換失敗",
-    "set.bypassWarn": "按下後繼電器立即動作。無論切往哪個方向,該埠對的流量都會瞬斷一次。",
+    "set.bypassConfirmTitle": "要切換這組 bypass 繼電器?",
+    "set.bypassConfirmOn": "兩個埠將直接對接。流量繼續通過但不再進入本機,在切回之前不會做任何過濾或擷取。",
+    "set.bypassConfirmOff": "讓該埠對重新經過本機,流量會恢復過濾。",
+    "set.bypassConfirmNow": "此操作立即生效——不會等待「套用」,且無論切往哪個方向該埠對都會瞬斷一次。",
+    "set.bypassPairTip": "此埠接有 bypass 繼電器。目前繼電器是斷開的,流量正常進入本機。", "set.bypassUnknown": "無法取得",
+    "set.bypassWorking": "切換中…",
     "set.system": "系統", "set.packet": "封包處理", "set.services": "服務",
     "set.applying": "套用中…", "set.applyingBody": "正在將設定寫入裝置,請稍候。",
     "set.power": "電源", "set.reboot": "重新開機", "set.halt": "關機",

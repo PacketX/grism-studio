@@ -1495,8 +1495,11 @@ group("LAN bypass");
 }
 
 for (const lang of Object.keys(I18N)) {
-  check(`${lang} names the bypass section`, !!I18N[lang]["set.bypass"]);
-  check(`${lang} warns that the relay moves at once`, !!I18N[lang]["set.bypassWarn"]);
+  check(`${lang} labels a bypass pair`, !!I18N[lang]["set.bypassPair"]);
+  // the switch sits among staged fields, so the dialog has to say it is not one
+  check(`${lang} says the switch is immediate`, !!I18N[lang]["set.bypassConfirmNow"]);
+  check(`${lang} says what each direction does`,
+    !!I18N[lang]["set.bypassConfirmOn"] && !!I18N[lang]["set.bypassConfirmOff"]);
 }
 
 /* ---------- saved configurations ---------- */
