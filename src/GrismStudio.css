@@ -1451,3 +1451,7 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .tmpl-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--txt-dim); }
 @media (max-width: 900px) { .tmpl-chip { max-width: 150px; } }
+
+/* the port an output lands on, and its name, under the O-id in the flow */
+.ovf-out-sub { font-family: var(--mono); font-size: 9px; fill: var(--txt-dim);
+  text-anchor: middle; }

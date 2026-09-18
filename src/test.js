@@ -1862,6 +1862,25 @@ group("template gallery");
     strip.chains[0].tree.t === "out");
 }
 
+/* ---------- overview: where a chain's output lands ---------- */
+group("chain output labels");
+{
+  const d = C.normalizeDoc(C.TEMPLATES.find((t) => t.id === "sdwan-l2gre").make());
+  const info = C.describeDoc(d, (k) => k);
+  // a chain sends to "O2", which on its own says nothing about the port
+  check("each output resolves to its port and name",
+    info.outputInfo.O2?.port === "P0" && info.outputInfo.O2?.name === "strip L2GRE to P0" &&
+    info.outputInfo.O3?.port === "P1" && info.outputInfo.O3?.name === "tag L2GRE to P1");
+
+  const plain = C.describeDoc(C.normalizeDoc(C.TEMPLATES.find((t) => t.id === "minimal").make()), (k) => k);
+  check("a document with no outputs resolves nothing", Object.keys(plain.outputInfo).length === 0);
+
+  const unnamed = C.describeDoc(C.normalizeDoc(C.parseRun(
+    `<run><output id="9"><port>P4</port></output><chain><in>P0</in><out>O9</out></chain></run>`).doc), (k) => k);
+  check("an unnamed output still resolves its port",
+    unnamed.outputInfo.O9?.port === "P4" && unnamed.outputInfo.O9?.name === "");
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {

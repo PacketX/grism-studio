@@ -385,6 +385,10 @@ export function summarizeChainTree(tree) {
 export function describeDoc(doc, t) {
   const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: describeCriterion(f.root, t) }));
   const filterNames = Object.fromEntries(filters.map((f) => [f.id, f.name]));
+  /* A chain sends to "O2", which says nothing about where the traffic ends up --
+     the port is on the output. Resolve it so the flow can show both. */
+  const outputInfo = Object.fromEntries((doc.outputs ?? []).map((o) =>
+    ["O" + o.id, { port: o.port || "", name: o.name || o.alt || "" }]));
   const chains = (doc.chains ?? []).map((c) => ({ ingress: c.ports || "P0", rules: summarizeChainTree(c.tree), flow: summarizeChain(c.tree) }));
   const portSet = new Set();
   chains.forEach((c) => {
@@ -394,7 +398,7 @@ export function describeDoc(doc, t) {
   const ports = [...portSet].filter((p) => /^[A-Za-z]*\d+$/.test(p)).sort();
   return {
     counts: { filters: filters.length, chains: chains.length, ports: ports.length },
-    ports, filters, filterNames, chains,
+    ports, filters, filterNames, outputInfo, chains,
   };
 }
 // Resolve a fids expression (e.g. "F1", "F1,!F3") to a readable name string

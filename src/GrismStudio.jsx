@@ -1057,7 +1057,7 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
         <section className="ov-section">
           <h3 className="ov-h3">{tr("ov.chains")} <span className="ov-count">{info.chains.length}</span></h3>
           <div className="ov-chains">
-            {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} t={tr} />)}
+            {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} outputInfo={info.outputInfo} t={tr} />)}
           </div>
           <button className="ov-jump" onClick={() => onGoto("chain")}>{tr("ov.editChains")}</button>
         </section>
@@ -4315,7 +4315,7 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
   );
 }
 
-const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, t }) {
+const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outputInfo = {}, t }) {
   const tr = t || ((k) => ({ "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match", "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "all", "flow.any": "any" }[k] || k));
   const flow = chain.flow || { root: null, terminal: null };
   const root = flow.root;
@@ -4353,7 +4353,15 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, t }) 
   const destY = {};
   destOrder.forEach((d, i) => { destY[d] = rowY(i * (rowCount / destCount)) + (destCount < rowCount ? rowH / 2 : 0); });
   const height = Math.max(rowY(rowCount - 1) + 50, rowY(destCount - 1) + 50, 110);
-  const width = outX + outW + 40;
+  /* A destination that resolves to an output carries a second line (its port and
+     name), which needs a wider box than a bare "P1" does. */
+  const destSub = Object.fromEntries(destOrder.map((d) => {
+    const oi = outputInfo[d];
+    const sub = oi ? [oi.port, oi.name].filter(Boolean).join(" · ") : "";
+    return [d, sub.length > 24 ? sub.slice(0, 23) + "…" : sub];
+  }));
+  const outWEff = destOrder.some((d) => destSub[d]) ? 160 : outW;
+  const width = outX + outWEff + 40;
 
   const rootMidY = root ? rowY(nodeById[root.id].row) : 44;
 
@@ -4417,12 +4425,22 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, t }) 
         {root && arrow(inX + ingressW, rootMidY, colX(0), rowY(nodeById[root.id].row), "flow", "in", tr("flow.in"))}
 
         {/* output port nodes (each drawn once) */}
-        {destOrder.map((d) => (
-          <g key={"d" + d}>
-            <rect x={outX} y={destY[d] - 15} width={outW} height="30" rx="7" className={d === "drop" ? "ovf-out drop" : "ovf-out"} />
-            <text x={outX + outW / 2} y={destY[d] + 5} className={"ovf-out-lbl" + (d === "drop" ? " drop" : "")}>{d}</text>
-          </g>
-        ))}
+        {destOrder.map((d) => {
+          /* "O2" is a reference; what matters to a reader is the port it lands
+             on and what the output was called. A plain port destination has
+             neither, and stays a single line. */
+          const subText = destSub[d];
+          const h = subText ? 42 : 30;
+          return (
+            <g key={"d" + d}>
+              <rect x={outX} y={destY[d] - h / 2} width={outWEff} height={h} rx="7"
+                className={d === "drop" ? "ovf-out drop" : "ovf-out"} />
+              <text x={outX + outWEff / 2} y={destY[d] + (subText ? -2 : 5)}
+                className={"ovf-out-lbl" + (d === "drop" ? " drop" : "")}>{d}</text>
+              {subText && <text x={outX + outWEff / 2} y={destY[d] + 12} className="ovf-out-sub">{subText}</text>}
+            </g>
+          );
+        })}
 
         {/* test nodes + their two sides */}
         {realNodes.map((nx) => {
