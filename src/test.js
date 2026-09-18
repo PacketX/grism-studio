@@ -1970,19 +1970,19 @@ for (const lang of Object.keys(I18N)) {
 /* ---------- chain layout ---------- */
 group("chain layout");
 {
-  const out = (p) => ({ id: "o" + p, t: "out", ports: p, mode: "duplicate", lb: "5thash" });
+  let uid = 0;
+  const out = (p) => ({ id: "o" + (++uid), t: "out", ports: p, mode: "duplicate", lb: "5thash" });
   const spine = (n) => n === 0 ? out("P9")
-    : { id: "b" + n, t: "branch", fids: "F" + n, fidOp: "or", match: out("P" + n), notmatch: spine(n - 1) };
-  let fid = 0;
-  const fork = (n) => n === 0 ? { ...out("P9"), id: "o" + (++fid) }
-    : { id: "f" + (++fid), t: "branch", fids: "F" + n, fidOp: "or", match: fork(n - 1), notmatch: fork(n - 1) };
+    : { id: "b" + (++uid), t: "branch", fids: "F" + n, fidOp: "or", match: out("P" + n), notmatch: spine(n - 1) };
+  const fork = (n) => n === 0 ? out("P9")
+    : { id: "f" + (++uid), t: "branch", fids: "F" + n, fidOp: "or", match: fork(n - 1), notmatch: fork(n - 1) };
 
   /* A chain where one side ends and the other carries on is a spine, and used
      to cost a column per test -- ten tests ran to 2000px. */
   const w = (tree) => Math.round(C.layoutChain({ ports: "P0", tree }).totalW);
-  check("a spine stays the same width however deep it goes",
-    w(spine(1)) === w(spine(4)) && w(spine(4)) === w(spine(10)));
-  check("a spine is two columns wide", w(spine(6)) < 400);
+  check("a spine stops widening once it is a spine",
+    w(spine(2)) === w(spine(4)) && w(spine(4)) === w(spine(12)));
+  check("a spine stays a few columns wide", w(spine(12)) < 500);
   check("depth still costs height", (() => {
     const a = C.layoutChain({ ports: "P0", tree: spine(2) }).totalH;
     const b = C.layoutChain({ ports: "P0", tree: spine(8) }).totalH;
@@ -1992,8 +1992,13 @@ group("chain layout");
   // a genuine fork has two paths to draw and still spreads
   check("a real fork still spreads out", w(fork(3)) > w(fork(2)) && w(fork(2)) > w(fork(1)));
 
-  // whatever the shape, nothing may be placed outside the reported width
+  // whatever the shape, nothing may be placed outside the reported width, and
+  // no two nodes may occupy the same space -- a filter drawn over an output
   for (const [name, tree] of [["spine", spine(7)], ["fork", fork(3)],
+      ["spine then fork", { id: "sf", t: "branch", fids: "F1", fidOp: "or", match: out("P1"),
+        notmatch: { id: "sf2", t: "branch", fids: "F2", fidOp: "or", match: out("P2"), notmatch: fork(2) } }],
+      ["fork then spine", { id: "fs", t: "branch", fids: "F1", fidOp: "or", match: spine(3), notmatch: spine(4) }],
+      ["one sided", { id: "os", t: "branch", fids: "F1", fidOp: "or", match: out("P1"), notmatch: null }],
       ["mixed", { id: "m", t: "branch", fids: "F1", fidOp: "or", match: spine(4), notmatch: fork(2) }]]) {
     const L = C.layoutChain({ ports: "P0", tree });
     check(`${name}: every node sits inside the reported width`,
@@ -2005,6 +2010,17 @@ group("chain layout");
     check(`${name}: every edge joins two placed nodes`,
       L.edges.every((e) => ids.has(e.from) && ids.has(e.to)));
     check(`${name}: no node is placed twice`, ids.size === L.placed.length);
+    /* The aside of a spine sits beside the node that carries on, and that node
+       drifts right when it is itself a fork -- which is how a filter came to be
+       drawn on top of an output. */
+    const clash = [];
+    for (let i = 0; i < L.placed.length; i++) for (let j = i + 1; j < L.placed.length; j++) {
+      const a = L.placed[i], b = L.placed[j];
+      if (a._x < b._x + C.NODE_W && b._x < a._x + C.NODE_W &&
+          a._y < b._y + C.NODE_H && b._y < a._y + C.NODE_H)
+        clash.push(`${a.t}:${a.id}@${a._x},${a._y} over ${b.t}:${b.id}@${b._x},${b._y}`);
+    }
+    check(`${name}: no two nodes overlap`, clash.length === 0, clash[0] ?? "");
   }
 }
 

@@ -1522,12 +1522,22 @@ export function layoutChain(root) {
     return null;
   };
 
+  /* Where a subtree's root sits within its own box: a spine's root is flush
+     left, everything else is centred over its children. Mirrors place(). */
+  function rootOffset(node) {
+    if (!node || ends(node)) return 0;
+    if (spineChild(node)) return 0;
+    return (width(node) - NODE_W) / 2;
+  }
+
   function width(node) {
     if (!node) return 0;
     if (node.t === "in") return width(node.child);
     if (ends(node)) return NODE_W;
     const sp = spineChild(node);
-    if (sp) return Math.max(NODE_W + H_GAP + NODE_W, width(sp.on));
+    // the aside sits beside the continuing node itself, so the room it needs is
+    // measured from where that node lands, not from its subtree's left edge
+    if (sp) return Math.max(width(sp.on), rootOffset(sp.on) + NODE_W + H_GAP + NODE_W);
     const wm = width(node.match), wn = width(node.notmatch);
     const kids = (wm ? 1 : 0) + (wn ? 1 : 0);
     return kids === 0 ? NODE_W : Math.max(NODE_W, wm + wn + (kids > 1 ? H_GAP : 0));
@@ -1554,7 +1564,7 @@ export function layoutChain(root) {
       if (parent) edges.push({ from: parent.id, to: node.id, kind });
       const asideKind = sp.aside === node.match ? "match" : "notmatch";
       const onKind = sp.on === node.match ? "match" : "notmatch";
-      place(sp.aside, x + NODE_W + H_GAP, cy, node, asideKind);
+      place(sp.aside, x + rootOffset(sp.on) + NODE_W + H_GAP, cy, node, asideKind);
       place(sp.on, x, cy, node, onKind);
       return;
     }
