@@ -5483,7 +5483,7 @@ function CollapseSection({ label, active, children }) {
   );
 }
 
-function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, t }) {
+function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, joiner, onJoiner, t }) {
   const tr = t || ((k) => k);
   // the chosen rows, named, for the header
   const chosen = items.filter((it) => it.on)
@@ -5507,10 +5507,15 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
       <button className={"acc-head" + (open ? " open" : "")} onClick={() => setOpen((o) => !o)}>
         {/* what is chosen, named -- the generic label is only the empty state */}
         {chosen.length
-          ? <span className="known-chosen">{chosen.map((c) => (
-              <span className="chosen-one" key={c.id}>
-                <b>{c.id}</b>{c.sub && <span>{c.sub}</span>}
-              </span>))}</span>
+          ? <span className="known-chosen">{chosen.map((c, i) => (
+              <React.Fragment key={c.id}>
+                {/* the joiner reads between the filters it joins, so the header
+                    states the whole condition rather than just its parts */}
+                {i > 0 && joiner && <span className="chosen-join">{joiner}</span>}
+                <span className="chosen-one">
+                  <b>{c.id}</b>{c.sub && <span>{c.sub}</span>}
+                </span>
+              </React.Fragment>))}</span>
           : <span className="known-label">{label}</span>}
         {chosen.length > 2 && <span className="acc-count">{chosen.length}</span>}
       </button>
@@ -5520,6 +5525,14 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
             <input type="checkbox" checked={multi} onChange={(e) => e.target.checked ? setMulti(true) : switchToSingle()} />
             multi-select
           </label>
+          {/* and/or only means something once two or more are referenced */}
+          {onJoiner && picked > 1 && (
+            <label className="acc-join">{tr("ch.combine")}
+              <select value={joiner} onChange={(e) => onJoiner(e.target.value)}>
+                <option value="or">or</option><option value="and">and</option>
+              </select>
+            </label>
+          )}
           {multi && items.length > 0 && <button className="acc-all" onClick={() => onAll(!allOn)}>
             {allOn ? "Clear all" : "Select all"}
           </button>}
@@ -5937,14 +5950,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             {/* No free-text fids: every value it could hold is a filter that is
                 either defined or a reference to nothing, and "!" is a control,
                 not something to spell. The chosen value reads off the picker. */}
-            {/* and/or only means something once two or more filters are referenced */}
-            {toks(sel.fids) > 1 && (
-              <label className="fld2"><span>{tr("ch.combine")}</span>
-                <select value={sel.fidOp} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fidOp: e.target.value }))}><option value="or">or</option><option value="and">and</option></select></label>
-            )}
             <CheckAccordion
               label={tr("ch.definedFilters")}
-              t={t}
+              t={t} joiner={sel.fidOp} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, fidOp: v }))}
               items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
                 on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) }))}
               onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
