@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.54.0";
+export const STUDIO_VERSION = "2.55.0";
 
 export const I18N = {
   en: {
@@ -494,6 +494,8 @@ export const I18N = {
     "ch.outputPorts": "Output ports", "ch.mode": "Mode", "ch.balanceBy": "Balance by",
     "ch.devicePorts": "device ports", "ch.portsDefault": "ports (default list)",
     "ch.definedOutputs": "defined outputs", "ch.deleteChain": "Delete this chain",
+    "ch.zoomIn": "Zoom in", "ch.zoomOut": "Zoom out", "ch.zoomReset": "Back to 100%",
+    "ch.zoomFit": "fit to view", "ch.zoomFitTip": "Scale the drawing until the whole chain fits the pane. Ctrl + scroll zooms too.",
     "ch.filtersReferenced": "Filters referenced",
     "ch.vlanOp": "VLAN operation", "ch.vlanId": "VLAN id",
     "ch.advancedOp": "Advanced operation",
@@ -987,6 +989,8 @@ export const I18N = {
     "ch.outputPorts": "輸出埠", "ch.mode": "模式", "ch.balanceBy": "分流依據",
     "ch.devicePorts": "裝置埠", "ch.portsDefault": "埠(預設清單)",
     "ch.definedOutputs": "已定義的 output", "ch.deleteChain": "刪除此鏈結",
+    "ch.zoomIn": "放大", "ch.zoomOut": "縮小", "ch.zoomReset": "回到 100%",
+    "ch.zoomFit": "縮放至適合", "ch.zoomFitTip": "縮放到整條鏈結剛好放進畫面。也可以用 Ctrl + 滾輪縮放。",
     "ch.filtersReferenced": "引用的篩選器",
     "ch.vlanOp": "VLAN 操作", "ch.vlanId": "VLAN 編號",
     "ch.advancedOp": "進階操作",

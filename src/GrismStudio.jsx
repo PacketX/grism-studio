@@ -5732,6 +5732,45 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   };
 
   const PAD = 40, svgW = totalW + PAD * 2, svgH = totalH + PAD * 2;
+
+  /* Zoom. The viewBox stays at the drawing's own size and only the rendered
+     width and height scale, so nothing has to know about it -- node positions,
+     hit areas and edges are all still in layout units. */
+  const ZOOM_STEPS = [0.5, 0.67, 0.8, 0.9, 1, 1.25, 1.5, 2];
+  const [zoom, setZoom] = React.useState(() => readPrefs().chainZoom ?? 1);
+  React.useEffect(() => { writePref("chainZoom", zoom); }, [zoom]);
+  const paneRef = React.useRef(null);
+  const stepZoom = (dir) => setZoom((z) => {
+    const i = ZOOM_STEPS.findIndex((v) => v >= z - 0.001);
+    const next = dir > 0 ? ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, i + 1)]
+      : ZOOM_STEPS[Math.max(0, (i < 0 ? ZOOM_STEPS.length : i) - 1)];
+    return next ?? z;
+  });
+  const fitZoom = React.useCallback(() => {
+    const pane = paneRef.current;
+    if (!pane || !svgW) return;
+    const cs = getComputedStyle(pane);
+    const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    // scale to whichever side runs out first, enlarging a small chain as well
+    // as shrinking a large one, within the range the buttons can reach
+    const f = Math.min((pane.clientWidth - padX) / svgW, (pane.clientHeight - padY) / svgH);
+    setZoom(Math.min(2, Math.max(0.2, Math.floor(f * 100) / 100)));
+  }, [svgW, svgH]);
+
+  /* React attaches wheel handlers as passive, so preventDefault inside one is
+     ignored and the pane scrolls under the zoom. Bind it ourselves. */
+  React.useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    const onWheel = (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;   // plain scrolling still scrolls
+      e.preventDefault();
+      stepZoom(e.deltaY < 0 ? 1 : -1);
+    };
+    pane.addEventListener("wheel", onWheel, { passive: false });
+    return () => pane.removeEventListener("wheel", onWheel);
+  }, []);
   const center = (n) => ({ x: n._x + NODE_W / 2 + PAD, y: n._y + PAD });
   const byId = Object.fromEntries(placed.map((n) => [n.id, n]));
 
@@ -5772,8 +5811,17 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
         )}
       </aside>
 
-      <section className="canvas-wrap" onClick={() => setSelId(null)}>
-        <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="canvas">
+      <section className="canvas-wrap" ref={paneRef} onClick={() => setSelId(null)}>
+        <div className="zoom-bar" onClick={(e) => e.stopPropagation()}>
+          <button onClick={() => stepZoom(-1)} disabled={zoom <= ZOOM_STEPS[0]}
+            title={tr("ch.zoomOut")} aria-label={tr("ch.zoomOut")}>−</button>
+          <button className="zoom-pct" onClick={() => setZoom(1)} title={tr("ch.zoomReset")}>
+            {Math.round(zoom * 100)}%</button>
+          <button onClick={() => stepZoom(1)} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+            title={tr("ch.zoomIn")} aria-label={tr("ch.zoomIn")}>+</button>
+          <button className="zoom-fit" onClick={fitZoom} title={tr("ch.zoomFitTip")}>{tr("ch.zoomFit")}</button>
+        </div>
+        <svg width={svgW * zoom} height={svgH * zoom} viewBox={`0 0 ${svgW} ${svgH}`} className="canvas">
           <defs>
             <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3a5064" /></marker>
             <marker id="ard" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3a4654" /></marker>
