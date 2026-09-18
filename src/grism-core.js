@@ -510,8 +510,11 @@ export const firstTwoPorts = (ports) => {
   return [list[0] ?? "P0", list[1] ?? list[0] ?? "P1"];
 };
 export function normalizeDoc(d) {
-  if (d.chains) return { ...d, chains: d.chains.map((c) => c.cid ? c : { ...c, cid: nid() }) };
-  const { chain, ...rest } = d;
+  /* Every collection has to exist, even empty: a template that is only an action
+     or only an input still has to serialise, and the serialiser walks all four. */
+  const base = { filters: [], inputs: [], outputs: [], actions: [], ...d };
+  if (base.chains) return { ...base, chains: base.chains.map((c) => c.cid ? c : { ...c, cid: nid() }) };
+  const { chain, ...rest } = base;
   return { ...rest, chains: [{ cid: nid(), ports: chain?.ports ?? "P0", tree: chain?.tree }] };
 }
 
@@ -627,6 +630,18 @@ const sdwanRun = (label, field, strip, tag) => `<run>
   </chain>
 </run>`;
 
+/* A replay input on its own. <input type="replayPcap"> transmits out of the
+   named port rather than injecting as ingress, and it can only play a file that
+   is already on the device -- the template just names the path. */
+export const PCAP_REPLAY_XML = `<run>
+  <input type="replayPcap" name="replay sample">
+    <port>P0</port>
+    <filepath>H1/in/sample.pcap</filepath>
+    <time>1</time>
+    <msinterval>1</msinterval>
+  </input>
+</run>`;
+
 export const SDWAN_TEMPLATE_XML = {
   l2gre: sdwanRun("L2GRE", "gre", "gre", "l2gre"),
   vxlan: sdwanRun("VXLAN", "vxlan", "vxlan", "vxlan"),
@@ -663,7 +678,7 @@ export const TEMPLATES = [
     blurb: "The smallest useful chain: packets from P0 that match F1 go to P1.",
     blurb_zh: "最精簡的實用鏈結:P0 進來、符合 F1 的封包送到 P1。",
     make: () => ({
-      filters: [{ id: 1, name: "match", sessionBase: "no",
+      filters: [{ id: 1, name: "https", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } },
     }) },
@@ -672,7 +687,7 @@ export const TEMPLATES = [
     blurb: "Matched traffic from P0 is spread across P1 and P2 by 5-tuple hash, keeping each session on one port.",
     blurb_zh: "P0 進來、符合的流量以 5-tuple hash 分散到 P1 和 P2,同一連線維持在同一埠。",
     make: () => ({
-      filters: [{ id: 1, name: "match", sessionBase: "no",
+      filters: [{ id: 1, name: "https", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or",
         match: { id: nid(), t: "out", ports: "P1,P2", mode: "loadBalance", lb: "5thash" }, notmatch: mkUnset() } },
@@ -709,7 +724,7 @@ export const TEMPLATES = [
     blurb: "Matched traffic goes to an output (O1) that rewrites source IP and adds a VLAN tag, then leaves on P1.",
     blurb_zh: "符合的流量送到 output(O1),改寫來源 IP 並加上 VLAN tag,再從 P1 送出。",
     make: () => ({
-      filters: [{ id: 1, name: "target", sessionBase: "no",
+      filters: [{ id: 1, name: "to 10.0.0.0/24", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "ip.dst", rel: "==", val: "10.0.0.0/24" }] } }],
       outputs: [{ id: 1, name: "rewrite", port: "P1", mods: [
         { id: nid(), k: "modify_srcip", val: "172.16.10.10" },
@@ -718,32 +733,24 @@ export const TEMPLATES = [
     }) },
   { id: "pcap-replay", title: "Replay pcap to a port", tag: "Input",
     title_zh: "重播 pcap 到埠", tag_zh: "輸入",
-    blurb: "An input replays a pcap file onto P0 once, then the chain forwards matched traffic out P1.",
-    blurb_zh: "一個 input 把 pcap 檔重播到 P0 一次,鏈結再把符合的流量從 P1 轉發出去。",
-    make: () => ({
-      filters: [{ id: 1, name: "match", sessionBase: "no",
-        root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "ip", rel: "==", val: "" }] } }],
-      inputs: [{ id: 1, name: "replay", alt: "test pcap", type: "replayPcap", port: "P0",
-        pcapMode: "files", filepaths: ["H1/in/sample.pcap"], fields: { time: "1", msinterval: "1" }, scanAttrs: {} }],
-      chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } },
-    }) },
+    blurb: "One input, replaying a pcap out of P0 once with a millisecond between packets. The file is only named here — upload it to the device yourself first, or there is nothing to play.",
+    blurb_zh: "一個 input,把 pcap 從 P0 重播一次,每個封包間隔 1 毫秒。範本只指定路徑,pcap 檔要自己先上傳到裝置,否則沒有東西可播。",
+    make: () => parseRun(PCAP_REPLAY_XML).doc },
   { id: "ingress-strip", title: "Strip VLAN at ingress", tag: "Action",
     title_zh: "入口移除 VLAN", tag_zh: "動作",
-    blurb: "An action strips the VLAN tag from packets arriving on P0 before the chain filters them.",
-    blurb_zh: "一個 action 在鏈結過濾前,先移除 P0 進來封包的 VLAN tag。",
+    blurb: "An action strips the VLAN tag from every packet arriving on P0, before anything else looks at them; the chain then forwards them to P1.",
+    blurb_zh: "一個 action 在其他處理之前,先移除 P0 進來所有封包的 VLAN tag,鏈結再把它們轉發到 P1。",
     make: () => ({
-      filters: [{ id: 1, name: "match", sessionBase: "no",
-        root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
       actions: [{ id: 1, name: "strip vlan", type: "input-packet-process", port: "P0",
         mods: [{ id: nid(), k: "stripping", val: "vlan" }], portA: "P1", portB: "P2" }],
-      chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } },
+      chain: { ports: "P0", tree: mkOut("P1") },
     }) },
   { id: "inline-bidir", title: "Inline (bidirectional)", tag: "Multi-chain",
     title_zh: "Inline(雙向)", tag_zh: "多鏈結",
     blurb: "Two chains form an inline pair: P6→P7 forwards matched traffic, and P7→P6 carries the return path.",
     blurb_zh: "兩條鏈結組成 inline 配對:P6→P7 轉發符合的流量,P7→P6 負責回程。",
     make: () => ({
-      filters: [{ id: 1, name: "match", sessionBase: "no",
+      filters: [{ id: 1, name: "https", sessionBase: "no",
         root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
       chains: [
         { cid: nid(), ports: "P6", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P7"), notmatch: mkOut("P7") } },
@@ -945,7 +952,7 @@ export const mkActionMod = (k) => ({ id: nid(), k, val: ACT_MOD_INDEX[k]?.opts?.
 export const mkAction = (id) => ({ id, name: "", type: "input-packet-process", port: "P0", mods: [], portA: "P1", portB: "P2" });
 
 export function serializeAction(a) {
-  const attrs = [`id="${a.id}"`, `type="${a.type}"`, a.name ? `name="${esc(a.name)}"` : null].filter(Boolean).join(" ");
+  const attrs = [`type="${a.type}"`, a.name ? `name="${esc(a.name)}"` : null].filter(Boolean).join(" ");
   const lines = [`<action ${attrs}>`];
   if (a.type === "linkpairs") {
     lines.push(`  <portA>${esc(a.portA)}</portA>`);

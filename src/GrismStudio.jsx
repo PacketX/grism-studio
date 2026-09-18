@@ -4526,7 +4526,7 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
   return (
     <aside className="filter-list">
       {title && <div className="chain-list-head">{title}</div>}
-      {items.map((it) => {
+      {items.map((it, i) => {
         const k = getKey(it);
         return (
           <div key={k}
@@ -4538,7 +4538,7 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
             onDrop={(e) => { e.preventDefault(); if (dragKey != null) move(dragKey, k); setDragKey(null); setOverKey(null); }}
             onClick={() => onSelect(it)}>
             <span className="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
-            {renderLabel(it)}
+            {renderLabel(it, i)}
           </div>
         );
       })}
@@ -5265,7 +5265,7 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
     <div className="filters-layout">
       <SortableList
         title={tr("tab.actions")} items={actions} activeKey={a.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>A{x.id}</b><span>{x.name || <em>{x.type === "linkpairs" ? "linkpairs" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
+        renderLabel={(x, i) => <><b>{i + 1}</b><span>{x.name || <em>{x.type === "linkpairs" ? "linkpairs" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveAction(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, actions: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...actions.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, actions: [...d.actions, copy] })); setActiveAction(nextId); }}
@@ -5273,8 +5273,9 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
 
       <div className="filter-editor">
         <div className="filter-meta">
-          <IdField prefix="A" id={a.id} siblingIds={doc.actions.map((x) => x.id)}
-            onCommit={(newId) => { setDoc((d) => ({ ...d, actions: d.actions.map((x) => x.id === a.id ? { ...x, id: newId } : x) })); setActiveAction(newId); }} />
+          {/* No id field: <action id> is optional in run.xsd, nothing references
+              an action by it, and it is no longer written out. The id stays
+              internal, as the key for selection and reordering. */}
           <label className="ml name"><span>{tr("common.name")}</span>
             <input value={a.name} onChange={(e) => patch({ name: e.target.value })} placeholder={tr("common.optional")} /></label>
           <label className="ml"><span>{tr("common.type")}</span>

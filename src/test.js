@@ -1777,6 +1777,69 @@ group("SD-WAN templates");
   }
 }
 
+/* ---------- pcap replay template / optional ids ---------- */
+group("replay template");
+{
+  const { readFileSync: rf, existsSync: ex } = await import("node:fs");
+  const XSD = "/data/Grism/doc/run.xsd";
+  const schema = ex(XSD) ? C.parseXsd(rf(XSD, "utf8")) : null;
+  if (schema) check("the replay XML validates", C.validateAgainstXsd(C.PCAP_REPLAY_XML, schema).length === 0);
+  check("the replay XML has no grism-level problems", C.grismXmlProblems(C.PCAP_REPLAY_XML).length === 0);
+
+  const d = C.normalizeDoc(C.TEMPLATES.find((t) => t.id === "pcap-replay").make());
+  check("it is one replay input and nothing else",
+    d.inputs.length === 1 && d.filters.length === 0 && d.chains.length === 0);
+  const i = d.inputs[0];
+  check("named, on P0, playing the sample once a millisecond apart",
+    i.name === "replay sample" && i.type === "replayPcap" && i.port === "P0" &&
+    i.filepaths[0] === "H1/in/sample.pcap" && i.fields.time === "1" && i.fields.msinterval === "1");
+  check("no alt", !i.alt);
+  for (const lang of Object.keys(I18N)) void lang;
+  const tpl = C.TEMPLATES.find((t) => t.id === "pcap-replay");
+  // the file is not part of the template, and a replay of a file that is not
+  // there does nothing at all -- so the card has to say so
+  check("both blurbs say the pcap has to be uploaded",
+    /upload/i.test(tpl.blurb) && /上傳/.test(tpl.blurb_zh));
+
+  // <action id> is optional in run.xsd and nothing references an action by it
+  const acted = C.normalizeDoc(C.parseRun(
+    `<run><action id="7" type="input-packet-process" name="keep"><port>P3</port></action></run>`).doc);
+  const out = (C.serializeRun ?? C.buildRunXml)(acted);
+  check("an imported action id is dropped on the way out",
+    !/<action[^>]*\bid=/.test(out) && /name="keep"/.test(out) && /type="input-packet-process"/.test(out));
+  if (schema) check("an action without an id still validates",
+    C.validateAgainstXsd(out, schema).length === 0);
+}
+
+/* ---------- every template, end to end ---------- */
+group("template gallery");
+{
+  const { readFileSync: rf, existsSync: ex } = await import("node:fs");
+  const XSD = "/data/Grism/doc/run.xsd";
+  const schema = ex(XSD) ? C.parseXsd(rf(XSD, "utf8")) : null;
+  let broke = [], invalid = [], weak = [];
+  for (const t of C.TEMPLATES) {
+    const d = C.normalizeDoc(t.make());
+    let xml = null;
+    // a template that is only an action, or only an input, still has to
+    // serialise -- normalizeDoc fills the collections make() left out
+    try { xml = (C.serializeRun ?? C.buildRunXml)(d); } catch { broke.push(t.id); continue; }
+    if (schema && C.validateAgainstXsd(xml, schema).length) invalid.push(t.id);
+    for (const f of d.filters) if (!f.name || /^(match|target)$/i.test(f.name)) weak.push(t.id + ":F" + f.id);
+    for (const o of d.outputs) if (!o.name) weak.push(t.id + ":O" + o.id);
+    for (const i of d.inputs) if (!i.name) weak.push(t.id + ":I" + i.id);
+  }
+  check("every template serialises", broke.length === 0, broke.join(" "));
+  check("every template validates against run.xsd", invalid.length === 0, invalid.join(" "));
+  // "match" says nothing about what it matches
+  check("no filter, output or input is left unnamed or vaguely named", weak.length === 0, weak.join(" "));
+
+  const strip = C.normalizeDoc(C.TEMPLATES.find((t) => t.id === "ingress-strip").make());
+  check("the VLAN template is the action and a plain forward, with no filter",
+    strip.filters.length === 0 && strip.actions.length === 1 && strip.chains.length === 1 &&
+    strip.chains[0].tree.t === "out");
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {
