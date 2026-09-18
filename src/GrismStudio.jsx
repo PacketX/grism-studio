@@ -1405,7 +1405,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const [rawCfg, setRawCfg] = React.useState(null);   // for the port pickers
   // LAN bypass: only some models have the relays, so the section appears only
   // when the config says so. null = not read yet, true/false = the relay state.
-  const [bypass, setBypass] = React.useState({});     // pair number -> true | false | null
+  /* pair number -> true | false. A pair missing from the map is one the device
+     would not report: some T12S units have no bypass board, and there is
+     nothing to show or offer for those ports. */
+  const [bypass, setBypass] = React.useState({});
   const [bypassBusy, setBypassBusy] = React.useState(0);
   const [bypassErr, setBypassErr] = React.useState("");
   /* The model decides whether this device has bypass relays at all, and the
@@ -1427,8 +1430,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     for (const pair of hw.pairs) {
       try {
         const res = await fetch(bypassStatusUrl(hw.key, pair.n), { credentials: "include" });
-        next[pair.n] = res.ok ? parseBypassStatus(await res.text()) : null;
-      } catch { next[pair.n] = null; }
+        if (!res.ok) continue;                 // a unit built without the bypass board
+        const state = parseBypassStatus(await res.text());
+        if (state !== null) next[pair.n] = state;
+      } catch { /* leave it out, same as a refusal */ }
     }
     setBypass(next);
   }, []);
@@ -1934,7 +1939,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                       <tr key={p.name} className={p.enable ? "" : "port-off"}>
                         <td className="tf-num mono">{p.ifidx ?? "—"}</td>
                         <td className="tf-name">{p.name}
-                          {bypassPairOf[p.name] && (() => {
+                          {bypassPairOf[p.name] !== undefined &&
+                            bypass[bypassPairOf[p.name]] !== undefined && (() => {
                             const pair = bypassHw.pairs.find((x) => x.n === bypassPairOf[p.name]);
                             const on = bypass[pair.n];
                             /* A button, not one of the staged fields beside it: every other control
@@ -1942,12 +1948,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                                is confirmed. */
                             return (
                               <button className={"tf-bypass as-toggle" + (on === true ? "" : " idle")}
-                                disabled={on === null || bypassBusy === pair.n}
+                                disabled={bypassBusy === pair.n}
                                 title={on === true ? tr("tf.bypassTip") : tr("set.bypassPairTip")}
                                 onClick={() => setConfirm({ kind: "bypass", pair, on })}>
                                 {bypassBusy === pair.n ? tr("set.bypassWorking")
                                   : on === true ? tr("tf.bypass")
-                                  : on === null ? tr("set.bypassUnknown")
                                   : tr("set.bypassPair") + " " + pair.n}
                               </button>
                             );

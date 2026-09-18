@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.29.0";
+export const STUDIO_VERSION = "2.29.1";
 
 export const I18N = {
   en: {
@@ -79,7 +79,7 @@ export const I18N = {
     "set.bypassConfirmOn": "Joins the two ports directly. Traffic keeps flowing but stops reaching the device, so nothing is filtered or captured until you switch back.",
     "set.bypassConfirmOff": "Brings the pair back through the device. Traffic is filtered again.",
     "set.bypassConfirmNow": "This takes effect immediately — it does not wait for Apply, and the pair is interrupted for a moment either way.",
-    "set.bypassPairTip": "Wired through a bypass relay. The relay is open, so traffic on this port reaches the device normally.", "set.bypassUnknown": "unknown",
+    "set.bypassPairTip": "Wired through a bypass relay. The relay is open, so traffic on this port reaches the device normally.",
     "set.bypassWorking": "switching…",
     "set.system": "System", "set.packet": "Packet handling", "set.services": "Services",
     "set.applying": "Applying…", "set.applyingBody": "Writing the configuration to the device. Please wait.",
@@ -539,7 +539,7 @@ export const I18N = {
     "set.bypassConfirmOn": "兩個埠將直接對接。流量繼續通過但不再進入本機,在切回之前不會做任何過濾或擷取。",
     "set.bypassConfirmOff": "讓該埠對重新經過本機,流量會恢復過濾。",
     "set.bypassConfirmNow": "此操作立即生效——不會等待「套用」,且無論切往哪個方向該埠對都會瞬斷一次。",
-    "set.bypassPairTip": "此埠接有 bypass 繼電器。目前繼電器是斷開的,流量正常進入本機。", "set.bypassUnknown": "無法取得",
+    "set.bypassPairTip": "此埠接有 bypass 繼電器。目前繼電器是斷開的,流量正常進入本機。",
     "set.bypassWorking": "切換中…",
     "set.system": "系統", "set.packet": "封包處理", "set.services": "服務",
     "set.applying": "套用中…", "set.applyingBody": "正在將設定寫入裝置,請稍候。",
