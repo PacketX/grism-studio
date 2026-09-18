@@ -37,6 +37,7 @@ import {
   hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   outputIndex, destLabel,
+  parseL2greCorrelation,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -77,7 +78,7 @@ export default function GrismStudio() {
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
     { id: "pipeline", tabs: ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
-    { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries"] },
+    { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre"] },
     { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
   const tabWorkspace = (tb) => (WORKSPACES.find((w) => w.tabs.includes(tb)) ?? WORKSPACES[0]).id;
@@ -215,6 +216,35 @@ export default function GrismStudio() {
   const t = useMemo(() => makeT(lang), [lang]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
+
+  /* The L2GRE correlation table only exists on a device that is decapsulating
+     L2GRE, so its page appears only when the device has rows to show. Read once
+     on arriving in the workspace -- it is a lookup table, not a live counter. */
+  const [l2gre, setL2gre] = useState(null);
+  // <args><grel2Correlation>, read from the same get_config the port list comes
+  // from. Declared here so hasL2gre below can see it.
+  const [l2greOn, setL2greOn] = useState(false);
+  useEffect(() => {
+    if (workspace !== "traffic" || !login.who) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/grism/task/get_l2gre_correlation_table", { credentials: "include" });
+        if (!res.ok) return;
+        const parsed = parseL2greCorrelation(await res.json());
+        if (alive) setL2gre(parsed);
+      } catch { /* leave the page hidden, as for a device that has no table */ }
+    })();
+    return () => { alive = false; };
+  }, [workspace, login.who]);
+  /* Show the page whenever correlation is switched on -- a device that has just
+     been turned on has an empty table, and hiding the page then reads as the
+     feature being missing. Also show it when rows survive the switch being
+     turned off, because those rows are still the answer to "what was in there". */
+  const hasL2gre = l2greOn || (l2gre?.rows.length ?? 0) > 0;
+  // a table that empties while it is open would otherwise leave a blank tab
+  useEffect(() => { if (tab === "trafficL2gre" && !hasL2gre) setTab("trafficPorts"); }, [tab, hasL2gre]);
+
   // Why the session ended, when something other than the logout button ended it.
   // Set as the tab that triggered it unmounts, so it has to live out here.
   const [signedOutNotice, setSignedOutNotice] = useState("");
@@ -413,6 +443,9 @@ export default function GrismStudio() {
       const loops = ifaces.filter((i) => (i.type || "").toUpperCase() === "LOOP")
         .flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
       setLoopPorts([...new Set(loops)]);
+      // whether the device is correlating L2GRE at all -- the table page is only
+      // worth showing when it is, or when it still holds rows from when it was
+      setL2greOn((cfg.args ?? {}).grel2Correlation === true);
       const targets = (cfg.heartbeat?.target ?? [])
         .map((t) => ({ id: t.id, sendPort: t.sendPort, receivePort: t.receivePort }))
         .filter((t) => t.id != null);
@@ -504,6 +537,7 @@ export default function GrismStudio() {
     setHbTargets([]);
     setDeviceStorages([]);
     setLoopPorts([]);
+    setL2greOn(false); setL2gre(null);
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
     /* The open document may be the device's running config, which is no longer
        ours to show and can no longer be reloaded. Go back to the overview on the
@@ -607,7 +641,8 @@ export default function GrismStudio() {
 
                 {open && w.id === "traffic" && (
                   <nav className="tabs ws-tabs">
-                    {["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries"].map((k) => (
+                    {["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries",
+                      ...(hasL2gre ? ["trafficL2gre"] : [])].map((k) => (
                       <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
                         {t("tab." + k)}
                       </button>
@@ -879,6 +914,9 @@ export default function GrismStudio() {
         )}
         {tab === "trafficCountries" && (
           <TrafficCountriesTab loggedIn={!!login.who} t={t} lang={lang} />
+        )}
+        {tab === "trafficL2gre" && (
+          <L2greTab data={l2gre} correlating={l2greOn} t={t} />
         )}
         {tab === "capture" && (
           <CaptureTab loggedIn={!!login.who} t={t}
@@ -6984,6 +7022,55 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 
       <div className="dev-inline-controls" />
 
+    </div>
+  );
+}
+
+/* ============================================================
+   L2GRE correlation — which tunnel each inner MAC was seen inside
+   ============================================================ */
+function L2greTab({ data, correlating, t }) {
+  const tr = t || ((k) => k);
+  const rows = data?.rows ?? [];
+  const loading = data === null;
+  return (
+    <div className="sys-wrap">
+      <div className="sys-head">
+        <h2 className="sys-title">{tr("tab.trafficL2gre")}</h2>
+      </div>
+      <p className="page-note">{tr("l2g.note")}</p>
+      {data?.hidden > 0 && (
+        <p className="set-hint warn">{tr("l2g.truncated").replace("{n}", data.hidden)}</p>
+      )}
+      {/* The two states worth explaining rather than showing as an empty table */}
+      {!loading && rows.length === 0 && correlating && (
+        <p className="sys-note dim">{tr("l2g.emptyOn")}</p>
+      )}
+      {rows.length > 0 && !correlating && (
+        <p className="set-hint warn">{tr("l2g.staleOff")}</p>
+      )}
+      {loading && <p className="sys-note dim">{tr("set.loading")}</p>}
+      {rows.length > 0 && <div className="tf-table-wrap">
+        <table className="tf-table">
+          <thead><tr>
+            <th>{tr("l2g.outerDst")}</th>
+            <th>{tr("l2g.outerSrc")}</th>
+            <th>{tr("l2g.inner")}</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                {/* the tunnel endpoint the traffic went to, then where it came
+                    from, then the MAC that was riding inside */}
+                <td className="mono">{r.outerDstIp} <span className="l2g-mac">({r.outerDstMac})</span></td>
+                <td className="mono">{r.outerSrcIp} <span className="l2g-mac">({r.outerSrcMac})</span></td>
+                <td className="mono">{r.innerMac}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>}
+      {rows.length > 0 && <p className="sys-note dim">{rows.length} {tr("l2g.entries")}</p>}
     </div>
   );
 }

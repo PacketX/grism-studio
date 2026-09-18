@@ -1891,6 +1891,39 @@ group("chain output labels");
   check("an unnamed output resolves to the port alone", C.destLabel("O9", noName) === "P4");
 }
 
+/* ---------- L2GRE correlation table ---------- */
+group("L2GRE correlation");
+{
+  const sample = JSON.parse(`{"ts":1789728588322,"gre_l2_correlation_table":[[8957,"26:50:31:a5:04:21","00:18:23:ee:03:2d","02:01:00:00:00:00","192.168.1.162","192.168.1.6",0],[22310,"be:fb:5e:e7:29:e0","00:18:23:ee:02:b5","02:01:00:00:00:00","192.168.1.163","192.168.1.6",12]],"gre_l2_correlation_table_count":2,"gre_l2_correlation_table_non_displayed_count":3}`);
+  const p = C.parseL2greCorrelation(sample);
+  check("reads the device's own count and the truncation count", p.count === 2 && p.hidden === 3);
+  // the row is a fixed array; the first element is an internal slot number
+  check("maps the row positions to their fields", (() => {
+    const r = p.rows[0];
+    return r.innerMac === "26:50:31:a5:04:21" && r.outerSrcMac === "00:18:23:ee:03:2d" &&
+      r.outerDstMac === "02:01:00:00:00:00" && r.outerSrcIp === "192.168.1.162" &&
+      r.outerDstIp === "192.168.1.6" && r.ageSec === 0;
+  })());
+  check("keeps the age of each entry", p.rows[1].ageSec === 12);
+
+  // a device that is not decapsulating L2GRE has no table, and the page hides
+  check("an empty table reads as zero",
+    C.parseL2greCorrelation({ gre_l2_correlation_table: [], gre_l2_correlation_table_count: 0 }).count === 0);
+  check("anything unexpected reads as zero rather than throwing",
+    C.parseL2greCorrelation(null).rows.length === 0 &&
+    C.parseL2greCorrelation({}).rows.length === 0 &&
+    C.parseL2greCorrelation({ gre_l2_correlation_table: "nope" }).rows.length === 0 &&
+    C.parseL2greCorrelation({ gre_l2_correlation_table: [[1, "aa"], null, 7] }).rows.length === 0);
+  check("a count the device did not send falls back to the rows it did",
+    C.parseL2greCorrelation({ gre_l2_correlation_table: sample.gre_l2_correlation_table }).count === 2);
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} names the L2GRE page and its three columns`,
+    !!I18N[lang]["tab.trafficL2gre"] && !!I18N[lang]["l2g.outerDst"] &&
+    !!I18N[lang]["l2g.outerSrc"] && !!I18N[lang]["l2g.inner"]);
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {

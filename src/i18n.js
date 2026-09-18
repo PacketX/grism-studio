@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.48.0";
+export const STUDIO_VERSION = "2.50.0";
 
 export const I18N = {
   en: {
@@ -36,6 +36,12 @@ export const I18N = {
     "cap.markForDelete": "Mark for deletion", "cap.delBody": "The capture file is removed from the storage volume. This cannot be undone.",
     "tab.trafficPorts": "Interfaces", "tab.trafficSessions": "Sessions",
     "tab.trafficServices": "Services", "tab.trafficCountries": "Countries",
+    "tab.trafficL2gre": "L2GRE Correlation",
+    "l2g.note": "Inner MAC addresses the device has seen inside an L2GRE tunnel, and the tunnel each one arrived through. Read once when you open the traffic pages.",
+    "l2g.outerDst": "Tunnel destination", "l2g.outerSrc": "Tunnel source", "l2g.inner": "Inner MAC",
+    "l2g.emptyOn": "Correlation is on, but the device has not seen any L2GRE traffic to correlate yet.",
+    "l2g.staleOff": "Correlation is switched off in packet handling. These entries are what the device saw while it was on.",
+    "l2g.entries": "entries", "l2g.truncated": "{n} more entries did not fit in the device's reply.",
     "sess.title": "Session tables", "sess.v4": "IPv4", "sess.v6": "IPv6",
     "sess.total": "Total sessions", "sess.concurrent": "Concurrent", "sess.netflow": "NetFlow records",
     "sess.eps": "events/sec", "sess.ofTotal": "of capacity", "sess.protocols": "Protocols", "sess.nextHdr": "Next headers",
@@ -524,6 +530,12 @@ export const I18N = {
     "cap.markForDelete": "標記為待刪除", "cap.delBody": "側錄檔會從儲存空間移除,且無法復原。",
     "tab.trafficPorts": "介面", "tab.trafficSessions": "連線",
     "tab.trafficServices": "服務", "tab.trafficCountries": "國家",
+    "tab.trafficL2gre": "L2GRE 對應表",
+    "l2g.note": "裝置在 L2GRE 通道內看到的內層 MAC,以及各自是從哪一條通道進來的。進入流量統計頁面時讀取一次。",
+    "l2g.outerDst": "通道目的", "l2g.outerSrc": "通道來源", "l2g.inner": "內層 MAC",
+    "l2g.emptyOn": "關聯已開啟,但裝置還沒看到可以關聯的 L2GRE 流量。",
+    "l2g.staleOff": "封包處理裡的關聯目前是關閉的,以下是開啟期間看到的內容。",
+    "l2g.entries": "筆", "l2g.truncated": "另有 {n} 筆未能放進裝置的回應中。",
     "sess.title": "連線表", "sess.v4": "IPv4", "sess.v6": "IPv6",
     "sess.total": "總連線數", "sess.concurrent": "在線數", "sess.netflow": "NetFlow 筆數",
     "sess.eps": "筆/秒", "sess.ofTotal": "使用率", "sess.protocols": "協定", "sess.nextHdr": "Next header",

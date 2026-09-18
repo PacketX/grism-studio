@@ -3341,3 +3341,36 @@ export function sdwanProblems(v, knownPorts = []) {
   if (t !== "" && !/^\d+$/.test(t)) out.push({ tunnel: "encrypt", kind: "timeout" });
   return out;
 }
+
+/* ============================================================
+   L2GRE correlation table
+
+   The device maps an inner source MAC to the tunnel it was seen inside, so a
+   session can be followed back to the endpoint carrying it. Each row arrives as
+   a fixed array: [table index, inner MAC, outer source MAC, outer dest MAC,
+   outer source IP, outer dest IP, seconds since the entry was last refreshed]
+   (src/statistics.c). The index is an internal slot number and is not shown.
+   ============================================================ */
+
+export function parseL2greCorrelation(payload) {
+  const raw = Array.isArray(payload?.gre_l2_correlation_table) ? payload.gre_l2_correlation_table : [];
+  const rows = raw
+    .filter((r) => Array.isArray(r) && r.length >= 6)
+    .map((r) => ({
+      innerMac: String(r[1] ?? ""),
+      outerSrcMac: String(r[2] ?? ""),
+      outerDstMac: String(r[3] ?? ""),
+      outerSrcIp: String(r[4] ?? ""),
+      outerDstIp: String(r[5] ?? ""),
+      ageSec: Number.isFinite(Number(r[6])) ? Number(r[6]) : null,
+    }));
+  const n = Number(payload?.gre_l2_correlation_table_count);
+  return {
+    rows,
+    // the device's own count, which is what decides whether there is a page to
+    // show -- it counts what it put in the array
+    count: Number.isFinite(n) ? n : rows.length,
+    hidden: Number(payload?.gre_l2_correlation_table_non_displayed_count) || 0,
+    ts: Number(payload?.ts) || null,
+  };
+}
