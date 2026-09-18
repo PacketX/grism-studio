@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.56.0";
+export const STUDIO_VERSION = "2.58.0";
 
 export const I18N = {
   en: {
@@ -494,6 +494,10 @@ export const I18N = {
     "ch.outputPorts": "Output ports", "ch.mode": "Mode", "ch.balanceBy": "Balance by",
     "ch.devicePorts": "device ports", "ch.portsDefault": "ports (default list)",
     "ch.definedOutputs": "defined outputs", "ch.deleteChain": "Delete this chain",
+    "ch.negOn": "Change to \"does not match this filter\"", "ch.negOff": "Change back to \"matches this filter\"",
+    "ch.noneChosen": "(none chosen)", "ch.outDrop": "discard", "ch.outSwitch": "to the switch",
+    "ch.dropNote": "0 discards the packet outright, which is not the same as leaving it unspecified.",
+    "ch.portsDefaultNote": "Default list — sign in to load the device\u2019s actual ports.",
     "ch.zoomIn": "Zoom in", "ch.zoomOut": "Zoom out", "ch.zoomReset": "Back to 100%",
     "ch.zoomFit": "fit to view", "ch.zoomFitTip": "Scale the drawing until the whole chain fits the pane. Ctrl + scroll zooms too.",
     "ch.filtersReferenced": "Filters referenced",
@@ -989,6 +993,10 @@ export const I18N = {
     "ch.outputPorts": "輸出埠", "ch.mode": "模式", "ch.balanceBy": "分流依據",
     "ch.devicePorts": "裝置埠", "ch.portsDefault": "埠(預設清單)",
     "ch.definedOutputs": "已定義的 output", "ch.deleteChain": "刪除此鏈結",
+    "ch.negOn": "改成「不符合這個篩選器」", "ch.negOff": "改回「符合這個篩選器」",
+    "ch.noneChosen": "(未選擇)", "ch.outDrop": "丟棄", "ch.outSwitch": "交給交換器",
+    "ch.dropNote": "選擇 0 代表明確丟棄,與「未指定」不同。",
+    "ch.portsDefaultNote": "這是預設清單 — 登入後會載入裝置實際的連接埠。",
     "ch.zoomIn": "放大", "ch.zoomOut": "縮小", "ch.zoomReset": "回到 100%",
     "ch.zoomFit": "縮放至適合", "ch.zoomFitTip": "縮放到整條鏈結剛好放進畫面。也可以用 Ctrl + 滾輪縮放。",
     "ch.filtersReferenced": "引用的篩選器",

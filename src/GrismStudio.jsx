@@ -5483,8 +5483,9 @@ function CollapseSection({ label, active, children }) {
   );
 }
 
-function CheckAccordion({ label, items, onToggle, onAll, onSetOne, emptyNote }) {
-  const [open, setOpen] = useState(false);
+function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, t }) {
+  const tr = t || ((k) => k);
+  const [open, setOpen] = useState(defaultOpen);
   const picked = items.filter((it) => it.on).length;
   const [multi, setMulti] = useState(picked > 1); // default single, unless already multiple
   // if the current value becomes multiple (e.g. selecting a different node that
@@ -5515,10 +5516,17 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, emptyNote }) 
         </div>
         <div className="fid-checks">
           {items.map((it) => (
-            <label key={it.id} className={"fid-check" + (it.on ? " on" : "")}>
+            <label key={it.id} className={"fid-check" + (it.on ? " on" : "") + (it.neg ? " neg" : "")}>
               <input type={multi ? "checkbox" : "radio"} checked={it.on}
                 onChange={() => multi ? onToggle(it.id) : onSetOne(it.id)} />
               <b>{it.b}</b>{it.sub && <span>{it.sub}</span>}
+              {/* negation belongs on the row it negates, not in a text box the
+                  reader has to know the syntax for */}
+              {onNegate && it.on && (
+                <button type="button" className={"fid-neg" + (it.neg ? " on" : "")}
+                  title={it.neg ? tr("ch.negOff") : tr("ch.negOn")}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNegate(it.id); }}>!</button>
+              )}
             </label>
           ))}
         </div>
@@ -5589,6 +5597,12 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   // reflect and edit it without disturbing negation or the text field.
   const fidsTokens = (fids) => String(fids || "").split(",").map((s) => s.trim()).filter(Boolean);
   const fidsHas = (fids, fid) => fidsTokens(fids).some((t) => t.replace(/^!/, "") === fid);
+  const fidsNegated = (fids, fid) => fidsTokens(fids).some((t) => t === "!" + fid);
+  const negateFid = (nodeId, fids, fid) => {
+    const next = fidsTokens(fids).map((t) =>
+      t.replace(/^!/, "") === fid ? (t.startsWith("!") ? fid : "!" + fid) : t);
+    mutate(nodeId, (n) => ({ ...n, fids: next.join(",") }));
+  };
   const toggleFid = (nodeId, fids, fid) => {
     const toks = fidsTokens(fids);
     const idx = toks.findIndex((t) => t.replace(/^!/, "") === fid);
@@ -5598,6 +5612,29 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   // generic comma-list toggle for port fields (ingress ports, output ports)
   const listTokens = (v) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
   const listHas = (v, item) => listTokens(v).includes(item);
+  /* On the canvas an output reference reads as "O2(P0)": the id it is written
+     as, and the port it actually leaves by. */
+  const withOutPorts = (ports) => listTokens(ports).map((tok) => {
+    const o = (doc.outputs ?? []).find((x) => "O" + x.id === tok);
+    return o && o.port ? `${tok}(${o.port})` : tok;
+  }).join(",");
+  /* Everything a chain's <out> accepts, in one list: ports, the outputs this
+     document defines, then the two standalone values. */
+  const SOLO_OUTS = [{ id: "0", subKey: "ch.outDrop" }, { id: "S", subKey: "ch.outSwitch" }];
+  const outChoices = useMemo(() => [
+    ...portOptions.map((p) => ({ id: p, sub: "" })),
+    ...(doc.outputs ?? []).map((o) => ({ id: "O" + o.id, sub: outputLabel(o) })),
+    ...SOLO_OUTS.map((x) => ({ id: x.id, sub: tr(x.subKey), solo: true })),
+  ], [portOptions, doc.outputs, tr]);
+  const toggleOutChoice = (nodeId, ports, item) => {
+    const solo = SOLO_OUTS.some((x) => x.id === item);
+    const toks = listTokens(ports);
+    let next;
+    if (solo) next = toks.includes(item) ? [] : [item];
+    else next = (toks.includes(item) ? toks.filter((t) => t !== item) : [...toks, item])
+      .filter((t) => !SOLO_OUTS.some((x) => x.id === t));
+    mutate(nodeId, (n) => ({ ...n, ports: next.join(",") }));
+  };
   const toggleInPort = (item) => {
     const toks = listTokens(chain.ports);
     const next = toks.includes(item) ? toks.filter((t) => t !== item) : [...toks, item];
@@ -5854,7 +5891,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               {bad && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
               {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">INGRESS</text><text x={c.x} y={c.y + 12} className="n-main">{n.ports}</text></>}
               {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || "FILTER"}</text><text x={c.x} y={c.y + 12} className="n-main">{n.fids}</text></>; })()}
-              {n.t === "out" && <><text x={c.x} y={c.y - 5} className={!drop && outAlt(n.ports) ? "n-alt" : "n-kind"}>{drop ? "DISCARD" : capAlt(outAlt(n.ports)) || (n.mode === "loadBalance" ? "LOAD BALANCE" : "OUTPUT")}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : n.ports}</text></>}
+              {n.t === "out" && <><text x={c.x} y={c.y - 5} className={!drop && outAlt(n.ports) ? "n-alt" : "n-kind"}>{drop ? "DISCARD" : capAlt(outAlt(n.ports)) || (n.mode === "loadBalance" ? "LOAD BALANCE" : "OUTPUT")}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : withOutPorts(n.ports)}</text></>}
             </g>;
           })}
         </svg>
@@ -5886,8 +5923,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
           {sel && isUnset(sel) && <><p className="insp-note">{tr("ch.unsetNote")}</p>
             <button className="primary" onClick={() => restoreSide(sel.id)}>{tr("ch.routeExplicitly")}</button></>}
           {sel && sel.t === "branch" && <>
-            <label className="fld2"><span>{tr("ch.filters")}</span>
-              <input value={sel.fids} onChange={(e) => mutate(sel.id, (n) => ({ ...n, fids: e.target.value }))} /><em>e.g. F1 or F1,!F3</em></label>
+            {/* No free-text fids: every value it could hold is a filter that is
+                either defined or a reference to nothing, and "!" is a control,
+                not something to spell. */}
+            <p className="insp-read"><span>{tr("ch.filters")}</span>
+              <code>{sel.fids || tr("ch.noneChosen")}</code></p>
             {/* and/or only means something once two or more filters are referenced */}
             {toks(sel.fids) > 1 && (
               <label className="fld2"><span>{tr("ch.combine")}</span>
@@ -5895,8 +5935,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             )}
             <CheckAccordion
               label={tr("ch.definedFilters")}
-              items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"), on: fidsHas(sel.fids, "F" + f.id) }))}
+              defaultOpen t={t}
+              items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
+                on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) }))}
               onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
+              onNegate={(fid) => negateFid(sel.id, sel.fids, fid)}
               onAll={(on) => setAllFids(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), on)}
               onSetOne={(fid) => setOneFid(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), fid)}
               emptyNote={tr("ch.noFiltersDefined")} />
@@ -5910,21 +5953,22 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             <button className="danger" onClick={() => removeTest(sel.id)}>{tr("ch.removeTest")}</button>
           </>}
           {sel && sel.t === "out" && <>
-            {isDrop(sel) ? <p className="insp-note">Discarded (<code>&lt;out&gt;0&lt;/out&gt;</code>). Explicit, distinct from unspecified.</p> : <>
-              <label className="fld2"><span>{tr("ch.outputPorts")}</span><input value={sel.ports} onChange={(e) => mutate(sel.id, (n) => ({ ...n, ports: e.target.value }))} /><em>P1,P2 · 0 drop · S switch · O1 = output def</em></label>
+            {/* One list: the device's ports, the outputs this document defines,
+                and the two values that are neither -- 0 discards, S hands the
+                packet to the switch. Those two stand alone, so choosing one
+                clears the rest and choosing a port clears them. */}
+            {isDrop(sel) && <p className="insp-note">{tr("ch.dropNote")}</p>}
+            <>
+              <p className="insp-read"><span>{tr("ch.outputPorts")}</span>
+                <code>{sel.ports || tr("ch.noneChosen")}</code></p>
               <CheckAccordion
                 label={portsFromDevice ? tr("ch.devicePorts") : tr("ch.portsDefault")}
-                items={portOptions.map((p) => ({ id: p, b: p, on: listHas(sel.ports, p) }))}
-                onToggle={(p) => toggleOutPort(sel.id, sel.ports, p)}
-                onAll={(on) => setAllOutPorts(sel.id, sel.ports, portOptions, on)}
-                onSetOne={(p) => setOneOutPort(sel.id, sel.ports, portOptions, p)}
-                emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
-              {(doc.outputs?.length ?? 0) > 0 && <CheckAccordion
-                label={tr("ch.definedOutputs")}
-                items={doc.outputs.map((o) => ({ id: "O" + o.id, b: "O" + o.id, sub: outputLabel(o), on: listHas(sel.ports, "O" + o.id) }))}
-                onToggle={(oid) => toggleOutPort(sel.id, sel.ports, oid)}
-                onAll={(on) => setAllOutPorts(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), on)}
-                onSetOne={(oid) => setOneOutPort(sel.id, sel.ports, doc.outputs.map((o) => "O" + o.id), oid)} />}
+                defaultOpen t={t}
+                items={outChoices.map((c) => ({ id: c.id, b: c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
+                onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
+                onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
+                onSetOne={(p2) => setOneOutPort(sel.id, sel.ports, outChoices.map((c) => c.id), p2)}
+                emptyNote={!portsFromDevice ? tr("ch.portsDefaultNote") : null} />
               {/* duplicate vs load balance only applies when traffic goes to several ports */}
               {toks(sel.ports) > 1 && (
                 <label className="fld2"><span>{tr("ch.mode")}</span><select value={sel.mode} onChange={(e) => mutate(sel.id, (n) => ({ ...n, mode: e.target.value }))}><option value="duplicate">duplicate</option><option value="loadBalance">load balance</option></select></label>
@@ -5945,7 +5989,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                   <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>{tr("ch.filterToNotmatch")}</button>
                 </div>
               </div>
-            </>}
+            </>
             {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>{tr("ch.removeBranch").replace("{side}", selOwner.side)}</button>}
           </>}
         </div>
