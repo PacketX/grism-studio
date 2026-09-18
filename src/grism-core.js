@@ -1040,7 +1040,7 @@ export const mkInput = (id) => ({ id, name: "", alt: "", type: "replayPcap", por
   pcapMode: "files", filepaths: [""], fields: { time: "1" }, scanAttrs: {} });
 
 export function serializeInput(inp) {
-  const attrs = [`id="${inp.id}"`, `type="${inp.type}"`,
+  const attrs = [`type="${inp.type}"`,
     inp.name ? `name="${esc(inp.name)}"` : null,
     inp.alt ? `alt="${esc(inp.alt)}"` : null].filter(Boolean).join(" ");
   const lines = [`<input ${attrs}>`, `  <port>${esc(inp.port)}</port>`];

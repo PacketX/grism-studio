@@ -4905,7 +4905,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
     <div className="filters-layout">
       <SortableList
         title={tr("tab.inputs")} items={inputs} activeKey={inp.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>I{x.id}</b><span>{x.name || <em>{x.type === "traffic-gen" ? "traffic-gen" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
+        renderLabel={(x, i) => <><b>{i + 1}</b><span>{x.name || <em>{x.type === "traffic-gen" ? "traffic-gen" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveInput(x.id)}
         onReorder={(next) => setDoc((d) => ({ ...d, inputs: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...inputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, inputs: [...d.inputs, copy] })); setActiveInput(nextId); }}
@@ -4913,8 +4913,8 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
 
       <div className="filter-editor">
         <div className="filter-meta">
-          <IdField prefix="I" id={inp.id} siblingIds={doc.inputs.map((x) => x.id)}
-            onCommit={(newId) => { setDoc((d) => ({ ...d, inputs: d.inputs.map((x) => x.id === inp.id ? { ...x, id: newId } : x) })); setActiveInput(newId); }} />
+              {/* No id field, as for actions: <input id> is optional in run.xsd,
+                  nothing references an input by it, and it is not written out. */}
           <label className="ml name"><span>{tr("common.name")}</span>
             <input value={inp[inp.labelAttr ?? "name"] ?? inp.name ?? ""}
               onChange={(e) => { const k = inp.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}

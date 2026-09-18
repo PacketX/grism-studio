@@ -1801,7 +1801,11 @@ group("replay template");
   check("both blurbs say the pcap has to be uploaded",
     /upload/i.test(tpl.blurb) && /上傳/.test(tpl.blurb_zh));
 
-  // <action id> is optional in run.xsd and nothing references an action by it
+  /* <action id> and <input id> are both optional in run.xsd, and nothing refers
+     to either by id -- this editor has no <aid>, and the firmware has no way to
+     name an input. Imported ids are kept as selection keys and dropped on the
+     way out. Filters and outputs are different: their ids are use="required"
+     and chains reference them as F1 / O2. */
   const acted = C.normalizeDoc(C.parseRun(
     `<run><action id="7" type="input-packet-process" name="keep"><port>P3</port></action></run>`).doc);
   const out = (C.serializeRun ?? C.buildRunXml)(acted);
@@ -1809,6 +1813,24 @@ group("replay template");
     !/<action[^>]*\bid=/.test(out) && /name="keep"/.test(out) && /type="input-packet-process"/.test(out));
   if (schema) check("an action without an id still validates",
     C.validateAgainstXsd(out, schema).length === 0);
+
+  const inped = C.normalizeDoc(C.parseRun(
+    `<run><input id="5" type="replayPcap" name="keep" alt="a"><port>P0</port><filepath>x.pcap</filepath></input></run>`).doc);
+  const iout = (C.serializeRun ?? C.buildRunXml)(inped);
+  check("an imported input id is dropped too, keeping name and alt",
+    !/<input[^>]*\bid=/.test(iout) && /name="keep"/.test(iout) && /alt="a"/.test(iout));
+  if (schema) check("an input without an id still validates",
+    C.validateAgainstXsd(iout, schema).length === 0);
+
+  // the ids that are required must survive
+  const keep = C.normalizeDoc(C.parseRun(
+    `<run><filter id="3"><or><find name="gre" relation="==" content=""/></or></filter>
+     <output id="4"><port>P1</port></output>
+     <chain><in>P0</in><fid>F3</fid><out>O4</out></chain></run>`).doc);
+  const kout = (C.serializeRun ?? C.buildRunXml)(keep);
+  check("filter and output ids are still written",
+    /<filter id="3"/.test(kout) && /<output id="4"/.test(kout) &&
+    /<fid>F3<\/fid>/.test(kout) && /<out>O4<\/out>/.test(kout));
 }
 
 /* ---------- every template, end to end ---------- */
