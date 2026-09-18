@@ -1508,79 +1508,107 @@ export function layoutChain(root) {
   const placed = [], edges = [];
   const inNode = { id: "__in__", t: "in", ports: root.ports, child: root.tree };
   /* A chain is usually a spine: one side of each test ends the packet's journey
-     and the other carries on to the next test. Laying both sides out as columns
-     made the drawing 184px wider for every test, so a ten-test chain ran to
-     2000px. The continuing side keeps its parent's column and the terminating
-     side steps aside, which holds a spine to two columns however deep it goes.
-     A real fork -- both sides continuing -- still spreads out. */
+     and the other carries on. Giving both sides a column of their own made the
+     drawing 184px wider per test, so the continuing side keeps its parent's
+     column and the terminating side steps aside -- alternating left and right
+     down the spine, so the drawing stays balanced instead of trailing off one
+     way. A real fork, both sides continuing, still spreads out.
+
+     Positions here are the node's own left edge, and each subtree reports how
+     far it reaches either side of that, so a branch hanging left is as easy to
+     account for as one hanging right. */
   const ends = (n) => !n || n.t === "out" || n.t === UNSET;
   const goesOn = (n) => !!n && !ends(n);
   const spineChild = (n) => {
-    if (!n.match || !n.notmatch) return null;
+    if (!n || !n.match || !n.notmatch) return null;
     if (goesOn(n.match) && !goesOn(n.notmatch)) return { on: n.match, aside: n.notmatch };
     if (goesOn(n.notmatch) && !goesOn(n.match)) return { on: n.notmatch, aside: n.match };
     return null;
   };
+  // which way this level's aside hangs; alternating keeps the spine centred
+  const asideGoesLeft = (depth) => depth % 2 === 1;
 
-  /* Where a subtree's root sits within its own box: a spine's root is flush
-     left, everything else is centred over its children. Mirrors place(). */
-  function rootOffset(node) {
-    if (!node || ends(node)) return 0;
-    if (spineChild(node)) return 0;
-    return (width(node) - NODE_W) / 2;
+  const extents = new Map();
+  function extent(node, depth) {
+    if (!node) return { l: 0, r: 0 };
+    const key = node.id + "@" + depth;
+    if (extents.has(key)) return extents.get(key);
+    let out;
+    if (node.t === "in") out = extent(node.child, depth);
+    else if (ends(node)) out = { l: 0, r: NODE_W };
+    else {
+      const sp = spineChild(node);
+      if (sp) {
+        const on = extent(sp.on, depth + 1);
+        out = asideGoesLeft(depth)
+          ? { l: Math.max(on.l, NODE_W + H_GAP), r: Math.max(on.r, NODE_W) }
+          : { l: Math.max(on.l, 0), r: Math.max(on.r, NODE_W + H_GAP + NODE_W) };
+      } else {
+        const m = node.match ? extent(node.match, depth + 1) : null;
+        const n2 = node.notmatch ? extent(node.notmatch, depth + 1) : null;
+        if (!m && !n2) out = { l: 0, r: NODE_W };
+        else if (m && n2) {
+          // the two blocks sit side by side and the node centres over them
+          const blockW = (m.l + m.r) + H_GAP + (n2.l + n2.r);
+          const mid = (blockW - NODE_W) / 2;
+          out = { l: mid, r: blockW - mid };
+        } else {
+          const only = m ?? n2;
+          out = { l: only.l, r: Math.max(NODE_W, only.r) };
+        }
+      }
+    }
+    extents.set(key, out);
+    return out;
   }
 
-  function width(node) {
-    if (!node) return 0;
-    if (node.t === "in") return width(node.child);
-    if (ends(node)) return NODE_W;
-    const sp = spineChild(node);
-    // the aside sits beside the continuing node itself, so the room it needs is
-    // measured from where that node lands, not from its subtree's left edge
-    if (sp) return Math.max(width(sp.on), rootOffset(sp.on) + NODE_W + H_GAP + NODE_W);
-    const wm = width(node.match), wn = width(node.notmatch);
-    const kids = (wm ? 1 : 0) + (wn ? 1 : 0);
-    return kids === 0 ? NODE_W : Math.max(NODE_W, wm + wn + (kids > 1 ? H_GAP : 0));
-  }
-
-  function place(node, x, y, parent, kind) {
+  function place(node, x, y, depth, parent, kind) {
     if (!node) return;
     if (node.t === "in") {
-      const w = width(node.child) || NODE_W;
-      // the inlet sits over the spine column, not over the whole drawing
-      const cx = spineChild(node.child) ? x + NODE_W / 2 : x + w / 2;
-      placed.push({ ...node, _x: cx - NODE_W / 2, _y: y });
-      if (node.child) { edges.push({ from: node.id, to: node.child.id, kind: "flow" }); place(node.child, x, y + NODE_H + V_GAP, node, "flow"); }
+      placed.push({ ...node, _x: x, _y: y });
+      if (node.child) {
+        edges.push({ from: node.id, to: node.child.id, kind: "flow" });
+        place(node.child, x, y + NODE_H + V_GAP, depth, node, "flow");
+      }
       return;
     }
     if (ends(node)) {
-      placed.push({ ...node, _x: x + (width(node) - NODE_W) / 2, _y: y });
-      if (parent) edges.push({ from: parent.id, to: node.id, kind }); return;
-    }
-    const sp = spineChild(node);
-    const cy = y + NODE_H + V_GAP;
-    if (sp) {
       placed.push({ ...node, _x: x, _y: y });
       if (parent) edges.push({ from: parent.id, to: node.id, kind });
-      const asideKind = sp.aside === node.match ? "match" : "notmatch";
-      const onKind = sp.on === node.match ? "match" : "notmatch";
-      place(sp.aside, x + rootOffset(sp.on) + NODE_W + H_GAP, cy, node, asideKind);
-      place(sp.on, x, cy, node, onKind);
       return;
     }
-    const wm = width(node.match), wn = width(node.notmatch);
-    const total = Math.max(NODE_W, wm + wn + ((wm && wn) ? H_GAP : 0)), cx = x + total / 2;
-    placed.push({ ...node, _x: cx - NODE_W / 2, _y: y });
+    placed.push({ ...node, _x: x, _y: y });
     if (parent) edges.push({ from: parent.id, to: node.id, kind });
-    let cur = x;
-    if (node.match) { place(node.match, cur, cy, node, "match"); cur += wm + H_GAP; }
-    if (node.notmatch) place(node.notmatch, cur, cy, node, "notmatch");
+    const cy = y + NODE_H + V_GAP;
+    const sp = spineChild(node);
+    if (sp) {
+      const asideKind = sp.aside === node.match ? "match" : "notmatch";
+      const onKind = sp.on === node.match ? "match" : "notmatch";
+      const asideX = asideGoesLeft(depth)
+        ? x - H_GAP - NODE_W
+        : x + NODE_W + H_GAP;
+      place(sp.aside, asideX, cy, depth + 1, node, asideKind);
+      place(sp.on, x, cy, depth + 1, node, onKind);
+      return;
+    }
+    const m = node.match ? extent(node.match, depth + 1) : null;
+    const n2 = node.notmatch ? extent(node.notmatch, depth + 1) : null;
+    if (m && n2) {
+      const blockW = (m.l + m.r) + H_GAP + (n2.l + n2.r);
+      const blockLeft = x + NODE_W / 2 - blockW / 2;   // centred under this node
+      place(node.match, blockLeft + m.l, cy, depth + 1, node, "match");
+      place(node.notmatch, blockLeft + (m.l + m.r) + H_GAP + n2.l, cy, depth + 1, node, "notmatch");
+    } else if (m) place(node.match, x, cy, depth + 1, node, "match");
+    else if (n2) place(node.notmatch, x, cy, depth + 1, node, "notmatch");
   }
 
-  place(inNode, 0, 0, null, null);
-  const totalW = Math.max(width(inNode) || NODE_W, ...placed.map((n) => n._x + NODE_W));
-  const maxY = Math.max(...placed.map((n) => n._y)) + NODE_H;
-  return { placed, edges, totalW, totalH: maxY };
+  place(inNode, 0, 0, 0, null, null);
+  // the drawing is laid out around the spine, so shift it back to x = 0
+  const minX = Math.min(...placed.map((n) => n._x));
+  placed.forEach((n) => { n._x -= minX; });
+  const totalW = Math.max(...placed.map((n) => n._x + NODE_W));
+  const totalH = Math.max(...placed.map((n) => n._y)) + NODE_H;
+  return { placed, edges, totalW, totalH };
 }
 
 /* Collapsible multi-select: a header (click to expand) showing the picked

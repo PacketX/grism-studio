@@ -1980,9 +1980,24 @@ group("chain layout");
   /* A chain where one side ends and the other carries on is a spine, and used
      to cost a column per test -- ten tests ran to 2000px. */
   const w = (tree) => Math.round(C.layoutChain({ ports: "P0", tree }).totalW);
-  check("a spine stops widening once it is a spine",
-    w(spine(2)) === w(spine(4)) && w(spine(4)) === w(spine(12)));
-  check("a spine stays a few columns wide", w(spine(12)) < 500);
+  check("a spine stops widening once both sides are in use",
+    w(spine(4)) === w(spine(8)) && w(spine(8)) === w(spine(12)));
+  check("a spine stays three columns wide", w(spine(12)) < 600);
+  /* The asides alternate, so the spine runs down the middle rather than
+     hugging one edge with everything trailing off the other way. */
+  check("the spine sits in the middle", (() => {
+    const L = C.layoutChain({ ports: "P0", tree: spine(8) });
+    const xs = [...new Set(L.placed.filter((n) => n.t === "branch").map((n) => n._x))];
+    if (xs.length !== 1) return false;
+    const left = xs[0], right = L.totalW - (xs[0] + C.NODE_W);
+    return Math.abs(left - right) < C.NODE_W;     // roughly even either side
+  })());
+  check("asides land on both sides of the spine", (() => {
+    const L = C.layoutChain({ ports: "P0", tree: spine(6) });
+    const sx = L.placed.find((n) => n.t === "branch")._x;
+    const outs = L.placed.filter((n) => n.t === "out" || n.t === "unset");
+    return outs.some((n) => n._x < sx) && outs.some((n) => n._x > sx);
+  })());
   check("depth still costs height", (() => {
     const a = C.layoutChain({ ports: "P0", tree: spine(2) }).totalH;
     const b = C.layoutChain({ ports: "P0", tree: spine(8) }).totalH;
