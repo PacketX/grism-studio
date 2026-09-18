@@ -1665,6 +1665,62 @@ for (const lang of Object.keys(I18N)) {
     /apply once|once|一次/.test(I18N[lang]["set.speedNote"] || ""));
 }
 
+/* ---------- SD-WAN tunnel correlation ---------- */
+group("SD-WAN tunnels");
+{
+  check("a port list is comma separated and trimmed",
+    JSON.stringify(C.parsePortList(" P0 , P4 ,, ")) === '["P0","P4"]' &&
+    C.parsePortList(null).length === 0 && C.parsePortList("   ").length === 0);
+
+  check("formatting drops duplicates", C.formatPortList(["P0", "P4", "P0"]) === "P0,P4");
+
+  check("toggling adds and removes",
+    C.togglePortInList("P0", "P4") === "P0,P4" && C.togglePortInList("P0,P4", "P0") === "P4");
+
+  const ports = ["P0", "P1", "P2", "P3"];
+  const kinds = (v) => C.sdwanProblems(v, ports).map((x) => x.tunnel + ":" + x.kind).join(" ");
+
+  check("correlation with ports is fine",
+    kinds({ grel2Correlation: true, grel2CorrelationPort: "P0,P2" }) === "");
+
+  // the firmware resolves these by name and silently drops what it cannot find,
+  // so an empty list is a setting that looks on and does nothing
+  check("correlation on with no port is a problem",
+    kinds({ grel2Correlation: true, grel2CorrelationPort: "" }) === "l2gre:noPorts");
+  check("correlation off with no port is not",
+    kinds({ grel2Correlation: false, grel2CorrelationPort: "" }) === "");
+  check("a port this device does not have is a problem",
+    kinds({ vxlanCorrelation: true, vxlanCorrelationPort: "P0,P99" }) === "vxlan:unknownPort");
+  check("each tunnel is reported on its own",
+    kinds({ grel2Correlation: true, grel2CorrelationPort: "",
+            vxlanCorrelation: true, vxlanCorrelationPort: "" }) === "l2gre:noPorts vxlan:noPorts");
+
+  check("the key lifetime has to be whole seconds",
+    kinds({ encapsulationEncryptKeyTimeout: "12x" }) === "encrypt:timeout" &&
+    kinds({ encapsulationEncryptKeyTimeout: "600" }) === "" &&
+    kinds({ encapsulationEncryptKeyTimeout: "" }) === "" &&
+    kinds({ encapsulationEncryptKeyTimeout: 0 }) === "");
+
+  // what the card submits, in the two places the device keeps it
+  check("the args configSet carries all six keys", (() => {
+    const xml = C.buildArgsConfigSet(Object.fromEntries(C.SDWAN_ARG_KEYS.map((k) => [k, ""])));
+    return C.SDWAN_ARG_KEYS.every((k) => xml.includes("<" + k + ">"));
+  })());
+  check("booleans are written the way the device writes them",
+    C.buildArgsConfigSet({ grel2Correlation: true, vxlanCorrelation: false })
+      .includes("<grel2Correlation>True</grel2Correlation>"));
+  check("decapsulation goes under filters/in-tunnels", (() => {
+    const xml = C.buildInTunnelsConfigSet({ GRE: true, VXLAN: false });
+    return xml.includes("<in-tunnels>") && xml.includes("<GRE>True</GRE>") && xml.includes("<VXLAN>False</VXLAN>");
+  })());
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} names the SD-WAN card`, !!I18N[lang]["set.sdwan"] && !!I18N[lang]["set.sdwanNote"]);
+  check(`${lang} explains both blocking problems`,
+    !!I18N[lang]["set.sdwanNoPorts"] && !!I18N[lang]["set.sdwanKeyTimeoutBad"]);
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {

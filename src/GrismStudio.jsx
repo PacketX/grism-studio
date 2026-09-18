@@ -35,6 +35,7 @@ import {
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
   hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
+  SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -1624,8 +1625,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
   // System + packet-handling settings all come out of get_config's <args> and
   // <filters>; the timezone list and SNMP community have endpoints of their own.
-  const SYS_ARGS = ["timeServer", "timeServer2", "resolveNameServer", "resolveNameServer2"];
-  const PKT_ARGS = ["deduplication", "ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct", "tryRunXmltoGdp"];
+  const SYS_ARGS = ["timeServer", "timeServer2", "resolveNameServer", "resolveNameServer2",
+    "grel2CorrelationPort", "vxlanCorrelationPort", "encapsulationEncryptKeyTimeout"];
+  const PKT_ARGS = ["deduplication", "ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct", "tryRunXmltoGdp",
+    "grel2Correlation", "vxlanCorrelation", "encapsulationEncrypt"];
   const TUNNELS = ["GTP", "GRE", "IPV4", "VXLAN", "MPLS_IN_UDP", "MPLS_IN_GRE", "L2MPLS_IN_UDP", "L2MPLS_IN_GRE"];
   const busy = React.useRef({});
   const loadSys = React.useCallback(async () => {
@@ -1964,6 +1967,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   };
 
   const pageRef = React.useRef(null);
+
+  /* The card straddles <args> and <filters><in-tunnels>, so its dirty check has
+     to cover both -- sysDirty alone would miss a decap flag being flipped. */
+  const sdwanDirty = () =>
+    [...SDWAN_ARG_KEYS, "tun_GRE", "tun_VXLAN"].some((k) => (sys[k] ?? "") !== (sysBase[k] ?? ""));
 
   const setIfaceField = (idx, k, v) => setIfaces((arr) => arr.map((it, i) => i === idx ? { ...it, fields: { ...it.fields, [k]: v } } : it));
 
@@ -2393,6 +2401,90 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               </div>
             </section>
           )}
+
+            {/* SD-WAN tunnel correlation. Two halves that work the same way: a
+                switch, the ports the encapsulated traffic arrives on, and the
+                matching in-tunnel decapsulation flag -- which is the same
+                setting the In-tunnel inspection card above shows, deliberately,
+                because turning correlation on without it correlates nothing. */}
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.sdwan")}</h3>
+              <p className="set-hint">{tr("set.sdwanNote")}</p>
+              {(() => {
+                /* Offer the ports encapsulated traffic can arrive on -- a LOOP
+                   port is not one -- but keep anything the config already names
+                   in the list, or a value set elsewhere would be invisible here
+                   and impossible to clear. Validation knows about every port the
+                   device has, so only a name it does not have is an error. */
+                const known = dataPortNames(rawCfg, { includeLoop: true });
+                const chosen = [...parsePortList(sys.grel2CorrelationPort),
+                                ...parsePortList(sys.vxlanCorrelationPort)];
+                const ports = [...new Set([...dataPortNames(rawCfg), ...chosen])];
+                const problems = sdwanProblems(sys, known);
+                const row = (tunnel, onKey, portKey, tunFlag, label) => {
+                  const on = !!sys[onKey];
+                  const picked = parsePortList(sys[portKey]);
+                  const mine = problems.filter((x) => x.tunnel === tunnel);
+                  return (
+                    <div className="sdw-block" key={tunnel}>
+                      <div className="oattr-subhead">{label}</div>
+                      <label className="set-check"><input type="checkbox" checked={on}
+                        onChange={(e) => setSysField(onKey, e.target.checked)} /> {tr("set.sdwanCorrelate")}</label>
+                      <label className="set-check"><input type="checkbox" checked={!!sys["tun_" + tunFlag]}
+                        onChange={(e) => setSysField("tun_" + tunFlag, e.target.checked)} /> {tr("set.sdwanDecap")}</label>
+                      <div className="sdw-ports">
+                        <span className="sdw-ports-label">{tr("set.sdwanPorts")}</span>
+                        {ports.length === 0
+                          ? <span className="dim">{tr("set.loading")}</span>
+                          : ports.map((n) => (
+                            <label className={"sdw-port" + (picked.includes(n) ? " on" : "")} key={n}>
+                              <input type="checkbox" checked={picked.includes(n)}
+                                onChange={() => setSysField(portKey, togglePortInList(sys[portKey], n))} />
+                              <span className="mono">{n}</span>
+                            </label>
+                          ))}
+                      </div>
+                      {mine.map((x, i) => (
+                        <p className="set-hint err" key={i}>
+                          {x.kind === "noPorts" ? tr("set.sdwanNoPorts") : `${tr("set.sdwanUnknownPort")} ${x.port}`}
+                        </p>
+                      ))}
+                    </div>
+                  );
+                };
+                return (<>
+                  {row("l2gre", "grel2Correlation", "grel2CorrelationPort", "GRE", "L2GRE")}
+                  {row("vxlan", "vxlanCorrelation", "vxlanCorrelationPort", "VXLAN", "VXLAN")}
+
+                  <div className="sdw-block">
+                    <div className="oattr-subhead">{tr("set.sdwanEncrypt")}</div>
+                    <p className="set-hint">{tr("set.sdwanEncryptNote")}</p>
+                    <label className="set-check"><input type="checkbox" checked={!!sys.encapsulationEncrypt}
+                      onChange={(e) => setSysField("encapsulationEncrypt", e.target.checked)} /> {tr("set.sdwanEncryptOn")}</label>
+                    <div className="set-grid">
+                      <label className="ml"><span>{tr("set.sdwanKeyTimeout")}</span>
+                        <input type="text" inputMode="numeric" value={sys.encapsulationEncryptKeyTimeout ?? ""}
+                          placeholder={tr("common.optional")}
+                          onChange={(e) => setSysField("encapsulationEncryptKeyTimeout", e.target.value)} /></label>
+                    </div>
+                    {problems.some((x) => x.tunnel === "encrypt") &&
+                      <p className="set-hint err">{tr("set.sdwanKeyTimeoutBad")}</p>}
+                  </div>
+
+                  <div className="set-actions">
+                    <button className="copy-btn" disabled={!sdwanDirty()}
+                      onClick={() => setSys((s) => ({ ...s,
+                        ...Object.fromEntries(SDWAN_ARG_KEYS.map((k) => [k, sysBase[k]])),
+                        tun_GRE: sysBase.tun_GRE, tun_VXLAN: sysBase.tun_VXLAN }))}>{tr("set.revert")}</button>
+                    <button className="sys-refresh"
+                      disabled={submit.state === "sending" || !sdwanDirty() || problems.length > 0}
+                      onClick={() => setConfirm({ kind: "sdwan" })}>
+                      {submit.state === "sending" ? tr("set.submitting") : tr("set.apply")}</button>
+                  </div>
+                </>);
+              })()}
+            </section>
+
 
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.flowServices")}</h3>
@@ -2988,6 +3080,18 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               }
               if (k === "snmp") { submitForm("/grism/set_snmp_read_community", "read_community", community,
                 () => setCommunityBase(community)); return; }
+              /* Correlation lives in <args>, decapsulation in <filters>; the
+                 device takes one configSet at a time, so send both. */
+              if (k === "sdwan") {
+                const tidy = (k) => (k.endsWith("CorrelationPort")
+                  ? formatPortList(parsePortList(sys[k]))     // the device had "    " in one of these
+                  : sys[k]);
+                submitConfigs([
+                  buildArgsConfigSet(Object.fromEntries(SDWAN_ARG_KEYS.map((key) => [key, tidy(key)]))),
+                  buildInTunnelsConfigSet({ GRE: !!sys.tun_GRE, VXLAN: !!sys.tun_VXLAN }),
+                ]);
+                return;
+              }
               const xml =
                 k === "ip" ? buildMgmtConfigSet(confirm.iface)
                 : k === "ports" ? buildPortConfigSet(changedPorts(portsBase, ports))

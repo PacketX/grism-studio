@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.34.0";
+export const STUDIO_VERSION = "2.35.0";
 
 export const I18N = {
   en: {
@@ -197,6 +197,18 @@ export const I18N = {
     "set.reassembly": "Fragmentation & reassembly",
     "set.reassemblyNote": "Reassemble split traffic before filters run, so a condition can match content that spans fragments.",
     "set.ipFrag": "IP fragment correlation", "set.tcpSeg": "TCP segment reassembly", "set.sctpChunk": "SCTP data chunk reconstruction",
+    "set.sdwan": "SD-WAN tunnels",
+    "set.sdwanNote": "Correlate traffic carried inside an SD-WAN overlay, so both directions of a session are recognised as one flow. Name the ports the encapsulated traffic arrives on, and turn on decapsulation for that tunnel type.",
+    "set.sdwanCorrelate": "Correlate tunnelled sessions",
+    "set.sdwanDecap": "Decapsulate this tunnel before filters run",
+    "set.sdwanPorts": "Arrives on",
+    "set.sdwanNoPorts": "Correlation is on but no port is selected, so nothing will be correlated.",
+    "set.sdwanUnknownPort": "This device has no port named",
+    "set.sdwanEncrypt": "Encapsulation encryption",
+    "set.sdwanEncryptNote": "Encrypts the payload the device encapsulates on the way out. Applies to both tunnel types.",
+    "set.sdwanEncryptOn": "Encrypt encapsulated payloads",
+    "set.sdwanKeyTimeout": "Key lifetime (s)",
+    "set.sdwanKeyTimeoutBad": "The key lifetime has to be a whole number of seconds.",
     "set.inTunnels": "In-tunnel inspection",
     "set.inTunnelsNote": "Look inside these encapsulations so filters can match the inner packet.",
     "set.service": "Service", "set.snmp": "SNMP", "set.readCommunity": "Read community",
@@ -667,6 +679,18 @@ export const I18N = {
     "set.reassembly": "分片與重組",
     "set.reassemblyNote": "在篩選器比對前先重組被切開的流量,讓條件能命中跨分片的內容。",
     "set.ipFrag": "IP 分片關聯", "set.tcpSeg": "TCP 分段重組", "set.sctpChunk": "SCTP 資料區塊重建",
+    "set.sdwan": "SD-WAN 通道",
+    "set.sdwanNote": "關聯 SD-WAN 疊加網路內的流量,讓同一條連線的兩個方向被視為同一筆流。請指定封裝流量進入的連接埠,並開啟該通道類型的解封裝。",
+    "set.sdwanCorrelate": "關聯通道內的連線",
+    "set.sdwanDecap": "在篩選器之前解封裝此通道",
+    "set.sdwanPorts": "進入埠",
+    "set.sdwanNoPorts": "已開啟關聯但沒有選擇任何埠,實際上不會關聯到任何流量。",
+    "set.sdwanUnknownPort": "本機沒有這個連接埠:",
+    "set.sdwanEncrypt": "封裝加密",
+    "set.sdwanEncryptNote": "將本機對外封裝的內容加密,兩種通道類型都適用。",
+    "set.sdwanEncryptOn": "加密封裝內容",
+    "set.sdwanKeyTimeout": "金鑰有效期 (秒)",
+    "set.sdwanKeyTimeoutBad": "金鑰有效期必須是整數秒。",
     "set.inTunnels": "穿隧內容檢查",
     "set.inTunnelsNote": "解開這些封裝,讓篩選器能比對內層封包。",
     "set.service": "服務", "set.snmp": "SNMP", "set.readCommunity": "讀取社群字串",

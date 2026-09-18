@@ -3216,3 +3216,49 @@ export function t12sSpeeds(cfg) {
 
 export const formatPortSpeed = (speed) =>
   speed === "10000" ? "10G" : speed === "1000" ? "1G" : "";
+
+/* ============================================================
+   SD-WAN tunnel correlation
+
+   grel2CorrelationPort and vxlanCorrelationPort are NOT UDP port numbers.
+   The firmware splits them on commas and resolves each token as an interface
+   port name (src/main.c: grism_config_interface_port_name_seek_idx), logging
+   the ones it finds and silently dropping the ones it does not -- so a typo
+   leaves correlation quietly doing nothing.
+   ============================================================ */
+
+export const SDWAN_ARG_KEYS = [
+  "grel2Correlation", "grel2CorrelationPort",
+  "vxlanCorrelation", "vxlanCorrelationPort",
+  "encapsulationEncrypt", "encapsulationEncryptKeyTimeout",
+];
+
+export const parsePortList = (s) =>
+  String(s ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+
+export const formatPortList = (list) => [...new Set(list)].join(",");
+
+export const togglePortInList = (s, port) => {
+  const list = parsePortList(s);
+  return formatPortList(list.includes(port) ? list.filter((p) => p !== port) : [...list, port]);
+};
+
+/* What stops a submit. Each problem names the tunnel it belongs to so the card
+   can put the message beside the right block. */
+export function sdwanProblems(v, knownPorts = []) {
+  const out = [];
+  const known = new Set(knownPorts);
+  for (const [tunnel, on, raw] of [
+    ["l2gre", !!v?.grel2Correlation, v?.grel2CorrelationPort],
+    ["vxlan", !!v?.vxlanCorrelation, v?.vxlanCorrelationPort],
+  ]) {
+    const ports = parsePortList(raw);
+    if (on && !ports.length) out.push({ tunnel, kind: "noPorts" });
+    if (known.size) for (const p of ports) {
+      if (!known.has(p)) out.push({ tunnel, kind: "unknownPort", port: p });
+    }
+  }
+  const t = String(v?.encapsulationEncryptKeyTimeout ?? "").trim();
+  if (t !== "" && !/^\d+$/.test(t)) out.push({ tunnel: "encrypt", kind: "timeout" });
+  return out;
+}
