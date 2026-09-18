@@ -1738,6 +1738,17 @@ group("SD-WAN templates");
     // the firmware takes f1 or F1; this editor only resolves F1, so the template
     // must not ship the lowercase form
     check(`${id} references its filter as F1`, doc.chains[0].tree.fids === "F1");
+    // every top-level element is named, so the chain flow and the health panel
+    // can say what they refer to instead of showing bare ids
+    check(`${id} names its filter, both outputs and the action`,
+      !!doc.filters[0].name && doc.outputs.every((o) => !!o.name) && doc.actions.every((a) => !!a.name));
+    check(`${id} names survive a round trip through the serialiser`, (() => {
+      const xml = (C.serializeRun ?? C.buildRunXml)(doc);
+      const back = C.normalizeDoc(C.parseRun(xml).doc);
+      return back.filters[0].name === doc.filters[0].name &&
+        back.outputs.map((o) => o.name).join("|") === doc.outputs.map((o) => o.name).join("|") &&
+        back.actions[0].name === doc.actions[0].name;
+    })());
     check(`${id} answers ARP and ICMP for the tunnel address`,
       JSON.stringify(doc).includes("arp_reply_default_mac") && JSON.stringify(doc).includes("icmp_reply"));
   }

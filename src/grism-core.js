@@ -596,23 +596,23 @@ export const finds = (field, rel, items) => items.map((c) => ({ id: nid(), t: "f
    not in the document. Normalised to F1 -- the device sees the same thing.
    ============================================================ */
 
-const sdwanRun = (field, strip, tag) => `<run>
-  <action>
+const sdwanRun = (label, field, strip, tag) => `<run>
+  <action name="${label} endpoint">
     <port>P1</port>
     <ip>192.168.2.1</ip>
     <arp_reply_default_mac/>
     <icmp_reply/>
   </action>
-  <filter id="1" sessionBase="no">
+  <filter id="1" name="is ${label}" sessionBase="no">
     <or>
       <find name="${field}" relation="==" content=""/>
     </or>
   </filter>
-  <output id="2">
+  <output id="2" name="strip ${label} to P0">
     <port>P0</port>
     <stripping>${strip}</stripping>
   </output>
-  <output id="3">
+  <output id="3" name="tag ${label} to P1">
     <port>P1</port>
     <tagging>${tag}</tagging>
   </output>
@@ -628,8 +628,8 @@ const sdwanRun = (field, strip, tag) => `<run>
 </run>`;
 
 export const SDWAN_TEMPLATE_XML = {
-  l2gre: sdwanRun("gre", "gre", "l2gre"),
-  vxlan: sdwanRun("vxlan", "vxlan", "vxlan"),
+  l2gre: sdwanRun("L2GRE", "gre", "gre", "l2gre"),
+  vxlan: sdwanRun("VXLAN", "vxlan", "vxlan", "vxlan"),
 };
 
 
@@ -705,7 +705,7 @@ export const TEMPLATES = [
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkOut("P2") } },
     }) },
   { id: "rewrite-output", title: "Rewrite via output", tag: "Output",
-    title_zh: "透過 output 改寫", tag_zh: "Output",
+    title_zh: "透過 output 改寫", tag_zh: "輸出",
     blurb: "Matched traffic goes to an output (O1) that rewrites source IP and adds a VLAN tag, then leaves on P1.",
     blurb_zh: "符合的流量送到 output(O1),改寫來源 IP 並加上 VLAN tag,再從 P1 送出。",
     make: () => ({
@@ -717,7 +717,7 @@ export const TEMPLATES = [
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("O1"), notmatch: mkOut("P2") } },
     }) },
   { id: "pcap-replay", title: "Replay pcap to a port", tag: "Input",
-    title_zh: "重播 pcap 到埠", tag_zh: "Input",
+    title_zh: "重播 pcap 到埠", tag_zh: "輸入",
     blurb: "An input replays a pcap file onto P0 once, then the chain forwards matched traffic out P1.",
     blurb_zh: "一個 input 把 pcap 檔重播到 P0 一次,鏈結再把符合的流量從 P1 轉發出去。",
     make: () => ({
@@ -728,7 +728,7 @@ export const TEMPLATES = [
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkUnset() } },
     }) },
   { id: "ingress-strip", title: "Strip VLAN at ingress", tag: "Action",
-    title_zh: "入口移除 VLAN", tag_zh: "Action",
+    title_zh: "入口移除 VLAN", tag_zh: "動作",
     blurb: "An action strips the VLAN tag from packets arriving on P0 before the chain filters them.",
     blurb_zh: "一個 action 在鏈結過濾前,先移除 P0 進來封包的 VLAN tag。",
     make: () => ({
@@ -751,7 +751,7 @@ export const TEMPLATES = [
       ],
     }) },
   { id: "vxlan-encap", title: "VXLAN encapsulation", tag: "Output",
-    title_zh: "VXLAN 封裝", tag_zh: "Output",
+    title_zh: "VXLAN 封裝", tag_zh: "輸出",
     blurb: "Matched traffic is wrapped in VXLAN (to a remote VTEP with a VNI) via output O1, then sent out P7.",
     blurb_zh: "符合的流量透過 output O1 封裝成 VXLAN(送到帶 VNI 的遠端 VTEP),再從 P7 送出。",
     make: () => ({

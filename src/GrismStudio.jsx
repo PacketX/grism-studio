@@ -944,8 +944,13 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
   const info = useMemo(() => describeDoc(doc, tr), [doc, lang]);
   const [filtersOpen, setFiltersOpen] = React.useState(false); // Overview: show all filters vs first few
 
+  /* templateName holds the English title -- it is the key the gallery is looked
+     up by -- so anything shown to the reader goes through tmplText. */
+  const template = docSource === "template" ? TEMPLATES.find((x) => x.title === templateName) : null;
+  const tplName = template ? tmplText(template, "title", lang) : templateName;
+
   const sourceLabel = docSource === "running" ? tr("ov.src.running")
-    : docSource === "template" ? tr("ov.src.template").replace("{name}", templateName) : tr("ov.src.manual");
+    : docSource === "template" ? tr("ov.src.template").replace("{name}", tplName) : tr("ov.src.manual");
 
   // one-line plain summary
   const summary = (() => {
@@ -959,7 +964,6 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
 
   // detailed explanation: an authored description for known templates, or a
   // best-effort inferred read for running configs / pasted XML.
-  const template = docSource === "template" ? TEMPLATES.find((x) => x.title === templateName) : null;
   const authored = template ? (tmplText(template, "detail", lang) || tmplText(template, "blurb", lang)) : null;
   const inferred = useMemo(() => (docSource === "template" ? [] : inferIntent(doc, tr)), [doc, docSource, lang]);
 
@@ -990,7 +994,7 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
       {!loggedIn && docSource === "template" && (
         <div className="tmpl-banner">
           <div className="tmpl-banner-text">
-            <b>{tr("ov.tmplBannerTitle")} · {templateName}</b>
+            <b>{tr("ov.tmplBannerTitle")} · {tplName}</b>
             <span>{tr("ov.tmplBannerBody")}</span>
           </div>
           {onOpenTemplates && (
@@ -1007,8 +1011,8 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
         </div>
         {onOpenTemplates && (
           <button className={"tmpl-btn" + (docSource === "template" ? " src-active" : "")} onClick={onOpenTemplates}
-            title={docSource === "template" ? `${tr("btn.template_current")}: ${templateName}` : tr("tmpl.tip")}>
-            {docSource === "template" ? `${tr("btn.template_current")} · ${templateName}` : tr("btn.templates")}
+            title={docSource === "template" ? `${tr("btn.template_current")}: ${tplName}` : tr("tmpl.tip")}>
+            {docSource === "template" ? `${tr("btn.template_current")} · ${tplName}` : tr("btn.templates")}
           </button>
         )}
       </div>
