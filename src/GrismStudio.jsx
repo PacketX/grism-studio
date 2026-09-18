@@ -1446,10 +1446,24 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
      those wait for Apply, this one takes the machine down. */
   const hasSpeed = React.useMemo(() => hasSpeedSwitch(devModel), [devModel]);
   const speeds = React.useMemo(() => t12sSpeeds(rawCfg), [rawCfg]);
+  const [spDraft, setSpDraft] = React.useState({});
+  // Re-seed when the device's own speeds arrive or change, so the page that comes
+  // back after the reboot shows what the device now reports, not the old draft.
+  const spKey = JSON.stringify(speeds);
+  React.useEffect(() => { setSpDraft(JSON.parse(spKey)); }, [spKey]);
+  const spChanged = React.useMemo(
+    () => T12S_SPEED_GROUPS.filter((g) => speeds[g.qlm] && spDraft[g.qlm] &&
+      spDraft[g.qlm] !== speeds[g.qlm]),
+    [speeds, spDraft]);
 
-  const submitSpeed = async (qlm, speed) => {
+  /* All the changed groups go in one request: each one costs a reboot, and
+     sending them one at a time would cost three. The endpoint leaves any group
+     it is not told about alone. */
+  const submitSpeed = async () => {
+    if (!spChanged.length) return;
     setSubmit({ state: "sending", msg: "" });
-    const body = new URLSearchParams(); body.set(qlm, speed);
+    const body = new URLSearchParams();
+    for (const g of spChanged) body.set(g.qlm, spDraft[g.qlm]);
     let ok = false;
     try {
       const res = await fetch("/grism/task/set_t12s_speed", { method: "POST", credentials: "include",
@@ -1459,12 +1473,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
     if (!ok) return;
     setSubmit({ state: "idle", msg: "" });
-    // Hold the page the same way a firmware update does: the reboot follows
-    // within a second, and a user left on a live-looking page would read the
-    // stale ports table as the change having done nothing.
+    // Hold the page the way a firmware update does: the reboot follows within a
+    // second, and a user left on a live-looking page would read the stale ports
+    // table as the change having done nothing.
     setWait({ title: tr("set.speedApplying"), body: tr("set.speedApplyingBody"),
       phase: "updating", phaseKey: "set.spPhase." });
   };
+
 
   const setBypassMode = async (hw, pair, on) => {
     setBypassBusy(pair.n); setBypassErr("");
@@ -2017,27 +2032,47 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
                   {/* Only a T12S can retune its QLMs, and only in fours. A group whose
                       speed the config does not report is left out rather than shown as
-                      an unknown that the switch would then have to guess at. */}
+                      an unknown that the switch would then have to guess at.
+
+                      Staged like the ports table above rather than applied per click:
+                      one reboot covers all three groups, so let the user pick
+                      everything first and pay for it once. */}
                   {hasSpeed && T12S_SPEED_GROUPS.some((g) => speeds[g.qlm]) && (
                     <section className="sys-card set-speed">
                       <h3 className="sys-card-title">{tr("set.speedTitle")}</h3>
                       <p className="set-hint">{tr("set.speedNote")}</p>
-                      {T12S_SPEED_GROUPS.filter((g) => speeds[g.qlm]).map((g) => (
-                        <div className="sp-row" key={g.qlm}>
-                          <span className="sp-ports mono">{g.ports.join(" · ")}</span>
-                          <span className="sp-seg">
-                            {T12S_SPEEDS.map((sp) => (
-                              <button key={sp}
-                                className={"sp-opt" + (speeds[g.qlm] === sp ? " on" : "")}
-                                disabled={speeds[g.qlm] === sp || submit.state === "sending"}
-                                title={speeds[g.qlm] === sp ? tr("set.speedCurrent") : tr("set.speedSwitchTip")}
-                                onClick={() => setConfirm({ kind: "speed", group: g, speed: sp })}>
-                                {formatPortSpeed(sp)}
-                              </button>
-                            ))}
-                          </span>
-                        </div>
-                      ))}
+                      {T12S_SPEED_GROUPS.filter((g) => speeds[g.qlm]).map((g) => {
+                        const picked = spDraft[g.qlm] ?? speeds[g.qlm];
+                        const moved = picked !== speeds[g.qlm];
+                        return (
+                          <div className={"sp-row" + (moved ? " changed" : "")} key={g.qlm}>
+                            <span className="sp-ports mono">{g.ports.join(" · ")}</span>
+                            {/* spell out what it is still running as until Apply */}
+                            <span className="sp-was">{moved
+                              ? `${formatPortSpeed(speeds[g.qlm])} → ${formatPortSpeed(picked)}` : ""}</span>
+                            <span className="sp-seg">
+                              {T12S_SPEEDS.map((sp) => (
+                                <button key={sp}
+                                  className={"sp-opt" + (picked === sp ? " on" : "")}
+                                  disabled={submit.state === "sending"}
+                                  onClick={() => setSpDraft((d) => ({ ...d, [g.qlm]: sp }))}>
+                                  {formatPortSpeed(sp)}
+                                </button>
+                              ))}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      <div className="set-actions">
+                        <span className="set-changed">{spChanged.length
+                          ? `${spChanged.length} ${tr("set.speedChanged")}` : ""}</span>
+                        <button className="copy-btn" disabled={!spChanged.length}
+                          onClick={() => setSpDraft(speeds)}>{tr("set.revert")}</button>
+                        <button className="sys-refresh"
+                          disabled={submit.state === "sending" || !spChanged.length}
+                          onClick={() => setConfirm({ kind: "speed" })}>
+                          {submit.state === "sending" ? tr("set.submitting") : tr("set.speedApply")}</button>
+                      </div>
                     </section>
                   )}
             </>
@@ -2814,7 +2849,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
             <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "speed" ? `${confirm.group.ports.join(" · ")} → ${formatPortSpeed(confirm.speed)} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -2835,7 +2870,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 uploadAndWait("/grism/task/update", fwFile, "file",
                   tr("set.fwUpdating"), tr("set.fwUpdatingBody")); return;
               }
-              if (k === "speed") { submitSpeed(confirm.group.qlm, confirm.speed); return; }
+              if (k === "speed") { submitSpeed(); return; }
               if (k === "bypass") {
                 setBypassMode(bypassHw, confirm.pair, !confirm.on);
                 return;

@@ -1657,6 +1657,12 @@ for (const lang of Object.keys(I18N)) {
     /restart|重(新)?開機/.test(I18N[lang]["set.speedConfirmBody"] || ""));
   check(`${lang} labels every speed-switch phase`,
     ["updating", "rebooting", "done"].every((p) => !!I18N[lang]["set.spPhase." + p]));
+  check(`${lang} labels the staged speed apply`,
+    !!I18N[lang]["set.speedApply"] && !!I18N[lang]["set.speedChanged"]);
+  // the card stages all three groups and submits once, so the note must not
+  // promise a reboot per switch
+  check(`${lang} says the groups are applied together`,
+    /apply once|once|一次/.test(I18N[lang]["set.speedNote"] || ""));
 }
 
 /* ---------- lint (catches what the suite cannot) ---------- */
