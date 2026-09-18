@@ -1410,3 +1410,12 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
   .card-jump { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .card-jump::-webkit-scrollbar { display: none; }
 }
+
+/* ---- management interfaces, one card ---------------------------------
+   Each interface is a row inside the card. The Apply row already carries a
+   top rule of its own, so the rows are separated by space rather than by a
+   second line. */
+.mgmt-row + .mgmt-row { margin-top: 26px; }
+.mgmt-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 12px; }
+.mgmt-name { font-size: 14px; font-weight: 650; color: var(--txt); }
+.mgmt-head .set-enable { margin-left: auto; }

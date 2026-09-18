@@ -2130,32 +2130,37 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {section === "system" && (
         <div className="set-forms">
           {/* The management addresses come first: they are what a new box needs
-              set before anything else on this page is reachable. */}
-        <div className="set-ifaces">
-          {ifaces.map((it, idx) => (
-            <section className="set-card" key={it.role}>
-              <div className="set-card-head">
-                <h3>{it.fields.name || it.role} <span className="set-role">{tr("set.role")}: {it.role}</span></h3>
-                <label className="set-enable"><input type="checkbox" checked={it.fields.enable === "True"}
-                  onChange={(e) => setIfaceField(idx, "enable", e.target.checked ? "True" : "False")} /> {tr("set.enabled")}</label>
+              set before anything else on this page is reachable. One card with a
+              row per interface rather than a card each -- three near-identical
+              cards made the section look like it had three separate subjects,
+              and gave the index three chips that all meant the same thing. */}
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.mgmtIP")}</h3>
+            {ifaces.map((it, idx) => (
+              <div className="mgmt-row" key={it.role}>
+                <div className="mgmt-head">
+                  <span className="mgmt-name">{it.fields.name || it.role}</span>
+                  <span className="set-role">{tr("set.role")}: {it.role}</span>
+                  <label className="set-enable"><input type="checkbox" checked={it.fields.enable === "True"}
+                    onChange={(e) => setIfaceField(idx, "enable", e.target.checked ? "True" : "False")} /> {tr("set.enabled")}</label>
+                </div>
+                <div className="set-grid">
+                  {[["ip","set.ip",false],["netmask","set.netmask",false],["gateway","set.gateway",false],["eth","set.eth",true]].map(([k, lbl, ro]) => (
+                    <label className="set-field" key={k}><span>{tr(lbl)}</span>
+                      {ro
+                        ? <input className="ro" value={it.fields[k]} readOnly tabIndex={-1} />
+                        : <input value={it.fields[k]} onChange={(e) => setIfaceField(idx, k, e.target.value)} />}
+                    </label>
+                  ))}
+                </div>
+                <div className="set-actions">
+                  <button className="sys-refresh" disabled={submit.state === "sending"}
+                    onClick={() => setConfirm({ kind: "ip", iface: it })}>
+                    {submit.state === "sending" ? tr("set.submitting") : tr("set.applyIP")}</button>
+                </div>
               </div>
-              <div className="set-grid">
-                {[["ip","set.ip",false],["netmask","set.netmask",false],["gateway","set.gateway",false],["eth","set.eth",true]].map(([k, lbl, ro]) => (
-                  <label className="set-field" key={k}><span>{tr(lbl)}</span>
-                    {ro
-                      ? <input className="ro" value={it.fields[k]} readOnly tabIndex={-1} />
-                      : <input value={it.fields[k]} onChange={(e) => setIfaceField(idx, k, e.target.value)} />}
-                  </label>
-                ))}
-              </div>
-              <div className="set-actions">
-                <button className="sys-refresh" disabled={submit.state === "sending"}
-                  onClick={() => setConfirm({ kind: "ip", iface: it })}>
-                  {submit.state === "sending" ? tr("set.submitting") : tr("set.applyIP")}</button>
-              </div>
-            </section>
-          ))}
-        </div>
+            ))}
+          </section>
 
           {!sys ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
             <section className="sys-card">
@@ -2927,7 +2932,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
             <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}` : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
