@@ -1716,6 +1716,10 @@ group("SD-WAN tunnels");
 }
 
 for (const lang of Object.keys(I18N)) {
+  check(`${lang} says a zero key lifetime never expires`,
+    !!I18N[lang]["set.sdwanKeyForever"] && /0/.test(I18N[lang]["set.sdwanKeyForever"]));
+  check(`${lang} labels the open template in the header`,
+    !!I18N[lang]["btn.fromTemplate"] && !!I18N[lang]["btn.fromTemplateTip"]);
   check(`${lang} names the SD-WAN card`, !!I18N[lang]["set.sdwan"] && !!I18N[lang]["set.sdwanNote"]);
   check(`${lang} explains both blocking problems`,
     !!I18N[lang]["set.sdwanNoPorts"] && !!I18N[lang]["set.sdwanKeyTimeoutBad"]);

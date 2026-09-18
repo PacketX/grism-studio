@@ -626,6 +626,16 @@ export default function GrismStudio() {
               )}
             </button>
           )}
+          {/* Which template the open document came from. The load button says
+              when the document is the device's running config; without this,
+              nothing in the header said when it is not. */}
+          {docSource === "template" && (
+            <button className="tmpl-chip" onClick={() => setShowTemplates(true)}
+              title={t("btn.fromTemplateTip")}>
+              <span className="tmpl-chip-tag">{t("btn.fromTemplate")}</span>
+              <span className="tmpl-chip-name">{templateName}</span>
+            </button>
+          )}
         </>}
         {workspace === "pipeline" && (
         <div className="health-wrap">
@@ -2467,7 +2477,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                       {onUseTemplate && (
                         <p className="sdw-tpl">
                           <button className="link-btn"
-                            onClick={() => onUseTemplate(tunnel === "l2gre" ? "sdwan-l2gre" : "sdwan-vxlan")}>
+                            onClick={() => setConfirm({ kind: "template",
+                              tpl: tunnel === "l2gre" ? "sdwan-l2gre" : "sdwan-vxlan", label })}>
                             {tr("set.sdwanTemplate")}
                           </button>
                           <span className="dim"> {tr("set.sdwanTemplateNote")}</span>
@@ -2496,6 +2507,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                           placeholder={tr("common.optional")}
                           onChange={(e) => setSysField("encapsulationEncryptKeyTimeout", e.target.value)} /></label>
                     </div>
+                    {/* main.c only runs the rotation handler when the timeout is
+                        non-zero, and an absent arg reads as 0, so both mean the
+                        key is never rotated. */}
+                    {["", "0"].includes(String(sys.encapsulationEncryptKeyTimeout ?? "").trim()) &&
+                      <p className="set-hint">{tr("set.sdwanKeyForever")}</p>}
                     {problems.some((x) => x.tunnel === "encrypt") &&
                       <p className="set-hint err">{tr("set.sdwanKeyTimeoutBad")}</p>}
                   </div>
@@ -3052,8 +3068,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}` : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}` : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -3074,6 +3090,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 uploadAndWait("/grism/task/update", fwFile, "file",
                   tr("set.fwUpdating"), tr("set.fwUpdatingBody")); return;
               }
+              /* Loading a template replaces the pipeline document, which is not
+                 what this page is about -- so say so before leaving it. */
+              if (k === "template") { onUseTemplate(confirm.tpl); return; }
               if (k === "speed") { submitSpeed(); return; }
               if (k === "bypass") {
                 setBypassMode(bypassHw, confirm.pair, !confirm.on);

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.36.0";
+export const STUDIO_VERSION = "2.39.0";
 
 export const I18N = {
   en: {
@@ -204,12 +204,15 @@ export const I18N = {
     "set.sdwanPorts": "Arrives on",
     "set.sdwanNoPorts": "Correlation is on but no port is selected, so nothing will be correlated.",
     "set.sdwanUnknownPort": "This device has no port named",
+    "set.tplConfirmTitle": "Open this template?",
+    "set.tplConfirmBody": "this builds the filter, outputs and chains for the tunnel in the pipeline editor and leaves this page. Whatever is open there now is replaced.",
     "set.sdwanTemplate": "Open the worked example",
     "set.sdwanTemplateNote": "— builds the filter, outputs and chains for this tunnel in the pipeline editor, replacing what is open there.",
     "set.sdwanEncrypt": "Encapsulation encryption",
     "set.sdwanEncryptNote": "Encrypts the payload the device encapsulates on the way out. Applies to both tunnel types.",
     "set.sdwanEncryptOn": "Encrypt encapsulated payloads",
     "set.sdwanKeyTimeout": "Key lifetime (s)",
+    "set.sdwanKeyForever": "0 — the key is never rotated, so it stays valid indefinitely.",
     "set.sdwanKeyTimeoutBad": "The key lifetime has to be a whole number of seconds.",
     "set.inTunnels": "In-tunnel inspection",
     "set.inTunnelsNote": "Look inside these encapsulations so filters can match the inner packet.",
@@ -267,6 +270,7 @@ export const I18N = {
     "ov.tmplBannerTitle": "You're viewing a template",
     "ov.tmplBannerBody": "This is an example configuration, not the one running on a device. Sign in to load the running configuration.",
     "ov.tmplBannerBtn": "Browse templates", "btn.templates": "Templates", "btn.template_current": "Template",
+    "btn.fromTemplate": "template", "btn.fromTemplateTip": "This configuration came from a template, not from the device. Click to pick another.",
     "btn.loadRunning": "load running", "btn.loading": "loading…",
     "btn.loadFailed": "load failed",
     "btn.login": "login", "btn.logout": "logout",
@@ -688,12 +692,15 @@ export const I18N = {
     "set.sdwanPorts": "進入埠",
     "set.sdwanNoPorts": "已開啟關聯但沒有選擇任何埠,實際上不會關聯到任何流量。",
     "set.sdwanUnknownPort": "本機沒有這個連接埠:",
+    "set.tplConfirmTitle": "要開啟這個範本?",
+    "set.tplConfirmBody": "會在封包處理編輯器建立這個通道所需的篩選器、輸出與鏈結,並離開此頁面。目前開啟的內容會被取代。",
     "set.sdwanTemplate": "開啟範例設定",
     "set.sdwanTemplateNote": "— 會在封包處理編輯器建立這個通道所需的篩選器、輸出與鏈結,並取代目前開啟的內容。",
     "set.sdwanEncrypt": "封裝加密",
     "set.sdwanEncryptNote": "將本機對外封裝的內容加密,兩種通道類型都適用。",
     "set.sdwanEncryptOn": "加密封裝內容",
     "set.sdwanKeyTimeout": "金鑰有效期 (秒)",
+    "set.sdwanKeyForever": "0 — 金鑰不會自動更換,永久有效。",
     "set.sdwanKeyTimeoutBad": "金鑰有效期必須是整數秒。",
     "set.inTunnels": "穿隧內容檢查",
     "set.inTunnelsNote": "解開這些封裝,讓篩選器能比對內層封包。",
@@ -751,6 +758,7 @@ export const I18N = {
     "ov.tmplBannerTitle": "目前顯示的是範本",
     "ov.tmplBannerBody": "這是示範用的設定,不是裝置上執行中的設定。登入後即可載入執行中的設定。",
     "ov.tmplBannerBtn": "瀏覽範本", "btn.templates": "範本", "btn.template_current": "範本",
+    "btn.fromTemplate": "範本", "btn.fromTemplateTip": "目前的設定來自範本,不是從裝置載入的。點擊可以換一個。",
     "btn.loadRunning": "載入設定", "btn.loading": "載入中…",
     "btn.loadFailed": "載入失敗",
     "btn.login": "登入", "btn.logout": "登出",
