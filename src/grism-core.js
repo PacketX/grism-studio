@@ -1507,36 +1507,68 @@ export const NODE_W = 150, NODE_H = 52, H_GAP = 34, V_GAP = 60, PH_H = 40;
 export function layoutChain(root) {
   const placed = [], edges = [];
   const inNode = { id: "__in__", t: "in", ports: root.ports, child: root.tree };
+  /* A chain is usually a spine: one side of each test ends the packet's journey
+     and the other carries on to the next test. Laying both sides out as columns
+     made the drawing 184px wider for every test, so a ten-test chain ran to
+     2000px. The continuing side keeps its parent's column and the terminating
+     side steps aside, which holds a spine to two columns however deep it goes.
+     A real fork -- both sides continuing -- still spreads out. */
+  const ends = (n) => !n || n.t === "out" || n.t === UNSET;
+  const goesOn = (n) => !!n && !ends(n);
+  const spineChild = (n) => {
+    if (!n.match || !n.notmatch) return null;
+    if (goesOn(n.match) && !goesOn(n.notmatch)) return { on: n.match, aside: n.notmatch };
+    if (goesOn(n.notmatch) && !goesOn(n.match)) return { on: n.notmatch, aside: n.match };
+    return null;
+  };
+
   function width(node) {
     if (!node) return 0;
     if (node.t === "in") return width(node.child);
-    if (node.t === "out" || node.t === UNSET) return NODE_W;
+    if (ends(node)) return NODE_W;
+    const sp = spineChild(node);
+    if (sp) return Math.max(NODE_W + H_GAP + NODE_W, width(sp.on));
     const wm = width(node.match), wn = width(node.notmatch);
     const kids = (wm ? 1 : 0) + (wn ? 1 : 0);
     return kids === 0 ? NODE_W : Math.max(NODE_W, wm + wn + (kids > 1 ? H_GAP : 0));
   }
+
   function place(node, x, y, parent, kind) {
     if (!node) return;
     if (node.t === "in") {
-      const w = width(node.child) || NODE_W, cx = x + w / 2;
+      const w = width(node.child) || NODE_W;
+      // the inlet sits over the spine column, not over the whole drawing
+      const cx = spineChild(node.child) ? x + NODE_W / 2 : x + w / 2;
       placed.push({ ...node, _x: cx - NODE_W / 2, _y: y });
       if (node.child) { edges.push({ from: node.id, to: node.child.id, kind: "flow" }); place(node.child, x, y + NODE_H + V_GAP, node, "flow"); }
       return;
     }
-    if (node.t === "out" || node.t === UNSET) {
+    if (ends(node)) {
       placed.push({ ...node, _x: x + (width(node) - NODE_W) / 2, _y: y });
       if (parent) edges.push({ from: parent.id, to: node.id, kind }); return;
+    }
+    const sp = spineChild(node);
+    const cy = y + NODE_H + V_GAP;
+    if (sp) {
+      placed.push({ ...node, _x: x, _y: y });
+      if (parent) edges.push({ from: parent.id, to: node.id, kind });
+      const asideKind = sp.aside === node.match ? "match" : "notmatch";
+      const onKind = sp.on === node.match ? "match" : "notmatch";
+      place(sp.aside, x + NODE_W + H_GAP, cy, node, asideKind);
+      place(sp.on, x, cy, node, onKind);
+      return;
     }
     const wm = width(node.match), wn = width(node.notmatch);
     const total = Math.max(NODE_W, wm + wn + ((wm && wn) ? H_GAP : 0)), cx = x + total / 2;
     placed.push({ ...node, _x: cx - NODE_W / 2, _y: y });
     if (parent) edges.push({ from: parent.id, to: node.id, kind });
-    let cur = x; const cy = y + NODE_H + V_GAP;
+    let cur = x;
     if (node.match) { place(node.match, cur, cy, node, "match"); cur += wm + H_GAP; }
     if (node.notmatch) place(node.notmatch, cur, cy, node, "notmatch");
   }
+
   place(inNode, 0, 0, null, null);
-  const totalW = width(inNode) || NODE_W;
+  const totalW = Math.max(width(inNode) || NODE_W, ...placed.map((n) => n._x + NODE_W));
   const maxY = Math.max(...placed.map((n) => n._y)) + NODE_H;
   return { placed, edges, totalW, totalH: maxY };
 }

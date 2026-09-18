@@ -1967,6 +1967,47 @@ for (const lang of Object.keys(I18N)) {
     !!I18N[lang]["common.use"] && !!I18N[lang]["common.useSuggested"]);
 }
 
+/* ---------- chain layout ---------- */
+group("chain layout");
+{
+  const out = (p) => ({ id: "o" + p, t: "out", ports: p, mode: "duplicate", lb: "5thash" });
+  const spine = (n) => n === 0 ? out("P9")
+    : { id: "b" + n, t: "branch", fids: "F" + n, fidOp: "or", match: out("P" + n), notmatch: spine(n - 1) };
+  let fid = 0;
+  const fork = (n) => n === 0 ? { ...out("P9"), id: "o" + (++fid) }
+    : { id: "f" + (++fid), t: "branch", fids: "F" + n, fidOp: "or", match: fork(n - 1), notmatch: fork(n - 1) };
+
+  /* A chain where one side ends and the other carries on is a spine, and used
+     to cost a column per test -- ten tests ran to 2000px. */
+  const w = (tree) => Math.round(C.layoutChain({ ports: "P0", tree }).totalW);
+  check("a spine stays the same width however deep it goes",
+    w(spine(1)) === w(spine(4)) && w(spine(4)) === w(spine(10)));
+  check("a spine is two columns wide", w(spine(6)) < 400);
+  check("depth still costs height", (() => {
+    const a = C.layoutChain({ ports: "P0", tree: spine(2) }).totalH;
+    const b = C.layoutChain({ ports: "P0", tree: spine(8) }).totalH;
+    return b > a;
+  })());
+
+  // a genuine fork has two paths to draw and still spreads
+  check("a real fork still spreads out", w(fork(3)) > w(fork(2)) && w(fork(2)) > w(fork(1)));
+
+  // whatever the shape, nothing may be placed outside the reported width
+  for (const [name, tree] of [["spine", spine(7)], ["fork", fork(3)],
+      ["mixed", { id: "m", t: "branch", fids: "F1", fidOp: "or", match: spine(4), notmatch: fork(2) }]]) {
+    const L = C.layoutChain({ ports: "P0", tree });
+    check(`${name}: every node sits inside the reported width`,
+      L.placed.every((n) => n._x >= 0 && n._x + C.NODE_W <= L.totalW + 1), name);
+    check(`${name}: every node sits inside the reported height`,
+      L.placed.every((n) => n._y >= 0 && n._y < L.totalH));
+    // an edge that names a node the layout never placed would draw to nowhere
+    const ids = new Set(L.placed.map((n) => n.id));
+    check(`${name}: every edge joins two placed nodes`,
+      L.edges.every((e) => ids.has(e.from) && ids.has(e.to)));
+    check(`${name}: no node is placed twice`, ids.size === L.placed.length);
+  }
+}
+
 /* ---------- hook order ---------- */
 group("hook order");
 {
