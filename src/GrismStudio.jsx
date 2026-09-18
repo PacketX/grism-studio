@@ -81,6 +81,9 @@ export default function GrismStudio() {
   ];
   const tabWorkspace = (tb) => (WORKSPACES.find((w) => w.tabs.includes(tb)) ?? WORKSPACES[0]).id;
   const workspace = tabWorkspace(tab);
+  // The document controls -- load from device, and which template is open --
+  // only mean anything where the document is: the overview and the pipeline.
+  const docWorkspace = workspace === "overview" || workspace === "pipeline";
   // leaving the pipeline closes its popovers and folds the advanced group back up
   useEffect(() => {
     if (workspace !== "pipeline") { setHealthOpen(false); setAdvOpen(false); }
@@ -625,7 +628,7 @@ export default function GrismStudio() {
           })}
         </nav>
         <div className="tabs-spacer" />
-        {workspace === "pipeline" && <>
+        {docWorkspace && <>
           {login.who && (
             <button className={"load-btn " + load.state + (docSource === "running" ? " src-active" : "")} onClick={loadRunning} disabled={load.state === "loading"}
               title={baseline !== null ? (dirty ? t("sync.dirtyTip") : t("sync.syncedTip")) : t("btn.loadRunningTip")}>
@@ -640,14 +643,17 @@ export default function GrismStudio() {
             </button>
           )}
         </>}
-        {/* Which document is open, in every workspace: a template can be picked
-            from the overview and then read about in settings, and either way the
-            header should say it is not what the device is running. */}
-        {docSource === "template" && (
+        {/* Which document is open. A template is usually picked from the
+            overview, so the label has to survive there and not only in the
+            pipeline -- but it means nothing on the traffic or system pages. */}
+        {docWorkspace && docSource === "template" && (
           <button className="tmpl-chip" onClick={() => setShowTemplates(true)}
             title={t("btn.fromTemplateTip")}>
             <span className="tmpl-chip-tag">{t("btn.fromTemplate")}</span>
-            <span className="tmpl-chip-name">{templateName}</span>
+            <span className="tmpl-chip-name">{(() => {
+              const tp = TEMPLATES.find((x) => x.title === templateName);
+              return tp ? tmplText(tp, "title", lang) : templateName;
+            })()}</span>
           </button>
         )}
         {workspace === "pipeline" && (

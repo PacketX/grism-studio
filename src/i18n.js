@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.40.0";
+export const STUDIO_VERSION = "2.41.0";
 
 export const I18N = {
   en: {
@@ -759,7 +759,7 @@ export const I18N = {
     "ov.tmplBannerBody": "這是示範用的設定,不是裝置上執行中的設定。登入後即可載入執行中的設定。",
     "ov.tmplBannerBtn": "瀏覽範本", "btn.templates": "範本", "btn.template_current": "範本",
     "btn.fromTemplate": "範本", "btn.fromTemplateTip": "目前的設定來自範本,不是從裝置載入的。點擊可以換一個。",
-    "btn.loadRunning": "載入設定", "btn.loading": "載入中…",
+    "btn.loadRunning": "載入裝置設定", "btn.loading": "載入中…",
     "btn.loadFailed": "載入失敗",
     "btn.login": "登入", "btn.logout": "登出",
     "sync.dirty": "尚未套用的變更", "sync.synced": "已同步",
