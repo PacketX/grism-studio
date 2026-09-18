@@ -1382,7 +1382,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const [errMsg, setErrMsg] = React.useState("");
   const [submit, setSubmit] = React.useState({ state: "idle", msg: "" }); // idle|sending|ok|error
   const [confirm, setConfirm] = React.useState(null);   // { kind:"ip", iface } | { kind:"xml" }
-  const [section, setSection] = React.useState("mgmt");  // mgmt | ports | raw
+  const [section, setSection] = React.useState("system");  // system | ports | raw
   // interface (port) settings: values as the device reports them, plus the edits
   const [portsBase, setPortsBase] = React.useState(null);
   const [ports, setPorts] = React.useState(null);
@@ -1670,7 +1670,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     } catch { /* status is optional decoration */ }
   }, []);
   React.useEffect(() => {
-    if (!loggedIn || section !== "heartbeat") return;
+    if (!loggedIn || section !== "packet") return;
     if (!hb) { loadHeartbeat(); return; }
     loadHbStatus(hb.targets);
   }, [loggedIn, section, hb, loadHeartbeat, loadHbStatus]);
@@ -1906,13 +1906,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         <h2 className="sys-title">{tr("set.title")}</h2>
         <div className="sys-controls">
           <div className="set-seg">
-            <button className={section === "mgmt" ? "on" : ""} onClick={() => setSection("mgmt")}>{tr("set.mgmtIP")}</button>
-            <button className={section === "ports" ? "on" : ""} onClick={() => setSection("ports")}>{tr("set.interfaces")}</button>
             <button className={section === "system" ? "on" : ""} onClick={() => setSection("system")}>{tr("set.system")}</button>
+            <button className={section === "ports" ? "on" : ""} onClick={() => setSection("ports")}>{tr("set.interfaces")}</button>
             <button className={section === "packet" ? "on" : ""} onClick={() => setSection("packet")}>{tr("set.packet")}</button>
             <button className={section === "auth" ? "on" : ""} onClick={() => setSection("auth")}>{tr("set.auth")}</button>
             <button className={section === "logging" ? "on" : ""} onClick={() => setSection("logging")}>{tr("set.logging")}</button>
-            <button className={section === "heartbeat" ? "on" : ""} onClick={() => setSection("heartbeat")}>{tr("set.heartbeat")}</button>
             <button className={section === "services" ? "on" : ""} onClick={() => setSection("services")}>{tr("set.services")}</button>
             <button className={section === "backup" ? "on" : ""} onClick={() => setSection("backup")}>{tr("set.backup")}</button>
             <button className={section === "firmware" ? "on" : ""} onClick={() => setSection("firmware")}>{tr("set.firmware")}</button>
@@ -1923,10 +1921,14 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             onClick={() => {
               getConfig(true);          // refresh means re-read, not reuse the cache
               if (section === "ports") { setPorts(null); loadPorts(); }
-              else if (section === "system" || section === "packet") { setSys(null); loadSys(); if (section === "system") { setZones([]); loadZones(); } }
+              else if (section === "system" || section === "packet") {
+                setSys(null); loadSys();
+                // the management addresses are parsed out of the raw config
+                if (section === "system") { setZones([]); loadZones(); setEditingRaw(false); load(); }
+                if (section === "packet") { setHb(null); loadHeartbeat(); }
+              }
               else if (section === "services") { setSvc(null); loadServices(); }
               else if (section === "logging") { setLg(null); loadLogging(); }
-              else if (section === "heartbeat") { setHb(null); loadHeartbeat(); }
               else if (section === "auth") { setViews(null); loadViews(); }
               else { setEditingRaw(false); load(); }
             }}>
@@ -1937,34 +1939,6 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {state === "error" && <div className="sys-err">{tr("set.loadFailed")}: {errMsg}</div>}
       {submit.state === "error" && <div className="sys-err">{tr("set.submitFailed")}: {submit.msg}</div>}
       {submit.state === "ok" && <div className="set-ok-banner">{tr("set.applied")}</div>}
-
-      {section === "mgmt" && (
-        <div className="set-ifaces">
-          {ifaces.map((it, idx) => (
-            <section className="set-card" key={it.role}>
-              <div className="set-card-head">
-                <h3>{it.fields.name || it.role} <span className="set-role">{tr("set.role")}: {it.role}</span></h3>
-                <label className="set-enable"><input type="checkbox" checked={it.fields.enable === "True"}
-                  onChange={(e) => setIfaceField(idx, "enable", e.target.checked ? "True" : "False")} /> {tr("set.enabled")}</label>
-              </div>
-              <div className="set-grid">
-                {[["ip","set.ip",false],["netmask","set.netmask",false],["gateway","set.gateway",false],["eth","set.eth",true]].map(([k, lbl, ro]) => (
-                  <label className="set-field" key={k}><span>{tr(lbl)}</span>
-                    {ro
-                      ? <input className="ro" value={it.fields[k]} readOnly tabIndex={-1} />
-                      : <input value={it.fields[k]} onChange={(e) => setIfaceField(idx, k, e.target.value)} />}
-                  </label>
-                ))}
-              </div>
-              <div className="set-actions">
-                <button className="sys-refresh" disabled={submit.state === "sending"}
-                  onClick={() => setConfirm({ kind: "ip", iface: it })}>
-                  {submit.state === "sending" ? tr("set.submitting") : tr("set.applyIP")}</button>
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
 
       {section === "ports" && (
         <div className="set-ports">
@@ -2082,6 +2056,34 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
       {section === "system" && (
         <div className="set-forms">
+          {/* The management addresses come first: they are what a new box needs
+              set before anything else on this page is reachable. */}
+        <div className="set-ifaces">
+          {ifaces.map((it, idx) => (
+            <section className="set-card" key={it.role}>
+              <div className="set-card-head">
+                <h3>{it.fields.name || it.role} <span className="set-role">{tr("set.role")}: {it.role}</span></h3>
+                <label className="set-enable"><input type="checkbox" checked={it.fields.enable === "True"}
+                  onChange={(e) => setIfaceField(idx, "enable", e.target.checked ? "True" : "False")} /> {tr("set.enabled")}</label>
+              </div>
+              <div className="set-grid">
+                {[["ip","set.ip",false],["netmask","set.netmask",false],["gateway","set.gateway",false],["eth","set.eth",true]].map(([k, lbl, ro]) => (
+                  <label className="set-field" key={k}><span>{tr(lbl)}</span>
+                    {ro
+                      ? <input className="ro" value={it.fields[k]} readOnly tabIndex={-1} />
+                      : <input value={it.fields[k]} onChange={(e) => setIfaceField(idx, k, e.target.value)} />}
+                  </label>
+                ))}
+              </div>
+              <div className="set-actions">
+                <button className="sys-refresh" disabled={submit.state === "sending"}
+                  onClick={() => setConfirm({ kind: "ip", iface: it })}>
+                  {submit.state === "sending" ? tr("set.submitting") : tr("set.applyIP")}</button>
+              </div>
+            </section>
+          ))}
+        </div>
+
           {!sys ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.timeServers")}</h3>
@@ -2239,6 +2241,80 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   onClick={() => setConfirm({ kind: "tunnels" })}>{tr("set.apply")}</button>
               </div>
             </section>
+
+            {/* Heartbeat lives here rather than in a tab of its own: it is one more
+                thing the box does to traffic, and it is short enough to read in place. */}
+          {!hb ? <p className="sys-note dim">{tr("set.loading")}</p> : (
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.heartbeat")}</h3>
+              <p className="set-hint">{tr("set.heartbeatNote")}</p>
+              <label className="set-check"><input type="checkbox" checked={hb.enable}
+                onChange={(e) => setHbField("enable", e.target.checked)} /> {tr("set.hbEnable")}</label>
+              <div className="set-grid">
+                <label className="ml"><span>{tr("set.hbFrequency")}</span>
+                  <input type="number" min="1" value={hb.frequency}
+                    onChange={(e) => setHbField("frequency", e.target.value)} /></label>
+                <label className="ml"><span>{tr("set.hbTimeouts")}</span>
+                  <input type="number" min="1" value={hb.maxAllowTimeouts}
+                    onChange={(e) => setHbField("maxAllowTimeouts", e.target.value)} /></label>
+              </div>
+
+              <div className="hb-targets">
+                {/* Disabled targets stay in the document (they're still submitted) but
+                    aren't shown — removing one just switches it off. */}
+                <div className="oattr-subhead">{tr("set.hbTargets")} ({hb.targets.filter((t) => t.enable).length})</div>
+                {hb.targets.filter((t) => t.enable).length === 0 && <p className="out-empty">{tr("set.hbNoTargets")}</p>}
+                {hb.targets.map((t, i) => t.enable && (
+                    <div className="hb-target" key={i}>
+                      <div className="hb-target-head">
+                        {(() => {
+                          const row = hbRows.find((r) => r.id === t.id);
+                          return row === undefined
+                            ? <span className="hb-state dim">{tr("set.hbUnknown")}</span>
+                            : <span className={"hb-state " + (row.up ? "up" : "down")}>
+                                <span className="dot" />{row.up ? tr("set.hbUp") : tr("set.hbDown")}</span>;
+                        })()}
+                        <button className="del" onClick={() => setHbTarget(i, { enable: false })}>
+                          {tr("common.delete")}</button>
+                      </div>
+                      <div className="set-grid">
+                        <label className="ml" style={{ flex: "0 1 110px" }}><span>ID</span>
+                          <input type="number" min="0" value={t.id}
+                            onChange={(e) => setHbTarget(i, { id: Number(e.target.value) || 0 })} /></label>
+                        <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.hbSend")}</span>
+                          <PortSelect value={t.sendPort} options={portOptions}
+                            onChange={(v) => setHbTarget(i, { sendPort: v })} invalid={!t.sendPort} /></label>
+                        <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.hbReceive")}</span>
+                          <PortSelect value={t.receivePort} options={portOptions}
+                            onChange={(v) => setHbTarget(i, { receivePort: v })} invalid={!t.receivePort} /></label>
+                        <label className="ml"><span>{tr("tf.desc")}</span>
+                          <input value={t.description} placeholder={tr("common.optional")}
+                            onChange={(e) => setHbTarget(i, { description: e.target.value })} /></label>
+                      </div>
+                      <label className="ml hb-data"><span>{tr("set.hbPacket")}</span>
+                        <textarea value={t.packetData} spellCheck={false} rows={2}
+                          onChange={(e) => setHbTarget(i, { packetData: e.target.value.replace(/\s+/g, "") })} /></label>
+                    </div>
+                ))}
+                {/* a new target takes the slot it will occupy among the enabled ones */}
+                <button className="add-btn" onClick={() => setHb((o) => ({ ...o,
+                  targets: insertHeartbeatTarget(o.targets,
+                    mkHeartbeatTarget(Math.max(0, ...o.targets.map((x) => x.id)) + 1)) }))}>
+                  {tr("set.hbAddTarget")}</button>
+              </div>
+
+              {heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).length > 0 && (
+                <ul className="problem-list">
+                  {heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).map((p, i) => <li key={i}><code>{p.scope}</code> — {p.msg}</li>)}
+                </ul>
+              )}
+              <div className="set-actions">
+                <button className="copy-btn" disabled={!hbDirty} onClick={() => setHb(hbBase)}>{tr("set.revert")}</button>
+                <button className="sys-refresh" disabled={submit.state === "sending" || !hbDirty || heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).length > 0}
+                  onClick={() => setConfirm({ kind: "heartbeat" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+          )}
 
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.flowServices")}</h3>
@@ -2557,82 +2633,6 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               </div>
             </>);
           })()}
-        </div>
-      )}
-
-      {section === "heartbeat" && (
-        <div className="set-forms">
-          {!hb ? <p className="sys-note dim">{tr("set.loading")}</p> : (
-            <section className="sys-card">
-              <h3 className="sys-card-title">{tr("set.heartbeat")}</h3>
-              <p className="set-hint">{tr("set.heartbeatNote")}</p>
-              <label className="set-check"><input type="checkbox" checked={hb.enable}
-                onChange={(e) => setHbField("enable", e.target.checked)} /> {tr("set.hbEnable")}</label>
-              <div className="set-grid">
-                <label className="ml"><span>{tr("set.hbFrequency")}</span>
-                  <input type="number" min="1" value={hb.frequency}
-                    onChange={(e) => setHbField("frequency", e.target.value)} /></label>
-                <label className="ml"><span>{tr("set.hbTimeouts")}</span>
-                  <input type="number" min="1" value={hb.maxAllowTimeouts}
-                    onChange={(e) => setHbField("maxAllowTimeouts", e.target.value)} /></label>
-              </div>
-
-              <div className="hb-targets">
-                {/* Disabled targets stay in the document (they're still submitted) but
-                    aren't shown — removing one just switches it off. */}
-                <div className="oattr-subhead">{tr("set.hbTargets")} ({hb.targets.filter((t) => t.enable).length})</div>
-                {hb.targets.filter((t) => t.enable).length === 0 && <p className="out-empty">{tr("set.hbNoTargets")}</p>}
-                {hb.targets.map((t, i) => t.enable && (
-                    <div className="hb-target" key={i}>
-                      <div className="hb-target-head">
-                        {(() => {
-                          const row = hbRows.find((r) => r.id === t.id);
-                          return row === undefined
-                            ? <span className="hb-state dim">{tr("set.hbUnknown")}</span>
-                            : <span className={"hb-state " + (row.up ? "up" : "down")}>
-                                <span className="dot" />{row.up ? tr("set.hbUp") : tr("set.hbDown")}</span>;
-                        })()}
-                        <button className="del" onClick={() => setHbTarget(i, { enable: false })}>
-                          {tr("common.delete")}</button>
-                      </div>
-                      <div className="set-grid">
-                        <label className="ml" style={{ flex: "0 1 110px" }}><span>ID</span>
-                          <input type="number" min="0" value={t.id}
-                            onChange={(e) => setHbTarget(i, { id: Number(e.target.value) || 0 })} /></label>
-                        <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.hbSend")}</span>
-                          <PortSelect value={t.sendPort} options={portOptions}
-                            onChange={(v) => setHbTarget(i, { sendPort: v })} invalid={!t.sendPort} /></label>
-                        <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.hbReceive")}</span>
-                          <PortSelect value={t.receivePort} options={portOptions}
-                            onChange={(v) => setHbTarget(i, { receivePort: v })} invalid={!t.receivePort} /></label>
-                        <label className="ml"><span>{tr("tf.desc")}</span>
-                          <input value={t.description} placeholder={tr("common.optional")}
-                            onChange={(e) => setHbTarget(i, { description: e.target.value })} /></label>
-                      </div>
-                      <label className="ml hb-data"><span>{tr("set.hbPacket")}</span>
-                        <textarea value={t.packetData} spellCheck={false} rows={2}
-                          onChange={(e) => setHbTarget(i, { packetData: e.target.value.replace(/\s+/g, "") })} /></label>
-                    </div>
-                ))}
-                {/* a new target takes the slot it will occupy among the enabled ones */}
-                <button className="add-btn" onClick={() => setHb((o) => ({ ...o,
-                  targets: insertHeartbeatTarget(o.targets,
-                    mkHeartbeatTarget(Math.max(0, ...o.targets.map((x) => x.id)) + 1)) }))}>
-                  {tr("set.hbAddTarget")}</button>
-              </div>
-
-              {heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).length > 0 && (
-                <ul className="problem-list">
-                  {heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).map((p, i) => <li key={i}><code>{p.scope}</code> — {p.msg}</li>)}
-                </ul>
-              )}
-              <div className="set-actions">
-                <button className="copy-btn" disabled={!hbDirty} onClick={() => setHb(hbBase)}>{tr("set.revert")}</button>
-                <button className="sys-refresh" disabled={submit.state === "sending" || !hbDirty || heartbeatProblems({ ...hb, targets: hb.targets.filter((t) => t.enable) }).length > 0}
-                  onClick={() => setConfirm({ kind: "heartbeat" })}>{tr("set.apply")}</button>
-              </div>
-            </section>
-          )}
         </div>
       )}
 
