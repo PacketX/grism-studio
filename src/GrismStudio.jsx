@@ -501,7 +501,20 @@ export default function GrismStudio() {
     setDeviceStorages([]);
     setLoopPorts([]);
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
-  }, []);
+    /* The open document may be the device's running config, which is no longer
+       ours to show and can no longer be reloaded. Go back to the overview on the
+       starter template, so what is on screen matches what we still have. */
+    setTab("overview");
+    const starter = TEMPLATES.find((x) => x.id === "starter");
+    if (starter) {
+      const nd = normalizeDoc(starter.make());
+      docRef.current = nd; setDocRaw(nd);
+      setBaseline(null); setBaselineDoc(null);
+      setDocSource("template"); setTemplateName(starter.title);
+      setLoad({ state: "idle", msg: "" });
+      resetHistory(); setActiveFilter(1);
+    }
+  }, [resetHistory]);
 
   return (
     <div className={"gs-root" + (theme === "light" ? " light" : "")}>
@@ -626,17 +639,17 @@ export default function GrismStudio() {
               )}
             </button>
           )}
-          {/* Which template the open document came from. The load button says
-              when the document is the device's running config; without this,
-              nothing in the header said when it is not. */}
-          {docSource === "template" && (
-            <button className="tmpl-chip" onClick={() => setShowTemplates(true)}
-              title={t("btn.fromTemplateTip")}>
-              <span className="tmpl-chip-tag">{t("btn.fromTemplate")}</span>
-              <span className="tmpl-chip-name">{templateName}</span>
-            </button>
-          )}
         </>}
+        {/* Which document is open, in every workspace: a template can be picked
+            from the overview and then read about in settings, and either way the
+            header should say it is not what the device is running. */}
+        {docSource === "template" && (
+          <button className="tmpl-chip" onClick={() => setShowTemplates(true)}
+            title={t("btn.fromTemplateTip")}>
+            <span className="tmpl-chip-tag">{t("btn.fromTemplate")}</span>
+            <span className="tmpl-chip-name">{templateName}</span>
+          </button>
+        )}
         {workspace === "pipeline" && (
         <div className="health-wrap">
           <button ref={healthBtnRef} className={"health " + (allProblems.length ? "bad" : allWarnings.length ? "warn" : "ok")}
