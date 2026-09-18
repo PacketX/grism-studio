@@ -5483,8 +5483,12 @@ function CollapseSection({ label, active, children }) {
   );
 }
 
-function CheckAccordion({ label, items, value, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, t }) {
+function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, t }) {
   const tr = t || ((k) => k);
+  // the chosen rows, named, for the header
+  const chosen = items.filter((it) => it.on)
+    .map((it) => ({ id: it.neg ? "!" + it.b : it.b, sub: it.sub }))
+    .slice(0, 3);
   const [open, setOpen] = useState(defaultOpen);
   const picked = items.filter((it) => it.on).length;
   const [multi, setMulti] = useState(picked > 1); // default single, unless already multiple
@@ -5501,10 +5505,14 @@ function CheckAccordion({ label, items, value, onToggle, onAll, onSetOne, onNega
   return (
     <div className="known acc">
       <button className={"acc-head" + (open ? " open" : "")} onClick={() => setOpen((o) => !o)}>
-        <span className="known-label">{label}</span>
-        {/* the chosen value reads off this header rather than a line of its own */}
-        {value ? <code className="acc-value">{value}</code>
-          : picked > 0 && <span className="acc-count">{picked}</span>}
+        {/* what is chosen, named -- the generic label is only the empty state */}
+        {chosen.length
+          ? <span className="known-chosen">{chosen.map((c) => (
+              <span className="chosen-one" key={c.id}>
+                <b>{c.id}</b>{c.sub && <span>{c.sub}</span>}
+              </span>))}</span>
+          : <span className="known-label">{label}</span>}
+        {chosen.length > 2 && <span className="acc-count">{chosen.length}</span>}
       </button>
       {open && <div className="acc-body">
         <div className="acc-toolbar">
@@ -5908,7 +5916,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
           {sel && sel.t === "in" && <>
             <CheckAccordion
               label={tr("ch.ingressPorts")}
-              defaultOpen t={t} value={chain.ports}
+              t={t}
               items={portOptions.map((p) => ({ id: p, b: p, on: listHas(chain.ports, p) }))}
               onToggle={(p) => toggleInPort(p)}
               onAll={(on) => setAllInPorts(portOptions, on)}
@@ -5936,7 +5944,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             )}
             <CheckAccordion
               label={tr("ch.definedFilters")}
-              defaultOpen t={t} value={sel.fids}
+              t={t}
               items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
                 on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) }))}
               onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
@@ -5962,7 +5970,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             <>
               <CheckAccordion
                 label={tr("ch.outputPorts")}
-                defaultOpen t={t} value={sel.ports}
+                t={t}
                 items={outChoices.map((c) => ({ id: c.id, b: c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
                 onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
