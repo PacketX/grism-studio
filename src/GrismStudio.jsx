@@ -356,6 +356,22 @@ export default function GrismStudio() {
     if (!docModified()) req.run();
     else setPendingLoad(req);
   }, [baseline, runXml]);
+  /* Loading a template replaces the working document, so it goes through the
+     same guard as loading a running config. goTo lets a caller outside the
+     pipeline -- the SD-WAN settings card -- land on the chains it just made. */
+  const applyTemplate = useCallback((tpl, goTo) => {
+    if (!tpl) return;
+    requestLoad({ kind: "template", run: () => {
+      const nd = normalizeDoc(tpl.make());
+      docRef.current = nd; setDocRaw(nd);
+      setBaseline(null); setBaselineDoc(null);
+      setDocSource("template"); setTemplateName(tpl.title);
+      setLoad({ state: "idle", msg: "" });
+      resetHistory(); setActiveFilter(1); setShowTemplates(false);
+      if (goTo) setTab(goTo);
+    } });
+  }, [requestLoad]);
+
   const loadRunning = useCallback(() => {
     requestLoad({ kind: "running", run: doLoadRunning });
   }, [doLoadRunning, requestLoad]);
@@ -775,7 +791,7 @@ export default function GrismStudio() {
               <span className="tmpl-modal-title">{t("tmpl.modalTitle")}</span>
               <button className="tmpl-close" onClick={() => setShowTemplates(false)} aria-label={t("common.cancel")}>✕</button>
             </div>
-            <TemplatesTab lang={lang} t={t} onApply={(tpl) => requestLoad({ kind: "template", run: () => { const nd = normalizeDoc(tpl.make()); docRef.current = nd; setDocRaw(nd); setBaseline(null); setBaselineDoc(null); setDocSource("template"); setTemplateName(tpl.title); setLoad({ state: "idle", msg: "" }); resetHistory(); setActiveFilter(1); setShowTemplates(false); } })} />
+            <TemplatesTab lang={lang} t={t} onApply={applyTemplate} />
           </div>
         </div>
       )}
@@ -818,6 +834,7 @@ export default function GrismStudio() {
         )}
         {tab === "settings" && (
           <SettingsTab loggedIn={!!login.who} t={t} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
+            onUseTemplate={(id) => applyTemplate(TEMPLATES.find((x) => x.id === id), "chain")}
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
         {tab === "trafficPorts" && (
@@ -1442,7 +1459,7 @@ function CardJump({ rootRef, section }) {
   );
 }
 
-function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut }) {
+function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
   const [ifaces, setIfaces] = React.useState([]);
@@ -2444,6 +2461,18 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                             </label>
                           ))}
                       </div>
+                      {/* The card configures correlation; the pipeline that actually
+                          unwraps and re-wraps the traffic is a separate document,
+                          so offer the worked example from here. */}
+                      {onUseTemplate && (
+                        <p className="sdw-tpl">
+                          <button className="link-btn"
+                            onClick={() => onUseTemplate(tunnel === "l2gre" ? "sdwan-l2gre" : "sdwan-vxlan")}>
+                            {tr("set.sdwanTemplate")}
+                          </button>
+                          <span className="dim"> {tr("set.sdwanTemplateNote")}</span>
+                        </p>
+                      )}
                       {mine.map((x, i) => (
                         <p className="set-hint err" key={i}>
                           {x.kind === "noPorts" ? tr("set.sdwanNoPorts") : `${tr("set.sdwanUnknownPort")} ${x.port}`}

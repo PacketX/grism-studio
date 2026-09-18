@@ -1433,3 +1433,7 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .sdw-port.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .sdw-port.on .mono { color: var(--accent-ink); }
 .sdw-port input { margin: 0; }
+
+.sdw-tpl { margin: 10px 0 0; font-size: 12.5px; color: var(--txt-dim); }
+.sdw-tpl .link-btn { border: 0; background: none; padding: 0; font: inherit;
+  color: var(--accent); cursor: pointer; text-decoration: underline; }

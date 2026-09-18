@@ -584,6 +584,55 @@ export function collectRefs(tree, definedIds) {
 
 /* ===================== templates ===================== */
 export const finds = (field, rel, items) => items.map((c) => ({ id: nid(), t: "find", field, rel, val: c }));
+/* ============================================================
+   SD-WAN tunnel templates
+
+   Kept as the run XML they were authored in and parsed on use, so the template
+   loads exactly what would be pasted into a running config.
+
+   The VXLAN one came written as <fid>f1</fid>. The firmware takes either case
+   (runxml2fc.c checks for 'F' or 'f'), but this editor resolves fid tokens
+   case-sensitively, so a lowercase one reads as a reference to a filter that is
+   not in the document. Normalised to F1 -- the device sees the same thing.
+   ============================================================ */
+
+const sdwanRun = (field, strip, tag) => `<run>
+  <action>
+    <port>P1</port>
+    <ip>192.168.2.1</ip>
+    <arp_reply_default_mac/>
+    <icmp_reply/>
+  </action>
+  <filter id="1" sessionBase="no">
+    <or>
+      <find name="${field}" relation="==" content=""/>
+    </or>
+  </filter>
+  <output id="2">
+    <port>P0</port>
+    <stripping>${strip}</stripping>
+  </output>
+  <output id="3">
+    <port>P1</port>
+    <tagging>${tag}</tagging>
+  </output>
+  <chain>
+    <in>P1</in>
+    <fid>F1</fid>
+    <out>O2</out>
+  </chain>
+  <chain>
+    <in>P0</in>
+    <out>O3</out>
+  </chain>
+</run>`;
+
+export const SDWAN_TEMPLATE_XML = {
+  l2gre: sdwanRun("gre", "gre", "l2gre"),
+  vxlan: sdwanRun("vxlan", "vxlan", "vxlan"),
+};
+
+
 export const TEMPLATES = [
   { id: "starter", title: "Starter (heartbeat + HTTPS)", tag: "Starter",
     title_zh: "入門(heartbeat + HTTPS)", tag_zh: "入門",
@@ -714,6 +763,16 @@ export const TEMPLATES = [
         { id: nid(), k: "vxlan_vni", val: "100" } ] }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("O1"), notmatch: mkUnset() } },
     }) },
+  { id: "sdwan-l2gre", title: "L2GRE tunnel, both directions", tag: "SD-WAN",
+    title_zh: "L2GRE 通道,雙向", tag_zh: "SD-WAN",
+    blurb: "P1 receives L2GRE; matched traffic is decapsulated out P0. The return path re-tags traffic from P0 back into L2GRE on P1. The action answers ARP and ICMP for the tunnel address.",
+    blurb_zh: "P1 收 L2GRE,符合的流量解封裝後從 P0 送出;回程把 P0 進來的流量重新加上 L2GRE 標頭送回 P1。action 負責回應通道位址的 ARP 與 ICMP。",
+    make: () => parseRun(SDWAN_TEMPLATE_XML.l2gre).doc },
+  { id: "sdwan-vxlan", title: "VXLAN tunnel, both directions", tag: "SD-WAN",
+    title_zh: "VXLAN 通道,雙向", tag_zh: "SD-WAN",
+    blurb: "The same shape for VXLAN: P1 receives, matched traffic is decapsulated out P0, and the return path re-tags from P0 back onto P1.",
+    blurb_zh: "VXLAN 版本的相同結構:P1 收,符合的流量解封裝後從 P0 送出,回程從 P0 重新封裝回 P1。",
+    make: () => parseRun(SDWAN_TEMPLATE_XML.vxlan).doc },
   { id: "geo-recursive", title: "Geo + protocol, whitelisted", tag: "Recursive",
     title_zh: "地理 + 協定,含白名單", tag_zh: "遞迴",
     blurb: "Recursive filter: geo AND (443 or 53) AND NOT whitelist.",

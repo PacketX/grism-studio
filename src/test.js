@@ -1721,6 +1721,47 @@ for (const lang of Object.keys(I18N)) {
     !!I18N[lang]["set.sdwanNoPorts"] && !!I18N[lang]["set.sdwanKeyTimeoutBad"]);
 }
 
+/* ---------- SD-WAN templates ---------- */
+group("SD-WAN templates");
+{
+  for (const id of ["sdwan-l2gre", "sdwan-vxlan"]) {
+    const tpl = C.TEMPLATES.find((t) => t.id === id);
+    check(`${id} is in the gallery with both languages`,
+      !!tpl && !!tpl.title && !!tpl.title_zh && !!tpl.blurb && !!tpl.blurb_zh);
+    const doc = C.normalizeDoc(tpl.make());
+    check(`${id} builds one filter, two outputs and two chains`,
+      doc.filters.length === 1 && doc.outputs.length === 2 && doc.chains.length === 2);
+    // the firmware takes f1 or F1; this editor only resolves F1, so the template
+    // must not ship the lowercase form
+    check(`${id} references its filter as F1`, doc.chains[0].tree.fids === "F1");
+    check(`${id} answers ARP and ICMP for the tunnel address`,
+      JSON.stringify(doc).includes("arp_reply_default_mac") && JSON.stringify(doc).includes("icmp_reply"));
+  }
+
+  const l2 = C.normalizeDoc(C.TEMPLATES.find((t) => t.id === "sdwan-l2gre").make());
+  const vx = C.normalizeDoc(C.TEMPLATES.find((t) => t.id === "sdwan-vxlan").make());
+  const mods = (d) => d.outputs.flatMap((o) => (o.mods ?? []).map((m) => m.k + "=" + m.val)).join(" ");
+  check("L2GRE strips gre out and tags l2gre back", mods(l2) === "stripping=gre tagging=l2gre");
+  check("VXLAN strips vxlan out and tags vxlan back", mods(vx) === "stripping=vxlan tagging=vxlan");
+  check("each matches on its own tunnel",
+    l2.filters[0].root.children[0].field === "gre" && vx.filters[0].root.children[0].field === "vxlan");
+
+  // a find name not in the catalogue is dropped by the device, leaving a filter
+  // that matches on less than it looks like it does
+  const known = new Set(C.FIELDS.flatMap((g) => g.items).map((f) => f.v));
+  check("both find names are in the field catalogue", known.has("gre") && known.has("vxlan"));
+
+  const { readFileSync: rf, existsSync: ex } = await import("node:fs");
+  const XSD = "/data/Grism/doc/run.xsd";
+  const schema = ex(XSD) ? C.parseXsd(rf(XSD, "utf8")) : null;
+  for (const [name, xml] of Object.entries(C.SDWAN_TEMPLATE_XML)) {
+    if (schema) check(`${name} template XML validates against run.xsd`,
+      C.validateAgainstXsd(xml, schema).length === 0);
+    check(`${name} template XML has no grism-level problems`,
+      C.grismXmlProblems(xml).length === 0);
+  }
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {

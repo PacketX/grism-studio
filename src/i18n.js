@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.35.0";
+export const STUDIO_VERSION = "2.36.0";
 
 export const I18N = {
   en: {
@@ -204,6 +204,8 @@ export const I18N = {
     "set.sdwanPorts": "Arrives on",
     "set.sdwanNoPorts": "Correlation is on but no port is selected, so nothing will be correlated.",
     "set.sdwanUnknownPort": "This device has no port named",
+    "set.sdwanTemplate": "Open the worked example",
+    "set.sdwanTemplateNote": "— builds the filter, outputs and chains for this tunnel in the pipeline editor, replacing what is open there.",
     "set.sdwanEncrypt": "Encapsulation encryption",
     "set.sdwanEncryptNote": "Encrypts the payload the device encapsulates on the way out. Applies to both tunnel types.",
     "set.sdwanEncryptOn": "Encrypt encapsulated payloads",
@@ -686,6 +688,8 @@ export const I18N = {
     "set.sdwanPorts": "進入埠",
     "set.sdwanNoPorts": "已開啟關聯但沒有選擇任何埠,實際上不會關聯到任何流量。",
     "set.sdwanUnknownPort": "本機沒有這個連接埠:",
+    "set.sdwanTemplate": "開啟範例設定",
+    "set.sdwanTemplateNote": "— 會在封包處理編輯器建立這個通道所需的篩選器、輸出與鏈結,並取代目前開啟的內容。",
     "set.sdwanEncrypt": "封裝加密",
     "set.sdwanEncryptNote": "將本機對外封裝的內容加密,兩種通道類型都適用。",
     "set.sdwanEncryptOn": "加密封裝內容",
