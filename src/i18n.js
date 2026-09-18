@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.58.0";
+export const STUDIO_VERSION = "2.59.0";
 
 export const I18N = {
   en: {
@@ -494,6 +494,7 @@ export const I18N = {
     "ch.outputPorts": "Output ports", "ch.mode": "Mode", "ch.balanceBy": "Balance by",
     "ch.devicePorts": "device ports", "ch.portsDefault": "ports (default list)",
     "ch.definedOutputs": "defined outputs", "ch.deleteChain": "Delete this chain",
+    "ch.doesNotMatch": "does not match",
     "ch.negOn": "Change to \"does not match this filter\"", "ch.negOff": "Change back to \"matches this filter\"",
     "ch.noneChosen": "(none chosen)", "ch.outDrop": "discard", "ch.outSwitch": "to the switch",
     "ch.dropNote": "0 discards the packet outright, which is not the same as leaving it unspecified.",
@@ -993,6 +994,7 @@ export const I18N = {
     "ch.outputPorts": "輸出埠", "ch.mode": "模式", "ch.balanceBy": "分流依據",
     "ch.devicePorts": "裝置埠", "ch.portsDefault": "埠(預設清單)",
     "ch.definedOutputs": "已定義的 output", "ch.deleteChain": "刪除此鏈結",
+    "ch.doesNotMatch": "不符合",
     "ch.negOn": "改成「不符合這個篩選器」", "ch.negOff": "改回「符合這個篩選器」",
     "ch.noneChosen": "(未選擇)", "ch.outDrop": "丟棄", "ch.outSwitch": "交給交換器",
     "ch.dropNote": "選擇 0 代表明確丟棄,與「未指定」不同。",

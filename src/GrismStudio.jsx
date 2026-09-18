@@ -5483,7 +5483,7 @@ function CollapseSection({ label, active, children }) {
   );
 }
 
-function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, t }) {
+function CheckAccordion({ label, items, value, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, t }) {
   const tr = t || ((k) => k);
   const [open, setOpen] = useState(defaultOpen);
   const picked = items.filter((it) => it.on).length;
@@ -5502,7 +5502,9 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
     <div className="known acc">
       <button className={"acc-head" + (open ? " open" : "")} onClick={() => setOpen((o) => !o)}>
         <span className="known-label">{label}</span>
-        {picked > 0 && <span className="acc-count">{picked}</span>}
+        {/* the chosen value reads off this header rather than a line of its own */}
+        {value ? <code className="acc-value">{value}</code>
+          : picked > 0 && <span className="acc-count">{picked}</span>}
       </button>
       {open && <div className="acc-body">
         <div className="acc-toolbar">
@@ -5519,7 +5521,9 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
             <label key={it.id} className={"fid-check" + (it.on ? " on" : "") + (it.neg ? " neg" : "")}>
               <input type={multi ? "checkbox" : "radio"} checked={it.on}
                 onChange={() => multi ? onToggle(it.id) : onSetOne(it.id)} />
-              <b>{it.b}</b>{it.sub && <span>{it.sub}</span>}
+              <b>{it.neg ? "!" + it.b : it.b}</b>
+              {it.neg && <span className="fid-negword">{tr("ch.doesNotMatch")}</span>}
+              {it.sub && <span>{it.sub}</span>}
               {/* negation belongs on the row it negates, not in a text box the
                   reader has to know the syntax for */}
               {onNegate && it.on && (
@@ -5891,7 +5895,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               {bad && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
               {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">INGRESS</text><text x={c.x} y={c.y + 12} className="n-main">{n.ports}</text></>}
               {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || "FILTER"}</text><text x={c.x} y={c.y + 12} className="n-main">{n.fids}</text></>; })()}
-              {n.t === "out" && <><text x={c.x} y={c.y - 5} className={!drop && outAlt(n.ports) ? "n-alt" : "n-kind"}>{drop ? "DISCARD" : capAlt(outAlt(n.ports)) || (n.mode === "loadBalance" ? "LOAD BALANCE" : "OUTPUT")}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : withOutPorts(n.ports)}</text></>}
+              {n.t === "out" && <><text x={c.x} y={c.y - 5} className="n-kind">{drop ? "DISCARD" : (n.mode === "loadBalance" ? "LOAD BALANCE" : "OUTPUT")}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : withOutPorts(n.ports)}</text></>}
             </g>;
           })}
         </svg>
@@ -5902,10 +5906,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
           <div className="insp-head">{sel ? (isUnset(sel) ? tr("ch.unspecified") : sel.t === "in" ? tr("ch.ingress") : sel.t === "branch" ? tr("ch.filter") : isDrop(sel) ? tr("ch.discard") : tr("ch.output")) : tr("ch.inspector")}</div>
           {!sel && <p className="insp-empty">{tr("ch.selectNode")}</p>}
           {sel && sel.t === "in" && <>
-            <label className="fld2"><span>{tr("ch.ingressPorts")}</span>
-              <input value={chain.ports} onChange={(e) => setPorts(e.target.value)} /><em>e.g. P0,P1</em></label>
             <CheckAccordion
-              label={portsFromDevice ? tr("ch.devicePorts") : tr("ch.portsDefault")}
+              label={tr("ch.ingressPorts")}
+              defaultOpen t={t} value={chain.ports}
               items={portOptions.map((p) => ({ id: p, b: p, on: listHas(chain.ports, p) }))}
               onToggle={(p) => toggleInPort(p)}
               onAll={(on) => setAllInPorts(portOptions, on)}
@@ -5925,9 +5928,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
           {sel && sel.t === "branch" && <>
             {/* No free-text fids: every value it could hold is a filter that is
                 either defined or a reference to nothing, and "!" is a control,
-                not something to spell. */}
-            <p className="insp-read"><span>{tr("ch.filters")}</span>
-              <code>{sel.fids || tr("ch.noneChosen")}</code></p>
+                not something to spell. The chosen value reads off the picker. */}
             {/* and/or only means something once two or more filters are referenced */}
             {toks(sel.fids) > 1 && (
               <label className="fld2"><span>{tr("ch.combine")}</span>
@@ -5935,7 +5936,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             )}
             <CheckAccordion
               label={tr("ch.definedFilters")}
-              defaultOpen t={t}
+              defaultOpen t={t} value={sel.fids}
               items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
                 on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) }))}
               onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
@@ -5959,11 +5960,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 clears the rest and choosing a port clears them. */}
             {isDrop(sel) && <p className="insp-note">{tr("ch.dropNote")}</p>}
             <>
-              <p className="insp-read"><span>{tr("ch.outputPorts")}</span>
-                <code>{sel.ports || tr("ch.noneChosen")}</code></p>
               <CheckAccordion
-                label={portsFromDevice ? tr("ch.devicePorts") : tr("ch.portsDefault")}
-                defaultOpen t={t}
+                label={tr("ch.outputPorts")}
+                defaultOpen t={t} value={sel.ports}
                 items={outChoices.map((c) => ({ id: c.id, b: c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
                 onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
