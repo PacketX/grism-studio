@@ -1374,6 +1374,73 @@ function SystemLogTab({ loggedIn, t }) {
   );
 }
 
+/* An index of the cards on the settings section you are looking at.
+
+   Sections run to seven cards, and the one you came for is usually below the
+   fold. Rather than tag every card in the JSX with an id, read the headings
+   back out of the rendered page -- they are the same strings the chips need,
+   and no card has to remember to register itself. */
+function CardJump({ rootRef, section }) {
+  const [titles, setTitles] = React.useState([]);
+  const stripRef = React.useRef(null);
+  React.useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const heads = () => [...root.querySelectorAll(".sys-card > .sys-card-title, .set-card > .set-card-head")];
+    const read = () => {
+      const next = heads().map((n) => {
+        const h = n.querySelector("h3") ?? n;
+        // the heading carries trimmings -- "M0 role: management", a metric --
+        // and the chip wants the name on its own
+        const extra = h.querySelector(".set-role, .sys-card-metric");
+        return (extra ? h.textContent.replace(extra.textContent, "") : h.textContent).trim();
+      });
+      // bail when nothing moved, or the observer below re-fires on our own render
+      setTitles((prev) => prev.length === next.length && prev.every((x, i) => x === next[i]) ? prev : next);
+    };
+    read();
+    const mo = new MutationObserver((recs) => {
+      if (recs.every((r) => stripRef.current?.contains(r.target))) return;
+      read();
+    });
+    // characterData too: switching language rewrites each heading's text node in
+    // place, which emits no childList records at all, and the chips would keep
+    // the old language forever
+    mo.observe(root, { childList: true, subtree: true, characterData: true });
+    return () => mo.disconnect();
+  }, [rootRef, section]);
+
+  /* The strip wraps to more rows as the window narrows, so the offset a jump has
+     to clear is not a constant. Publish the measured height for the CSS. */
+  React.useEffect(() => {
+    const strip = stripRef.current, root = rootRef.current;
+    if (!strip || !root) return;
+    const publish = () => root.style.setProperty("--cj-h", strip.offsetHeight + "px");
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(strip);
+    return () => { ro.disconnect(); root.style.removeProperty("--cj-h"); };
+  }, [rootRef, titles.length]);
+
+  if (titles.length < 3) return null;      // a short section indexes itself
+  const jump = (i) => {
+    const head = [...(rootRef.current?.querySelectorAll(".sys-card > .sys-card-title, .set-card > .set-card-head") ?? [])][i];
+    const card = head?.closest(".sys-card, .set-card");
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    card.classList.remove("jump-hit");
+    void card.offsetWidth;                 // restart the animation on a repeat click
+    card.classList.add("jump-hit");
+  };
+  return (
+    <div className="card-jump" ref={stripRef}>
+      {titles.map((title, i) => (
+        <button key={title + i} className="cj-chip" onClick={() => jump(i)}>{title}</button>
+      ))}
+    </div>
+  );
+}
+
 function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut }) {
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
@@ -1896,12 +1963,16 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
   };
 
+  const pageRef = React.useRef(null);
+
   const setIfaceField = (idx, k, v) => setIfaces((arr) => arr.map((it, i) => i === idx ? { ...it, fields: { ...it.fields, [k]: v } } : it));
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("set.needLogin")}</div></div>;
 
   return (
-    <div className="sys-wrap">
+    /* set-page scopes the card styling to this tab: System status shares
+       .sys-wrap and .sys-card but wants its own compact look */
+    <div className="sys-wrap set-page" ref={pageRef}>
       <div className="sys-head">
         <h2 className="sys-title">{tr("set.title")}</h2>
         <div className="sys-controls">
@@ -1939,6 +2010,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {state === "error" && <div className="sys-err">{tr("set.loadFailed")}: {errMsg}</div>}
       {submit.state === "error" && <div className="sys-err">{tr("set.submitFailed")}: {submit.msg}</div>}
       {submit.state === "ok" && <div className="set-ok-banner">{tr("set.applied")}</div>}
+
+      <CardJump rootRef={pageRef} section={section} />
 
       {section === "ports" && (
         <div className="set-ports">
@@ -2432,9 +2505,14 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                       setNewUser({ name: "", pass: "", confirm: "" });
                   }}>{tr("set.acctAdd")}</button>
               </div>
+            </section>
 
+            {/* Its own card, not a second heading inside the accounts one: a card
+                is what the index on this page indexes, and changing your own
+                password is the thing people come to this section to find. */}
+            <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.acctChangePw")}</h3>
-            {!me && <p className="set-hint warn">{tr("set.acctWhoUnknown")}</p>}
+              {!me && <p className="set-hint warn">{tr("set.acctWhoUnknown")}</p>}
               <div className="set-grid">
                 <label className="set-field"><span>{tr("set.acctOldPassword")}</span>
                   <input type="password" value={pw.old} autoComplete="current-password"
