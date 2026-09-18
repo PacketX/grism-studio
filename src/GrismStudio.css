@@ -1463,3 +1463,13 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 
 /* the MAC beside the tunnel address it belongs to */
 .l2g-mac { color: var(--txt-dim); font-size: 11.5px; }
+
+/* a name field that offers a suggestion: the placeholder shows it, the button
+   takes it. The button is only there while the field is empty. */
+.name-with-hint { position: relative; display: block; }
+.name-with-hint input { width: 100%; }
+.name-take { position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  border: 1px solid var(--line-2); background: var(--panel); color: var(--txt-dim);
+  border-radius: 6px; padding: 2px 8px; font: inherit; font-size: 11px; cursor: pointer; }
+.name-take:hover { border-color: var(--accent); color: var(--accent);
+  background: rgba(var(--accent-rgb), .10); }

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.50.0";
+export const STUDIO_VERSION = "2.51.0";
 
 export const I18N = {
   en: {
@@ -37,7 +37,7 @@ export const I18N = {
     "tab.trafficPorts": "Interfaces", "tab.trafficSessions": "Sessions",
     "tab.trafficServices": "Services", "tab.trafficCountries": "Countries",
     "tab.trafficL2gre": "L2GRE Correlation",
-    "l2g.note": "Inner MAC addresses the device has seen inside an L2GRE tunnel, and the tunnel each one arrived through. Read once when you open the traffic pages.",
+    "l2g.note": "Inner MAC addresses the device has seen inside an L2GRE tunnel, and the tunnel each one arrived through.",
     "l2g.outerDst": "Tunnel destination", "l2g.outerSrc": "Tunnel source", "l2g.inner": "Inner MAC",
     "l2g.emptyOn": "Correlation is on, but the device has not seen any L2GRE traffic to correlate yet.",
     "l2g.staleOff": "Correlation is switched off in packet handling. These entries are what the device saw while it was on.",
@@ -424,6 +424,7 @@ export const I18N = {
     "login.signingIn": "signing in…", "login.signIn": "Sign in",
     "confirm.discardTitle": "Discard current edits?",
     "common.delete": "Delete", "common.cancel": "Cancel", "common.optional": "optional",
+    "common.use": "use", "common.useSuggested": "Use this name, read from what this element already does.",
     "common.name": "name", "common.type": "type",
     "common.addFilter": "+ Add filter", "common.newFilter": "+ New filter",
     "common.addInput": "+ Add input", "common.dupInput": "⧉ Duplicate input",
@@ -531,7 +532,7 @@ export const I18N = {
     "tab.trafficPorts": "介面", "tab.trafficSessions": "連線",
     "tab.trafficServices": "服務", "tab.trafficCountries": "國家",
     "tab.trafficL2gre": "L2GRE 對應表",
-    "l2g.note": "裝置在 L2GRE 通道內看到的內層 MAC,以及各自是從哪一條通道進來的。進入流量統計頁面時讀取一次。",
+    "l2g.note": "裝置在 L2GRE 通道內看到的內層 MAC,以及各自是從哪一條通道進來的。",
     "l2g.outerDst": "通道目的", "l2g.outerSrc": "通道來源", "l2g.inner": "內層 MAC",
     "l2g.emptyOn": "關聯已開啟,但裝置還沒看到可以關聯的 L2GRE 流量。",
     "l2g.staleOff": "封包處理裡的關聯目前是關閉的,以下是開啟期間看到的內容。",
@@ -916,6 +917,7 @@ export const I18N = {
     "login.signingIn": "登入中…", "login.signIn": "登入",
     "confirm.discardTitle": "放棄目前的編輯?",
     "common.delete": "刪除", "common.cancel": "取消", "common.optional": "選填",
+    "common.use": "採用", "common.useSuggested": "採用這個名稱,它是從這個元素目前的內容推出來的。",
     "common.name": "名稱", "common.type": "類型",
     "common.addFilter": "+ 新增篩選器", "common.newFilter": "+ 新篩選器",
     "common.addInput": "+ 新增 input", "common.dupInput": "⧉ 複製 input",

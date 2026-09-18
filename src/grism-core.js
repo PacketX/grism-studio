@@ -3374,3 +3374,79 @@ export function parseL2greCorrelation(payload) {
     ts: Number(payload?.ts) || null,
   };
 }
+
+/* ============================================================
+   Suggested names
+
+   A name is optional everywhere, and an unnamed element shows as a bare id in
+   the chain flow, the health panel and the simulator. These read what the
+   element already says about itself and propose a short label for it -- nothing
+   is applied until the user takes it.
+   ============================================================ */
+
+const firstFind = (node) => {
+  if (!node) return null;
+  if (node.t === "find") return node;
+  for (const c of node.children ?? []) { const f = firstFind(c); if (f) return f; }
+  return null;
+};
+const countFinds = (node) =>
+  !node ? 0 : (node.t === "find" ? 1 : (node.children ?? []).reduce((n, c) => n + countFinds(c), 0));
+
+export function suggestFilterName(f) {
+  const find = firstFind(f?.root);
+  if (!find) return "";
+  const val = String(find.val ?? "").trim();
+  const rel = find.rel && find.rel !== "==" ? ` ${find.rel}` : " ";
+  const head = `${find.field}${val ? rel + val : ""}`.trim();
+  const more = countFinds(f.root) - 1;
+  return more > 0 ? `${head} +${more}` : head;
+}
+
+export function suggestOutputName(o) {
+  const mods = (o?.mods ?? []).filter((m) => m && m.k);
+  const strip = mods.find((m) => m.k === "stripping");
+  const tag = mods.find((m) => m.k === "tagging");
+  const port = o?.port || "";
+  if (strip) return `strip ${strip.val} to ${port}`.trim();
+  if (tag) return `tag ${tag.val} to ${port}`.trim();
+  if (mods.length) {
+    const k = mods[0].k;
+    const family = k.includes("_") ? k.split("_")[0] : k.replace(/_/g, " ");
+    return `${family} to ${port}`.trim();
+  }
+  return port ? `to ${port}` : "";
+}
+
+export function suggestActionName(a) {
+  if (!a) return "";
+  if (a.type === "linkpairs") return `link ${a.portA}-${a.portB}`;
+  const mods = (a.mods ?? []).filter((m) => m && m.k);
+  const port = a.port || "";
+  if (!mods.length) return port ? `on ${port}` : "";
+  const m = mods[0];
+  const val = String(m.val ?? "").trim();
+  const what = m.k === "stripping" || m.k === "tagging" ? `${m.k.replace(/ping$/, "")} ${val}`
+    : `${m.k.replace(/_/g, " ")}${val ? " " + val : ""}`;
+  return `${what} on ${port}`.trim();
+}
+
+export function suggestInputName(i) {
+  if (!i) return "";
+  const port = i.port || "";
+  if (i.type === "replayPcap") {
+    const first = (i.filepaths ?? []).find(Boolean) || "";
+    const file = first.split("/").filter(Boolean).pop() || "";
+    return file ? `replay ${file}` : (port ? `replay to ${port}` : "replay");
+  }
+  return port ? `${i.type} on ${port}` : String(i.type ?? "");
+}
+
+export const SUGGESTORS = {
+  filter: suggestFilterName, output: suggestOutputName,
+  action: suggestActionName, input: suggestInputName,
+};
+export const suggestName = (kind, item) => {
+  const s = (SUGGESTORS[kind]?.(item) ?? "").trim();
+  return s.length > 40 ? s.slice(0, 39) + "…" : s;
+};

@@ -38,6 +38,7 @@ import {
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   outputIndex, destLabel,
   parseL2greCorrelation,
+  suggestName,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -916,7 +917,7 @@ export default function GrismStudio() {
           <TrafficCountriesTab loggedIn={!!login.who} t={t} lang={lang} />
         )}
         {tab === "trafficL2gre" && (
-          <L2greTab data={l2gre} correlating={l2greOn} t={t} />
+          <L2greTab data={l2gre} correlating={l2greOn} onData={setL2gre} t={t} />
         )}
         {tab === "capture" && (
           <CaptureTab loggedIn={!!login.who} t={t}
@@ -4538,6 +4539,27 @@ function TemplatesTab({ onApply, lang, t }) {
    an id must be a positive integer unique within its own collection. Commits
    only a valid, non-duplicate change; otherwise shows the typed value as invalid
    until corrected. */
+/* A name field that offers a suggestion read from the element itself. The
+   suggestion is only ever a placeholder and a button -- nothing is written
+   until it is taken, so a deliberately blank name stays blank. */
+function NameField({ kind, item, value, onChange, t }) {
+  const tr = t || ((k) => k);
+  const hint = suggestName(kind, item);
+  const empty = !String(value ?? "").trim();
+  return (
+    <label className="ml name"><span>{tr("common.name")}</span>
+      <span className="name-with-hint">
+        <input value={value ?? ""} onChange={onChange}
+          placeholder={hint || tr("common.optional")} />
+        {hint && empty && (
+          <button type="button" className="name-take" title={tr("common.useSuggested")}
+            onClick={() => onChange({ target: { value: hint } })}>{tr("common.use")}</button>
+        )}
+      </span>
+    </label>
+  );
+}
+
 function IdField({ prefix, id, siblingIds, onCommit }) {
   const [draft, setDraft] = useState(String(id));
   useEffect(() => { setDraft(String(id)); }, [id]);
@@ -4662,10 +4684,8 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
         <div className="filter-meta">
           <IdField prefix="F" id={f.id} siblingIds={doc.filters.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, id: newId } : x) })); setActiveFilter(newId); }} />
-          <label className="ml name"><span>{tr("common.name")}</span>
-            <input value={f[f.labelAttr ?? "name"] ?? f.name ?? ""}
-              onChange={(e) => { const k = f.labelAttr ?? "name"; patchMeta(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
-              placeholder={tr("flt.namePh")} /></label>
+          <NameField kind="filter" item={f} t={t} value={f[f.labelAttr ?? "name"] ?? f.name ?? ""}
+            onChange={(e) => { const k = f.labelAttr ?? "name"; patchMeta(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
           <label className="ml" title={`sessionBase — ${tr("flt.sessionBaseTip")}`}><span>{tr("flt.sessionBase")}</span>
             <select value={f.sessionBase} onChange={(e) => patchMeta({ sessionBase: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
@@ -4972,10 +4992,8 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
         <div className="filter-meta">
               {/* No id field, as for actions: <input id> is optional in run.xsd,
                   nothing references an input by it, and it is not written out. */}
-          <label className="ml name"><span>{tr("common.name")}</span>
-            <input value={inp[inp.labelAttr ?? "name"] ?? inp.name ?? ""}
-              onChange={(e) => { const k = inp.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
-              placeholder={tr("common.optional")} /></label>
+          <NameField kind="input" item={inp} t={t} value={inp[inp.labelAttr ?? "name"] ?? inp.name ?? ""}
+            onChange={(e) => { const k = inp.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
           <label className="ml"><span>{tr("common.type")}</span>
             <select value={inp.type} onChange={(e) => {
               const type = e.target.value;
@@ -5155,10 +5173,8 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
         <div className="filter-meta">
           <IdField prefix="O" id={o.id} siblingIds={doc.outputs.map((x) => x.id)}
             onCommit={(newId) => { setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, id: newId } : x) })); setActiveOutput(newId); }} />
-          <label className="ml name"><span>{tr("common.name")}</span>
-            <input value={o[o.labelAttr ?? "name"] ?? o.name ?? ""}
-              onChange={(e) => { const k = o.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }}
-              placeholder={tr("common.optional")} /></label>
+          <NameField kind="output" item={o} t={t} value={o[o.labelAttr ?? "name"] ?? o.name ?? ""}
+            onChange={(e) => { const k = o.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
           <label className="ml"><span>{tr("out.port")}</span>
             <PortSelect value={o.port} options={portOptions} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
@@ -5333,8 +5349,8 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
           {/* No id field: <action id> is optional in run.xsd, nothing references
               an action by it, and it is no longer written out. The id stays
               internal, as the key for selection and reordering. */}
-          <label className="ml name"><span>{tr("common.name")}</span>
-            <input value={a.name} onChange={(e) => patch({ name: e.target.value })} placeholder={tr("common.optional")} /></label>
+          <NameField kind="action" item={a} t={t} value={a.name}
+            onChange={(e) => patch({ name: e.target.value })} />
           <label className="ml"><span>{tr("common.type")}</span>
             <select value={a.type} onChange={(e) => patch({ type: e.target.value })}>
               <option value="input-packet-process">{tr("act.typeProcess")}</option>
@@ -7029,14 +7045,37 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 /* ============================================================
    L2GRE correlation — which tunnel each inner MAC was seen inside
    ============================================================ */
-function L2greTab({ data, correlating, t }) {
+function L2greTab({ data, correlating, onData, t }) {
   const tr = t || ((k) => k);
   const rows = data?.rows ?? [];
   const loading = data === null;
+  const [auto, setAuto] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  const read = React.useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/grism/task/get_l2gre_correlation_table", { credentials: "include" });
+      if (res.ok) onData?.(parseL2greCorrelation(await res.json()));
+    } catch { /* keep whatever was last read */ }
+    finally { setBusy(false); }
+  }, [onData]);
+
+  React.useEffect(() => {
+    if (!auto) return;
+    const id = setInterval(read, 5000);
+    return () => clearInterval(id);
+  }, [auto, read]);
   return (
     <div className="sys-wrap">
       <div className="sys-head">
         <h2 className="sys-title">{tr("tab.trafficL2gre")}</h2>
+        <div className="sys-controls">
+          <label className="sys-auto"><input type="checkbox" checked={auto}
+            onChange={(e) => setAuto(e.target.checked)} /> {tr("sys.auto")}</label>
+          <button className="sys-refresh" onClick={read} disabled={busy}>
+            {busy ? tr("sys.refreshing") : tr("sys.refresh")}</button>
+        </div>
       </div>
       <p className="page-note">{tr("l2g.note")}</p>
       {data?.hidden > 0 && (

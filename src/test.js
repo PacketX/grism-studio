@@ -1924,6 +1924,49 @@ for (const lang of Object.keys(I18N)) {
     !!I18N[lang]["l2g.outerSrc"] && !!I18N[lang]["l2g.inner"]);
 }
 
+/* ---------- suggested names ---------- */
+group("name suggestions");
+{
+  const of = (id) => C.normalizeDoc(C.TEMPLATES.find((t) => t.id === id).make());
+  const l2 = of("sdwan-l2gre");
+  check("a filter is named for its first condition",
+    C.suggestName("filter", l2.filters[0]) === "gre" &&
+    C.suggestName("filter", of("loadbalance").filters[0]) === "tcp.port 443");
+  // a filter with more than one condition says how many more
+  check("extra conditions are counted, not listed",
+    /\+5$/.test(C.suggestName("filter", of("geo-recursive").filters[0])));
+
+  check("an output is named for what it does to the traffic",
+    C.suggestName("output", l2.outputs[0]) === "strip gre to P0" &&
+    C.suggestName("output", l2.outputs[1]) === "tag l2gre to P1");
+  // vxlan_sip / vxlan_dip / vxlan_vni are one encapsulation, not three settings
+  check("an encapsulation family collapses to its name",
+    C.suggestName("output", of("vxlan-encap").outputs[0]) === "vxlan to P7");
+  check("an output with no modifiers is named for its port",
+    C.suggestName("output", { port: "P3", mods: [] }) === "to P3");
+
+  check("an action is named for its first modifier and port",
+    C.suggestName("action", of("ingress-strip").actions[0]) === "strip vlan on P0");
+  check("a link-pair action names both ports",
+    C.suggestName("action", { type: "linkpairs", portA: "P1", portB: "P2" }) === "link P1-P2");
+
+  check("a replay input is named for its file",
+    C.suggestName("input", of("pcap-replay").inputs[0]) === "replay sample.pcap");
+
+  check("nothing to go on yields nothing, never a bad name",
+    ["filter", "output", "action", "input"].every((k) => C.suggestName(k, {}) === "") &&
+    C.suggestName("filter", null) === "" && C.suggestName("nope", {}) === "");
+
+  // the suggestion is a label, not a paragraph
+  const long = C.suggestName("filter", { root: { t: "find", field: "http.request.uri.path.and.then.some.more", rel: "==", val: "/a/very/long/path/that/keeps/going" } });
+  check("a long suggestion is truncated", long.length <= 40 && long.endsWith("…"));
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} labels the take-suggestion button`,
+    !!I18N[lang]["common.use"] && !!I18N[lang]["common.useSuggested"]);
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {
