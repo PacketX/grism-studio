@@ -1967,6 +1967,31 @@ for (const lang of Object.keys(I18N)) {
     !!I18N[lang]["common.use"] && !!I18N[lang]["common.useSuggested"]);
 }
 
+/* ---------- hook order ---------- */
+group("hook order");
+{
+  /* A hook after an early return changes the hook count between renders: the
+     component mounts with fewer while logged out and more once logged in, and
+     React throws #310 -- which surfaces as "tab render failed" on a page the
+     user was already looking at. Unit tests cannot see it, so it is checked
+     statically here. */
+  const { readFileSync: rf } = await import("node:fs");
+  const src = rf(new URL("./GrismStudio.jsx", import.meta.url), "utf8").split("\n");
+  let comp = null, earlyReturn = null;
+  const offenders = [];
+  src.forEach((line, i) => {
+    const m = line.match(/^function ([A-Z]\w*)\(/);
+    if (m) { comp = m[1]; earlyReturn = null; return; }
+    if (!comp) return;
+    if (/^\}/.test(line)) { comp = null; return; }
+    if (earlyReturn === null && /^\s{2}if \(.*\) return /.test(line)) earlyReturn = i + 1;
+    if (earlyReturn !== null && /(React\.)?use(State|Effect|Memo|Callback|Ref|LayoutEffect)\(/.test(line)
+        && !line.trim().startsWith("//"))
+      offenders.push(`${comp}:${i + 1} (early return at ${earlyReturn})`);
+  });
+  check("no component calls a hook after an early return", offenders.length === 0, offenders.join(" "));
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {

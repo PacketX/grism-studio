@@ -3455,14 +3455,6 @@ function TrafficTab({ loggedIn, t }) {
     return () => clearInterval(id);
   }, [refreshSec, loggedIn, load]);
 
-  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
-
-  // detail field groups for the expanded ingress view
-  const DETAIL_SIMPLE = ["inMulticastPackets", "inBroadcastPackets", "inDups", "inDropBytes"];
-  const DETAIL_LEN = ["inLen64Packets", "inLen65-127Packets", "inLen128-255Packets", "inLen256-511Packets", "inLen512-1023Packets", "inLen1024-1518Packets", "inLen1519-MaxPackets"];
-  const DETAIL_ERR = ["inFcsAlignErrorPackets", "inRuntErrorPackets", "inRuntCrcErrorPackets", "inOversizeErrorPackets", "inOversizeCrcErrorPackets"];
-  const COLSPAN = 15;
-
   // split V-ports (virtual, name starts with "V") from the rest. When any exist,
   // show them on their own and let the user reveal the physical ports too.
   // Split virtual (V*) from physical ports once per data refresh rather than on
@@ -3473,6 +3465,14 @@ function TrafficTab({ loggedIn, t }) {
     return { vRows: v, physRows: p, hasV: v.length > 0,
       shownRows: v.length === 0 ? rows : (showPhys ? [...v, ...p] : v) };
   }, [rows, showPhys]);
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+
+  // detail field groups for the expanded ingress view
+  const DETAIL_SIMPLE = ["inMulticastPackets", "inBroadcastPackets", "inDups", "inDropBytes"];
+  const DETAIL_LEN = ["inLen64Packets", "inLen65-127Packets", "inLen128-255Packets", "inLen256-511Packets", "inLen512-1023Packets", "inLen1024-1518Packets", "inLen1519-MaxPackets"];
+  const DETAIL_ERR = ["inFcsAlignErrorPackets", "inRuntErrorPackets", "inRuntCrcErrorPackets", "inOversizeErrorPackets", "inOversizeCrcErrorPackets"];
+  const COLSPAN = 15;
 
   return (
     <div className="sys-wrap">
