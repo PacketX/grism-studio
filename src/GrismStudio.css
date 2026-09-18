@@ -1323,3 +1323,26 @@ a.copy-btn{display:inline-block; text-decoration:none; line-height:1.7;}
 button.tf-bypass.as-toggle{cursor:pointer; background:transparent; font-family:var(--mono);}
 button.tf-bypass.as-toggle:hover:not(:disabled){background:rgba(var(--accent-rgb),.12); border-color:var(--accent); color:var(--accent);}
 button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
+
+/* ---- T12S port speed --------------------------------------------------
+   A segmented pair rather than a dropdown: there are exactly two speeds, and
+   which one is live should be readable without opening anything. */
+.set-speed { margin-top: 18px; }
+.sp-row { display: flex; align-items: center; gap: 14px; padding: 8px 0;
+  border-top: 1px solid var(--line); }
+.sp-row:first-of-type { border-top: 0; }
+.sp-ports { flex: 1 1 auto; color: var(--txt); font-size: 13px; }
+.sp-seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 7px;
+  overflow: hidden; flex: 0 0 auto; }
+.sp-opt { border: 0; background: transparent; color: var(--txt-dim);
+  padding: 5px 14px; font: inherit; font-size: 13px; cursor: pointer; }
+.sp-opt + .sp-opt { border-left: 1px solid var(--line-2); }
+.sp-opt:hover:not(:disabled) { background: rgba(var(--accent-rgb),.12); color: var(--accent); }
+/* The live speed is the disabled segment -- it must read as "this is it", not
+   as unavailable, so it keeps full contrast instead of the usual dimming. */
+.sp-opt.on, .sp-opt.on:disabled { background: var(--accent); color: var(--accent-ink);
+  cursor: default; opacity: 1; }
+@media (max-width: 900px) {
+  .sp-row { flex-wrap: wrap; gap: 8px; }
+  .sp-ports { flex-basis: 100%; }
+}

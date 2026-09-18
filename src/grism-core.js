@@ -3180,3 +3180,39 @@ export const parseBypassStatus = (text) => {
   const t = String(text ?? "").trim();
   return t === "1" ? true : t === "0" ? false : null;
 };
+
+
+/* ============================================================
+   T12S port speed
+
+   Four ports share a QLM and change together. The mode lives in the U-Boot
+   environment and only takes effect at boot, so every change reboots.
+   ============================================================ */
+
+export const T12S_SPEED_GROUPS = [
+  { qlm: "qlm5_6", ports: ["P0", "P1", "P2", "P3"] },
+  { qlm: "qlm3",   ports: ["P4", "P5", "P6", "P7"] },
+  { qlm: "qlm2",   ports: ["P8", "P9", "P10", "P11"] },
+];
+export const T12S_SPEEDS = ["1000", "10000"];
+
+/* Whether this device has the switch at all. Only a T12S does; the endpoint is
+   named after it. */
+export const hasSpeedSwitch = (model) => String(model ?? "").toUpperCase().includes("T12S");
+
+/* What each group is set to now, read from the interfaces in the device config
+   rather than from link state -- a port with nothing plugged in still belongs
+   to a group running at 10G. Returns { qlm: "1000" | "10000" }. */
+export function t12sSpeeds(cfg) {
+  const out = {};
+  for (const iface of cfg?.interfaces ?? []) {
+    const group = T12S_SPEED_GROUPS.find((g) => g.qlm === iface?.name);
+    if (!group) continue;
+    const speed = (iface.ports ?? []).map((p) => String(p?.speed ?? "")).find(Boolean);
+    if (T12S_SPEEDS.includes(speed)) out[group.qlm] = speed;
+  }
+  return out;
+}
+
+export const formatPortSpeed = (speed) =>
+  speed === "10000" ? "10G" : speed === "1000" ? "1G" : "";

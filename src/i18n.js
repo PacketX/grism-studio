@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.29.1";
+export const STUDIO_VERSION = "2.30.0";
 
 export const I18N = {
   en: {
@@ -153,6 +153,16 @@ export const I18N = {
     "set.fwOnlineBody": "The device installs the image and reboots. Traffic stops for several minutes — do not power it off.",
     "set.fwPhase.updating": "Installing — device still responding", "set.fwPhase.rebooting": "Restarting — device is offline",
     "set.fwPhase.done": "Update complete", "set.fwReload": "Reload page",
+    "set.speedTitle": "Port speed",
+    "set.speedNote": "Four ports share a transceiver group and change together. The new speed is written to the boot environment, so the device restarts to apply it.",
+    "set.speedCurrent": "Current speed of this group.",
+    "set.speedSwitchTip": "Switch this group. The device restarts immediately.",
+    "set.speedConfirmTitle": "Change port speed?",
+    "set.speedConfirmBody": "All four ports change together and the device restarts now. Traffic through them stops until it is back.",
+    "set.speedApplying": "Changing port speed",
+    "set.speedApplyingBody": "The new speed is set. The device is restarting to apply it — this takes about a minute.",
+    "set.spPhase.updating": "Accepted — device still responding", "set.spPhase.rebooting": "Restarting — device is offline",
+    "set.spPhase.done": "Port speed changed",
     "set.fwUpdating": "Updating firmware",
     "set.fwUpdatingBody": "The device is installing the image and will restart. Do not power it off; reload this page once it is back.",
     "set.auth": "Login authentication", "set.authUse": "Authenticate with",
@@ -613,6 +623,16 @@ export const I18N = {
     "set.fwOnlineBody": "裝置會安裝映像檔並重新開機,流量中斷數分鐘,期間請勿關閉電源。",
     "set.fwPhase.updating": "更新中 — 裝置仍可連線", "set.fwPhase.rebooting": "重開機中 — 裝置已離線",
     "set.fwPhase.done": "更新完成", "set.fwReload": "重新載入頁面",
+    "set.speedTitle": "連接埠速度",
+    "set.speedNote": "每四個埠共用一組收發器,只能整組切換。新速度寫入開機環境,因此裝置會重新開機才會生效。",
+    "set.speedCurrent": "這組目前的速度。",
+    "set.speedSwitchTip": "切換這一組,裝置會立刻重新開機。",
+    "set.speedConfirmTitle": "要切換連接埠速度?",
+    "set.speedConfirmBody": "四個埠會一起改變,裝置會立刻重新開機,期間這些埠的流量會中斷。",
+    "set.speedApplying": "切換連接埠速度",
+    "set.speedApplyingBody": "新的速度已設定,裝置正在重新開機以套用 — 大約需要一分鐘。",
+    "set.spPhase.updating": "已接受 — 裝置仍可連線", "set.spPhase.rebooting": "重開機中 — 裝置已離線",
+    "set.spPhase.done": "連接埠速度已切換",
     "set.fwUpdating": "韌體更新中",
     "set.fwUpdatingBody": "裝置正在安裝映像檔並即將重新啟動。請勿關閉電源,完成後重新整理此頁。",
     "set.auth": "登入驗證", "set.authUse": "使用此伺服器驗證:",

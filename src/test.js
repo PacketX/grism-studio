@@ -1616,6 +1616,49 @@ for (const lang of Object.keys(I18N)) {
   check(`${lang} explains why a big file cannot be edited`, !!I18N[lang]["xf.tooBig"]);
 }
 
+/* ---------- T12S port speed ---------- */
+group("port speed");
+{
+  check("only a T12S offers the switch",
+    C.hasSpeedSwitch("T12S") && C.hasSpeedSwitch("GRISM-T12S") &&
+    !C.hasSpeedSwitch("G8S") && !C.hasSpeedSwitch("HL1") && !C.hasSpeedSwitch(""));
+
+  check("the groups match the QLM wiring",
+    C.T12S_SPEED_GROUPS.map((g) => `${g.qlm}:${g.ports.join(",")}`).join(" ") ===
+    "qlm5_6:P0,P1,P2,P3 qlm3:P4,P5,P6,P7 qlm2:P8,P9,P10,P11");
+
+  // the device reports speeds as numbers, not strings
+  const cfg = { interfaces: [
+    { name: "qlm2", type: "XFI", ports: [{ name: "P8", speed: 10000 }, { name: "P9", speed: 10000 }] },
+    { name: "qlm3", type: "SGMII", ports: [{ name: "P4", speed: 1000 }] },
+    { name: "qlm5_6", type: "SGMII", ports: [{ name: "P0", speed: 1000 }] },
+    { name: null, type: "LOOP", ports: [{ name: "P12", speed: 10000 }] },
+  ] };
+  const sp = C.t12sSpeeds(cfg);
+  check("each group reads its current speed",
+    sp.qlm2 === "10000" && sp.qlm3 === "1000" && sp.qlm5_6 === "1000");
+  check("interfaces outside the groups are ignored", Object.keys(sp).length === 3);
+
+  // A G8S reports no interface names at all; a group we cannot read must stay
+  // out of the list rather than show up as a guess.
+  check("an unreadable config yields no groups",
+    Object.keys(C.t12sSpeeds(null)).length === 0 &&
+    Object.keys(C.t12sSpeeds({ interfaces: [{ name: null, ports: [{ speed: 1000 }] }] })).length === 0);
+  check("an unexpected speed is not offered as current",
+    Object.keys(C.t12sSpeeds({ interfaces: [{ name: "qlm2", ports: [{ speed: 2500 }] }] })).length === 0);
+
+  check("speeds are labelled in the units the front panel uses",
+    C.formatPortSpeed("1000") === "1G" && C.formatPortSpeed("10000") === "10G" &&
+    C.formatPortSpeed("") === "");
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} warns that the speed switch reboots`,
+    /restart|重(新)?開機/.test(I18N[lang]["set.speedConfirmBody"] || ""));
+  check(`${lang} labels every speed-switch phase`,
+    ["updating", "rebooting", "done"].every((p) => !!I18N[lang]["set.spPhase." + p]));
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {

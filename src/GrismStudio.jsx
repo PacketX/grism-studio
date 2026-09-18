@@ -34,6 +34,7 @@ import {
   bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
+  hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -1438,6 +1439,33 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     setBypass(next);
   }, []);
 
+  /* ---- T12S port speed (1G/10G, four ports per QLM) ------------------
+     The mode lives in the U-Boot environment, so it only takes effect at the
+     next boot and the device reboots itself right after accepting it. That is
+     why this is a switch of its own rather than one of the staged port fields:
+     those wait for Apply, this one takes the machine down. */
+  const hasSpeed = React.useMemo(() => hasSpeedSwitch(devModel), [devModel]);
+  const speeds = React.useMemo(() => t12sSpeeds(rawCfg), [rawCfg]);
+
+  const submitSpeed = async (qlm, speed) => {
+    setSubmit({ state: "sending", msg: "" });
+    const body = new URLSearchParams(); body.set(qlm, speed);
+    let ok = false;
+    try {
+      const res = await fetch("/grism/task/set_t12s_speed", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      ok = res.ok;
+      if (!ok) setSubmit({ state: "error", msg: (await res.text()).trim() || ("HTTP " + res.status) });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+    if (!ok) return;
+    setSubmit({ state: "idle", msg: "" });
+    // Hold the page the same way a firmware update does: the reboot follows
+    // within a second, and a user left on a live-looking page would read the
+    // stale ports table as the change having done nothing.
+    setWait({ title: tr("set.speedApplying"), body: tr("set.speedApplyingBody"),
+      phase: "updating", phaseKey: "set.spPhase." });
+  };
+
   const setBypassMode = async (hw, pair, on) => {
     setBypassBusy(pair.n); setBypassErr("");
     try {
@@ -1507,6 +1535,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       const stats = statRes.ok ? (await statRes.json()).statistics : [];
       const rows = mergePortStats(parseInterfacePorts(cfg), stats);
       setPortsBase(rows); setPorts(rows);
+      setRawCfg(cfg);                       // the speed groups are read off the same body
     } catch (e) { warnFetch("interface settings", e); setPortsBase([]); setPorts([]); }
   }, []);
   React.useEffect(() => { if (loggedIn && section === "ports" && !ports) loadPorts(); }, [loggedIn, section, ports, loadPorts]);
@@ -1985,6 +2014,32 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   onClick={() => setConfirm({ kind: "ports" })}>
                   {submit.state === "sending" ? tr("set.submitting") : tr("set.applyPorts")}</button>
               </div>
+
+                  {/* Only a T12S can retune its QLMs, and only in fours. A group whose
+                      speed the config does not report is left out rather than shown as
+                      an unknown that the switch would then have to guess at. */}
+                  {hasSpeed && T12S_SPEED_GROUPS.some((g) => speeds[g.qlm]) && (
+                    <section className="sys-card set-speed">
+                      <h3 className="sys-card-title">{tr("set.speedTitle")}</h3>
+                      <p className="set-hint">{tr("set.speedNote")}</p>
+                      {T12S_SPEED_GROUPS.filter((g) => speeds[g.qlm]).map((g) => (
+                        <div className="sp-row" key={g.qlm}>
+                          <span className="sp-ports mono">{g.ports.join(" · ")}</span>
+                          <span className="sp-seg">
+                            {T12S_SPEEDS.map((sp) => (
+                              <button key={sp}
+                                className={"sp-opt" + (speeds[g.qlm] === sp ? " on" : "")}
+                                disabled={speeds[g.qlm] === sp || submit.state === "sending"}
+                                title={speeds[g.qlm] === sp ? tr("set.speedCurrent") : tr("set.speedSwitchTip")}
+                                onClick={() => setConfirm({ kind: "speed", group: g, speed: sp })}>
+                                {formatPortSpeed(sp)}
+                              </button>
+                            ))}
+                          </span>
+                        </div>
+                      ))}
+                    </section>
+                  )}
             </>
           )}
         </div>
@@ -2758,8 +2813,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <p className="modal-body">{confirm.kind === "ip" ? tr("set.confirmBody") : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "speed" ? `${confirm.group.ports.join(" · ")} → ${formatPortSpeed(confirm.speed)} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -2780,6 +2835,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 uploadAndWait("/grism/task/update", fwFile, "file",
                   tr("set.fwUpdating"), tr("set.fwUpdatingBody")); return;
               }
+              if (k === "speed") { submitSpeed(confirm.group.qlm, confirm.speed); return; }
               if (k === "bypass") {
                 setBypassMode(bypassHw, confirm.pair, !confirm.on);
                 return;
@@ -2847,7 +2903,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <div className="apply-msg">{wait.title}</div>
             <div className="apply-sub">{wait.body}</div>
             <div className={"apply-phase" + (wait.phase === "done" ? " ok" : "")}>
-              {tr("set.fwPhase." + wait.phase)}
+              {tr((wait.phaseKey ?? "set.fwPhase.") + wait.phase)}
             </div>
             {/* A factory reset never reaches "done": the device comes back on its
                 factory address, so the poll against this one can only ever see it
