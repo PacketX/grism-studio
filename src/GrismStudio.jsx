@@ -36,6 +36,7 @@ import {
   tRemove, tUpdate, tmplText, toks, validate,
   hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
+  outputIndex, destLabel,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -6988,6 +6989,11 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 }
 
 function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, t }) {
+  /* Where each "On" in an outcome actually sends the packet. */
+  const outIdx = React.useMemo(() => outputIndex(doc), [doc.outputs]);
+  const destLines = (text) => String(text ?? "").split(",").map((x) => x.trim()).filter(Boolean)
+    .map((tok) => { const d = destLabel(tok, outIdx); return d ? `${tok} → ${d}` : ""; })
+    .filter(Boolean);
   const tr = t || ((k) => k);
   // all filter ids to offer as switches: defined here + referenced-but-undefined
   const filterIds = useMemo(() => {
@@ -7192,12 +7198,18 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
               <div className={"sim-node out " + outcome.kind}>
                 <span className="sim-node-k">{outcome.kind === "out" ? (outcome.mode === "loadBalance" ? "load balance" : "output") : outcome.kind === "drop" ? "discard" : "default"}</span>
                 <span className="sim-node-v">{outcome.text}{outcome.kind === "out" && outcome.mode === "loadBalance" ? ` (${outcome.lb})` : ""}</span>
+                {/* "O2" is a reference; say which port it leaves by, and what it
+                    was called, as the overview flow does */}
+                {destLines(outcome.text).map((line, k) => (
+                  <span className="sim-node-dest" key={k}>{line}</span>
+                ))}
               </div>
             </div>
             <div className="sim-summary">
               Packet on <code>{inPort}</code>
               {steps.length > 0 && <> → {steps.map((s, j) => <span key={j}>{j > 0 ? ", " : ""}<code>{s.fids}</code> {s.matched ? "match" : "not-match"}</span>)}</>}
-              {" → "}<b className={"sim-out-" + outcome.kind}>{outcome.kind === "out" ? outcome.text : outcome.text}</b>
+              {" → "}<b className={"sim-out-" + outcome.kind}>{outcome.text}</b>
+              {destLines(outcome.text).length > 0 && <span className="sim-summary-dest"> ({destLines(outcome.text).join("; ")})</span>}
             </div>
           </div>
         ))}

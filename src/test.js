@@ -1879,6 +1879,16 @@ group("chain output labels");
     `<run><output id="9"><port>P4</port></output><chain><in>P0</in><out>O9</out></chain></run>`).doc), (k) => k);
   check("an unnamed output still resolves its port",
     unnamed.outputInfo.O9?.port === "P4" && unnamed.outputInfo.O9?.name === "");
+
+  // the same resolver backs the simulator's outcome node
+  const idx = C.outputIndex(d);
+  check("destLabel reads port and name", C.destLabel("O2", idx) === "P0 · strip L2GRE to P0");
+  check("destLabel trims the token", C.destLabel(" O3 ", idx) === "P1 · tag L2GRE to P1");
+  check("a plain port has nothing to resolve",
+    C.destLabel("P1", idx) === "" && C.destLabel("", idx) === "" && C.destLabel("O9", idx) === "");
+  const noName = C.outputIndex(C.normalizeDoc(C.parseRun(
+    `<run><output id="9"><port>P4</port></output></run>`).doc));
+  check("an unnamed output resolves to the port alone", C.destLabel("O9", noName) === "P4");
 }
 
 /* ---------- lint (catches what the suite cannot) ---------- */

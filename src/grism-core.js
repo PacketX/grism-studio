@@ -381,14 +381,23 @@ export function summarizeChainTree(tree) {
   })(tree);
   return rules;
 }
+/* A chain sends to "O2", which says nothing about where the traffic ends up --
+   the port is on the output. These resolve the reference for anything that
+   shows a destination to a reader. */
+export function outputIndex(doc) {
+  return Object.fromEntries((doc?.outputs ?? []).map((o) =>
+    ["O" + o.id, { port: o.port || "", name: o.name || o.alt || "" }]));
+}
+export function destLabel(tok, index) {
+  const i = index?.[String(tok ?? "").trim()];
+  return i ? [i.port, i.name].filter(Boolean).join(" · ") : "";
+}
+
 // Whole-document overview: counts, per-filter conditions, per-chain routing, ports used.
 export function describeDoc(doc, t) {
   const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: describeCriterion(f.root, t) }));
   const filterNames = Object.fromEntries(filters.map((f) => [f.id, f.name]));
-  /* A chain sends to "O2", which says nothing about where the traffic ends up --
-     the port is on the output. Resolve it so the flow can show both. */
-  const outputInfo = Object.fromEntries((doc.outputs ?? []).map((o) =>
-    ["O" + o.id, { port: o.port || "", name: o.name || o.alt || "" }]));
+  const outputInfo = outputIndex(doc);
   const chains = (doc.chains ?? []).map((c) => ({ ingress: c.ports || "P0", rules: summarizeChainTree(c.tree), flow: summarizeChain(c.tree) }));
   const portSet = new Set();
   chains.forEach((c) => {
