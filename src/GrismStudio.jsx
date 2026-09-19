@@ -73,6 +73,67 @@ function writePref(key, value) {
 /* ============================================================
    Component tree
    ============================================================ */
+/* Dialogs, in one place. Twelve confirmations in this file are a scrim div
+   whose onClick closes it, with the panel inside -- correct with a mouse and
+   nothing else: Escape did nothing, tab walked straight into the form behind
+   the scrim and could activate it, and nothing announced that a dialog had
+   opened. Rather than teach each of the twelve separately, watch for them.
+   Escape closes the topmost by firing the close its own scrim already carries;
+   focus moves inside on open and back to the opener on close; tab cycles
+   within the panel; and the panel is marked up as a dialog. */
+function ModalA11y() {
+  React.useEffect(() => {
+    let opener = null;
+    const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]),'
+      + ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    // the confirmations, plus the login dialog and the template gallery, which
+    // use a scrim class of their own but are dialogs in every other respect
+    const scrims = () => [...document.querySelectorAll(".modal-scrim, .tmpl-scrim")];
+    const topScrim = () => scrims()[scrims().length - 1] ?? null;
+    const panelOf = (scrim) => scrim?.firstElementChild ?? scrim ?? null;
+    const focusables = (root) => [...root.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+    const onKey = (e) => {
+      const scrim = topScrim();
+      if (!scrim) return;
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); scrim.click(); return; }
+      if (e.key !== "Tab") return;
+      const list = focusables(panelOf(scrim));
+      if (!list.length) return;
+      const i = list.indexOf(document.activeElement);
+      if (i === -1) { e.preventDefault(); list[0].focus(); return; }
+      if (e.shiftKey ? i === 0 : i === list.length - 1) {
+        e.preventDefault();
+        list[e.shiftKey ? list.length - 1 : 0].focus();
+      }
+    };
+    const sync = () => {
+      const scrim = topScrim();
+      const panel = panelOf(scrim);
+      if (panel) {
+        if (!panel.hasAttribute("role")) {
+          panel.setAttribute("role", "dialog");
+          panel.setAttribute("aria-modal", "true");
+          if (!panel.hasAttribute("tabindex")) panel.setAttribute("tabindex", "-1");
+        }
+        if (!panel.contains(document.activeElement)) {
+          if (!opener) opener = document.activeElement;
+          (focusables(panel)[0] ?? panel).focus();
+        }
+      } else if (opener) {
+        // put the caret back where the user left it, not at the top of the page
+        if (document.contains(opener) && typeof opener.focus === "function") opener.focus();
+        opener = null;
+      }
+    };
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("keydown", onKey, true);
+    return () => { mo.disconnect(); document.removeEventListener("keydown", onKey, true); };
+  }, []);
+  return null;
+}
+
 export default function GrismStudio() {
   const [doc, setDocRaw] = useState(() => normalizeDoc(TEMPLATES.find((t) => t.id === "starter").make())); // seed with the starter example
 
@@ -564,6 +625,7 @@ export default function GrismStudio() {
 
   return (
     <div className={"gs-root" + (theme === "light" ? " light" : "")}>
+      <ModalA11y />
 
       <header className="topbar">
         <button className="brand" onClick={() => setTab("overview")}>
@@ -4912,7 +4974,7 @@ function IdField({ prefix, id, siblingIds, onCommit }) {
 
 /* Left-hand list with drag-to-reorder and a per-item duplicate button. Reorder
    changes the underlying array order (and therefore XML output order). */
-function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReorder, onDuplicate, addLabel, dupLabel, onAdd, title }) {
+function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReorder, onDuplicate, addLabel, dupLabel, onAdd, title, dragTitle = "Drag to reorder" }) {
   const [dragKey, setDragKey] = useState(null);
   const [overKey, setOverKey] = useState(null);
   const move = (fromKey, toKey) => {
@@ -4927,7 +4989,7 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
   };
   const active = items.find((it) => getKey(it) === activeKey);
   return (
-    <aside className="filter-list">
+    <aside className="filter-list" role="listbox" aria-label={title || undefined}>
       {title && <div className="chain-list-head">{title}</div>}
       {items.map((it, i) => {
         const k = getKey(it);
@@ -4939,8 +5001,13 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
             onDragOver={(e) => { e.preventDefault(); if (overKey !== k) setOverKey(k); }}
             onDragEnd={() => { setDragKey(null); setOverKey(null); }}
             onDrop={(e) => { e.preventDefault(); if (dragKey != null) move(dragKey, k); setDragKey(null); setOverKey(null); }}
-            onClick={() => onSelect(it)}>
-            <span className="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
+            onClick={() => onSelect(it)}
+            /* Selecting an item was mouse-only: tab went straight past the list
+               to "+ Add", so a keyboard user could only ever edit whichever
+               item happened to be active. */
+            tabIndex={0} role="option" aria-selected={k === activeKey}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(it); } }}>
+            <span className="drag-handle" title={dragTitle} aria-hidden="true">⠿</span>
             {renderLabel(it, i)}
           </div>
         );
@@ -4996,7 +5063,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
 
   return (
     <div className="filters-layout">
-      <SortableList
+      <SortableList dragTitle={tr("ch.dragReorder")}
         title={tr("tab.filters")} items={doc.filters} activeKey={f.id} getKey={(x) => x.id}
         renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>{tr("flt.unnamed")}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveFilter(x.id)}
@@ -5022,7 +5089,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
             <select value={f.matchedlog || "no"} onChange={(e) => patchMeta({ matchedlog: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
             </select></label>
-          <AttrToggle open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
+          <AttrToggle t={tr} open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
             label={tr("flt.advAttrs")} active={Object.values(f.fattrs ?? {}).some((v) => v && v !== "no")} />
           <button className="del" onClick={() => delFilter(f.id)}>{tr("common.delete")}</button>
         </div>
@@ -5087,14 +5154,16 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
         {isEmptyFilter(f) && (
           <div className="empty-note">
             <div className="empty-note-body">
-              <b>This filter has no conditions.</b>{" "}
+              <b>{tr("flt.emptyTitle")}</b>{" "}
               {f.blockifempty === "yes"
-                ? <>With <code>blockifempty="yes"</code>, it matches <b>nothing</b> — no packet passes.</>
-                : <>By default an empty filter matches <b>everything</b> — every packet is treated as a match.</>}
+                ? <>{tr("flt.emptyWith")} <code>blockifempty="yes"</code>,{" "}
+                  <span dangerouslySetInnerHTML={{ __html: tr("flt.emptyNone") }} /></>
+                : <>{tr("flt.emptyByDefault")}{" "}
+                  <span dangerouslySetInnerHTML={{ __html: tr("flt.emptyAll") }} /></>}
             </div>
             <button className="empty-toggle"
               onClick={() => patchMeta({ blockifempty: f.blockifempty === "yes" ? "no" : "yes" })}>
-              {f.blockifempty === "yes" ? "Switch to match-all" : "Switch to match-none"}
+              {f.blockifempty === "yes" ? tr("flt.switchToAll") : tr("flt.switchToNone")}
             </button>
           </div>
         )}
@@ -5304,7 +5373,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
 
   return (
     <div className="filters-layout">
-      <SortableList
+      <SortableList dragTitle={tr("ch.dragReorder")}
         title={tr("tab.inputs")} items={inputs} activeKey={inp.id} getKey={(x) => x.id}
         renderLabel={(x, i) => <><b>{i + 1}</b><span>{x.name || <em>{x.type === "traffic-gen" ? "traffic-gen" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveInput(x.id)}
@@ -5490,7 +5559,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
 
   return (
     <div className="filters-layout">
-      <SortableList
+      <SortableList dragTitle={tr("ch.dragReorder")}
         title={tr("tab.outputs")} items={outputs} activeKey={o.id} getKey={(x) => x.id}
         renderLabel={(x) => <><b>O{x.id}</b><span>{x.name || <em>{x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveOutput(x.id)}
@@ -5507,7 +5576,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
           <label className="ml"><span>{tr("out.port")}</span>
             <PortSelect value={o.port} options={portOptions} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
-          <AttrToggle open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
+          <AttrToggle t={tr} open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
             label={tr("out.attrs")} active={Object.values(o.oattrs ?? {}).some((v) => v && v !== "no")} />
           <button className="del" onClick={() => delOutput(o.id)}>{tr("common.delete")}</button>
         </div>
@@ -5544,7 +5613,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
           {(o.mods ?? []).length === 0 && (
             <p className="out-empty">{tr("out.forwardNote")}</p>
           )}
-          {(o.mods ?? []).map((m) => <OutputModRow key={m.id} mod={m} onChange={setMod} onOp={setModOp} onAttr={setModAttr} onRemove={delMod} />)}
+          {(o.mods ?? []).map((m) => <OutputModRow t={tr} key={m.id} mod={m} onChange={setMod} onOp={setModOp} onAttr={setModAttr} onRemove={delMod} />)}
 
           <div className="mod-palette">
             {[["rewrite",tr("out.pAdd")],["reply",tr("out.pReply")],["redirect",tr("out.pRedirect")],["mirror",tr("out.pMirror")],["vxlan",tr("out.pVxlan")],["nvgre",tr("out.pNvgre")]].map(([grp, label]) => {
@@ -5567,7 +5636,8 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
               </div>
               );
             })}
-            {((o.oattrs ?? {}).type === "tcpreset") && <p className="out-empty">Type <code>tcpreset</code> takes no modifiers.</p>}
+            {((o.oattrs ?? {}).type === "tcpreset") &&
+              <p className="out-empty">{tr("out.noMods").replace("{type}", "tcpreset")}</p>}
           </div>
         </div>
 
@@ -5580,7 +5650,8 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
   );
 }
 
-function OutputModRow({ mod, onChange, onOp, onAttr, onRemove }) {
+function OutputModRow({ mod, onChange, onOp, onAttr, onRemove, t }) {
+  const tr = t || ((k) => k);
   const meta = OUT_MOD_INDEX[mod.k]; if (!meta) return null;
   const isVlanOp = meta.kind === "vlanop";
   const isFlag = meta.kind === "flag";
@@ -5591,7 +5662,7 @@ function OutputModRow({ mod, onChange, onOp, onAttr, onRemove }) {
   return (
     <div className="mod-row">
       <span className="mod-key">{meta.label}</span>
-      {isFlag ? <span className="exists-note">no value</span>
+      {isFlag ? <span className="exists-note">{tr("out.noValue")}</span>
         : meta.kind === "enum"
         ? <select className="mod-val" value={mod.val} onChange={(e) => onChange(mod.id, e.target.value)}>
             {meta.opts.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -5622,7 +5693,7 @@ function OutputModRow({ mod, onChange, onOp, onAttr, onRemove }) {
       ))}
       <code className="mod-tag">&lt;{mod.k}{isVlanOp ? ` type=${op}` : ""}&gt;</code>
       <div className="spacer" />
-      <button className="icon-btn" onClick={() => onRemove(mod.id)} aria-label="Remove modifier">✕</button>
+      <button className="icon-btn" onClick={() => onRemove(mod.id)} aria-label={tr("out.removeMod")}>✕</button>
       {err && <div className="row-err">{err}</div>}
     </div>
   );
@@ -5665,7 +5736,7 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
 
   return (
     <div className="filters-layout">
-      <SortableList
+      <SortableList dragTitle={tr("ch.dragReorder")}
         title={tr("tab.actions")} items={actions} activeKey={a.id} getKey={(x) => x.id}
         renderLabel={(x, i) => <><b>{i + 1}</b><span>{x.name || <em>{x.type === "linkpairs" ? "linkpairs" : x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
         onSelect={(x) => setActiveAction(x.id)}
@@ -5710,7 +5781,7 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
               {(a.mods ?? []).length === 0 && (
                 <p className="out-empty">{tr("act.modNote")}</p>
               )}
-              {(a.mods ?? []).map((m) => <ActionModRow key={m.id} mod={m} onChange={setMod} onRemove={delMod} onMtu={(mid, mtu) => patch({ mods: a.mods.map((x) => x.id === mid ? { ...x, mtu } : x) })} />)}
+              {(a.mods ?? []).map((m) => <ActionModRow t={tr} key={m.id} mod={m} onChange={setMod} onRemove={delMod} onMtu={(mid, mtu) => patch({ mods: a.mods.map((x) => x.id === mid ? { ...x, mtu } : x) })} />)}
 
               <div className="mod-palette">
                 <span className="mod-palette-label">{tr("act.addModifier")}</span>
@@ -5735,7 +5806,8 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
   );
 }
 
-function ActionModRow({ mod, onChange, onRemove, onMtu }) {
+function ActionModRow({ mod, onChange, onRemove, onMtu, t }) {
+  const tr = t || ((k) => k);
   const meta = ACT_MOD_INDEX[mod.k]; if (!meta) return null;
   const isFlag = meta.kind === "flag";
   const isMtu = meta.kind === "mtu";
@@ -5756,7 +5828,7 @@ function ActionModRow({ mod, onChange, onRemove, onMtu }) {
                 onChange={(e) => onChange(mod.id, e.target.value)} />}
       <code className="mod-tag">&lt;{mod.k}{isMtu ? " mtu" : ""}&gt;</code>
       <div className="spacer" />
-      <button className="icon-btn" onClick={() => onRemove(mod.id)} aria-label="Remove modifier">✕</button>
+      <button className="icon-btn" onClick={() => onRemove(mod.id)} aria-label={tr("out.removeMod")}>✕</button>
       {err && <div className="row-err">{err}</div>}
     </div>
   );
@@ -5774,38 +5846,54 @@ function useAnchoredPos(open, triggerRef, width) {
   const [pos, setPos] = React.useState(null);
   React.useLayoutEffect(() => {
     if (!open || !triggerRef.current) { setPos(null); return; }
-    const place = () => {
+    /* This hook is called from the root component, so every setPos re-renders
+       the whole app. It ran on every scroll event -- capture phase, so nested
+       scrollers counted too -- and always allocated a new object, which React
+       cannot bail out of. Scrolling the health popover's own list rebuilt the
+       Export tab's highlighting before each paint. Keep the same value when
+       nothing moved, and do the work once per frame. */
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
       const r = triggerRef.current?.getBoundingClientRect();
       if (!r) return;
       const w = Math.min(width, window.innerWidth - 16);
       const left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
-      setPos({ top: r.bottom + 8, left, width: w });
+      const top = r.bottom + 8;
+      setPos((prev) => (prev && prev.top === top && prev.left === left && prev.width === w) ? prev : { top, left, width: w });
     };
-    place();
+    const place = () => { if (!frame) frame = requestAnimationFrame(measure); };
+    measure();
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
-    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true);
+    };
   }, [open, triggerRef, width]);
   return pos;
 }
 
-function AttrToggle({ label, active, open, onToggle }) {
+function AttrToggle({ label, active, open, onToggle, t }) {
+  const tr = t || ((k) => k);
   return (
     <button className={"attr-toggle" + (open ? " open" : "")} onClick={onToggle} aria-expanded={open}>
       <span>{label}</span>
-      {active && !open && <span className="coll-dot" title="A value is set" />}
+      {active && !open && <span className="coll-dot" title={tr("common.valueSet")} />}
       <span className="attr-toggle-caret" aria-hidden="true">{open ? "▲" : "▼"}</span>
     </button>
   );
 }
 
-function CollapseSection({ label, active, children }) {
+function CollapseSection({ label, active, children, t }) {
+  const tr = t || ((k) => k);
+
   const [open, setOpen] = useState(false);
   return (
     <div className="coll">
       <button className={"coll-head" + (open ? " open" : "")} onClick={() => setOpen((o) => !o)}>
         <span>{label}</span>
-        {active && !open && <span className="coll-dot" title="A value is set" />}
+        {active && !open && <span className="coll-dot" title={tr("common.valueSet")} />}
       </button>
       {open && <div className="coll-body">{children}</div>}
     </div>
@@ -5903,6 +5991,10 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
 
 function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, t, touched }) {
   const tr = t || ((k) => k);
+  // {name} placeholders, so a translation can put the value where its own
+  // grammar needs it rather than where English happened to put it
+  const fill = (str, vals) => String(str).replace(/\{(\w+)\}/g, (_, k) => vals[k] ?? "");
+  const sideWord = (side) => tr(side === "match" ? "sim.match" : "sim.notMatch");
   const [selId, setSelId] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [chipConfirm, setChipConfirm] = useState(null); // { field: "fids"|"ports", from, to, nodeId }
@@ -6184,22 +6276,26 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     };
     pane.addEventListener("wheel", onWheel, { passive: false });
     return () => pane.removeEventListener("wheel", onWheel);
-  }, []);
+    /* paneRef is only attached in the main return, below an early return for
+       the no-chain empty state -- so with [] this ran once, found nothing, and
+       never looked again. Creating the first chain does not remount the tab,
+       so ctrl+wheel stayed dead until the user switched tabs and back. */
+  }, [chain]);
   const center = (n) => ({ x: n._x + NODE_W / 2 + PAD, y: n._y + PAD });
   const byId = Object.fromEntries(placed.map((n) => [n.id, n]));
 
   if (!chain) return (
     <div className="empty-pane">
       <div className="empty-cta">
-        <p>No chains yet. A <code>&lt;chain&gt;</code> routes packets arriving on an ingress port through filter tests to outputs.</p>
-        <button className="primary" onClick={addChain}>+ New chain</button>
+        <p>{tr("ch.emptyTitle")}</p>
+        <button className="primary" onClick={addChain}>{tr("ch.newChain")}</button>
       </div>
     </div>
   );
 
   return (
     <div className="chain-layout3">
-      <aside className="chain-list">
+      <aside className="chain-list" role="listbox" aria-label={tr("tab.chain")}>
         <div className="chain-list-head">{tr("tab.chain")}</div>
         {chains.map((c) => {
           const inP = chainInFirst(c);
@@ -6211,7 +6307,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               onDragOver={(e) => { e.preventDefault(); if (chainOverCid !== c.cid) setChainOverCid(c.cid); }}
               onDragEnd={() => { setChainDragCid(null); setChainOverCid(null); }}
               onDrop={(e) => { e.preventDefault(); if (chainDragCid != null) moveChain(chainDragCid, c.cid); setChainDragCid(null); setChainOverCid(null); }}
-              onClick={() => { setActiveChain(c.cid); setSelId(null); }}>
+              onClick={() => { setActiveChain(c.cid); setSelId(null); }}
+              tabIndex={0} role="option" aria-selected={c.cid === cid}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveChain(c.cid); setSelId(null); } }}>
               <span className="drag-handle" title={tr("ch.dragReorder")} aria-hidden="true">⠿</span>
               <span className="chain-flow"><b>{inP || "?"}</b> <span className="arr">→</span> <span className="dest">{(() => {
                 const all = chainDest(c);
@@ -6274,17 +6372,17 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               const x = c.x - NODE_W / 2, y = c.y - PH_H / 2;
               return <g key={n.id} className={"gnode unset" + (isSel ? " sel" : "")} onClick={(ev) => { ev.stopPropagation(); setSelId(n.id); }}>
                 <rect x={x} y={y} width={NODE_W} height={PH_H} rx="8" />
-                <text x={c.x} y={c.y - 3} className="n-kind dim">UNSPECIFIED</text>
-                <text x={c.x} y={c.y + 11} className="n-default">device default</text>
+                <text x={c.x} y={c.y - 3} className="n-kind dim">{tr("ch.capUnspecified")}</text>
+                <text x={c.x} y={c.y + 11} className="n-default">{tr("ch.capDeviceDefault")}</text>
               </g>;
             }
             const x = c.x - NODE_W / 2, y = c.y - NODE_H / 2, drop = isDrop(n), bad = problemIds.has(n.id);
             return <g key={n.id} className={`gnode ${n.t}${drop ? " drop" : ""}${bad ? " bad" : ""}${isSel ? " sel" : ""}`} onClick={(ev) => { ev.stopPropagation(); setSelId(n.id); }}>
               <rect x={x} y={y} width={NODE_W} height={NODE_H} rx="9" />
               {bad && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
-              {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">INGRESS</text><text x={c.x} y={c.y + 12} className="n-main">{n.ports}</text></>}
-              {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || "FILTER"}</text><text x={c.x} y={c.y + 12} className="n-main">{n.fids}</text></>; })()}
-              {n.t === "out" && <><text x={c.x} y={c.y - 5} className="n-kind">{drop ? "DISCARD" : (n.mode === "loadBalance" ? "LOAD BALANCE" : "OUTPUT")}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : withOutPorts(n.ports)}</text></>}
+              {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">{tr("ch.capIngress")}</text><text x={c.x} y={c.y + 12} className="n-main">{n.ports}</text></>}
+              {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || tr("ch.capFilter")}</text><text x={c.x} y={c.y + 12} className="n-main">{n.fids}</text></>; })()}
+              {n.t === "out" && <><text x={c.x} y={c.y - 5} className="n-kind">{drop ? tr("ch.capDiscard") : (n.mode === "loadBalance" ? tr("ch.capBalance") : tr("ch.capOutput"))}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : withOutPorts(n.ports)}</text></>}
             </g>;
           })}
         </svg>
@@ -6302,8 +6400,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               onToggle={(p) => toggleInPort(p)}
               onAll={(on) => setAllInPorts(portOptions, on)}
               onSetOne={(p) => setOneInPort(portOptions, p)}
-              emptyNote={!portsFromDevice ? "Default list — sign in to load the device's actual ports." : null} />
-            <CollapseSection label={tr("ch.advancedOp")} active={!!chain.inVlan?.vlantype}>
+              emptyNote={!portsFromDevice ? tr("ch.defaultPorts") : null} />
+            <CollapseSection t={tr} label={tr("ch.advancedOp")} active={!!chain.inVlan?.vlantype}>
               <label className="fld2"><span>{tr("ch.vlanOp")}</span>
                 <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
                   <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
@@ -6363,7 +6461,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                   </label>
                 )}
                 emptyNote={!portsFromDevice ? tr("ch.portsDefaultNote") : null} />
-              <CollapseSection label={tr("ch.advancedOp")} active={!!sel.vlantype}>
+              <CollapseSection t={tr} label={tr("ch.advancedOp")} active={!!sel.vlantype}>
                 <label className="fld2"><span>{tr("ch.vlanOp")}</span>
                   <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
                     <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
@@ -6397,23 +6495,22 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
 
       {confirm && <div className="modal-scrim" onClick={() => setConfirm(null)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-title">Remove the <b className={confirm.side}>{confirm.side}</b> branch of <code>{confirm.fids}</code>?</div>
-          <p className="modal-body">Choose what happens to packets that would take this path.</p>
-          {confirm.blockUnset ? <div className="rule-note">The <b className={confirm.otherSide}>{confirm.otherSide}</b> side is already unspecified. A <code>&lt;fid&gt;</code> must route at least one side, so this must go somewhere explicit.</div>
-            : <button className="opt" onClick={() => resolveRemove("unset")}><span className="opt-name">Leave unspecified</span><span className="opt-desc">No <code>&lt;next&gt;</code> written; device default applies.</span></button>}
-          <button className="opt drop" onClick={() => resolveRemove("drop")}><span className="opt-name">Discard explicitly</span><span className="opt-desc">Emits <code>&lt;out&gt;0&lt;/out&gt;</code>; intent visible.</span></button>
-          <button className="opt-cancel" onClick={() => setConfirm(null)}>Cancel</button>
+          <div className="modal-title">{fill(tr("ch.rmTitle"), { side: sideWord(confirm.side), fids: confirm.fids })}</div>
+          <p className="modal-body">{tr("ch.rmBody")}</p>
+          {confirm.blockUnset
+            ? <div className="rule-note">{fill(tr("ch.rmOnlySide"), { side: sideWord(confirm.otherSide) })}</div>
+            : <button className="opt" onClick={() => resolveRemove("unset")}><span className="opt-name">{tr("ch.rmUnset")}</span><span className="opt-desc">{tr("ch.rmUnsetDesc")}</span></button>}
+          <button className="opt drop" onClick={() => resolveRemove("drop")}><span className="opt-name">{tr("ch.rmDrop")}</span><span className="opt-desc">{tr("ch.rmDropDesc")}</span></button>
+          <button className="opt-cancel" onClick={() => setConfirm(null)}>{tr("common.cancel")}</button>
         </div>
       </div>}
 
       {chipConfirm && <div className="modal-scrim" onClick={() => setChipConfirm(null)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-title">Replace {chipConfirm.field === "fids" ? "filter" : "output"} reference?</div>
-          <p className="modal-body">
-            This node is currently set to <code>{chipConfirm.from}</code>. Applying this will change it to <code>{chipConfirm.to}</code>, replacing what's there.
-          </p>
-          <button className="opt" onClick={resolveChip}><span className="opt-name">Replace with {chipConfirm.to}</span><span className="opt-desc">Overwrites the current value.</span></button>
-          <button className="opt-cancel" onClick={() => setChipConfirm(null)}>Cancel</button>
+          <div className="modal-title">{tr(chipConfirm.field === "fids" ? "ch.repTitleF" : "ch.repTitleO")}</div>
+          <p className="modal-body">{fill(tr("ch.repBody"), { from: chipConfirm.from, to: chipConfirm.to })}</p>
+          <button className="opt" onClick={resolveChip}><span className="opt-name">{fill(tr("ch.repGo"), { to: chipConfirm.to })}</span><span className="opt-desc">{tr("ch.repDesc")}</span></button>
+          <button className="opt-cancel" onClick={() => setChipConfirm(null)}>{tr("common.cancel")}</button>
         </div>
       </div>}
     </div>
@@ -6804,10 +6901,17 @@ function OtherConfigFiles({ t }) {
      Without a schema to check against, fall back to the structural check so a
      device too old to serve one is still usable. Field-value complaints stay
      advisory: these files are fragments and may lean on what run.xml defines. */
-  const structErr = editing ? grismStructureError(editing.text) : "";
-  const xsdProblems = editing && !structErr && schema ? validateAgainstXsd(editing.text, schema) : [];
+  /* Memoised on the text being edited: as bare render-body expressions these
+     four re-parsed the file on every render of the page, including renders
+     caused by typing somewhere else entirely. */
+  const editText = editing ? editing.text : null;
+  const structErr = React.useMemo(() => (editText ? grismStructureError(editText) : ""), [editText]);
+  const xsdProblems = React.useMemo(
+    () => (editText && !structErr && schema ? validateAgainstXsd(editText, schema) : []),
+    [editText, structErr, schema]);
   const editErr = structErr || (xsdProblems.length ? xsdProblemLine(xsdProblems[0]) : "");
-  const editIssues = editing && !editErr ? grismXmlProblems(editing.text) : [];
+  const editIssues = React.useMemo(
+    () => (editText && !editErr ? grismXmlProblems(editText) : []), [editText, editErr]);
 
   return (
     <section className="xfiles">
@@ -7429,11 +7533,12 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
             <div className="dev-brand"><span className="dev-logo">◇</span> GRISM<span className="dev-model"> · packet broker</span></div>
             {/* the legend rides in the head rather than taking a row of its own,
                 which is height the chain view below needs more than it does */}
+            {/* the same four states the port tooltips already name */}
             <div className="dev-legend">
-              <span className="dev-leg in"><span className="dev-leg-dot" />ingress</span>
-              <span className="dev-leg out"><span className="dev-leg-dot" />output</span>
-              <span className="dev-leg both"><span className="dev-leg-dot" />both</span>
-              <span className="dev-leg idle"><span className="dev-leg-dot" />unused</span>
+              <span className="dev-leg in"><span className="dev-leg-dot" />{tr("sim.roleIn")}</span>
+              <span className="dev-leg out"><span className="dev-leg-dot" />{tr("sim.roleOut")}</span>
+              <span className="dev-leg both"><span className="dev-leg-dot" />{tr("sim.roleBoth")}</span>
+              <span className="dev-leg idle"><span className="dev-leg-dot" />{tr("sim.roleIdle")}</span>
             </div>
             <div className="dev-head-btns">
               {playState === "idle" && <button className="dev-play" onClick={play} disabled={!animPlan} title={animPlan ? tr("sim.playTip") : tr("sim.selectIngress")}>{tr("sim.play")}</button>}
@@ -7803,28 +7908,29 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
       </aside>
 
       <section className="sim-results">
-        {!inPort && <div className="sim-hint">Select an ingress port to trace the packet path.</div>}
-        {inPort && matchingChains.length === 0 && <div className="sim-hint">No chain ingresses on <code>{inPort}</code>. The packet wouldn't be processed by any chain.</div>}
+        {!inPort && <div className="sim-hint">{tr("sim.pickIngress")}</div>}
+        {inPort && matchingChains.length === 0 &&
+          <div className="sim-hint">{tr("sim.noChainFor").replace("{port}", inPort)}</div>}
         {results.map(({ chain, steps, outcome }, i) => (
           <div key={chain.cid} className="sim-trace">
             <div className="sim-trace-head">
               <span className="sim-chip in">IN {inPort}</span>
-              {matchingChains.length > 1 && <span className="sim-trace-n">chain {i + 1}</span>}
+              {matchingChains.length > 1 && <span className="sim-trace-n">{tr("sim.chainN").replace("{n}", i + 1)}</span>}
             </div>
             <div className="sim-flow">
-              <div className="sim-node in"><span className="sim-node-k">ingress</span><span className="sim-node-v">{inPort}</span></div>
+              <div className="sim-node in"><span className="sim-node-k">{tr("sim.ingress")}</span><span className="sim-node-v">{inPort}</span></div>
               {steps.map((s) => (
                 <React.Fragment key={s.id}>
                   <div className="sim-arrow">↓</div>
                   <div className={"sim-node branch " + (s.matched ? "matched" : "notmatched")}>
                     <span className="sim-node-k">{s.fids}{s.alt && s.alt !== s.fids ? ` · ${s.alt}` : ""}</span>
-                    <span className={"sim-node-badge " + (s.matched ? "match" : "notmatch")}>{s.matched ? "match →" : "not-match →"}</span>
+                    <span className={"sim-node-badge " + (s.matched ? "match" : "notmatch")}>{(s.matched ? tr("sim.match") : tr("sim.notMatch")) + " →"}</span>
                   </div>
                 </React.Fragment>
               ))}
               <div className="sim-arrow">↓</div>
               <div className={"sim-node out " + outcome.kind}>
-                <span className="sim-node-k">{outcome.kind === "out" ? (outcome.mode === "loadBalance" ? "load balance" : "output") : outcome.kind === "drop" ? "discard" : "default"}</span>
+                <span className="sim-node-k">{outcome.kind === "out" ? (outcome.mode === "loadBalance" ? tr("sim.loadBalance") : tr("sim.output")) : outcome.kind === "drop" ? tr("sim.discard") : tr("sim.default")}</span>
                 <span className="sim-node-v">{outcome.text}{outcome.kind === "out" && outcome.mode === "loadBalance" ? ` (${outcome.lb})` : ""}</span>
                 {/* "O2" is a reference; say which port it leaves by, and what it
                     was called, as the overview flow does */}
@@ -7834,8 +7940,8 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
               </div>
             </div>
             <div className="sim-summary">
-              Packet on <code>{inPort}</code>
-              {steps.length > 0 && <> → {steps.map((s, j) => <span key={j}>{j > 0 ? ", " : ""}<code>{s.fids}</code> {s.matched ? "match" : "not-match"}</span>)}</>}
+              {tr("sim.packetOn")} <code>{inPort}</code>
+              {steps.length > 0 && <> → {steps.map((s, j) => <span key={j}>{j > 0 ? ", " : ""}<code>{s.fids}</code> {s.matched ? tr("sim.match") : tr("sim.notMatch")}</span>)}</>}
               {" → "}<b className={"sim-out-" + outcome.kind}>{outcome.text}</b>
               {destLines(outcome.text).length > 0 && <span className="sim-summary-dest"> ({destLines(outcome.text).join("; ")})</span>}
             </div>
@@ -7871,15 +7977,23 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
      used to leave "apply changes" enabled, and only failed once pressed. */
   const [schema, setSchema] = useState(undefined);
   useEffect(() => { loadRunSchema().then(setSchema); }, []);
+  /* Validation is expensive -- a structural check is three parses of the whole
+     document and the schema check two more -- and it used to run on the value
+     as typed, with grismStructureError called twice over. A large config made
+     every keystroke a visible stall. Validate the deferred value, so typing
+     stays ahead of it, and compute the structural error once. */
+  const deferredEdit = React.useDeferredValue(edit);
+  const structErr = React.useMemo(
+    () => (deferredEdit && deferredEdit.trim() ? grismStructureError(deferredEdit) : ""), [deferredEdit]);
   const xsdProblems = React.useMemo(
-    () => (edit && edit.trim() && schema && !grismStructureError(edit) ? validateAgainstXsd(edit, schema) : []),
-    [edit, schema]);
+    () => (deferredEdit && deferredEdit.trim() && schema && !structErr ? validateAgainstXsd(deferredEdit, schema) : []),
+    [deferredEdit, schema, structErr]);
   const editErr = React.useMemo(
-    () => (edit && edit.trim()
-      ? grismStructureError(edit) || (xsdProblems.length ? xsdProblemLine(xsdProblems[0]) : "")
-      : ""), [edit, xsdProblems]);
+    () => (deferredEdit && deferredEdit.trim()
+      ? structErr || (xsdProblems.length ? xsdProblemLine(xsdProblems[0]) : "")
+      : ""), [deferredEdit, structErr, xsdProblems]);
   const editIssues = React.useMemo(
-    () => (edit && edit.trim() && !editErr ? grismXmlProblems(edit) : []), [edit, editErr]);
+    () => (deferredEdit && deferredEdit.trim() && !editErr ? grismXmlProblems(deferredEdit) : []), [deferredEdit, editErr]);
   const applyEdit = () => {
     try {
       const warnings = onApplyXml(edit);

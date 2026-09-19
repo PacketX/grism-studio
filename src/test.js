@@ -2360,6 +2360,70 @@ group("simulate panel density");
   }
 }
 
+/* ---------- audit fixes: no English left in the JSX ----------------------- */
+group("everything on screen is translatable");
+{
+  const { readFileSync: rf } = await import("node:fs");
+  const jsx = rf(new URL("./GrismStudio.jsx", import.meta.url), "utf8").split("\n");
+  /* The default language is Chinese, so a literal in the JSX is a pane that
+     renders in English against a translated surround -- which is how the chain
+     editor, both of its modals and the whole simulate results panel ended up
+     untranslated. Text between tags, and the four attributes a user can read.
+     Known exceptions: a MIB filename and a path example. */
+  /* Config vocabulary is shown as itself -- these are the values that go into
+     the XML, and translating them would be wrong. Everything else is prose. */
+  const ALLOW = [/PACKETX-MIB\.txt/, /H1\/in\/played/, /^run\.xml$/, /^studio$/,
+    /^(replayPcap|traffic-gen|tagging|stripping|tcpreset|delete|backup|move)$/, /^pk\./];
+  // text after a tag counts too: the simulate legend hid four English words
+  // behind a self-closing span and went unnoticed for exactly that reason
+  const text = />\s*([A-Za-z][A-Za-z][A-Za-z ,'\-’.?:]{4,})\s*</g;
+  const attr = /(emptyNote|title|placeholder|aria-label)="([A-Z][^"]{6,})"/g;
+  const found = [];
+  jsx.forEach((line, i) => {
+    const t = line.trim();
+    if (t.startsWith("//") || t.startsWith("*") || line.includes("console.")) return;
+    for (const m of line.matchAll(text)) if (!ALLOW.some((r) => r.test(m[1]))) found.push(`${i + 1}: ${m[1]}`);
+    for (const m of line.matchAll(attr)) if (!ALLOW.some((r) => r.test(m[2]))) found.push(`${i + 1}: ${m[1]}="${m[2]}"`);
+  });
+  check("no hard-coded English is rendered", found.length === 0, found.slice(0, 6).join(" | "));
+}
+
+/* ---------- audit fixes: the simulate page reads in both themes ----------- */
+group("simulate page colours");
+{
+  const { readFileSync: rf } = await import("node:fs");
+  const css = rf(new URL("./GrismStudio.css", import.meta.url), "utf8");
+  const varsIn = (block) => Object.fromEntries([...block.matchAll(/--(sim-out|sim-loop|sim-from|bg)\s*:\s*(#[0-9a-f]{3,6})/gi)]
+    .map((m) => [m[1], m[2]]));
+  const darkRoot = css.slice(css.indexOf(".gs-root{"), css.indexOf(".gs-root.light{"));
+  const darkSim = varsIn(css.slice(css.indexOf(":root, .gs-root{"), css.indexOf(".gs-root.light{ --sim-out")));
+  const lightSim = varsIn(css.slice(css.indexOf(".gs-root.light{ --sim-out")));
+  const lightRoot = varsIn(css.slice(css.indexOf(".gs-root.light{"), css.indexOf(".gs-root.light{ --sim-out")));
+  const lum = (h) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.substr(i, 2), 16) / 255)
+    .map((s2) => s2 <= 0.03928 ? s2 / 12.92 : ((s2 + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const cr = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+  check("both themes name every simulate colour",
+    ["sim-out", "sim-loop", "sim-from"].every((k) => !!darkSim[k] && !!lightSim[k]),
+    JSON.stringify({ darkSim, lightSim }));
+  /* These carry meaning -- which port the packet came from, which is a LOOP,
+     where the trace ends -- so they have to be readable, not merely present.
+     Written inline they were dark-only and landed near 1.2:1 in light. */
+  const weak = [];
+  for (const [theme, sim, bg] of [["dark", darkSim, darkRoot.match(/--bg:(#[0-9a-f]{6})/i)[1]],
+    ["light", lightSim, lightRoot.bg]])
+    for (const k of ["sim-out", "sim-loop", "sim-from"])
+      if (cr(sim[k], bg) < 4.5) weak.push(`${theme} ${k} ${cr(sim[k], bg).toFixed(2)}`);
+  check("every simulate colour clears 4.5:1 against its own background", weak.length === 0, weak.join(", "));
+  // the inline literals are what made it dark-only; they must not creep back
+  check("the simulate rules use the variables, not literals",
+    !/\.sim-node\.out \.sim-node-v\{color:#/.test(css) && !/\.dev-port\.loop\{border-color:#/.test(css));
+  // an animation that never ends has to answer the reduced-motion switch
+  const rm = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce) {"));
+  check("the looping simulate animations respect reduced motion",
+    ["dev-port.next", "dev-port.from", "dev-cable.active"].every((sel) => rm.includes(sel)));
+}
+
 /* ---------- audit fixes: the document model ------------------------------- */
 group("ids survive a round trip");
 {

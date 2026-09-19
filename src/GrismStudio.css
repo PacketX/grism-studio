@@ -552,6 +552,14 @@
 /* Port buttons size themselves to how many there are: a 12-port broker can
    afford big targets, a 32-port one cannot. Density picks the size variables;
    every rule below reads them, so the panel stays one row and stays short. */
+/* The simulate page used to name its colours inline, which meant it only had
+   a dark theme: in light they landed at 1.2-1.9:1 and the "just left" port name
+   was effectively invisible. Same hues, darkened to clear 4.5:1 on the light
+   background. */
+:root, .gs-root{ --sim-out:#f0a6c0; --sim-loop:#e0b24a; --sim-from:#a7f3d0;
+  --sim-in-bg:rgba(var(--accent-2-rgb),.08); --sim-out-bg:rgba(240,196,212,.06); }
+.gs-root.light{ --sim-out:#9d174d; --sim-loop:#8a6100; --sim-from:#116329;
+  --sim-in-bg:rgba(var(--accent-2-rgb),.07); --sim-out-bg:rgba(157,23,77,.05); }
 .dev-panel{flex:0 0 auto; padding:10px 18px; background:var(--panel-2);
   --dp-w:58px; --dp-h:46px; --dp-fs:13px; --dp-pad:7px 8px 6px; --dp-colgap:11px; --dp-rowgap:44px;}
 .dev-panel[data-dense=lg]{--dp-w:92px; --dp-h:56px; --dp-fs:16px; --dp-pad:9px 14px 7px; --dp-colgap:13px;}
@@ -580,10 +588,10 @@
 .dev-port-area{display:flex; align-items:flex-start; gap:18px; flex-wrap:nowrap;}
 .dev-port-cols{display:flex; flex-wrap:wrap; gap:var(--dp-rowgap) 8px; flex:1 1 auto; min-width:0;}
 .dev-loop-group{display:flex; flex-direction:column; gap:6px; padding-left:18px; margin-left:auto; border-left:1px dashed var(--line-2); flex:0 0 auto;}
-.dev-loop-label{font-family:var(--mono); font-size:9px; letter-spacing:.16em; color:#e0b24a; text-align:center;}
-.dev-port.loop{border-color:#e0b24a;}
-.dev-port.loop .dev-port-led{background:#e0b24a; box-shadow:0 0 8px rgba(224,178,74,.7);}
-.dev-port-role.loop{color:#e0b24a;}
+.dev-loop-label{font-family:var(--mono); font-size:9px; letter-spacing:.16em; color:var(--sim-loop); text-align:center;}
+.dev-port.loop{border-color:var(--sim-loop);}
+.dev-port.loop .dev-port-led{background:var(--sim-loop); box-shadow:0 0 8px rgba(224,178,74,.7);}
+.dev-port-role.loop{color:var(--sim-loop);}
 .dev-port-col{display:flex; flex-direction:column; gap:var(--dp-colgap);}
 .dev-port-slot{display:flex; justify-content:center;}
 .dev-port-empty{display:block; min-width:var(--dp-w); height:var(--dp-h);}
@@ -597,9 +605,9 @@
 .dev-port.in .dev-port-led{background:var(--match); box-shadow:0 0 8px var(--match);}
 .dev-port.in{border-color:var(--match);}
 .dev-port.in .dev-port-role{color:var(--match);}
-.dev-port.out .dev-port-led{background:#f0a6c0; box-shadow:0 0 8px rgba(240,166,192,.7);}
+.dev-port.out .dev-port-led{background:var(--sim-out); box-shadow:0 0 8px rgba(240,166,192,.7);}
 .dev-port.out{border-color:#a85878;}
-.dev-port.out .dev-port-role{color:#f0a6c0;}
+.dev-port.out .dev-port-role{color:var(--sim-out);}
 .dev-port.both .dev-port-led{background:var(--accent-2); box-shadow:0 0 8px var(--accent-2);}
 .dev-port.both{border-color:var(--accent-2);}
 .dev-port.both .dev-port-role{color:var(--accent-2);}
@@ -607,14 +615,14 @@
 .dev-port.next{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 0 16px -2px var(--accent); animation:dev-next-pulse 1s ease-in-out infinite;}
 .dev-port.next .dev-port-name{color:var(--accent);}
 .dev-port.from{border-color:#a7f3d0; box-shadow:0 0 0 1px rgba(167,243,208,.7), 0 0 10px -2px rgba(167,243,208,.8); animation:dev-from-pulse 1.4s ease-in-out infinite;}
-.dev-port.from .dev-port-name{color:#a7f3d0;}
+.dev-port.from .dev-port-name{color:var(--sim-from);}
 @keyframes dev-next-pulse{0%,100%{box-shadow:0 0 0 1px var(--accent), 0 0 12px -2px var(--accent);}50%{box-shadow:0 0 0 1px var(--accent), 0 0 22px 2px var(--accent);}}
 @keyframes dev-from-pulse{0%,100%{box-shadow:0 0 0 1px rgba(167,243,208,.6), 0 0 8px -2px rgba(167,243,208,.6);}50%{box-shadow:0 0 0 1px rgba(167,243,208,.85), 0 0 16px 0 rgba(167,243,208,.85);}}
 .dev-legend{display:flex; gap:14px; align-items:center; margin:0 auto 0 18px;}
 .dev-leg{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--txt-faint); font-family:var(--mono);}
 .dev-leg-dot{width:7px; height:7px; border-radius:99px;}
 .dev-leg.in .dev-leg-dot{background:var(--match);}
-.dev-leg.out .dev-leg-dot{background:#f0a6c0;}
+.dev-leg.out .dev-leg-dot{background:var(--sim-out);}
 .dev-leg.both .dev-leg-dot{background:var(--accent-2);}
 .dev-leg.idle .dev-leg-dot{background:var(--line-2);}
 .dev-wrap{position:relative; max-width:1240px; margin:0 auto;}
@@ -674,7 +682,7 @@
 .sim-switch-list{display:flex; flex-direction:column; gap:4px;}
 .sim-switch-row{display:flex; align-items:center; gap:8px; padding:6px 9px; border:1px solid var(--line); border-radius:7px; background:var(--panel);}
 .sim-fid{font-family:var(--mono); color:var(--accent); font-size:12px; flex:0 0 auto;}
-.sim-undef{color:#c99a3e; font-size:10px;}
+.sim-undef{color:var(--sim-loop); font-size:10px;}
 .sim-falt{flex:1; font-size:11.5px; color:var(--txt-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .sim-toggle{flex:0 0 auto; border:1px solid var(--line-2); border-radius:6px; padding:4px 10px; font-size:11px; font-family:var(--mono); font-weight:600; background:transparent;}
 .sim-toggle.match{color:var(--match); border-color:var(--match); background:rgba(52,211,153,.08);}
@@ -701,7 +709,7 @@
 .sim-node.out{border-color:#5b3a4a; background:var(--sim-out-bg,rgba(240,196,212,.06));}
 .sim-node.out.drop{border-color:#454a55;}
 .sim-node.out.default{border-color:var(--unset); border-style:dashed;}
-.sim-node.out .sim-node-v{color:#f0c4d4;}
+.sim-node.out .sim-node-v{color:var(--sim-out);}
 .sim-node.out.drop .sim-node-v,.sim-node.out.default .sim-node-v{color:var(--txt-dim);}
 .sim-arrow{color:var(--txt-faint); font-size:16px; line-height:1; padding:4px 0;}
 .sim-summary{margin-top:14px; padding-top:14px; border-top:1px solid var(--line); font-size:12.5px; color:var(--txt-dim); line-height:1.7;}
@@ -1440,7 +1448,15 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 @keyframes jump-hit { from { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .38); }
   to { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0); } }
 .set-page .jump-hit { animation: jump-hit 1.1s ease-out; }
-@media (prefers-reduced-motion: reduce) { .set-page .jump-hit { animation: none; } }
+/* The pulses and the marching cable run for as long as the simulation is
+   playing -- neither property composites, so they repaint continuously, and
+   every one of them also sets a static border or shadow that says the same
+   thing. The progress spinner and the apply slide stay: they mean "working". */
+@media (prefers-reduced-motion: reduce) {
+  .set-page .jump-hit { animation: none; }
+  .dev-port.next, .dev-port.from, .dev-cable.active, .dev-cable.next,
+  .inline-dev.next, .inline-dev.from, .dev-port.next .dev-port-name { animation: none; }
+}
 
 /* On a phone the chips wrap to four rows and 138px of sticky index arrives
    before a single setting does. One swipeable row instead. */
