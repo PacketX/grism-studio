@@ -40,6 +40,7 @@ import {
   parseL2greCorrelation,
   suggestName,
   parseVports, vportProblems, buildVportConfigSet,
+  nextVport,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -2311,7 +2312,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                     })}
                     <div className="set-actions">
                       <button className="copy-btn"
-                        onClick={() => setVpAdds((rows) => [...rows, { name: "", ports: "", vlanid: "" }])}>
+                        onClick={() => setVpAdds((rows) => [...rows,
+                          nextVport(rows.at(-1) ?? vports.at(-1))])}>
                         {tr("set.vportAdd")}</button>
                       <span className="set-changed">{vpDirty
                         ? `${vpAdds.length} ${tr("set.vportAdded")} · ${vpDeletes.length} ${tr("set.vportRemoved")}` : ""}</span>
@@ -5707,6 +5709,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const outAlt = (ports) => { for (const tok of String(ports).split(",")) { const t = tok.trim(); if (outputAlt[t]) return outputAlt[t]; } return ""; };
   const capAlt = (s) => s && s.length > 30 ? s.slice(0, 29) + "…" : s; // visible cap; full text in a hover tooltip
 
+  const [destOpen, setDestOpen] = useState(null);   // chain whose full output list is showing
   const sel = placed.find((n) => n.id === selId) || null;
   const mutate = (id, fn) => setChainTreeFor(cid, (tree) => cUpdate(tree, id, fn));
   // Apply a chip (defined filter/output) to the selected node. If the field
@@ -5752,7 +5755,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const SOLO_OUTS = [{ id: "0", subKey: "ch.outDrop" }, { id: "S", subKey: "ch.outSwitch" }];
   const outChoices = useMemo(() => [
     ...portOptions.map((p) => ({ id: p, sub: "" })),
-    ...(doc.outputs ?? []).map((o) => ({ id: "O" + o.id, sub: outputLabel(o) })),
+    ...(doc.outputs ?? []).map((o) => ({
+      id: "O" + o.id,
+      label: o.port ? `O${o.id}(${o.port})` : "O" + o.id,
+      sub: String(o.name || o.alt || "").trim(),
+    })),
     ...SOLO_OUTS.map((x) => ({ id: x.id, sub: tr(x.subKey), solo: true })),
   ], [portOptions, doc.outputs, tr]);
   const toggleOutChoice = (nodeId, ports, item) => {
@@ -5848,9 +5855,10 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
         }
       ["match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
     })(c.tree);
-      const all = [...new Set(outs)];
-      if (!all.length) return "—";
-      return all.length > 3 ? all.slice(0, 3).join(", ") + " +" + (all.length - 3) : all.join(", ");
+      return [...new Set(outs)].map((tok) => {
+        const o = (doc.outputs ?? []).find((x) => "O" + x.id === tok);
+        return o && o.port ? `${tok}(${o.port})` : tok;
+      });
   };
   const chainInFirst = (c) => (c.ports || "").split(",")[0].trim();
 
@@ -5971,7 +5979,23 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               onDrop={(e) => { e.preventDefault(); if (chainDragCid != null) moveChain(chainDragCid, c.cid); setChainDragCid(null); setChainOverCid(null); }}
               onClick={() => { setActiveChain(c.cid); setSelId(null); }}>
               <span className="drag-handle" title={tr("ch.dragReorder")} aria-hidden="true">⠿</span>
-              <span className="chain-flow"><b>{inP || "?"}</b> <span className="arr">→</span> <span className="dest">{chainDest(c)}</span></span>
+              <span className="chain-flow"><b>{inP || "?"}</b> <span className="arr">→</span> <span className="dest">{(() => {
+                const all = chainDest(c);
+                if (!all.length) return "—";
+                const open = destOpen === c.cid;
+                const shown = open ? all : all.slice(0, 3);
+                return (<>
+                  {shown.join(", ")}
+                  {/* the rest is a click away rather than gone */}
+                  {all.length > shown.length && (
+                    <button className="dest-more"
+                      onClick={(e) => { e.stopPropagation(); setDestOpen(c.cid); }}>+{all.length - shown.length}</button>
+                  )}
+                  {open && all.length > 3 && (
+                    <button className="dest-more" onClick={(e) => { e.stopPropagation(); setDestOpen(null); }}>−</button>
+                  )}
+                </>);
+              })()}</span></span>
               {touched?.has(c.cid) && <span className="row-changed" title={tr("chg.rowTip")} />}
             </div>
           );
@@ -6089,7 +6113,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               <CheckAccordion
                 label={tr("ch.outputPorts")}
                 t={t}
-                items={outChoices.map((c) => ({ id: c.id, b: c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
+                items={outChoices.map((c) => ({ id: c.id, b: c.label ?? c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
                 onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
                 onSetOne={(p2) => setOneOutPort(sel.id, sel.ports, outChoices.map((c) => c.id), p2)}

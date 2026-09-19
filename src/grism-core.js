@@ -3577,3 +3577,17 @@ export function buildVportConfigSet({ adds = [], deletes = [] } = {}) {
   ];
   return `<configSet reboot="yes">\n  <interfaces>\n    <find type="VPORT">\n${rows.join("\n")}\n    </find>\n  </interfaces>\n</configSet>`;
 }
+
+/* The next virtual port, following on from the one before it: the same members,
+   the name and VLAN stepped by one. Adding a group of them is the common case,
+   and they are almost always consecutive. */
+export function nextVport(prev) {
+  if (!prev) return { name: "", ports: "", vlanid: "" };
+  const m = /^V(\d+)$/.exec(String(prev.name ?? "").trim());
+  const vlan = String(prev.vlanid ?? "").trim();
+  return {
+    name: m ? "V" + (Number(m[1]) + 1) : "",
+    ports: String(prev.ports ?? ""),
+    vlanid: /^\d+$/.test(vlan) && +vlan < 4094 ? String(+vlan + 1) : "",
+  };
+}

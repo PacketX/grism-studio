@@ -2046,8 +2046,9 @@ group("truncated summaries");
      at three outputs, and the picker's badge counted the three it had room for
      rather than everything chosen. Both have to say how many there really are. */
   const src = (await import("node:fs")).readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
-  check("the chain rail counts what it cannot show",
-    /all\.length > 3 \? all\.slice\(0, 3\)\.join\(", "\) \+ " \+" \+ \(all\.length - 3\)/.test(src));
+  // the rail lists three and puts the rest behind a "+N" that expands
+  check("the chain rail can expand its remainder",
+    /all\.slice\(0, 3\)/.test(src) && /dest-more/.test(src) && /setDestOpen\(c\.cid\)/.test(src));
   check("the picker badge counts every chosen row",
     /chosenAll\.length > 2 && <span className="acc-count">\{chosenAll\.length\}/.test(src));
   // the header fills its width and CSS clips it, rather than stopping at three
@@ -2110,6 +2111,25 @@ group("virtual ports");
 for (const lang of Object.keys(I18N)) {
   check(`${lang} warns that virtual ports restart the device`,
     /restart|重(新)?開機/.test(I18N[lang]["set.vportConfirmBody"] || ""));
+}
+
+/* ---------- the next virtual port ---------- */
+group("next virtual port");
+{
+  // adding a group of them is the common case, and they run consecutively
+  check("follows on from the row above",
+    JSON.stringify(C.nextVport({ name: "V4", ports: "P6,P7", vlanid: "104" }))
+      === JSON.stringify({ name: "V5", ports: "P6,P7", vlanid: "105" }));
+  check("keeps the members as they are",
+    C.nextVport({ name: "V1", ports: "P0,P1,P2" }).ports === "P0,P1,P2");
+  check("no vlan to step means no vlan", C.nextVport({ name: "V9", ports: "P0" }).vlanid === "");
+  // 4094 is the last usable id, so there is nothing to step to
+  check("a vlan at the top does not roll over",
+    C.nextVport({ name: "V9", ports: "P0", vlanid: "4094" }).vlanid === "");
+  check("a name that is not V<n> leaves the name to the user",
+    C.nextVport({ name: "mgmt", ports: "P0", vlanid: "5" }).name === "");
+  check("nothing to follow yields an empty row",
+    JSON.stringify(C.nextVport(null)) === JSON.stringify({ name: "", ports: "", vlanid: "" }));
 }
 
 /* ---------- hook order ---------- */
