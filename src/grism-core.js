@@ -3520,3 +3520,60 @@ export const suggestName = (kind, item) => {
   const s = (SUGGESTORS[kind]?.(item) ?? "").trim();
   return s.length > 40 ? s.slice(0, 39) + "…" : s;
 };
+
+/* ============================================================
+   Virtual ports
+
+   A VPORT groups physical ports under one name, optionally on a VLAN. They are
+   added and removed through <interfaces><find type="VPORT">, and the device
+   reboots to apply -- so the whole set of changes goes in one configSet.
+   ============================================================ */
+
+export function parseVports(cfg) {
+  const iface = (cfg?.interfaces ?? []).find((i) => (i?.type || "").toUpperCase() === "VPORT");
+  return (iface?.ports ?? []).map((p) => ({
+    name: String(p?.name ?? ""),
+    ports: String(p?.port ?? ""),
+    vlanid: p?.vlanid == null || p.vlanid === 0 ? "" : String(p.vlanid),
+    description: String(p?.description ?? ""),
+  })).filter((v) => v.name);
+}
+
+export const vportPortList = (s) =>
+  String(s ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+
+/* What stops a submit. Each problem names the row it belongs to. */
+export function vportProblems({ adds = [], deletes = [], existing = [], devicePorts = [] } = {}) {
+  const out = [];
+  const known = new Set(devicePorts);
+  const kept = existing.filter((v) => !deletes.includes(v.name)).map((v) => v.name);
+  const seen = new Set(kept);
+  adds.forEach((a, i) => {
+    const name = String(a?.name ?? "").trim();
+    if (!name) out.push({ row: i, kind: "noName" });
+    else if (!/^V\d+$/.test(name)) out.push({ row: i, kind: "badName", name });
+    else if (seen.has(name)) out.push({ row: i, kind: "duplicate", name });
+    if (name) seen.add(name);
+    const ports = vportPortList(a?.ports);
+    if (!ports.length) out.push({ row: i, kind: "noPorts" });
+    if (known.size) for (const p of ports) {
+      if (!known.has(p)) out.push({ row: i, kind: "unknownPort", port: p });
+    }
+    const v = String(a?.vlanid ?? "").trim();
+    if (v !== "" && !(/^\d+$/.test(v) && +v >= 1 && +v <= 4094)) out.push({ row: i, kind: "badVlan", vlan: v });
+  });
+  return out;
+}
+
+export function buildVportConfigSet({ adds = [], deletes = [] } = {}) {
+  const rows = [
+    ...adds.map((a) => {
+      const vlan = String(a?.vlanid ?? "").trim();
+      return `      <ports type="add"><name>${esc(String(a?.name ?? "").trim())}</name>` +
+        `<port>${esc(vportPortList(a?.ports).join(","))}</port>` +
+        (vlan ? `<vlanid>${esc(vlan)}</vlanid>` : "") + `</ports>`;
+    }),
+    ...deletes.map((n) => `      <ports type="delete" name="${esc(n)}" />`),
+  ];
+  return `<configSet reboot="yes">\n  <interfaces>\n    <find type="VPORT">\n${rows.join("\n")}\n    </find>\n  </interfaces>\n</configSet>`;
+}

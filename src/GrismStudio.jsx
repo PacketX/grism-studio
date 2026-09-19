@@ -39,6 +39,7 @@ import {
   outputIndex, destLabel,
   parseL2greCorrelation,
   suggestName,
+  parseVports, vportProblems, buildVportConfigSet,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -1532,6 +1533,18 @@ function CardJump({ rootRef, section }) {
   );
 }
 
+/* A VPort problem in words. */
+function vportProblemText(p, tr) {
+  if (!p) return "";
+  if (p.kind === "noName") return tr("set.vpErrNoName");
+  if (p.kind === "badName") return tr("set.vpErrBadName");
+  if (p.kind === "duplicate") return `${tr("set.vpErrDup")} ${p.name}`;
+  if (p.kind === "noPorts") return tr("set.vpErrNoPorts");
+  if (p.kind === "unknownPort") return `${tr("set.sdwanUnknownPort")} ${p.port}`;
+  if (p.kind === "badVlan") return tr("set.vpErrVlan");
+  return "";
+}
+
 function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
@@ -2056,6 +2069,40 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
   };
 
+  /* ---- virtual ports ------------------------------------------------
+     Staged: rows to add and names to delete are collected and sent as one
+     configSet, because applying it reboots the device. */
+  const vports = React.useMemo(() => parseVports(rawCfg), [rawCfg]);
+  const [vpAdds, setVpAdds] = React.useState([]);
+  const [vpDeletes, setVpDeletes] = React.useState([]);
+  // a reload of the device config invalidates a draft built against the old one
+  const vpKey = React.useMemo(() => vports.map((v) => v.name).join(","), [vports]);
+  React.useEffect(() => { setVpAdds([]); setVpDeletes([]); }, [vpKey]);
+  const setVpAdd = (i, patch) => setVpAdds((rows) => rows.map((r, j) => j === i ? { ...r, ...patch } : r));
+  const vpDirty = vpAdds.length > 0 || vpDeletes.length > 0;
+  const vpProblems = React.useMemo(() => vportProblems({
+    adds: vpAdds, deletes: vpDeletes, existing: vports,
+    devicePorts: dataPortNames(rawCfg, { includeLoop: true }),
+  }), [vpAdds, vpDeletes, vports, rawCfg]);
+
+  const submitVports = async () => {
+    setSubmit({ state: "sending", msg: "" });
+    const body = new URLSearchParams();
+    body.set("data", buildVportConfigSet({ adds: vpAdds, deletes: vpDeletes }));
+    let ok = false;
+    try {
+      const res = await fetch("/grism/task/submit_config", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      ok = res.ok;
+      if (!ok) setSubmit({ state: "error", msg: (await res.text()).trim() || ("HTTP " + res.status) });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+    if (!ok) return;
+    setSubmit({ state: "idle", msg: "" });
+    // <configSet reboot="yes">: hold the page the way the speed switch does
+    setWait({ title: tr("set.vportApplying"), body: tr("set.vportApplyingBody"),
+      phase: "updating", phaseKey: "set.spPhase." });
+  };
+
   const pageRef = React.useRef(null);
 
   /* The card straddles <args> and <filters><in-tunnels>, so its dirty check has
@@ -2220,6 +2267,62 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                       </div>
                     </section>
                   )}
+
+                  {/* Virtual ports. Added and removed together, because the
+                      device reboots to apply the change and doing it one row at
+                      a time would cost a reboot each. */}
+                  <section className="sys-card set-vport">
+                    <h3 className="sys-card-title">{tr("set.vport")}</h3>
+                    <p className="set-hint">{tr("set.vportNote")}</p>
+                    {vports.length === 0 && vpAdds.length === 0 && (
+                      <p className="sys-note dim">{tr("set.vportNone")}</p>
+                    )}
+                    {vports.map((v) => {
+                      const gone = vpDeletes.includes(v.name);
+                      return (
+                        <div className={"vp-row" + (gone ? " gone" : "")} key={v.name}>
+                          <span className="vp-name mono">{v.name}</span>
+                          <span className="vp-ports mono">{v.ports || "—"}</span>
+                          <span className="vp-vlan">{v.vlanid ? "VLAN " + v.vlanid : tr("set.vportNoVlan")}</span>
+                          <button className={"copy-btn" + (gone ? " on" : "")}
+                            onClick={() => setVpDeletes((d) => gone ? d.filter((x) => x !== v.name) : [...d, v.name])}>
+                            {gone ? tr("set.vportUndo") : tr("common.delete")}</button>
+                        </div>
+                      );
+                    })}
+                    {vpAdds.map((a, i) => {
+                      const mine = vpProblems.filter((x) => x.row === i);
+                      return (
+                        <div className="vp-row new" key={"add" + i}>
+                          <label className="vp-f"><span>{tr("set.vportName")}</span>
+                            <input value={a.name} placeholder="V3"
+                              onChange={(e) => setVpAdd(i, { name: e.target.value.trim() })} /></label>
+                          <label className="vp-f wide"><span>{tr("set.vportPorts")}</span>
+                            <input value={a.ports} placeholder="P6,P7"
+                              onChange={(e) => setVpAdd(i, { ports: e.target.value })} /></label>
+                          <label className="vp-f"><span>{tr("set.vportVlan")}</span>
+                            <input value={a.vlanid} inputMode="numeric" placeholder={tr("common.optional")}
+                              onChange={(e) => setVpAdd(i, { vlanid: e.target.value.trim() })} /></label>
+                          <button className="icon-btn" aria-label={tr("common.delete")}
+                            onClick={() => setVpAdds((rows) => rows.filter((_, j) => j !== i))}>✕</button>
+                          {mine.length > 0 && <p className="set-hint err">{vportProblemText(mine[0], tr)}</p>}
+                        </div>
+                      );
+                    })}
+                    <div className="set-actions">
+                      <button className="copy-btn"
+                        onClick={() => setVpAdds((rows) => [...rows, { name: "", ports: "", vlanid: "" }])}>
+                        {tr("set.vportAdd")}</button>
+                      <span className="set-changed">{vpDirty
+                        ? `${vpAdds.length} ${tr("set.vportAdded")} · ${vpDeletes.length} ${tr("set.vportRemoved")}` : ""}</span>
+                      <button className="copy-btn" disabled={!vpDirty}
+                        onClick={() => { setVpAdds([]); setVpDeletes([]); }}>{tr("set.revert")}</button>
+                      <button className="sys-refresh"
+                        disabled={submit.state === "sending" || !vpDirty || vpProblems.length > 0}
+                        onClick={() => setConfirm({ kind: "vport" })}>
+                        {submit.state === "sending" ? tr("set.submitting") : tr("set.vportApply")}</button>
+                    </div>
+                  </section>
             </>
           )}
         </div>
@@ -3131,8 +3234,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}` : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}` : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -3156,6 +3259,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               /* Loading a template replaces the pipeline document, which is not
                  what this page is about -- so say so before leaving it. */
               if (k === "template") { onUseTemplate(confirm.tpl); return; }
+              if (k === "vport") { submitVports(); return; }
               if (k === "speed") { submitSpeed(); return; }
               if (k === "bypass") {
                 setBypassMode(bypassHw, confirm.pair, !confirm.on);
@@ -5488,7 +5592,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
   // the chosen rows, named, for the header -- listed up to a few, then counted
   const chosenAll = items.filter((it) => it.on)
     .map((it) => ({ id: it.neg ? "!" + it.b : it.b, sub: it.sub }));
-  const chosen = chosenAll.slice(0, 3);
+  const chosen = chosenAll;
   const [open, setOpen] = useState(defaultOpen);
   const picked = items.filter((it) => it.on).length;
   const [multi, setMulti] = useState(picked > 1); // default single, unless already multiple

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.62.0";
+export const STUDIO_VERSION = "2.64.0";
 
 export const I18N = {
   en: {
@@ -159,6 +159,22 @@ export const I18N = {
     "set.fwOnlineBody": "The device installs the image and reboots. Traffic stops for several minutes — do not power it off.",
     "set.fwPhase.updating": "Installing — device still responding", "set.fwPhase.rebooting": "Restarting — device is offline",
     "set.fwPhase.done": "Update complete", "set.fwReload": "Reload page",
+    "set.vport": "Virtual ports",
+    "set.vportNote": "A virtual port groups physical ports under one name, optionally on a VLAN. Add and remove them together — applying the change reboots the device.",
+    "set.vportNone": "This device has no virtual ports.",
+    "set.vportName": "Name", "set.vportPorts": "Member ports", "set.vportVlan": "VLAN id",
+    "set.vportNoVlan": "no VLAN", "set.vportUndo": "Keep",
+    "set.vportAdd": "+ Add a virtual port", "set.vportAdded": "to add", "set.vportRemoved": "to remove",
+    "set.vportApply": "Apply and restart",
+    "set.vportConfirmTitle": "Change the virtual ports?",
+    "set.vportConfirmBody": "the device restarts to apply this, and traffic stops until it is back.",
+    "set.vportApplying": "Changing virtual ports",
+    "set.vportApplyingBody": "The change is submitted. The device is restarting to apply it — this takes about a minute.",
+    "set.vpErrNoName": "Give the virtual port a name.",
+    "set.vpErrBadName": "A virtual port is named V followed by a number, like V3.",
+    "set.vpErrDup": "This name is already taken:",
+    "set.vpErrNoPorts": "Name at least one member port.",
+    "set.vpErrVlan": "A VLAN id is a whole number from 1 to 4094.",
     "set.speedTitle": "Port speed",
     "set.speedNote": "Four ports share a transceiver group and change together. Set all the groups you want, then apply once: the speed is written to the boot environment and the device restarts to pick it up.",
     "set.speedChanged": "groups will change",
@@ -661,6 +677,22 @@ export const I18N = {
     "set.fwOnlineBody": "裝置會安裝映像檔並重新開機,流量中斷數分鐘,期間請勿關閉電源。",
     "set.fwPhase.updating": "更新中 — 裝置仍可連線", "set.fwPhase.rebooting": "重開機中 — 裝置已離線",
     "set.fwPhase.done": "更新完成", "set.fwReload": "重新載入頁面",
+    "set.vport": "虛擬埠",
+    "set.vportNote": "虛擬埠把多個實體埠歸成一個名稱,可以指定 VLAN。新增與刪除一起送出 — 套用時裝置會重新開機。",
+    "set.vportNone": "這台裝置沒有虛擬埠。",
+    "set.vportName": "名稱", "set.vportPorts": "成員埠", "set.vportVlan": "VLAN 編號",
+    "set.vportNoVlan": "無 VLAN", "set.vportUndo": "保留",
+    "set.vportAdd": "+ 新增虛擬埠", "set.vportAdded": "個新增", "set.vportRemoved": "個刪除",
+    "set.vportApply": "套用並重開機",
+    "set.vportConfirmTitle": "要變更虛擬埠?",
+    "set.vportConfirmBody": "裝置會重新開機以套用,期間流量會中斷。",
+    "set.vportApplying": "變更虛擬埠",
+    "set.vportApplyingBody": "變更已送出,裝置正在重新開機以套用 — 大約需要一分鐘。",
+    "set.vpErrNoName": "請為虛擬埠命名。",
+    "set.vpErrBadName": "虛擬埠的名稱是 V 加數字,例如 V3。",
+    "set.vpErrDup": "這個名稱已經有了:",
+    "set.vpErrNoPorts": "至少要指定一個成員埠。",
+    "set.vpErrVlan": "VLAN id 是 1 到 4094 的整數。",
     "set.speedTitle": "連接埠速度",
     "set.speedNote": "每四個埠共用一組收發器,只能整組切換。三組都調好後再一次套用:速度寫入開機環境,裝置會重新開機才生效,一次套用只會重開一次。",
     "set.speedChanged": "組會變更",

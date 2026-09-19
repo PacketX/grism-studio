@@ -2048,9 +2048,68 @@ group("truncated summaries");
   const src = (await import("node:fs")).readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
   check("the chain rail counts what it cannot show",
     /all\.length > 3 \? all\.slice\(0, 3\)\.join\(", "\) \+ " \+" \+ \(all\.length - 3\)/.test(src));
-  check("the picker badge counts every chosen row, not the shown ones",
-    /chosenAll\.length > 2 && <span className="acc-count">\{chosenAll\.length\}/.test(src) &&
-    /const chosen = chosenAll\.slice\(0, 3\)/.test(src));
+  check("the picker badge counts every chosen row",
+    /chosenAll\.length > 2 && <span className="acc-count">\{chosenAll\.length\}/.test(src));
+  // the header fills its width and CSS clips it, rather than stopping at three
+  check("the header is not truncated in JS", !/chosenAll\.slice\(/.test(src));
+}
+
+/* ---------- virtual ports ---------- */
+group("virtual ports");
+{
+  const cfg = { interfaces: [{ type: "VPORT", ports: [
+    { name: "V3", port: "P6,P7", vlanid: 103 },
+    { name: "V4", port: "P6,P7", vlanid: 104 },
+    { name: "V5", port: "P0", vlanid: 0 }] }] };
+  const vs = C.parseVports(cfg);
+  check("reads name, members and vlan off the device config",
+    vs.length === 3 && vs[0].name === "V3" && vs[0].ports === "P6,P7" && vs[0].vlanid === "103");
+  // the device writes 0 for "no VLAN", which is not a VLAN id
+  check("vlan 0 reads as no vlan", vs[2].vlanid === "");
+  check("a device with no virtual ports reads as none",
+    C.parseVports({}).length === 0 && C.parseVports(null).length === 0);
+
+  const xml = C.buildVportConfigSet({
+    adds: [{ name: "V3", ports: "P6,P7", vlanid: "103" }, { name: "V4", ports: " P6 , P7 ", vlanid: "104" }],
+    deletes: ["V0", "V1"] });
+  check("the configSet reboots, as the device requires", xml.includes('<configSet reboot="yes">'));
+  check("adds and deletes go in one <find type=\"VPORT\">",
+    (xml.match(/<find type="VPORT">/g) ?? []).length === 1 &&
+    (xml.match(/type="add"/g) ?? []).length === 2 && (xml.match(/type="delete"/g) ?? []).length === 2);
+  check("a row carries name, ports and vlan",
+    xml.includes("<ports type=\"add\"><name>V3</name><port>P6,P7</port><vlanid>103</vlanid></ports>"));
+  check("member ports are trimmed", xml.includes("<port>P6,P7</port>") && !xml.includes(" , "));
+  check("a delete names the port it removes", xml.includes('<ports type="delete" name="V0" />'));
+  check("no vlan means no <vlanid>",
+    !C.buildVportConfigSet({ adds: [{ name: "V9", ports: "P0" }] }).includes("<vlanid>"));
+
+  const dev = ["P0", "P1", "P6", "P7"];
+  const kinds = (o) => C.vportProblems({ ...o, devicePorts: dev }).map((x) => x.kind).join(" ");
+  check("a good row has no problems", kinds({ adds: [{ name: "V9", ports: "P6,P7", vlanid: "103" }] }) === "");
+  check("the vlan is optional", kinds({ adds: [{ name: "V9", ports: "P6" }] }) === "");
+  check("a name has to look like V3",
+    kinds({ adds: [{ name: "x9", ports: "P6" }] }) === "badName" &&
+    kinds({ adds: [{ name: "", ports: "P6" }] }) === "noName");
+  /* A name already in use would collide -- unless the port holding it is being
+     removed in the same submit, which is one configSet and so one moment. */
+  check("a name in use is a problem",
+    kinds({ adds: [{ name: "V3", ports: "P6" }], existing: [{ name: "V3" }] }) === "duplicate");
+  check("unless that port is being removed at the same time",
+    kinds({ adds: [{ name: "V3", ports: "P6" }], existing: [{ name: "V3" }], deletes: ["V3"] }) === "");
+  check("two new rows cannot share a name",
+    kinds({ adds: [{ name: "V9", ports: "P6" }, { name: "V9", ports: "P7" }] }) === "duplicate");
+  check("members are required and must exist on the device",
+    kinds({ adds: [{ name: "V9", ports: "" }] }) === "noPorts" &&
+    kinds({ adds: [{ name: "V9", ports: "P6,P99" }] }) === "unknownPort");
+  check("a vlan id is 1..4094",
+    kinds({ adds: [{ name: "V9", ports: "P6", vlanid: "0" }] }) === "badVlan" &&
+    kinds({ adds: [{ name: "V9", ports: "P6", vlanid: "4095" }] }) === "badVlan" &&
+    kinds({ adds: [{ name: "V9", ports: "P6", vlanid: "4094" }] }) === "");
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} warns that virtual ports restart the device`,
+    /restart|重(新)?開機/.test(I18N[lang]["set.vportConfirmBody"] || ""));
 }
 
 /* ---------- hook order ---------- */

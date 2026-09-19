@@ -1492,7 +1492,8 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 
 /* what the picker has chosen, named, in place of the generic label */
 .known-chosen { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
-  min-width: 0; overflow: hidden; }
+  min-width: 0; overflow: hidden; line-height: 1.5;
+  max-height: 3em; }
 .chosen-one { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
 .chosen-one b { font-family: var(--mono); font-size: 11.5px; color: var(--txt); }
 .chosen-one span { font-size: 11.5px; color: var(--txt-dim); overflow: hidden;
@@ -1512,3 +1513,22 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .acc-join { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px;
   color: var(--txt-dim); }
 .acc-join select { font-size: 11.5px; padding: 1px 4px; }
+
+/* ---- virtual ports ---------------------------------------------------- */
+.set-vport { margin-top: 18px; }
+.vp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  padding: 9px 0; border-top: 1px solid var(--line); }
+.vp-row:first-of-type { border-top: 0; }
+.vp-name { font-weight: 650; color: var(--txt); min-width: 46px; }
+.vp-ports { color: var(--txt-dim); font-size: 12.5px; flex: 1 1 auto; }
+.vp-vlan { font-size: 12px; color: var(--txt-faint); }
+/* a row staged for removal still reads, it just says what will happen */
+.vp-row.gone .vp-name, .vp-row.gone .vp-ports, .vp-row.gone .vp-vlan {
+  text-decoration: line-through; color: var(--txt-faint); }
+.vp-row.gone .copy-btn.on { border-color: var(--warn); color: var(--warn); }
+.vp-row.new { align-items: flex-end; }
+.vp-f { display: flex; flex-direction: column; gap: 4px; }
+.vp-f span { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--txt-faint); }
+.vp-f input { width: 96px; }
+.vp-f.wide input { width: 180px; }
+.vp-row .set-hint.err { flex-basis: 100%; margin: 0; }
