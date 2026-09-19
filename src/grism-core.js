@@ -3440,6 +3440,80 @@ export const formatPortSpeed = (speed) =>
    leaves correlation quietly doing nothing.
    ============================================================ */
 
+/* ============================================================
+   MEC (S1AP / GTP correlation)
+   ------------------------------------------------------------
+   s1cCorrelation builds the S1AP item table; flowExtensionGtpTunnelhdr adds
+   the GTP tunnel header to the flow extension, and the sweep that clears idle
+   entries runs on the cron below -- but only while s1cCorrelation is on
+   (main.c:1458). The GTP decapsulation flag lives with the other in-tunnels.
+   ============================================================ */
+
+export const MEC_ARG_KEYS = [
+  "s1cCorrelation", "flowExtensionGtpTunnelhdr",
+  "s1apItemsClearIdleCron", "s1apItemsClearIdleMax",
+];
+
+/* The firmware's cron is not the usual dialect: each field is compared with a
+   single atoi (main.c:1478-1496), so "*" or one integer and nothing else: a
+   step expression reads as 0. The month field is tm_mon, which is 0-based.
+   All five fields must be present or the sweep never runs at all. */
+export const CRON_FIELDS = [
+  { name: "minute", min: 0, max: 59 },
+  { name: "hour", min: 0, max: 23 },
+  { name: "day", min: 1, max: 31 },
+  { name: "month", min: 0, max: 11 },   // tm_mon: January is 0
+  { name: "weekday", min: 0, max: 6 },  // tm_wday: Sunday is 0
+];
+
+export function cronProblem(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return { kind: "empty" };
+  const parts = raw.split(/\s+/);
+  if (parts.length !== 5) return { kind: "fields", got: parts.length };
+  for (let i = 0; i < 5; i++) {
+    const f = CRON_FIELDS[i], v = parts[i];
+    if (v === "*") continue;
+    if (!/^\d+$/.test(v)) return { kind: "syntax", field: f.name, value: v };
+    const n = +v;
+    if (n < f.min || n > f.max) return { kind: "range", field: f.name, value: v, min: f.min, max: f.max };
+  }
+  return null;
+}
+
+/* What stops a MEC submit. */
+export function mecProblems(v) {
+  const out = [];
+  const cron = cronProblem(v?.s1apItemsClearIdleCron);
+  // an absent cron is not an error: it only means the sweep does not run.
+  // `scope` says which control the message belongs beside; the problem's own
+  // `field` is the cron field that is wrong, and spreading it over a key of
+  // the same name is how the message went missing the first time.
+  if (cron && cron.kind !== "empty") out.push({ ...cron, scope: "cron" });
+  const max = String(v?.s1apItemsClearIdleMax ?? "").trim();
+  if (max !== "" && !/^\d+$/.test(max)) out.push({ scope: "max", kind: "syntax" });
+  return out;
+}
+
+/* ============================================================
+   Deduplication ports
+   ------------------------------------------------------------
+   A comma list of interface port names, resolved the same way the tunnel
+   correlation lists are (main.c:906) -- a name the device does not have is
+   dropped without a word. Empty means every port except LOOP ones, which the
+   firmware skips deliberately; naming a LOOP port explicitly does dedupe it.
+   ============================================================ */
+
+export function dedupProblems(v, knownPorts = []) {
+  const out = [];
+  const known = new Set(knownPorts);
+  if (!known.size) return out;
+  for (const p of parsePortList(v?.deduplicationPorts)) {
+    if (!known.has(p)) out.push({ kind: "unknownPort", port: p });
+  }
+  return out;
+}
+
 export const SDWAN_ARG_KEYS = [
   "grel2Correlation", "grel2CorrelationPort",
   "vxlanCorrelation", "vxlanCorrelationPort",

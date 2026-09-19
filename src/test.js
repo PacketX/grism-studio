@@ -2376,7 +2376,9 @@ group("everything on screen is translatable");
   /* Config vocabulary is shown as itself -- these are the values that go into
      the XML, and translating them would be wrong. Everything else is prose. */
   const ALLOW = [/PACKETX-MIB\.txt/, /H1\/in\/played/, /^run\.xml$/, /^studio$/,
-    /^(replayPcap|traffic-gen|tagging|stripping|tcpreset|delete|backup|move)$/, /^pk\./];
+    /^(replayPcap|traffic-gen|tagging|stripping|tcpreset|delete|backup|move)$/, /^pk\./,
+    // a dotted lowercase identifier is a filter field name, not prose
+    /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/];
   // text after a tag counts too: the simulate legend hid four English words
   // behind a self-closing span and went unnoticed for exactly that reason
   const text = />\s*([A-Za-z][A-Za-z][A-Za-z ,'\-’.?:]{4,})\s*</g;
@@ -2389,6 +2391,55 @@ group("everything on screen is translatable");
     for (const m of line.matchAll(attr)) if (!ALLOW.some((r) => r.test(m[2]))) found.push(`${i + 1}: ${m[1]}="${m[2]}"`);
   });
   check("no hard-coded English is rendered", found.length === 0, found.slice(0, 6).join(" | "));
+}
+
+/* ---------- MEC and deduplication ports ----------------------------------- */
+group("MEC settings");
+{
+  /* The firmware's cron is compared field by field with a single atoi
+     (main.c:1478), so anything richer than * or one number is silently wrong,
+     and the month field is tm_mon -- 0 is January. */
+  check("the default the devices ship with is valid", C.cronProblem("0 2 * * 1") === null);
+  check("all stars is valid", C.cronProblem("* * * * *") === null);
+  check("a missing field is caught", C.cronProblem("0 2 * *")?.kind === "fields");
+  check("a step expression is caught, because atoi reads it as 0",
+    C.cronProblem("*/5 * * * *")?.kind === "syntax");
+  check("a range is caught", C.cronProblem("0 1-5 * * *")?.kind === "syntax");
+  check("an hour past 23 is caught", C.cronProblem("0 24 * * *")?.kind === "range");
+  // tm_mon: December is 11, and 12 is not a month at all
+  check("month counts from zero", C.cronProblem("0 2 * 11 *") === null && C.cronProblem("0 2 * 12 *")?.kind === "range");
+  check("weekday counts from zero", C.cronProblem("0 2 * * 6") === null && C.cronProblem("0 2 * * 7")?.kind === "range");
+  // an absent cron is a decision, not a mistake: the sweep just never runs
+  check("an empty cron is not an error", C.mecProblems({ s1apItemsClearIdleCron: "" }).length === 0);
+  check("a bad cron stops the submit", C.mecProblems({ s1apItemsClearIdleCron: "0 2 *" }).length === 1);
+  /* The message has to reach the control it belongs to: the problem carries
+     the offending cron field in `field`, so the card looks it up by `scope`
+     instead -- spreading one over the other made the message disappear. */
+  check("a cron problem says which control it belongs to",
+    C.mecProblems({ s1apItemsClearIdleCron: "0 99 * * *" })[0].scope === "cron");
+  check("and still says which cron field was wrong",
+    C.mecProblems({ s1apItemsClearIdleCron: "0 99 * * *" })[0].field === "hour");
+  check("the idle-seconds problem is scoped to its own box",
+    C.mecProblems({ s1apItemsClearIdleMax: "nope" })[0].scope === "max");
+  check("the idle seconds must be a number",
+    C.mecProblems({ s1apItemsClearIdleMax: "604800" }).length === 0 &&
+    C.mecProblems({ s1apItemsClearIdleMax: "a week" }).length === 1);
+  check("every key the card writes is named", C.MEC_ARG_KEYS.join() ===
+    "s1cCorrelation,flowExtensionGtpTunnelhdr,s1apItemsClearIdleCron,s1apItemsClearIdleMax");
+}
+
+group("deduplication ports");
+{
+  const known = ["P0", "P1", "P2"];
+  // names are resolved by the device (main.c:906); one it does not have is dropped without a word
+  check("a port the device does not have is reported",
+    C.dedupProblems({ deduplicationPorts: "P1,P9" }, known).map((x) => x.port).join() === "P9");
+  check("an empty list is fine -- it means every port",
+    C.dedupProblems({ deduplicationPorts: "" }, known).length === 0);
+  check("nothing is claimed before the port list is known",
+    C.dedupProblems({ deduplicationPorts: "P9" }, []).length === 0);
+  check("the list round-trips through the same helpers as the tunnel lists",
+    C.formatPortList(C.parsePortList(" P0 , P1 ,, P0 ")) === "P0,P1");
 }
 
 /* ---------- audit fixes: the simulate page reads in both themes ----------- */

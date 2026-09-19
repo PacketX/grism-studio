@@ -36,6 +36,7 @@ import {
   tRemove, tUpdate, tmplText, toks, validate,
   hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
+  MEC_ARG_KEYS, mecProblems, dedupProblems,
   outputIndex, destLabel,
   parseL2greCorrelation,
   suggestName,
@@ -1801,9 +1802,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   // System + packet-handling settings all come out of get_config's <args> and
   // <filters>; the timezone list and SNMP community have endpoints of their own.
   const SYS_ARGS = ["timeServer", "timeServer2", "resolveNameServer", "resolveNameServer2",
-    "grel2CorrelationPort", "vxlanCorrelationPort", "encapsulationEncryptKeyTimeout"];
+    "grel2CorrelationPort", "vxlanCorrelationPort", "encapsulationEncryptKeyTimeout",
+    "deduplicationPorts", "s1apItemsClearIdleCron", "s1apItemsClearIdleMax"];
   const PKT_ARGS = ["deduplication", "ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct", "tryRunXmltoGdp",
-    "grel2Correlation", "vxlanCorrelation", "encapsulationEncrypt"];
+    "grel2Correlation", "vxlanCorrelation", "encapsulationEncrypt",
+    "s1cCorrelation", "flowExtensionGtpTunnelhdr"];
   const TUNNELS = ["GTP", "GRE", "IPV4", "VXLAN", "MPLS_IN_UDP", "MPLS_IN_GRE", "L2MPLS_IN_UDP", "L2MPLS_IN_GRE"];
   const busy = React.useRef({});
   const loadSys = React.useCallback(async () => {
@@ -2199,13 +2202,14 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     devicePorts: dataPortNames(rawCfg, { includeLoop: true }),
   }), [vpAdds, vpDeletes, vports, rawCfg]);
 
-  const submitVports = async () => {
+  /* Write a configSet, then restart, holding the screen until the device is
+     back. Two steps rather than configSet reboot="yes": with the reboot inside
+     the write, a write that failed and a device that went down look the same
+     from here. Used by anything the firmware only picks up at startup. */
+  const submitAndReboot = async (xml, { title, body: bodyText, phaseKey }) => {
     setSubmit({ state: "sending", msg: "" });
     const body = new URLSearchParams();
-    body.set("data", buildVportConfigSet({ adds: vpAdds, deletes: vpDeletes }));
-    /* Two steps: write the configuration, then restart. The configSet could
-       carry reboot="yes" and do both, but then a write that failed and a
-       device that went down look the same from here. */
+    body.set("data", xml);
     try {
       const res = await fetch("/grism/task/submit_config", { method: "POST", credentials: "include",
         headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
@@ -2218,12 +2222,20 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       return;
     }
     setSubmit({ state: "idle", msg: "" });
-    setWait({ title: tr("set.vportApplying"), body: tr("set.vportApplyingBody"),
-      phase: "updating", phaseKey: "set.vpPhase." });
+    setWait({ title, body: bodyText, phase: "updating", phaseKey });
     // the restart is its own request; it may not answer, which is expected
     try { await fetch("/grism/task/reboot", { method: "POST", credentials: "include" }); }
     catch { /* the device is already on its way down */ }
   };
+
+  const submitVports = () => submitAndReboot(buildVportConfigSet({ adds: vpAdds, deletes: vpDeletes }),
+    { title: tr("set.vportApplying"), body: tr("set.vportApplyingBody"), phaseKey: "set.vpPhase." });
+
+  /* Only an enable flag needs the restart: descriptions are picked up live. */
+  const portEnableChanged = React.useMemo(() => {
+    const base = new Map((portsBase ?? []).map((p) => [p.name, p]));
+    return (ports ?? []).some((p) => base.has(p.name) && !!base.get(p.name).enable !== !!p.enable);
+  }, [portsBase, ports]);
 
   const pageRef = React.useRef(null);
   /* A new section starts at its first card. The page owns the scroll, so
@@ -2233,6 +2245,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
   /* The card straddles <args> and <filters><in-tunnels>, so its dirty check has
      to cover both -- sysDirty alone would miss a decap flag being flipped. */
+  /* Same shape as the SD-WAN check: the MEC card straddles <args> and the GTP
+     flag under <filters><in-tunnels>, so both have to count as dirty. */
+  const mecDirty = () =>
+    [...MEC_ARG_KEYS, "tun_GTP"].some((k) => (sys[k] ?? "") !== (sysBase[k] ?? ""));
+
   const sdwanDirty = () =>
     [...SDWAN_ARG_KEYS, "tun_GRE", "tun_VXLAN"].some((k) => (sys[k] ?? "") !== (sysBase[k] ?? ""));
 
@@ -2342,6 +2359,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   </tbody>
                 </table>
               </div>
+              {/* the switch is the part that costs a restart, so say it before
+                  the button rather than in the dialog only */}
+              {portEnableChanged && <p className="set-hint warn">{tr("set.portsNeedReboot")}</p>}
               <div className="set-actions">
                 <span className="set-changed">{changedPorts(portsBase, ports).length > 0
                   ? `${changedPorts(portsBase, ports).length} ${tr("set.portsChanged")}` : ""}</span>
@@ -2606,10 +2626,40 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <p className="set-hint">{tr("set.dedupNote")}</p>
               <label className="set-check"><input type="checkbox" checked={!!sys.deduplication}
                 onChange={(e) => setSysField("deduplication", e.target.checked)} /> {tr("set.dedupOn")}</label>
-              <div className="set-actions">
-                <button className="sys-refresh" disabled={submit.state === "sending" || !sysDirty(["deduplication"])}
-                  onClick={() => setConfirm({ kind: "args", keys: ["deduplication"] })}>{tr("set.apply")}</button>
-              </div>
+              {(() => {
+                /* Which ports get deduplicated. Empty is not "none": the
+                   firmware then dedupes every port except LOOP ones, which it
+                   skips on purpose. A named LOOP port is deduplicated, so the
+                   list offers them too. */
+                const known = dataPortNames(rawCfg, { includeLoop: true });
+                const chosen = parsePortList(sys.deduplicationPorts);
+                const ports = [...new Set([...known, ...chosen])];
+                const probs = dedupProblems(sys, known);
+                return (<>
+                  <div className="sdw-ports">
+                    <span className="sdw-ports-label">{tr("set.dedupPorts")}</span>
+                    {ports.length === 0
+                      ? <span className="dim">{tr("set.loading")}</span>
+                      : <CheckAccordion label={tr("set.dedupAllPorts")} alwaysMulti t={tr}
+                          items={ports.map((n) => ({ id: n, b: n, on: chosen.includes(n) }))}
+                          onToggle={(n) => setSysField("deduplicationPorts", togglePortInList(sys.deduplicationPorts, n))}
+                          onSetOne={(n) => setSysField("deduplicationPorts", n ?? "")}
+                          onAll={(on) => setSysField("deduplicationPorts", on ? formatPortList(ports) : "")} />}
+                  </div>
+                  <p className="set-hint">{chosen.length ? tr("set.dedupSomeNote") : tr("set.dedupAllNote")}</p>
+                  {probs.map((x, i) => (
+                    <p className="set-hint err" key={i}>{tr("set.sdwanUnknownPort")} {x.port}</p>
+                  ))}
+                  <div className="set-actions">
+                    <button className="copy-btn" disabled={!sysDirty(["deduplication", "deduplicationPorts"])}
+                      onClick={() => setSys((o) => ({ ...o, deduplication: sysBase.deduplication,
+                        deduplicationPorts: sysBase.deduplicationPorts }))}>{tr("set.revert")}</button>
+                    <button className="sys-refresh"
+                      disabled={submit.state === "sending" || !sysDirty(["deduplication", "deduplicationPorts"])}
+                      onClick={() => setConfirm({ kind: "args", keys: ["deduplication", "deduplicationPorts"] })}>{tr("set.apply")}</button>
+                  </div>
+                </>);
+              })()}
             </section>
 
             <section className="sys-card">
@@ -2659,6 +2709,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.heartbeat")}</h3>
               <p className="set-hint">{tr("set.heartbeatNote")}</p>
+              {/* The status is not only for reading: a filter can test it, which
+                  is how a missed target becomes a routing decision. */}
+              <p className="set-hint">{tr("set.hbFilterHint")} <code>heartbeat.target.miss.id</code></p>
               <label className="set-check"><input type="checkbox" checked={hb.enable}
                 onChange={(e) => setHbField("enable", e.target.checked)} /> {tr("set.hbEnable")}</label>
               <div className="set-grid">
@@ -2726,6 +2779,68 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               </div>
             </section>
           )}
+
+            {/* MEC. S1AP correlation and the GTP side of it: the item table is
+                built while s1cCorrelation is on, the flow extension can carry
+                the GTP tunnel header, and a cron sweep drops entries that have
+                gone idle. The GTP decapsulation flag is the same one the
+                In-tunnel card shows, deliberately -- correlating GTP without
+                decapsulating it correlates nothing. */}
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.mec")}</h3>
+              <p className="set-hint">{tr("set.mecNote")}</p>
+              {(() => {
+                const problems = mecProblems(sys);
+                const cronErr = problems.find((x) => x.scope === "cron");
+                const maxErr = problems.find((x) => x.scope === "max");
+                const cronText = String(sys.s1apItemsClearIdleCron ?? "").trim();
+                return (<>
+                  <label className="set-check"><input type="checkbox" checked={!!sys.s1cCorrelation}
+                    onChange={(e) => setSysField("s1cCorrelation", e.target.checked)} /> {tr("set.mecS1c")}</label>
+                  <label className="set-check"><input type="checkbox" checked={!!sys.tun_GTP}
+                    onChange={(e) => setSysField("tun_GTP", e.target.checked)} /> {tr("set.mecGtpDecap")}</label>
+                  <label className="set-check"><input type="checkbox" checked={!!sys.flowExtensionGtpTunnelhdr}
+                    onChange={(e) => setSysField("flowExtensionGtpTunnelhdr", e.target.checked)} /> {tr("set.mecFlowExt")}</label>
+
+                  <div className="oattr-subhead">{tr("set.mecSweep")}</div>
+                  <p className="set-hint">{tr("set.mecSweepNote")}</p>
+                  <div className="set-grid">
+                    <label className="ml"><span>{tr("set.mecCron")}</span>
+                      <input type="text" value={sys.s1apItemsClearIdleCron ?? ""}
+                        placeholder="0 2 * * 1"
+                        onChange={(e) => setSysField("s1apItemsClearIdleCron", e.target.value)} /></label>
+                    <label className="ml"><span>{tr("set.mecIdleMax")}</span>
+                      <input type="text" inputMode="numeric" value={sys.s1apItemsClearIdleMax ?? ""}
+                        placeholder="604800"
+                        onChange={(e) => setSysField("s1apItemsClearIdleMax", e.target.value)} /></label>
+                  </div>
+                  {/* the firmware's cron is a restricted dialect and its month
+                      field is tm_mon, which surprises everyone once */}
+                  <p className="set-hint">{tr("set.mecCronHelp")}</p>
+                  {!cronText && <p className="set-hint">{tr("set.mecCronEmpty")}</p>}
+                  {cronErr && <p className="set-hint err">{
+                    cronErr.kind === "fields" ? tr("set.mecCronFields")
+                      : cronErr.kind === "range" ? `${tr("set.mecCronRange")} ${cronErr.field} ${cronErr.min}–${cronErr.max}`
+                        : `${tr("set.mecCronSyntax")} ${cronErr.value}`}</p>}
+                  {maxErr && <p className="set-hint err">{tr("set.mecIdleMaxBad")}</p>}
+                  {/* the sweep is gated on correlation being on (main.c:1458) */}
+                  {!sys.s1cCorrelation && (cronText || String(sys.s1apItemsClearIdleMax ?? "").trim()) &&
+                    <p className="set-hint warn">{tr("set.mecSweepOff")}</p>}
+                  {sys.s1cCorrelation && !sys.tun_GTP && <p className="set-hint warn">{tr("set.mecNeedsGtp")}</p>}
+
+                  <div className="set-actions">
+                    <button className="copy-btn" disabled={!mecDirty()}
+                      onClick={() => setSys((o) => ({ ...o,
+                        ...Object.fromEntries(MEC_ARG_KEYS.map((k) => [k, sysBase[k]])),
+                        tun_GTP: sysBase.tun_GTP }))}>{tr("set.revert")}</button>
+                    <button className="sys-refresh"
+                      disabled={submit.state === "sending" || !mecDirty() || problems.length > 0}
+                      onClick={() => setConfirm({ kind: "mec" })}>
+                      {submit.state === "sending" ? tr("set.submitting") : tr("set.apply")}</button>
+                  </div>
+                </>);
+              })()}
+            </section>
 
             {/* SD-WAN tunnel correlation. Two halves that work the same way: a
                 switch, the ports the encapsulated traffic arrives on, and the
@@ -3375,7 +3490,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
             <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}` : confirm.kind === "ports" ? tr("set.confirmPortsBody") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}` : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -3437,6 +3552,16 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 () => setCommunityBase(community)); return; }
               /* Correlation lives in <args>, decapsulation in <filters>; the
                  device takes one configSet at a time, so send both. */
+              /* Same split as SD-WAN: the switches are <args>, the GTP
+                 decapsulation flag is a filter, and the device takes one
+                 configSet at a time. */
+              if (k === "mec") {
+                submitConfigs([
+                  buildArgsConfigSet(Object.fromEntries(MEC_ARG_KEYS.map((key) => [key, sys[key]]))),
+                  buildInTunnelsConfigSet({ GTP: !!sys.tun_GTP }),
+                ]);
+                return;
+              }
               if (k === "sdwan") {
                 const tidy = (k) => (k.endsWith("CorrelationPort")
                   ? formatPortList(parsePortList(sys[k]))     // the device had "    " in one of these
@@ -3445,6 +3570,21 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   buildArgsConfigSet(Object.fromEntries(SDWAN_ARG_KEYS.map((key) => [key, tidy(key)]))),
                   buildInTunnelsConfigSet({ GRE: !!sys.tun_GRE, VXLAN: !!sys.tun_VXLAN }),
                 ]);
+                return;
+              }
+              if (k === "args" && confirm.keys?.includes("deduplicationPorts")) {
+                submitConfigs([buildArgsConfigSet({
+                  deduplication: !!sys.deduplication,
+                  deduplicationPorts: formatPortList(parsePortList(sys.deduplicationPorts)),
+                })]);
+                return;
+              }
+              /* The firmware reads the port enable flags at startup, so a
+                 port switched on or off does nothing until it restarts. A
+                 description-only edit is picked up live and applies as normal. */
+              if (k === "ports" && portEnableChanged) {
+                submitAndReboot(buildPortConfigSet(changedPorts(portsBase, ports)),
+                  { title: tr("set.portsApplying"), body: tr("set.portsApplyingBody"), phaseKey: "set.ptPhase." });
                 return;
               }
               const xml =
