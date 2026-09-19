@@ -2246,6 +2246,33 @@ group("front panel");
     check(`${name} leaves room for the labels above and below`,
       top >= 12 && P.height - bottom >= 12);
   }
+  /* One set of lamp colours for both themes. They only read that way against
+     something dark, so the sockets are dark in either theme -- if a later
+     change lightens them, the lamps stop meaning anything. */
+  {
+    const { readFileSync: rf } = await import("node:fs");
+    const css = rf(new URL("./GrismStudio.css", import.meta.url), "utf8");
+    const varsOf = (block) => Object.fromEntries([...block.matchAll(/--fp-([a-z-]+)\s*:\s*(#[0-9a-f]{6})/gi)]
+      .map((m) => [m[1], m[2]]));
+    const dark = varsOf(css.slice(css.indexOf("--fp-chassis"), css.indexOf(".gs-root.light")));
+    const light = varsOf(css.slice(css.indexOf(".gs-root.light")));
+    check("the lamp colours are the same in both themes",
+      ["up", "rx", "tx"].every((k) => dark[k] && dark[k] === light[k]),
+      ["up", "rx", "tx"].map((k) => `${k}:${dark[k]}/${light[k]}`).join(" "));
+    const lum = (h) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.substr(i, 2), 16) / 255)
+      .map((s) => s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const cr = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    const weak = [];
+    for (const [name, v] of [["dark", dark], ["light", light]])
+      for (const k of ["up", "rx", "tx"]) {
+        if (cr(v[k], v.cage) < 3) weak.push(`${name} ${k} vs cage ${cr(v[k], v.cage).toFixed(2)}`);
+        if (cr(v[k], v.off) < 3) weak.push(`${name} ${k} vs unlit ${cr(v[k], v.off).toFixed(2)}`);
+      }
+    check("a lit lamp reads against its socket and against being unlit in both themes",
+      weak.length === 0, weak.join(", "));
+  }
+
   // on the box the management port sits beside the data ports, not across the chassis
   check("the G8S management port is next to P6, not at the far end", (() => {
     const p6 = G.cages.find((c) => c.name === "P6");

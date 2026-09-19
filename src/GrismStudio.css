@@ -44,9 +44,9 @@
 .gs-root.light{
   --bg:#f6f8fa; --panel:#ffffff; --panel-2:#f6f8fa; --line:#d1d9e0; --line-2:#afb8c1;
   --txt:#1f2328; --txt-dim:#59636e; --txt-faint:#656d76; --accent:#1b6b85; --accent-2:#8a6100;
-  --fp-chassis:#dfe4ea; --fp-line:#a8b2be; --fp-cage:#ffffff; --fp-slot:#b9c3ce;
-  --fp-off:#9aa5b1; --fp-label:#4a5560;
-  --fp-up:#1a7f37; --fp-rx:#1b6b85; --fp-tx:#8a6100;
+  --fp-chassis:#dfe4ea; --fp-line:#a8b2be; --fp-cage:#333f4d; --fp-slot:#1b222a;
+  --fp-off:#4d5866; --fp-label:#4a5560;
+  --fp-up:#3fd16a; --fp-rx:#4fc3e8; --fp-tx:#f0b53f;
   --accent-rgb:27,107,133; --accent-2-rgb:138,97,0;
   /* straight off the favicon, for fills that carry no text -- the meters,
      dots and grips. Anything with a label on it uses --accent instead, so
@@ -1583,8 +1583,8 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .fp-key { display: flex; flex-wrap: wrap; gap: 5px 10px; margin: 0;
   font-size: 11px; color: var(--txt-dim); }
 .fp-key span { display: inline-flex; align-items: center; gap: 6px; }
-.fp-key span { background: var(--fp-chassis); border: 1px solid var(--fp-line); border-radius: 6px;
-  padding: 2px 8px; color: var(--fp-label); }
+.fp-key span { background: var(--fp-cage); border: 1px solid var(--fp-line); border-radius: 6px;
+  padding: 2px 8px; color: #c8d0d9; }
 .fp-key i { width: 9px; height: 9px; border-radius: 99px; background: var(--fp-off);
   display: inline-block; flex: 0 0 auto; }
 .fp-key .fp-key-led.on { background: var(--fp-up); }
