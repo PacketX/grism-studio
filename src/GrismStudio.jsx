@@ -3517,9 +3517,7 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = f
      here", and the table above it carries the rates. */
   const moving = (v) => v > 0;
   return (
-    <section className="sys-card panel-card">
-      <h3 className="sys-card-title">{tr("panel.title")}</h3>
-      <p className="set-hint">{tr("panel.note")}</p>
+    <section className="panel-strip">
       <div className="panel-wrap">
         <svg viewBox={`0 0 ${L.width} ${L.height}`}
           className={"fp" + (blind ? " blind" : "") + (stale ? " stale" : "")}
@@ -3537,7 +3535,7 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = f
           </g>
           {/* the lamps this chassis carries, if any -- on a G8S the two bypass
               pairs, whose state the page already knows */}
-          {(L.lamps ?? []).map((l) => {
+          {bypassed && (L.lamps ?? []).map((l) => {
             const on = !blind && !!bypassed?.has(l.pair);
             return (
               <g key={l.id}>
@@ -3583,12 +3581,12 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = f
       </div>
       {blind && <p className="sys-note dim">{tr("panel.noData")}</p>}
       {!blind && stale && <p className="set-hint warn">{tr("panel.stale")}</p>}
-      <div className="fp-key">
+      <div className="fp-key" title={tr("panel.note")}>
         <span><i className="fp-key-led on" /> {tr("panel.keyUp")}</span>
         <span><i className="fp-key-led" /> {tr("panel.keyDown")}</span>
         <span><i className="fp-key-rx" /> {tr("panel.keyRx")}</span>
         <span><i className="fp-key-tx" /> {tr("panel.keyTx")}</span>
-        {(L.lamps ?? []).length > 0 &&
+        {bypassed && (L.lamps ?? []).length > 0 &&
           <span><i className="fp-key-byp" /> {tr("panel.keyBypass")}</span>}
       </div>
     </section>
@@ -3614,10 +3612,10 @@ function TrafficTab({ loggedIn, t, model = "" }) {
      for a value that does not change. */
   const [bypassed, setBypassed] = React.useState(new Set());
   // the same answer keyed by pair, for the front panel's BYP lamps
-  const [bypassedPairs, setBypassedPairs] = React.useState(new Set());
+  const [bypassedPairs, setBypassedPairs] = React.useState(null);   // null = the device would not say
 
   React.useEffect(() => {
-    if (!loggedIn) { setBypassed(new Set()); setBypassedPairs(new Set()); return; }
+    if (!loggedIn) { setBypassed(new Set()); setBypassedPairs(null); return; }
     let live = true;
     (async () => {
       try {
@@ -3625,14 +3623,14 @@ function TrafficTab({ loggedIn, t, model = "" }) {
         const hw = bypassSupport((cfg.args && cfg.args.model) || cfg.model || "");
         if (!hw) return;
         const out = new Set(), pairs = new Set();
+        let known = true;
         for (const pair of hw.pairs) {
           const res = await fetch(bypassStatusUrl(hw.key, pair.n), { credentials: "include" });
-          if (res.ok && parseBypassStatus(await res.text()) === true) {
-            pair.ports.forEach((n) => out.add(n));
-            pairs.add(pair.n);
-          }
+          const state = res.ok ? parseBypassStatus(await res.text()) : null;
+          if (state === null) { known = false; continue; }
+          if (state === true) { pair.ports.forEach((n) => out.add(n)); pairs.add(pair.n); }
         }
-        if (live) { setBypassed(out); setBypassedPairs(pairs); }
+        if (live) { setBypassed(out); setBypassedPairs(known ? pairs : null); }
       } catch { /* a device that cannot say leaves the column unmarked */ }
     })();
     return () => { live = false; };
@@ -3702,6 +3700,15 @@ function TrafficTab({ loggedIn, t, model = "" }) {
         onClear={() => clearCounters("/grism/task/clear_lite_counters")} />
 
       {state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {errMsg}</div>}
+
+      {/* the ports as they sit on the box, above the table that lists them --
+          it is the first thing worth looking at, so it goes first */}
+      {hasFrontPanel(model || devModel) && (
+        <FrontPanel model={model || devModel} stats={rows}
+          mgmtStat={rows.find((r) => r.name === "H1")}
+          bypassed={bypassedPairs} bypassedPorts={bypassed}
+          stale={state === "error"} t={t} />
+      )}
 
       {sessions && (
         <div className="tf-flow-line">
@@ -3799,13 +3806,6 @@ function TrafficTab({ loggedIn, t, model = "" }) {
         </div>
       )}
 
-      {/* the ports as they sit on the box, under the table that lists them */}
-      {hasFrontPanel(model || devModel) && (
-        <FrontPanel model={model || devModel} stats={rows}
-          mgmtStat={rows.find((r) => r.name === "H1")}
-          bypassed={bypassedPairs} bypassedPorts={bypassed}
-          stale={state === "error"} t={t} />
-      )}
     </div>
   );
 }

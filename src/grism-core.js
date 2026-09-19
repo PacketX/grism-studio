@@ -3604,8 +3604,8 @@ export function nextVport(prev) {
    ============================================================ */
 
 const T12S_BLOCKS = [
-  { x: 150, top: ["P1", "P3"], bottom: ["P0", "P2"] },
-  { x: 260, top: ["P5", "P7"], bottom: ["P4", "P6"] },
+  { x: 130, top: ["P1", "P3"], bottom: ["P0", "P2"] },
+  { x: 230, top: ["P5", "P7"], bottom: ["P4", "P6"] },
 ];
 const T12S_RIGHT = ["P8", "P9", "P10", "P11"];
 
@@ -3623,7 +3623,7 @@ export function panelModel(model) {
    management port on the RIGHT after the console block -- the mirror of the
    T12S -- and the two bypass lamps on the left. */
 export function g8sPanelLayout() {
-  const JACK_W = 44, JACK_H = 26, PAIR_GAP = 20, GAP_Y = 10, TOP_Y = 26, X0 = 150;
+  const JACK_W = 40, JACK_H = 18, PAIR_GAP = 18, GAP_Y = 8, TOP_Y = 13, X0 = 130;
   const cages = [];
   [["P1", "P0"], ["P3", "P2"], ["P5", "P4"], ["P7", "P6"]].forEach(([top, bottom], i) => {
     const x = X0 + i * (JACK_W + PAIR_GAP);
@@ -3632,35 +3632,39 @@ export function g8sPanelLayout() {
   });
   return {
     model: "G8S", kind: "rj45",
-    width: 560, height: TOP_Y * 2 + JACK_H * 2 + GAP_Y,
-    mgmt: { x: 496, y: TOP_Y + JACK_H + GAP_Y - 2, w: 34, h: 30 },
+    width: 512, height: TOP_Y * 2 + JACK_H * 2 + GAP_Y,
+    mgmt: { x: 456, y: TOP_Y + JACK_H + GAP_Y, w: 28, h: 18 },
     // the bypass pairs the device actually has, as the front panel labels them
     lamps: [
-      { id: "BYP-1", x: 96, y: TOP_Y + 8, pair: 1 },
-      { id: "BYP-2", x: 96, y: TOP_Y + 34, pair: 2 },
+      { id: "BYP-1", x: 76, y: TOP_Y + 9, pair: 1 },
+      { id: "BYP-2", x: 76, y: TOP_Y + JACK_H + GAP_Y + 9, pair: 2 },
     ],
     cages,
   };
 }
 
 export function t12sPanelLayout() {
-  const CAGE_W = 44, CAGE_H = 26, GAP_X = 2, GAP_Y = 10, TOP_Y = 26;
+  const CAGE_W = 40, CAGE_H = 18, GAP_X = 2, GAP_Y = 8, TOP_Y = 13;
   const cages = [];
   for (const b of T12S_BLOCKS) {
     b.top.forEach((n, i) => cages.push({ name: n, x: b.x + i * (CAGE_W + GAP_X), y: TOP_Y, w: CAGE_W, h: CAGE_H, kind: "sfp" }));
     b.bottom.forEach((n, i) => cages.push({ name: n, x: b.x + i * (CAGE_W + GAP_X), y: TOP_Y + CAGE_H + GAP_Y, w: CAGE_W, h: CAGE_H, kind: "sfp" }));
   }
-  const rightX = 430;
+  const rightX = 392;
   T12S_RIGHT.forEach((n, i) => cages.push({
-    name: n, x: rightX + i * (CAGE_W + 14), y: TOP_Y + (CAGE_H + GAP_Y) / 2, w: CAGE_W, h: CAGE_H, kind: "sfp",
+    name: n, x: rightX + i * (CAGE_W + 12), y: TOP_Y + (CAGE_H + GAP_Y) / 2, w: CAGE_W, h: CAGE_H, kind: "sfp",
   }));
   return {
-    model: "T12S", kind: "sfp", lamps: [],
-    width: rightX + T12S_RIGHT.length * (CAGE_W + 14) + 16,
+    model: "T12S", kind: "sfp",
+    lamps: [
+      { id: "BYP-1", x: 24, y: TOP_Y + 9, pair: 1 },
+      { id: "BYP-2", x: 24, y: TOP_Y + CAGE_H + GAP_Y + 9, pair: 2 },
+    ],
+    width: rightX + T12S_RIGHT.length * (CAGE_W + 12) + 14,
     height: TOP_Y * 2 + CAGE_H * 2 + GAP_Y,
     // the management port sits immediately left of P0
     // level with the lower row, where it sits on the box: beside P0, not P1
-    mgmt: { x: 96, y: TOP_Y + CAGE_H + GAP_Y - 2, w: 34, h: 30 },
+    mgmt: { x: 76, y: TOP_Y + CAGE_H + GAP_Y, w: 28, h: 18 },
     cages,
   };
 }

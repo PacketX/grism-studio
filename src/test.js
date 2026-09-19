@@ -2231,7 +2231,16 @@ group("front panel");
     L.kind === "sfp" && L.cages.every((c) => c.kind === "sfp"));
   check("a lamp per bypass pair", (G.lamps ?? []).length === 2 &&
     G.lamps.map((x) => x.pair).join(",") === "1,2");
-  check("the T12S has no bypass lamps", (L.lamps ?? []).length === 0);
+  check("both chassis carry a lamp per bypass pair",
+    (L.lamps ?? []).length === 2 && L.lamps.map((x) => x.pair).join(",") === "1,2");
+  check("the lamps sit left of the management port on both",
+    L.lamps.every((l) => l.x < L.mgmt.x) && G.lamps.every((l) => l.x < G.mgmt.x));
+  /* The panel sits above the table now, so it has to stay under about 2cm --
+     75.6px at 96dpi, and the drawing renders at its own height. */
+  check("both chassis fit in two centimetres", L.height <= 75 && G.height <= 75);
+  check("the lamps match the bypass pairs the device reports",
+    L.lamps.map((l) => l.pair).join() === C.BYPASS_MODELS.T12S.pairs.map((p) => p.n).join() &&
+    G.lamps.map((l) => l.pair).join() === C.BYPASS_MODELS.G8S.pairs.map((p) => p.n).join());
   const gclash = [];
   const gboxes = [...G.cages, { name: "MGMT", ...G.mgmt }];
   for (let i = 0; i < gboxes.length; i++) for (let j = i + 1; j < gboxes.length; j++) {
