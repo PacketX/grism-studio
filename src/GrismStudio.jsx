@@ -2226,6 +2226,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   };
 
   const pageRef = React.useRef(null);
+  /* A new section starts at its first card. The page owns the scroll, so
+     switching sections used to leave it wherever the last one had been read
+     down to -- landing halfway into a set of cards the user had not seen. */
+  React.useEffect(() => { if (pageRef.current) pageRef.current.scrollTop = 0; }, [section]);
 
   /* The card straddles <args> and <filters><in-tunnels>, so its dirty check has
      to cover both -- sysDirty alone would miss a decap flag being flipped. */
