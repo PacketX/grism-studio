@@ -2791,16 +2791,29 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <p className="set-hint">{tr("set.mecNote")}</p>
               {(() => {
                 const problems = mecProblems(sys);
+                const MEC_SWITCHES = ["s1cCorrelation", "tun_GTP", "flowExtensionGtpTunnelhdr"];
+                const mecOn = MEC_SWITCHES.filter((k) => !!sys[k]).length;
+                const mecAllOn = mecOn === MEC_SWITCHES.length;
+                const mecMixed = mecOn > 0 && !mecAllOn;
                 const cronErr = problems.find((x) => x.scope === "cron");
                 const maxErr = problems.find((x) => x.scope === "max");
                 const cronText = String(sys.s1apItemsClearIdleCron ?? "").trim();
                 return (<>
-                  <label className="set-check"><input type="checkbox" checked={!!sys.s1cCorrelation}
-                    onChange={(e) => setSysField("s1cCorrelation", e.target.checked)} /> {tr("set.mecS1c")}</label>
-                  <label className="set-check"><input type="checkbox" checked={!!sys.tun_GTP}
-                    onChange={(e) => setSysField("tun_GTP", e.target.checked)} /> {tr("set.mecGtpDecap")}</label>
-                  <label className="set-check"><input type="checkbox" checked={!!sys.flowExtensionGtpTunnelhdr}
-                    onChange={(e) => setSysField("flowExtensionGtpTunnelhdr", e.target.checked)} /> {tr("set.mecFlowExt")}</label>
+                  {/* One decision, three parameters. On their own they are not
+                      independent -- correlating without decapsulating GTP
+                      correlates nothing, and the tunnel header in the flow
+                      extension is what makes the correlation usable -- so the
+                      card offers the feature and writes all three. A config
+                      that arrives with them out of step shows as part-on. */}
+                  <label className="set-check">
+                    <input type="checkbox" checked={mecAllOn}
+                      ref={(el) => { if (el) el.indeterminate = mecMixed; }}
+                      onChange={(e) => { const on = e.target.checked; MEC_SWITCHES.forEach((k) => setSysField(k, on)); }} />
+                    {tr("set.mecEnable")}
+                  </label>
+                  <p className="set-hint">{tr("set.mecEnableNote")}{" "}
+                    <code>s1cCorrelation</code>, <code>in-tunnels/GTP</code>, <code>flowExtensionGtpTunnelhdr</code></p>
+                  {mecMixed && <p className="set-hint warn">{tr("set.mecMixed")}</p>}
 
                   <div className="oattr-subhead">{tr("set.mecSweep")}</div>
                   <p className="set-hint">{tr("set.mecSweepNote")}</p>
@@ -2826,7 +2839,6 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   {/* the sweep is gated on correlation being on (main.c:1458) */}
                   {!sys.s1cCorrelation && (cronText || String(sys.s1apItemsClearIdleMax ?? "").trim()) &&
                     <p className="set-hint warn">{tr("set.mecSweepOff")}</p>}
-                  {sys.s1cCorrelation && !sys.tun_GTP && <p className="set-hint warn">{tr("set.mecNeedsGtp")}</p>}
 
                   <div className="set-actions">
                     <button className="copy-btn" disabled={!mecDirty()}
@@ -2863,15 +2875,25 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 const problems = sdwanProblems(sys, known);
                 const row = (tunnel, onKey, portKey, tunFlag, label) => {
                   const on = !!sys[onKey];
+                  const decap = !!sys["tun_" + tunFlag];
+                  const mixed = on !== decap;
                   const picked = parsePortList(sys[portKey]);
                   const mine = problems.filter((x) => x.tunnel === tunnel);
                   return (
                     <div className="sdw-block" key={tunnel}>
                       <div className="oattr-subhead">{label}</div>
-                      <label className="set-check"><input type="checkbox" checked={on}
-                        onChange={(e) => setSysField(onKey, e.target.checked)} /> {tr("set.sdwanCorrelate")}</label>
-                      <label className="set-check"><input type="checkbox" checked={!!sys["tun_" + tunFlag]}
-                        onChange={(e) => setSysField("tun_" + tunFlag, e.target.checked)} /> {tr("set.sdwanDecap")}</label>
+                      {/* Same as MEC: correlation and decapsulation are one
+                          decision -- correlating a tunnel the device does not
+                          unwrap correlates nothing -- so one switch writes both. */}
+                      <label className="set-check">
+                        <input type="checkbox" checked={on && decap}
+                          ref={(el) => { if (el) el.indeterminate = mixed; }}
+                          onChange={(e) => { const v = e.target.checked; setSysField(onKey, v); setSysField("tun_" + tunFlag, v); }} />
+                        {tr("set.sdwanEnable")}
+                      </label>
+                      <p className="set-hint">{tr("set.mecEnableNote")}{" "}
+                        <code>{onKey}</code>, <code>in-tunnels/{tunFlag}</code></p>
+                      {mixed && <p className="set-hint warn">{tr("set.sdwanMixed")}</p>}
                       <div className="sdw-ports">
                         <span className="sdw-ports-label">{tr("set.sdwanPorts")}</span>
                         {ports.length === 0

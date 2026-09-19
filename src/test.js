@@ -1070,7 +1070,7 @@ check("no Chinese entry is left in English", (() => {
   // only escaped this check for being shorter than the four-letter threshold.
   const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
     "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass",
-    "MGMT"]);
+    "MGMT", "MEC (S1AP/NGAP · GTP)"]);
   const same = Object.keys(I18N.en).filter((k) =>
     I18N["zh-TW"][k] === I18N.en[k] && !shared.has(I18N.en[k]) && /[A-Za-z]{4,}/.test(I18N.en[k]));
   if (same.length) console.log("    untranslated:", same.join(", "));
@@ -2378,7 +2378,9 @@ group("everything on screen is translatable");
   const ALLOW = [/PACKETX-MIB\.txt/, /H1\/in\/played/, /^run\.xml$/, /^studio$/,
     /^(replayPcap|traffic-gen|tagging|stripping|tcpreset|delete|backup|move)$/, /^pk\./,
     // a dotted lowercase identifier is a filter field name, not prose
-    /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/];
+    /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/,
+    // and a camelCase word with no spaces is a config key shown as itself
+    /^[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*$/];
   // text after a tag counts too: the simulate legend hid four English words
   // behind a self-closing span and went unnoticed for exactly that reason
   const text = />\s*([A-Za-z][A-Za-z][A-Za-z ,'\-’.?:]{4,})\s*</g;
