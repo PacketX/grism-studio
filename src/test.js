@@ -2369,9 +2369,12 @@ group("settings sticky header");
   const block = css.slice(css.indexOf(".set-page .set-sticky"), css.indexOf(".cj-chip"));
   check("the header block sticks to the top of the settings scroll area",
     /position: sticky/.test(block) && /background: var\(--bg\)/.test(block));
-  // .sys-wrap has 24px of top padding; the block cancels it or the page shows through
-  check("the block covers the scroll area's own padding",
-    /top: -24px/.test(block) && /padding-top: 24px/.test(block));
+  /* The header must not move when it goes from resting to stuck: the block
+     owns the page's top padding and the page itself has none, so its resting
+     position and its stuck position are the same place. */
+  check("the block rests where it sticks",
+    /top: 0;/.test(block) && /padding-top: 24px/.test(block) &&
+    /\.set-page \{ padding-top: 0; \}/.test(css));
   // two sticky elements one inside the other leave the chips floating
   check("the index does not stick separately inside the block",
     /\.set-page \.set-sticky \.card-jump \{ position: static/.test(css));

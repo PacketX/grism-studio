@@ -1410,9 +1410,12 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
    so it stays reachable once you are down among the cards. */
 /* The page header and the index travel together: .sys-wrap owns the scroll,
    so one sticky block at its top keeps the section switcher, the re-read
-   button and the chips reachable from anywhere on the page. -24px cancels the
-   wrap's own top padding so nothing shows through above the block. */
-.set-page .set-sticky { position: sticky; top: -24px; z-index: 4; background: var(--bg);
+   button and the chips reachable from anywhere on the page. The block carries
+   the page's top padding itself and .set-page gives its own up -- otherwise
+   the header starts 24px lower than it lands once it sticks, and the whole
+   thing visibly jumps on the first scroll. */
+.set-page { padding-top: 0; }
+.set-page .set-sticky { position: sticky; top: 0; z-index: 4; background: var(--bg);
   padding-top: 24px; }
 .set-page .set-sticky .sys-head { margin-bottom: 0; padding-bottom: 6px; }
 .card-jump { position: sticky; top: -24px; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px;
