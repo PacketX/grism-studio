@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.68.0";
+export const STUDIO_VERSION = "2.69.0";
 
 export const I18N = {
   en: {
@@ -510,6 +510,7 @@ export const I18N = {
     "ch.filterToMatch": "+ filter (this → match)", "ch.filterToNotmatch": "+ filter (this → notmatch)",
     "ch.removeTest": "Remove filter → output",
     "ch.outputPorts": "Output ports", "ch.mode": "Mode", "ch.balanceBy": "Balance by",
+    "ch.modeDuplicate": "duplicate", "ch.modeBalance": "load balance",
     "ch.devicePorts": "device ports", "ch.portsDefault": "ports (default list)",
     "ch.definedOutputs": "defined outputs", "ch.deleteChain": "Delete this chain",
     "ch.doesNotMatch": "does not match",
@@ -1028,6 +1029,7 @@ export const I18N = {
     "ch.filterToMatch": "+ 篩選器(此 → 符合)", "ch.filterToNotmatch": "+ 篩選器(此 → 不符合)",
     "ch.removeTest": "移除篩選器 → 輸出",
     "ch.outputPorts": "輸出埠", "ch.mode": "模式", "ch.balanceBy": "分流依據",
+    "ch.modeDuplicate": "複製", "ch.modeBalance": "負載平衡",
     "ch.devicePorts": "裝置埠", "ch.portsDefault": "埠(預設清單)",
     "ch.definedOutputs": "已定義的 output", "ch.deleteChain": "刪除此鏈結",
     "ch.doesNotMatch": "不符合",

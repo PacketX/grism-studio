@@ -5597,7 +5597,8 @@ function CollapseSection({ label, active, children }) {
   );
 }
 
-function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, joiner, onJoiner, t }) {
+function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false,
+  joiner, onJoiner, joinerOptions, joinerLabel, joinerText, extra, t }) {
   const tr = t || ((k) => k);
   // the chosen rows, named, for the header -- listed up to a few, then counted
   const chosenAll = items.filter((it) => it.on)
@@ -5625,7 +5626,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
               <React.Fragment key={c.id}>
                 {/* the joiner reads between the filters it joins, so the header
                     states the whole condition rather than just its parts */}
-                {i > 0 && joiner && <span className="chosen-join">{joiner}</span>}
+                {i > 0 && (joinerText ?? joiner) && <span className="chosen-join">{joinerText ?? joiner}</span>}
                 <span className="chosen-one">
                   <b>{c.id}</b>{c.sub && <span>{c.sub}</span>}
                 </span>
@@ -5639,14 +5640,17 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
             <input type="checkbox" checked={multi} onChange={(e) => e.target.checked ? setMulti(true) : switchToSingle()} />
             multi-select
           </label>
-          {/* and/or only means something once two or more are referenced */}
+          {/* how the chosen rows combine -- and/or for filters, duplicate or
+              load balance for ports. Only meaningful once there are two. */}
           {onJoiner && picked > 1 && (
-            <label className="acc-join">{tr("ch.combine")}
+            <label className="acc-join">{joinerLabel ?? tr("ch.combine")}
               <select value={joiner} onChange={(e) => onJoiner(e.target.value)}>
-                <option value="or">or</option><option value="and">and</option>
+                {(joinerOptions ?? [{ v: "or", l: "or" }, { v: "and", l: "and" }])
+                  .map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
               </select>
             </label>
           )}
+          {picked > 1 && extra}
           {multi && items.length > 0 && <button className="acc-all" onClick={() => onAll(!allOn)}>
             {allOn ? "Clear all" : "Select all"}
           </button>}
@@ -6125,12 +6129,18 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
                 onSetOne={(p2) => setOneOutPort(sel.id, sel.ports, outChoices.map((c) => c.id), p2)}
+                joiner={sel.mode} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, mode: v }))}
+                joinerLabel={tr("ch.mode")}
+                joinerOptions={[{ v: "duplicate", l: tr("ch.modeDuplicate") }, { v: "loadBalance", l: tr("ch.modeBalance") }]}
+                joinerText={sel.mode === "loadBalance" ? tr("ch.modeBalance") : tr("ch.modeDuplicate")}
+                extra={sel.mode === "loadBalance" && (
+                  <label className="acc-join">{tr("ch.balanceBy")}
+                    <select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>
+                      {["session", "5thash", "rr", "sip", "dip"].map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </label>
+                )}
                 emptyNote={!portsFromDevice ? tr("ch.portsDefaultNote") : null} />
-              {/* duplicate vs load balance only applies when traffic goes to several ports */}
-              {toks(sel.ports) > 1 && (
-                <label className="fld2"><span>{tr("ch.mode")}</span><select value={sel.mode} onChange={(e) => mutate(sel.id, (n) => ({ ...n, mode: e.target.value }))}><option value="duplicate">duplicate</option><option value="loadBalance">load balance</option></select></label>
-              )}
-              {toks(sel.ports) > 1 && sel.mode === "loadBalance" && <label className="fld2"><span>{tr("ch.balanceBy")}</span><select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>{["session","5thash","rr","sip","dip"].map((o) => <option key={o} value={o}>{o}</option>)}</select></label>}
               <CollapseSection label={tr("ch.advancedOp")} active={!!sel.vlantype}>
                 <label className="fld2"><span>{tr("ch.vlanOp")}</span>
                   <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
