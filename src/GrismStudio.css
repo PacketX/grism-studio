@@ -6,6 +6,10 @@
      much more visible than what was here before. */
   --bg:#0d1117; --panel:#161b22; --panel-2:#0d1117; --line:#30363d; --line-2:#3d444d;
   --txt:#e6edf3; --txt-dim:#9198a1; --txt-faint:#6e7681;
+  /* front panel: a drawing of a physical box, but it still lives on a page */
+  --fp-chassis:#2e3844; --fp-line:#4a5663; --fp-cage:#3a4553; --fp-slot:#171c23;
+  --fp-off:#4a5460; --fp-label:#aab4bf;
+  --fp-up:#3fd16a; --fp-rx:#4fc3e8; --fp-tx:#f0b53f;
   /* From favicon-128.ico: the cyan-teal of the dots and the gold of the
      diamonds. Lifted off the icon's own values only as far as the dark
      canvas needs -- 9.2 and 10.1 against the background. */
@@ -40,6 +44,9 @@
 .gs-root.light{
   --bg:#f6f8fa; --panel:#ffffff; --panel-2:#f6f8fa; --line:#d1d9e0; --line-2:#afb8c1;
   --txt:#1f2328; --txt-dim:#59636e; --txt-faint:#656d76; --accent:#1b6b85; --accent-2:#8a6100;
+  --fp-chassis:#dfe4ea; --fp-line:#a8b2be; --fp-cage:#ffffff; --fp-slot:#b9c3ce;
+  --fp-off:#9aa5b1; --fp-label:#4a5560;
+  --fp-up:#1a7f37; --fp-rx:#1b6b85; --fp-tx:#8a6100;
   --accent-rgb:27,107,133; --accent-2-rgb:138,97,0;
   /* straight off the favicon, for fills that carry no text -- the meters,
      dots and grips. Anything with a label on it uses --accent instead, so
@@ -1554,21 +1561,21 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
 @media (min-width: 760px) { .panel-wrap { -webkit-mask-image: none; mask-image: none; } }
-.fp { height: 70px; width: auto; max-width: 100%; display: block; }
-.fp-chassis { fill: #14181d; stroke: #2b323a; stroke-width: 1; }
-.fp-mgmt { fill: #20262d; stroke: #49525c; stroke-width: 1; }
-.fp-mgmt-clip { fill: #49525c; }
-.fp-cage { fill: #1b2128; stroke: #3c454f; stroke-width: 1; }
-.fp-slot { fill: #0c1014; }
-.fp-lbl { font-family: var(--mono); font-size: 9px; fill: #9aa4af; text-anchor: middle; }
-.fp-lbl.mgmt { font-size: 8px; fill: #7f8b97; }
+.fp { height: 73px; width: auto; max-width: 100%; display: block; }
+.fp-chassis { fill: var(--fp-chassis); stroke: var(--fp-line); stroke-width: 1.5; }
+.fp-mgmt { fill: var(--fp-cage); stroke: var(--fp-line); stroke-width: 1; }
+.fp-mgmt-clip { fill: var(--fp-off); }
+.fp-cage { fill: var(--fp-cage); stroke: var(--fp-line); stroke-width: 1; }
+.fp-slot { fill: var(--fp-slot); }
+.fp-lbl { font-family: var(--mono); font-size: 8px; fill: var(--fp-label); text-anchor: middle; }
+.fp-lbl.mgmt { font-size: 7.5px; fill: var(--fp-label); }
 /* a link that is up lights its cage as well as its lamp */
-.fp-port.up .fp-cage { stroke: #3fd16a; }
-.fp-led { fill: #2a323b; }
-.fp-led.on { fill: #3fd16a; }
-.fp-act { fill: #2a323b; }
-.fp-act.rx.on { fill: #4fc3e8; }
-.fp-act.tx.on { fill: #f0b53f; }
+.fp-port.up .fp-cage { stroke: var(--fp-up); stroke-width: 1.5; }
+.fp-led { fill: var(--fp-off); }
+.fp-led.on { fill: var(--fp-up); }
+.fp-act { fill: var(--fp-off); }
+.fp-act.rx.on { fill: var(--fp-rx); }
+.fp-act.tx.on { fill: var(--fp-tx); }
 /* nothing has been read yet: the lamps say nothing rather than "all down" */
 .fp.blind .fp-cage, .fp.blind .fp-mgmt { stroke-dasharray: 3 3; opacity: .65; }
 .fp.blind .fp-led, .fp.blind .fp-act { opacity: .35; }
@@ -1576,19 +1583,19 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .fp-key { display: flex; flex-wrap: wrap; gap: 5px 10px; margin: 0;
   font-size: 11px; color: var(--txt-dim); }
 .fp-key span { display: inline-flex; align-items: center; gap: 6px; }
-.fp-key span { background: #14181d; border: 1px solid #2b323a; border-radius: 6px;
-  padding: 2px 8px; color: #9aa4af; }
-.fp-key i { width: 9px; height: 9px; border-radius: 99px; background: #2a323b;
+.fp-key span { background: var(--fp-chassis); border: 1px solid var(--fp-line); border-radius: 6px;
+  padding: 2px 8px; color: var(--fp-label); }
+.fp-key i { width: 9px; height: 9px; border-radius: 99px; background: var(--fp-off);
   display: inline-block; flex: 0 0 auto; }
-.fp-key .fp-key-led.on { background: #3fd16a; }
+.fp-key .fp-key-led.on { background: var(--fp-up); }
 .fp-key .fp-key-rx, .fp-key .fp-key-tx { width: 0; height: 0; background: none;
   border-left: 5px solid transparent; border-right: 5px solid transparent; }
-.fp-key .fp-key-rx { border-top: 6px solid #4fc3e8; }
-.fp-key .fp-key-tx { border-bottom: 6px solid #f0b53f; }
+.fp-key .fp-key-rx { border-top: 6px solid var(--fp-rx); }
+.fp-key .fp-key-tx { border-bottom: 6px solid var(--fp-tx); }
 
 /* a bypassed pair: the lamp the box has, and the ports it takes out of line */
-.fp-led.byp { fill: #2a323b; }
-.fp-led.byp.on { fill: #f0b53f; }
-.fp-lbl.lamp { font-size: 7.5px; fill: #7f8b97; text-anchor: start; }
-.fp-port.byp .fp-cage { stroke: #f0b53f; stroke-dasharray: 3 2; }
-.fp-key .fp-key-byp { background: #f0b53f; }
+.fp-led.byp { fill: var(--fp-off); }
+.fp-led.byp.on { fill: var(--fp-tx); }
+.fp-lbl.lamp { font-size: 7.5px; fill: var(--fp-label); text-anchor: start; }
+.fp-port.byp .fp-cage { stroke: var(--fp-tx); stroke-dasharray: 3 2; stroke-width: 1.5; }
+.fp-key .fp-key-byp { background: var(--fp-tx); }

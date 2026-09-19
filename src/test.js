@@ -2238,6 +2238,19 @@ group("front panel");
   /* The panel sits above the table now, so it has to stay under about 2cm --
      75.6px at 96dpi, and the drawing renders at its own height. */
   check("both chassis fit in two centimetres", L.height <= 75 && G.height <= 75);
+  /* The labels sit above the top row and below the bottom one, so the canvas
+     has to leave room for them or they are cut off by its own edge. */
+  for (const [name, P] of [["T12S", L], ["G8S", G]]) {
+    const top = Math.min(...P.cages.map((c) => c.y));
+    const bottom = Math.max(...P.cages.map((c) => c.y + c.h));
+    check(`${name} leaves room for the labels above and below`,
+      top >= 12 && P.height - bottom >= 12);
+  }
+  // on the box the management port sits beside the data ports, not across the chassis
+  check("the G8S management port is next to P6, not at the far end", (() => {
+    const p6 = G.cages.find((c) => c.name === "P6");
+    return G.mgmt.x > p6.x && G.mgmt.x - (p6.x + p6.w) < 40;
+  })());
   check("the lamps match the bypass pairs the device reports",
     L.lamps.map((l) => l.pair).join() === C.BYPASS_MODELS.T12S.pairs.map((p) => p.n).join() &&
     G.lamps.map((l) => l.pair).join() === C.BYPASS_MODELS.G8S.pairs.map((p) => p.n).join());

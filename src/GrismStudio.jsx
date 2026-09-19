@@ -3531,7 +3531,7 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = f
             <circle cx={L.mgmt.x + 5} cy={L.mgmt.y + L.mgmt.h - 5} r="2.6"
               className={"fp-led" + (!blind && mgmt.link ? " on" : "")} />
             <title>{`${tr("panel.mgmt")} — ${blind ? tr("panel.unknown") : mgmt.link ? tr("panel.keyUp") : tr("panel.keyDown")}`}</title>
-            <text x={L.mgmt.x + L.mgmt.w / 2} y={L.mgmt.y - 6} className="fp-lbl mgmt">{tr("panel.mgmt")}</text>
+            <text x={L.mgmt.x + L.mgmt.w / 2} y={L.mgmt.y + L.mgmt.h + 11} className="fp-lbl mgmt">{tr("panel.mgmt")}</text>
           </g>
           {/* the lamps this chassis carries, if any -- on a G8S the two bypass
               pairs, whose state the page already knows */}
@@ -3573,7 +3573,7 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = f
                   className={"fp-act rx" + (!blind && moving(s.rx) ? " on" : "")} />
                 <path d={`M ${cx + 1} ${c.y + c.h - 3} l 4 -5 l 4 5 z`}
                   className={"fp-act tx" + (!blind && moving(s.tx) ? " on" : "")} />
-                <text x={cx} y={labelAbove ? c.y - 6 : c.y + c.h + 13} className="fp-lbl">{c.name}</text>
+                <text x={cx} y={labelAbove ? c.y - 5 : c.y + c.h + 11} className="fp-lbl">{c.name}</text>
               </g>
             );
           })}
