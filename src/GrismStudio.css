@@ -573,9 +573,13 @@
 .dev-packet-layer{position:absolute; inset:0; pointer-events:none; overflow:visible; z-index:5;}
 .dev-packet-core{fill:var(--accent); }
 .dev-packet-glow{fill:var(--accent); opacity:.35;}
-.dev-port-area{display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap;}
-.dev-port-cols{display:flex; flex-wrap:wrap; gap:var(--dp-rowgap) 8px;}
-.dev-loop-group{display:flex; flex-direction:column; gap:6px; padding-left:18px; margin-left:auto; border-left:1px dashed var(--line-2);}
+/* The LOOP ports are a column of their own on the right. The port block
+   beside them wraps internally when there are enough ports to need it -- but
+   the two blocks must not wrap against each other, or a 70-port device drops
+   its LOOP group onto a line of its own below everything. */
+.dev-port-area{display:flex; align-items:flex-start; gap:18px; flex-wrap:nowrap;}
+.dev-port-cols{display:flex; flex-wrap:wrap; gap:var(--dp-rowgap) 8px; flex:1 1 auto; min-width:0;}
+.dev-loop-group{display:flex; flex-direction:column; gap:6px; padding-left:18px; margin-left:auto; border-left:1px dashed var(--line-2); flex:0 0 auto;}
 .dev-loop-label{font-family:var(--mono); font-size:9px; letter-spacing:.16em; color:#e0b24a; text-align:center;}
 .dev-port.loop{border-color:#e0b24a;}
 .dev-port.loop .dev-port-led{background:#e0b24a; box-shadow:0 0 8px rgba(224,178,74,.7);}
@@ -1404,8 +1408,17 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 /* ---- the card index ----------------------------------------------------
    Sticks to the top of the settings scroll area (.sys-wrap owns the scroll),
    so it stays reachable once you are down among the cards. */
+/* The page header and the index travel together: .sys-wrap owns the scroll,
+   so one sticky block at its top keeps the section switcher, the re-read
+   button and the chips reachable from anywhere on the page. -24px cancels the
+   wrap's own top padding so nothing shows through above the block. */
+.set-page .set-sticky { position: sticky; top: -24px; z-index: 4; background: var(--bg);
+  padding-top: 24px; }
+.set-page .set-sticky .sys-head { margin-bottom: 0; padding-bottom: 6px; }
 .card-jump { position: sticky; top: -24px; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px;
   padding: 8px 0 12px; margin-bottom: 4px; background: var(--bg); }
+/* inside the block it no longer sticks on its own -- the block does */
+.set-page .set-sticky .card-jump { position: static; }
 .cj-chip { border: 1px solid var(--line); background: var(--panel-2); color: var(--txt-dim);
   border-radius: 99px; padding: 4px 12px; font: inherit; font-size: 12.5px; cursor: pointer;
   white-space: nowrap; }

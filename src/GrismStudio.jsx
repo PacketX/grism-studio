@@ -1511,7 +1511,10 @@ function CardJump({ rootRef, section }) {
   /* The strip wraps to more rows as the window narrows, so the offset a jump has
      to clear is not a constant. Publish the measured height for the CSS. */
   React.useEffect(() => {
-    const strip = stripRef.current, root = rootRef.current;
+    // measure the whole sticky block (page header + chips), since that is what
+    // a jumped-to card has to clear
+    const strip = stripRef.current?.closest(".set-sticky") ?? stripRef.current;
+    const root = rootRef.current;
     if (!strip || !root) return;
     const publish = () => root.style.setProperty("--cj-h", strip.offsetHeight + "px");
     publish();
@@ -2132,6 +2135,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     /* set-page scopes the card styling to this tab: System status shares
        .sys-wrap and .sys-card but wants its own compact look */
     <div className="sys-wrap set-page" ref={pageRef}>
+      {/* The section switcher and the re-read button are how you move around
+          this page, so they follow the scroll rather than being left at the top
+          of it -- together with the card index, as one block. */}
+      <div className="set-sticky">
       <div className="sys-head">
         <h2 className="sys-title">{tr("set.title")}</h2>
         <div className="sys-controls">
@@ -2166,11 +2173,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         </div>
       </div>
 
+      <CardJump rootRef={pageRef} section={section} />
+      </div>
+
       {state === "error" && <div className="sys-err">{tr("set.loadFailed")}: {errMsg}</div>}
       {submit.state === "error" && <div className="sys-err">{tr("set.submitFailed")}: {submit.msg}</div>}
       {submit.state === "ok" && <div className="set-ok-banner">{tr("set.applied")}</div>}
-
-      <CardJump rootRef={pageRef} section={section} />
 
       {section === "ports" && (
         <div className="set-ports">

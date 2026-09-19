@@ -2344,11 +2344,45 @@ group("simulate panel density");
     // each launch reads the route from the ref, not from the render it started in
     check("a packet's route is resolved as it launches",
       /const plan = planRef\.current/.test(jsx));
+    /* Enough ports and the port block wraps to a second row. The LOOP group
+       must not wrap with it -- it is a column beside the block, not another
+       item in it. */
+    const css2 = rf(new URL("./GrismStudio.css", import.meta.url), "utf8");
+    check("the port block and the LOOP group never wrap against each other",
+      /\.dev-port-area\{[^}]*flex-wrap:nowrap/.test(css2));
+    check("the port block still wraps internally",
+      /\.dev-port-cols\{[^}]*flex-wrap:wrap/.test(css2));
+    check("the LOOP group keeps its own width", /\.dev-loop-group\{[^}]*flex:0 0 auto/.test(css2));
     // changing a switch mid-stream must divert the next packet, not stop the stream
     const eff = jsx.slice(jsx.indexOf("planRef.current = animPlan"), jsx.indexOf("}, [animPlan]);"));
     check("a filter change does not stop the stream",
       /if \(!animPlan\)/.test(eff) && !/^\s*setPlayState\("idle"\);/m.test(eff.split("if (!animPlan)")[0]));
   }
+}
+
+/* ---------- settings page: the header travels with the scroll -------------- */
+group("settings sticky header");
+{
+  const { readFileSync: rf } = await import("node:fs");
+  const css = rf(new URL("./GrismStudio.css", import.meta.url), "utf8");
+  const jsx = rf(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+  const block = css.slice(css.indexOf(".set-page .set-sticky"), css.indexOf(".cj-chip"));
+  check("the header block sticks to the top of the settings scroll area",
+    /position: sticky/.test(block) && /background: var\(--bg\)/.test(block));
+  // .sys-wrap has 24px of top padding; the block cancels it or the page shows through
+  check("the block covers the scroll area's own padding",
+    /top: -24px/.test(block) && /padding-top: 24px/.test(block));
+  // two sticky elements one inside the other leave the chips floating
+  check("the index does not stick separately inside the block",
+    /\.set-page \.set-sticky \.card-jump \{ position: static/.test(css));
+  // the header, the section switcher and the re-read button ride together
+  const sticky = jsx.slice(jsx.indexOf('<div className="set-sticky">'), jsx.indexOf("<CardJump rootRef={pageRef}"));
+  check("the block holds the page header and the re-read button",
+    /className="sys-head"/.test(sticky) && /sys-refresh/.test(sticky) && /set-seg/.test(sticky));
+  // a jumped-to card has to clear the whole block, not just the chips
+  check("the published offset measures the whole block",
+    /closest\("\.set-sticky"\)/.test(jsx));
+  check("the card index still clears it", /scroll-margin-top: calc\(var\(--cj-h/.test(css));
 }
 
 for (const lang of Object.keys(I18N)) {
