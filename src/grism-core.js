@@ -3593,3 +3593,63 @@ export function nextVport(prev) {
     vlanid: /^\d+$/.test(vlan) && +vlan < 4094 ? String(+vlan + 1) : "",
   };
 }
+
+/* ============================================================
+   T12S front panel
+
+   Drawn from the product photo: a management RJ45, then two stacked 2x2 blocks
+   of SFP cages, then four on their own at the right. The odd-numbered port of
+   each pair is the upper cage, which is how the silkscreen reads -- P1 above
+   P0, P3 above P2, and so on.
+   ============================================================ */
+
+const T12S_BLOCKS = [
+  { x: 150, top: ["P1", "P3"], bottom: ["P0", "P2"] },
+  { x: 260, top: ["P5", "P7"], bottom: ["P4", "P6"] },
+];
+const T12S_RIGHT = ["P8", "P9", "P10", "P11"];
+
+/* Only the T12S has this chassis drawn. Named for what it decides, rather than
+   borrowing the speed switch's predicate, which is about something else. */
+export const hasFrontPanel = (model) => String(model ?? "").toUpperCase().includes("T12S");
+
+export function t12sPanelLayout() {
+  const CAGE_W = 44, CAGE_H = 26, GAP_X = 2, GAP_Y = 10, TOP_Y = 26;
+  const cages = [];
+  for (const b of T12S_BLOCKS) {
+    b.top.forEach((n, i) => cages.push({ name: n, x: b.x + i * (CAGE_W + GAP_X), y: TOP_Y, w: CAGE_W, h: CAGE_H }));
+    b.bottom.forEach((n, i) => cages.push({ name: n, x: b.x + i * (CAGE_W + GAP_X), y: TOP_Y + CAGE_H + GAP_Y, w: CAGE_W, h: CAGE_H }));
+  }
+  const rightX = 430;
+  T12S_RIGHT.forEach((n, i) => cages.push({
+    name: n, x: rightX + i * (CAGE_W + 14), y: TOP_Y + (CAGE_H + GAP_Y) / 2, w: CAGE_W, h: CAGE_H,
+  }));
+  return {
+    width: rightX + T12S_RIGHT.length * (CAGE_W + 14) + 16,
+    height: TOP_Y * 2 + CAGE_H * 2 + GAP_Y,
+    // the management port sits immediately left of P0
+    // level with the lower row, where it sits on the box: beside P0, not P1
+    mgmt: { x: 96, y: TOP_Y + CAGE_H + GAP_Y - 2, w: 34, h: 30 },
+    cages,
+  };
+}
+
+/* What a cage should show: whether the link is up, and whether anything is
+   moving in either direction. */
+export function panelPortState(stat) {
+  if (!stat) return { present: false, link: false, rx: 0, tx: 0, speed: null };
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const link = Number(stat.linkStatus) === 1;
+  /* The device formats Mbps to two decimals, so a link carrying a couple of
+     packets a second reports 0.00 and would read as idle. The packet counters
+     in the same row are exact, so take activity from whichever says yes.
+     Nothing moves on a link that is down, whatever the counters say. */
+  const rx = link ? num(stat.inMbps) || num(stat.inPps) : 0;
+  const tx = link ? num(stat.outMbps) || num(stat.outPps) : 0;
+  return { present: true, link, rx, tx, speed: stat.speed == null ? null : Number(stat.speed) };
+}
+
+export const panelStates = (stats) => {
+  const by = new Map((stats ?? []).filter((s) => s && s.name).map((s) => [String(s.name), s]));
+  return Object.fromEntries(t12sPanelLayout().cages.map((c) => [c.name, panelPortState(by.get(c.name))]));
+};

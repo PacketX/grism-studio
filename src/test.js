@@ -1069,7 +1069,8 @@ check("no Chinese entry is left in English", (() => {
   // "down" joins these as a link state shown verbatim; "up" already was, and
   // only escaped this check for being shorter than the four-letter threshold.
   const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
-    "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass"]);
+    "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass",
+    "MGMT"]);
   const same = Object.keys(I18N.en).filter((k) =>
     I18N["zh-TW"][k] === I18N.en[k] && !shared.has(I18N.en[k]) && /[A-Za-z]{4,}/.test(I18N.en[k]));
   if (same.length) console.log("    untranslated:", same.join(", "));
@@ -2135,6 +2136,91 @@ group("next virtual port");
     C.nextVport({ name: "mgmt", ports: "P0", vlanid: "5" }).name === "");
   check("nothing to follow yields an empty row",
     JSON.stringify(C.nextVport(null)) === JSON.stringify({ name: "", ports: "", vlanid: "" }));
+}
+
+/* ---------- T12S front panel ---------- */
+group("front panel");
+{
+  const L = C.t12sPanelLayout();
+  check("twelve cages, one per physical port", L.cages.length === 12 &&
+    new Set(L.cages.map((c) => c.name)).size === 12);
+  check("every port from P0 to P11 is drawn",
+    Array.from({ length: 12 }, (_, i) => "P" + i).every((n) => L.cages.some((c) => c.name === n)));
+
+  /* The silkscreen reads odd above even: P1 over P0, P3 over P2. Getting this
+     backwards would label a lit port as its neighbour. */
+  const y = (n) => L.cages.find((c) => c.name === n).y;
+  const x = (n) => L.cages.find((c) => c.name === n).x;
+  check("the odd port of each pair is the upper cage",
+    [[1, 0], [3, 2], [5, 4], [7, 6]].every(([odd, even]) => y("P" + odd) < y("P" + even)));
+  check("each pair shares a column",
+    [[1, 0], [3, 2], [5, 4], [7, 6]].every(([odd, even]) => x("P" + odd) === x("P" + even)));
+  check("the pairs run left to right",
+    x("P0") < x("P2") && x("P2") < x("P4") && x("P4") < x("P6"));
+  check("P8 to P11 sit right of the blocks and in order",
+    x("P8") > x("P7") && x("P8") < x("P9") && x("P9") < x("P10") && x("P10") < x("P11"));
+  check("P8 to P11 share a row", new Set(["P8", "P9", "P10", "P11"].map(y)).size === 1);
+
+  // the management port is left of P0 and must not sit on top of anything
+  check("the management port is left of P0", L.mgmt.x + L.mgmt.w <= x("P0"));
+  const boxes = [...L.cages, { name: "MGMT", ...L.mgmt }];
+  const clash = [];
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j];
+    if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h)
+      clash.push(a.name + "/" + b.name);
+  }
+  check("nothing overlaps anything", clash.length === 0, clash.join(" "));
+  check("everything is inside the reported canvas",
+    boxes.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= L.width && b.y + b.h <= L.height));
+
+  check("the management port is level with the lower row, beside P0",
+    Math.abs(L.mgmt.y - y("P0")) < 12 && Math.abs(L.mgmt.y - y("P1")) > 20);
+  // the blocks are the speed groups this page switches together
+  check("a pair sits closer than two blocks do",
+    (x("P2") - x("P0")) < (x("P4") - x("P2")));
+
+  // what each cage shows
+  const st = C.panelStates([
+    { name: "P1", linkStatus: 1, inMbps: 3.2, outMbps: 0, speed: 1000 },
+    { name: "P0", linkStatus: 0, inMbps: 0, outMbps: 0 },
+    { name: "P2", linkStatus: "1", inMbps: "0.5", outMbps: null },
+  ]);
+  check("a live port reads its link and its rates",
+    st.P1.link === true && st.P1.rx === 3.2 && st.P1.tx === 0);
+  check("a dark port reads as down", st.P0.link === false);
+  // the device sends numbers, but a string or a null must not light an arrow
+  check("strings and nulls are handled",
+    st.P2.link === true && st.P2.rx === 0.5 && st.P2.tx === 0);
+  /* A port missing from the statistics is drawn dark rather than skipped --
+     the panel is the shape of the box, not of the reply. */
+  check("a port the device did not report is drawn, dark",
+    st.P9 && st.P9.present === false && st.P9.link === false);
+  check("nothing at all is still twelve ports",
+    Object.keys(C.panelStates(null)).length === 12 &&
+    Object.keys(C.panelStates([])).length === 12);
+
+  /* The device formats Mbps to two decimals, so a link carrying a couple of
+     packets a second reports 0.00 -- which used to read as idle. */
+  const slow = C.panelPortState({ linkStatus: 1, inMbps: "0.00", inPps: 2, outMbps: 0, outPps: 0 });
+  check("a slow link still shows activity", slow.rx === 2 && slow.tx === 0);
+  check("counters on a down link move nothing", (() => {
+    const d = C.panelPortState({ linkStatus: 0, inMbps: 5, outMbps: 5, inPps: 900 });
+    return d.link === false && d.rx === 0 && d.tx === 0;
+  })());
+
+  check("the panel is gated on being a T12S",
+    C.hasFrontPanel("T12S") && C.hasFrontPanel("GRISM-T12S") &&
+    !C.hasFrontPanel("G8S") && !C.hasFrontPanel("HL1") && !C.hasFrontPanel(""));
+}
+
+for (const lang of Object.keys(I18N)) {
+  check(`${lang} names the panel and its legend`,
+    !!I18N[lang]["panel.title"] && !!I18N[lang]["panel.mgmt"] &&
+    ["keyUp", "keyDown", "keyRx", "keyTx"].every((k) => !!I18N[lang]["panel." + k]));
+  // dark lamps mean two different things and the page has to say which
+  check(`${lang} distinguishes "nothing read" from "all down"`,
+    !!I18N[lang]["panel.noData"] && !!I18N[lang]["panel.stale"] && !!I18N[lang]["panel.unknown"]);
 }
 
 /* ---------- hook order ---------- */

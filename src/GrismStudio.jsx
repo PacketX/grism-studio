@@ -41,6 +41,8 @@ import {
   suggestName,
   parseVports, vportProblems, buildVportConfigSet,
   nextVport,
+  t12sPanelLayout, panelStates,
+  hasFrontPanel, panelPortState,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -227,6 +229,7 @@ export default function GrismStudio() {
   // <args><grel2Correlation>, read from the same get_config the port list comes
   // from. Declared here so hasL2gre below can see it.
   const [l2greOn, setL2greOn] = useState(false);
+  const [deviceModel, setDeviceModel] = useState("");   // <args><model>, for panels that are model-specific
   useEffect(() => {
     if (workspace !== "traffic" || !login.who) return;
     let alive = true;
@@ -449,6 +452,7 @@ export default function GrismStudio() {
       // whether the device is correlating L2GRE at all -- the table page is only
       // worth showing when it is, or when it still holds rows from when it was
       setL2greOn((cfg.args ?? {}).grel2Correlation === true);
+      setDeviceModel(String((cfg.args ?? {}).model ?? ""));
       const targets = (cfg.heartbeat?.target ?? [])
         .map((t) => ({ id: t.id, sendPort: t.sendPort, receivePort: t.receivePort }))
         .filter((t) => t.id != null);
@@ -540,7 +544,7 @@ export default function GrismStudio() {
     setHbTargets([]);
     setDeviceStorages([]);
     setLoopPorts([]);
-    setL2greOn(false); setL2gre(null);
+    setL2greOn(false); setL2gre(null); setDeviceModel("");
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
     /* The open document may be the device's running config, which is no longer
        ours to show and can no longer be reloaded. Go back to the overview on the
@@ -906,7 +910,7 @@ export default function GrismStudio() {
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
         {tab === "trafficPorts" && (
-          <TrafficTab loggedIn={!!login.who} t={t} />
+          <TrafficTab loggedIn={!!login.who} t={t} model={deviceModel} />
         )}
         {tab === "trafficSessions" && (
           <TrafficSessionsTab loggedIn={!!login.who} t={t}
@@ -3496,11 +3500,84 @@ function BreakdownTable({ rows, keyLabel, labelOf, tr, limit = 10 }) {
   );
 }
 
-function TrafficTab({ loggedIn, t }) {
+/* ============================================================
+   T12S front panel — the ports as they sit on the box
+   ============================================================ */
+function T12sPanel({ stats, mgmtStat, stale = false, t }) {
+  const tr = t || ((k) => k);
+  const L = t12sPanelLayout();
+  const st = panelStates(stats);
+  const topRow = Math.min(...L.cages.map((c) => c.y));
+  /* Nothing read yet, or nothing readable: the lamps say nothing rather than
+     saying every link is down, which is a different and alarming claim. */
+  const blind = !(stats ?? []).length;
+  const mgmt = panelPortState(mgmtStat);
+  /* Anything at all counts as activity: the panel answers "is traffic moving
+     here", and the table above it carries the rates. */
+  const moving = (v) => v > 0;
+  return (
+    <section className="sys-card panel-card">
+      <h3 className="sys-card-title">{tr("panel.title")}</h3>
+      <p className="set-hint">{tr("panel.note")}</p>
+      <div className="panel-wrap">
+        <svg viewBox={`0 0 ${L.width} ${L.height}`}
+          className={"fp" + (blind ? " blind" : "") + (stale ? " stale" : "")}
+          role="img" aria-label={tr("panel.title")}>
+          <rect x="1" y="1" width={L.width - 2} height={L.height - 2} rx="10" className="fp-chassis" />
+          {/* management port, immediately left of P0 */}
+          <g>
+            <rect x={L.mgmt.x} y={L.mgmt.y} width={L.mgmt.w} height={L.mgmt.h} rx="3" className="fp-mgmt" />
+            <rect x={L.mgmt.x + 8} y={L.mgmt.y + L.mgmt.h - 9} width={18} height={6} rx="1" className="fp-mgmt-clip" />
+            {/* the management port has a link light like any other */}
+            <circle cx={L.mgmt.x + 5} cy={L.mgmt.y + L.mgmt.h - 5} r="2.6"
+              className={"fp-led" + (!blind && mgmt.link ? " on" : "")} />
+            <title>{`${tr("panel.mgmt")} — ${blind ? tr("panel.unknown") : mgmt.link ? tr("panel.keyUp") : tr("panel.keyDown")}`}</title>
+            <text x={L.mgmt.x + L.mgmt.w / 2} y={L.mgmt.y - 6} className="fp-lbl mgmt">{tr("panel.mgmt")}</text>
+          </g>
+          {L.cages.map((c) => {
+            const s = st[c.name] ?? { link: false, rx: 0, tx: 0 };
+            const cx = c.x + c.w / 2;
+            const labelAbove = c.y === topRow;
+            return (
+              <g key={c.name} className={"fp-port" + (!blind && s.link ? " up" : "")}>
+                <rect x={c.x} y={c.y} width={c.w} height={c.h} rx="3" className="fp-cage" />
+                <rect x={c.x + 5} y={c.y + 5} width={c.w - 10} height={c.h - 16} rx="1.5" className="fp-slot" />
+                {/* the state in words, for anyone not reading the colours */}
+                <title>{`${c.name} — ${blind ? tr("panel.unknown")
+                  : s.link ? [tr("panel.keyUp"), moving(s.rx) && tr("panel.keyRx"), moving(s.tx) && tr("panel.keyTx")]
+                    .filter(Boolean).join(", ")
+                  : tr("panel.keyDown")}`}</title>
+                {/* the link light, as on the front of the box */}
+                <circle cx={c.x + 6} cy={c.y + c.h - 5} r="2.6" className={"fp-led" + (!blind && s.link ? " on" : "")} />
+                {/* in and out, lit only while something is moving */}
+                <path d={`M ${cx - 9} ${c.y + c.h - 8} l 4 5 l 4 -5 z`}
+                  className={"fp-act rx" + (!blind && moving(s.rx) ? " on" : "")} />
+                <path d={`M ${cx + 1} ${c.y + c.h - 3} l 4 -5 l 4 5 z`}
+                  className={"fp-act tx" + (!blind && moving(s.tx) ? " on" : "")} />
+                <text x={cx} y={labelAbove ? c.y - 6 : c.y + c.h + 13} className="fp-lbl">{c.name}</text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      {blind && <p className="sys-note dim">{tr("panel.noData")}</p>}
+      {!blind && stale && <p className="set-hint warn">{tr("panel.stale")}</p>}
+      <div className="fp-key">
+        <span><i className="fp-key-led on" /> {tr("panel.keyUp")}</span>
+        <span><i className="fp-key-led" /> {tr("panel.keyDown")}</span>
+        <span><i className="fp-key-rx" /> {tr("panel.keyRx")}</span>
+        <span><i className="fp-key-tx" /> {tr("panel.keyTx")}</span>
+      </div>
+    </section>
+  );
+}
+
+function TrafficTab({ loggedIn, t, model = "" }) {
   const tr = t || ((k) => k);
   const [rows, setRows] = React.useState([]);
   const [sessions, setSessions] = React.useState(null); // { v4:{total,concurrent}, v6:{total,concurrent} }
   const [descs, setDescs] = React.useState({});         // { portName: description }
+  const [devModel, setDevModel] = React.useState("");   // from this page's own get_config
   const [state, setState] = React.useState("idle");   // idle | loading | ok | error
   const [errMsg, setErrMsg] = React.useState("");
   const [updatedAt, setUpdatedAt] = React.useState(null);
@@ -3557,6 +3634,7 @@ function TrafficTab({ loggedIn, t }) {
       const map = {};
       (json.interfaces || []).forEach((grp) => (grp.ports || []).forEach((p) => { if (p.name) map[p.name] = p.description || ""; }));
       setDescs(map);
+      setDevModel(String((json.args ?? {}).model ?? ""));
     } catch (e) { warnFetch("port descriptions", e); }
   }, []);
 
@@ -3691,6 +3769,12 @@ function TrafficTab({ loggedIn, t }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* the ports as they sit on the box, under the table that lists them */}
+      {hasFrontPanel(model || devModel) && (
+        <T12sPanel stats={rows} mgmtStat={rows.find((r) => r.name === "H1")}
+          stale={state === "error"} t={t} />
       )}
     </div>
   );
