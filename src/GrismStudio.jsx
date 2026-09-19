@@ -5598,7 +5598,7 @@ function CollapseSection({ label, active, children }) {
 }
 
 function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false,
-  joiner, onJoiner, joinerOptions, joinerLabel, joinerText, extra, t }) {
+  joiner, onJoiner, joinerOptions, joinerLabel, joinerText, prefix, extra, t }) {
   const tr = t || ((k) => k);
   // the chosen rows, named, for the header -- listed up to a few, then counted
   const chosenAll = items.filter((it) => it.on)
@@ -5622,11 +5622,14 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
       <button className={"acc-head" + (open ? " open" : "")} onClick={() => setOpen((o) => !o)}>
         {/* what is chosen, named -- the generic label is only the empty state */}
         {chosen.length
-          ? <span className="known-chosen">{chosen.map((c, i) => (
+          ? <span className="known-chosen">
+              {prefix && chosen.length > 1 && <span className="chosen-join">{prefix}</span>}
+              {chosen.map((c, i) => (
               <React.Fragment key={c.id}>
                 {/* the joiner reads between the filters it joins, so the header
                     states the whole condition rather than just its parts */}
-                {i > 0 && (joinerText ?? joiner) && <span className="chosen-join">{joinerText ?? joiner}</span>}
+                {i > 0 && !prefix && (joinerText ?? joiner) &&
+                  <span className="chosen-join">{joinerText ?? joiner}</span>}
                 <span className="chosen-one">
                   <b>{c.id}</b>{c.sub && <span>{c.sub}</span>}
                 </span>
@@ -6132,7 +6135,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 joiner={sel.mode} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, mode: v }))}
                 joinerLabel={tr("ch.mode")}
                 joinerOptions={[{ v: "duplicate", l: tr("ch.modeDuplicate") }, { v: "loadBalance", l: tr("ch.modeBalance") }]}
-                joinerText={sel.mode === "loadBalance" ? tr("ch.modeBalance") : tr("ch.modeDuplicate")}
+                prefix={sel.mode === "loadBalance" ? tr("ch.modeBalanceTo") : tr("ch.modeDuplicateTo")}
                 extra={sel.mode === "loadBalance" && (
                   <label className="acc-join">{tr("ch.balanceBy")}
                     <select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>
