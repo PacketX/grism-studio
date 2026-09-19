@@ -5485,10 +5485,10 @@ function CollapseSection({ label, active, children }) {
 
 function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false, joiner, onJoiner, t }) {
   const tr = t || ((k) => k);
-  // the chosen rows, named, for the header
-  const chosen = items.filter((it) => it.on)
-    .map((it) => ({ id: it.neg ? "!" + it.b : it.b, sub: it.sub }))
-    .slice(0, 3);
+  // the chosen rows, named, for the header -- listed up to a few, then counted
+  const chosenAll = items.filter((it) => it.on)
+    .map((it) => ({ id: it.neg ? "!" + it.b : it.b, sub: it.sub }));
+  const chosen = chosenAll.slice(0, 3);
   const [open, setOpen] = useState(defaultOpen);
   const picked = items.filter((it) => it.on).length;
   const [multi, setMulti] = useState(picked > 1); // default single, unless already multiple
@@ -5517,7 +5517,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
                 </span>
               </React.Fragment>))}</span>
           : <span className="known-label">{label}</span>}
-        {chosen.length > 2 && <span className="acc-count">{chosen.length}</span>}
+        {chosenAll.length > 2 && <span className="acc-count">{chosenAll.length}</span>}
       </button>
       {open && <div className="acc-body">
         <div className="acc-toolbar">
@@ -5737,10 +5737,16 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     const outs = [];
     (function walk(n) {
       if (!n || isUnset(n)) return;
-      if (n.t === "out") { outs.push(n.ports === "0" ? "drop" : n.ports); return; }
+        if (n.t === "out") {
+          String(n.ports ?? "").split(",").map((x) => x.trim()).filter(Boolean)
+            .forEach((tok) => outs.push(tok === "0" ? "drop" : tok));
+          return;
+        }
       ["match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
     })(c.tree);
-    return [...new Set(outs)].slice(0, 3).join(", ") || "—";
+      const all = [...new Set(outs)];
+      if (!all.length) return "—";
+      return all.length > 3 ? all.slice(0, 3).join(", ") + " +" + (all.length - 3) : all.join(", ");
   };
   const chainInFirst = (c) => (c.ports || "").split(",")[0].trim();
 

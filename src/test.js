@@ -2039,6 +2039,20 @@ group("chain layout");
   }
 }
 
+/* ---------- truncated summaries ---------- */
+group("truncated summaries");
+{
+  /* A list cut at three used to read as the whole list: the chain rail stopped
+     at three outputs, and the picker's badge counted the three it had room for
+     rather than everything chosen. Both have to say how many there really are. */
+  const src = (await import("node:fs")).readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+  check("the chain rail counts what it cannot show",
+    /all\.length > 3 \? all\.slice\(0, 3\)\.join\(", "\) \+ " \+" \+ \(all\.length - 3\)/.test(src));
+  check("the picker badge counts every chosen row, not the shown ones",
+    /chosenAll\.length > 2 && <span className="acc-count">\{chosenAll\.length\}/.test(src) &&
+    /const chosen = chosenAll\.slice\(0, 3\)/.test(src));
+}
+
 /* ---------- hook order ---------- */
 group("hook order");
 {
