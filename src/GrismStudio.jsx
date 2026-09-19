@@ -2090,18 +2090,26 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     setSubmit({ state: "sending", msg: "" });
     const body = new URLSearchParams();
     body.set("data", buildVportConfigSet({ adds: vpAdds, deletes: vpDeletes }));
-    let ok = false;
+    /* Two steps: write the configuration, then restart. The configSet could
+       carry reboot="yes" and do both, but then a write that failed and a
+       device that went down look the same from here. */
     try {
       const res = await fetch("/grism/task/submit_config", { method: "POST", credentials: "include",
         headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-      ok = res.ok;
-      if (!ok) setSubmit({ state: "error", msg: (await res.text()).trim() || ("HTTP " + res.status) });
-    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
-    if (!ok) return;
+      if (!res.ok) {
+        setSubmit({ state: "error", msg: (await res.text()).trim() || ("HTTP " + res.status) });
+        return;
+      }
+    } catch (e) {
+      setSubmit({ state: "error", msg: String(e.message || e) });
+      return;
+    }
     setSubmit({ state: "idle", msg: "" });
-    // <configSet reboot="yes">: hold the page the way the speed switch does
     setWait({ title: tr("set.vportApplying"), body: tr("set.vportApplyingBody"),
-      phase: "updating", phaseKey: "set.spPhase." });
+      phase: "updating", phaseKey: "set.vpPhase." });
+    // the restart is its own request; it may not answer, which is expected
+    try { await fetch("/grism/task/reboot", { method: "POST", credentials: "include" }); }
+    catch { /* the device is already on its way down */ }
   };
 
   const pageRef = React.useRef(null);

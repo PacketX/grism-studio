@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.65.0";
+export const STUDIO_VERSION = "2.67.0";
 
 export const I18N = {
   en: {
@@ -169,7 +169,9 @@ export const I18N = {
     "set.vportConfirmTitle": "Change the virtual ports?",
     "set.vportConfirmBody": "the device restarts to apply this, and traffic stops until it is back.",
     "set.vportApplying": "Changing virtual ports",
-    "set.vportApplyingBody": "The change is submitted. The device is restarting to apply it — this takes about a minute.",
+    "set.vportApplyingBody": "The change is saved. The device is restarting to apply it — this takes about a minute.",
+    "set.vpPhase.updating": "Saved — restarting the device", "set.vpPhase.rebooting": "Restarting — device is offline",
+    "set.vpPhase.done": "Virtual ports changed",
     "set.vpErrNoName": "Give the virtual port a name.",
     "set.vpErrBadName": "A virtual port is named V followed by a number, like V3.",
     "set.vpErrDup": "This name is already taken:",
@@ -687,7 +689,9 @@ export const I18N = {
     "set.vportConfirmTitle": "要變更虛擬埠?",
     "set.vportConfirmBody": "裝置會重新開機以套用,期間流量會中斷。",
     "set.vportApplying": "變更虛擬埠",
-    "set.vportApplyingBody": "變更已送出,裝置正在重新開機以套用 — 大約需要一分鐘。",
+    "set.vportApplyingBody": "變更已儲存,裝置正在重新開機以套用 — 大約需要一分鐘。",
+    "set.vpPhase.updating": "已儲存 — 正在重新啟動裝置", "set.vpPhase.rebooting": "重開機中 — 裝置已離線",
+    "set.vpPhase.done": "虛擬埠已變更",
     "set.vpErrNoName": "請為虛擬埠命名。",
     "set.vpErrBadName": "虛擬埠的名稱是 V 加數字,例如 V3。",
     "set.vpErrDup": "這個名稱已經有了:",

@@ -3525,8 +3525,10 @@ export const suggestName = (kind, item) => {
    Virtual ports
 
    A VPORT groups physical ports under one name, optionally on a VLAN. They are
-   added and removed through <interfaces><find type="VPORT">, and the device
-   reboots to apply -- so the whole set of changes goes in one configSet.
+   added and removed through <interfaces><find type="VPORT">, and only take
+   effect after a restart -- so the whole set of changes goes in one configSet,
+   and the caller restarts the device afterwards through /grism/task/reboot
+   rather than through the configSet's own reboot attribute.
    ============================================================ */
 
 export function parseVports(cfg) {
@@ -3575,7 +3577,7 @@ export function buildVportConfigSet({ adds = [], deletes = [] } = {}) {
     }),
     ...deletes.map((n) => `      <ports type="delete" name="${esc(n)}" />`),
   ];
-  return `<configSet reboot="yes">\n  <interfaces>\n    <find type="VPORT">\n${rows.join("\n")}\n    </find>\n  </interfaces>\n</configSet>`;
+  return `<configSet reboot="no">\n  <interfaces>\n    <find type="VPORT">\n${rows.join("\n")}\n    </find>\n  </interfaces>\n</configSet>`;
 }
 
 /* The next virtual port, following on from the one before it: the same members,

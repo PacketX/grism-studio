@@ -2073,7 +2073,7 @@ group("virtual ports");
   const xml = C.buildVportConfigSet({
     adds: [{ name: "V3", ports: "P6,P7", vlanid: "103" }, { name: "V4", ports: " P6 , P7 ", vlanid: "104" }],
     deletes: ["V0", "V1"] });
-  check("the configSet reboots, as the device requires", xml.includes('<configSet reboot="yes">'));
+  check("the configSet does not reboot on its own", xml.includes('<configSet reboot="no">'));
   check("adds and deletes go in one <find type=\"VPORT\">",
     (xml.match(/<find type="VPORT">/g) ?? []).length === 1 &&
     (xml.match(/type="add"/g) ?? []).length === 2 && (xml.match(/type="delete"/g) ?? []).length === 2);
@@ -2111,6 +2111,11 @@ group("virtual ports");
 for (const lang of Object.keys(I18N)) {
   check(`${lang} warns that virtual ports restart the device`,
     /restart|重(新)?開機/.test(I18N[lang]["set.vportConfirmBody"] || ""));
+  // the restart screen has to say what it is waiting for, not borrow the
+  // speed switch's wording
+  check(`${lang} has its own restart phases for virtual ports`,
+    ["updating", "rebooting", "done"].every((x) => !!I18N[lang]["set.vpPhase." + x]) &&
+    I18N[lang]["set.vpPhase.done"] !== I18N[lang]["set.spPhase.done"]);
 }
 
 /* ---------- the next virtual port ---------- */
