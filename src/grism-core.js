@@ -3609,22 +3609,53 @@ const T12S_BLOCKS = [
 ];
 const T12S_RIGHT = ["P8", "P9", "P10", "P11"];
 
-/* Only the T12S has this chassis drawn. Named for what it decides, rather than
-   borrowing the speed switch's predicate, which is about something else. */
-export const hasFrontPanel = (model) => String(model ?? "").toUpperCase().includes("T12S");
+/* Which models have their chassis drawn. Named for what it decides, rather
+   than borrowing the speed switch's predicate, which is about something else. */
+export const hasFrontPanel = (model) => !!panelModel(model);
+export function panelModel(model) {
+  const m = String(model ?? "").toUpperCase();
+  if (m.includes("T12S")) return "T12S";
+  if (m.includes("G8S")) return "G8S";
+  return null;
+}
+
+/* The G8S: eight copper jacks in four stacked pairs, odd above even, with the
+   management port on the RIGHT after the console block -- the mirror of the
+   T12S -- and the two bypass lamps on the left. */
+export function g8sPanelLayout() {
+  const JACK_W = 44, JACK_H = 26, PAIR_GAP = 20, GAP_Y = 10, TOP_Y = 26, X0 = 150;
+  const cages = [];
+  [["P1", "P0"], ["P3", "P2"], ["P5", "P4"], ["P7", "P6"]].forEach(([top, bottom], i) => {
+    const x = X0 + i * (JACK_W + PAIR_GAP);
+    cages.push({ name: top, x, y: TOP_Y, w: JACK_W, h: JACK_H, kind: "rj45" });
+    cages.push({ name: bottom, x, y: TOP_Y + JACK_H + GAP_Y, w: JACK_W, h: JACK_H, kind: "rj45" });
+  });
+  return {
+    model: "G8S", kind: "rj45",
+    width: 560, height: TOP_Y * 2 + JACK_H * 2 + GAP_Y,
+    mgmt: { x: 496, y: TOP_Y + JACK_H + GAP_Y - 2, w: 34, h: 30 },
+    // the bypass pairs the device actually has, as the front panel labels them
+    lamps: [
+      { id: "BYP-1", x: 96, y: TOP_Y + 8, pair: 1 },
+      { id: "BYP-2", x: 96, y: TOP_Y + 34, pair: 2 },
+    ],
+    cages,
+  };
+}
 
 export function t12sPanelLayout() {
   const CAGE_W = 44, CAGE_H = 26, GAP_X = 2, GAP_Y = 10, TOP_Y = 26;
   const cages = [];
   for (const b of T12S_BLOCKS) {
-    b.top.forEach((n, i) => cages.push({ name: n, x: b.x + i * (CAGE_W + GAP_X), y: TOP_Y, w: CAGE_W, h: CAGE_H }));
-    b.bottom.forEach((n, i) => cages.push({ name: n, x: b.x + i * (CAGE_W + GAP_X), y: TOP_Y + CAGE_H + GAP_Y, w: CAGE_W, h: CAGE_H }));
+    b.top.forEach((n, i) => cages.push({ name: n, x: b.x + i * (CAGE_W + GAP_X), y: TOP_Y, w: CAGE_W, h: CAGE_H, kind: "sfp" }));
+    b.bottom.forEach((n, i) => cages.push({ name: n, x: b.x + i * (CAGE_W + GAP_X), y: TOP_Y + CAGE_H + GAP_Y, w: CAGE_W, h: CAGE_H, kind: "sfp" }));
   }
   const rightX = 430;
   T12S_RIGHT.forEach((n, i) => cages.push({
-    name: n, x: rightX + i * (CAGE_W + 14), y: TOP_Y + (CAGE_H + GAP_Y) / 2, w: CAGE_W, h: CAGE_H,
+    name: n, x: rightX + i * (CAGE_W + 14), y: TOP_Y + (CAGE_H + GAP_Y) / 2, w: CAGE_W, h: CAGE_H, kind: "sfp",
   }));
   return {
+    model: "T12S", kind: "sfp", lamps: [],
     width: rightX + T12S_RIGHT.length * (CAGE_W + 14) + 16,
     height: TOP_Y * 2 + CAGE_H * 2 + GAP_Y,
     // the management port sits immediately left of P0
@@ -3649,7 +3680,10 @@ export function panelPortState(stat) {
   return { present: true, link, rx, tx, speed: stat.speed == null ? null : Number(stat.speed) };
 }
 
-export const panelStates = (stats) => {
+export const panelLayout = (model) =>
+  panelModel(model) === "G8S" ? g8sPanelLayout() : t12sPanelLayout();
+
+export const panelStates = (stats, model) => {
   const by = new Map((stats ?? []).filter((s) => s && s.name).map((s) => [String(s.name), s]));
-  return Object.fromEntries(t12sPanelLayout().cages.map((c) => [c.name, panelPortState(by.get(c.name))]));
+  return Object.fromEntries(panelLayout(model).cages.map((c) => [c.name, panelPortState(by.get(c.name))]));
 };

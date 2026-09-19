@@ -43,6 +43,7 @@ import {
   nextVport,
   t12sPanelLayout, panelStates,
   hasFrontPanel, panelPortState,
+  panelLayout,
 } from "./grism-core.js";
 
 /* Persisted UI preferences (language, theme, traffic refresh interval). Stored in
@@ -3503,10 +3504,10 @@ function BreakdownTable({ rows, keyLabel, labelOf, tr, limit = 10 }) {
 /* ============================================================
    T12S front panel — the ports as they sit on the box
    ============================================================ */
-function T12sPanel({ stats, mgmtStat, stale = false, t }) {
+function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = false, t }) {
   const tr = t || ((k) => k);
-  const L = t12sPanelLayout();
-  const st = panelStates(stats);
+  const L = panelLayout(model);
+  const st = panelStates(stats, model);
   const topRow = Math.min(...L.cages.map((c) => c.y));
   /* Nothing read yet, or nothing readable: the lamps say nothing rather than
      saying every link is down, which is a different and alarming claim. */
@@ -3534,19 +3535,39 @@ function T12sPanel({ stats, mgmtStat, stale = false, t }) {
             <title>{`${tr("panel.mgmt")} — ${blind ? tr("panel.unknown") : mgmt.link ? tr("panel.keyUp") : tr("panel.keyDown")}`}</title>
             <text x={L.mgmt.x + L.mgmt.w / 2} y={L.mgmt.y - 6} className="fp-lbl mgmt">{tr("panel.mgmt")}</text>
           </g>
+          {/* the lamps this chassis carries, if any -- on a G8S the two bypass
+              pairs, whose state the page already knows */}
+          {(L.lamps ?? []).map((l) => {
+            const on = !blind && !!bypassed?.has(l.pair);
+            return (
+              <g key={l.id}>
+                <circle cx={l.x} cy={l.y} r="3" className={"fp-led byp" + (on ? " on" : "")} />
+                <text x={l.x + 8} y={l.y + 3} className="fp-lbl lamp">{l.id}</text>
+                <title>{`${l.id} — ${blind ? tr("panel.unknown") : on ? tr("panel.bypassOn") : tr("panel.bypassOff")}`}</title>
+              </g>
+            );
+          })}
           {L.cages.map((c) => {
             const s = st[c.name] ?? { link: false, rx: 0, tx: 0 };
             const cx = c.x + c.w / 2;
             const labelAbove = c.y === topRow;
             return (
-              <g key={c.name} className={"fp-port" + (!blind && s.link ? " up" : "")}>
+              <g key={c.name} className={"fp-port" + (!blind && s.link ? " up" : "")
+                + (bypassedPorts?.has(c.name) ? " byp" : "")}>
                 <rect x={c.x} y={c.y} width={c.w} height={c.h} rx="3" className="fp-cage" />
-                <rect x={c.x + 5} y={c.y + 5} width={c.w - 10} height={c.h - 16} rx="1.5" className="fp-slot" />
+                {c.kind === "rj45" ? (
+                  /* a jack: the opening with the latch notch cut into its top */
+                  <path className="fp-slot" d={`M ${c.x + 8} ${c.y + 4}
+                    h ${c.w - 16} v ${c.h - 14} h -${c.w - 16} z
+                    M ${c.x + c.w / 2 - 4} ${c.y + 4} h 8 v -3 h -8 z`} />
+                ) : (
+                  <rect x={c.x + 5} y={c.y + 5} width={c.w - 10} height={c.h - 16} rx="1.5" className="fp-slot" />
+                )}
                 {/* the state in words, for anyone not reading the colours */}
                 <title>{`${c.name} — ${blind ? tr("panel.unknown")
                   : s.link ? [tr("panel.keyUp"), moving(s.rx) && tr("panel.keyRx"), moving(s.tx) && tr("panel.keyTx")]
                     .filter(Boolean).join(", ")
-                  : tr("panel.keyDown")}`}</title>
+                  : tr("panel.keyDown")}${bypassedPorts?.has(c.name) ? " · " + tr("tf.bypass") : ""}`}</title>
                 {/* the link light, as on the front of the box */}
                 <circle cx={c.x + 6} cy={c.y + c.h - 5} r="2.6" className={"fp-led" + (!blind && s.link ? " on" : "")} />
                 {/* in and out, lit only while something is moving */}
@@ -3567,6 +3588,8 @@ function T12sPanel({ stats, mgmtStat, stale = false, t }) {
         <span><i className="fp-key-led" /> {tr("panel.keyDown")}</span>
         <span><i className="fp-key-rx" /> {tr("panel.keyRx")}</span>
         <span><i className="fp-key-tx" /> {tr("panel.keyTx")}</span>
+        {(L.lamps ?? []).length > 0 &&
+          <span><i className="fp-key-byp" /> {tr("panel.keyBypass")}</span>}
       </div>
     </section>
   );
@@ -3590,21 +3613,26 @@ function TrafficTab({ loggedIn, t, model = "" }) {
      alongside the counters would be several ssh round trips a second on a T12S
      for a value that does not change. */
   const [bypassed, setBypassed] = React.useState(new Set());
+  // the same answer keyed by pair, for the front panel's BYP lamps
+  const [bypassedPairs, setBypassedPairs] = React.useState(new Set());
 
   React.useEffect(() => {
-    if (!loggedIn) { setBypassed(new Set()); return; }
+    if (!loggedIn) { setBypassed(new Set()); setBypassedPairs(new Set()); return; }
     let live = true;
     (async () => {
       try {
         const cfg = await (await fetch("/grism/task/get_config", { credentials: "include" })).json();
         const hw = bypassSupport((cfg.args && cfg.args.model) || cfg.model || "");
         if (!hw) return;
-        const out = new Set();
+        const out = new Set(), pairs = new Set();
         for (const pair of hw.pairs) {
           const res = await fetch(bypassStatusUrl(hw.key, pair.n), { credentials: "include" });
-          if (res.ok && parseBypassStatus(await res.text()) === true) pair.ports.forEach((n) => out.add(n));
+          if (res.ok && parseBypassStatus(await res.text()) === true) {
+            pair.ports.forEach((n) => out.add(n));
+            pairs.add(pair.n);
+          }
         }
-        if (live) setBypassed(out);
+        if (live) { setBypassed(out); setBypassedPairs(pairs); }
       } catch { /* a device that cannot say leaves the column unmarked */ }
     })();
     return () => { live = false; };
@@ -3773,7 +3801,9 @@ function TrafficTab({ loggedIn, t, model = "" }) {
 
       {/* the ports as they sit on the box, under the table that lists them */}
       {hasFrontPanel(model || devModel) && (
-        <T12sPanel stats={rows} mgmtStat={rows.find((r) => r.name === "H1")}
+        <FrontPanel model={model || devModel} stats={rows}
+          mgmtStat={rows.find((r) => r.name === "H1")}
+          bypassed={bypassedPairs} bypassedPorts={bypassed}
           stale={state === "error"} t={t} />
       )}
     </div>

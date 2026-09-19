@@ -2141,7 +2141,7 @@ group("next virtual port");
 /* ---------- T12S front panel ---------- */
 group("front panel");
 {
-  const L = C.t12sPanelLayout();
+  const L = C.panelLayout("T12S");
   check("twelve cages, one per physical port", L.cages.length === 12 &&
     new Set(L.cages.map((c) => c.name)).size === 12);
   check("every port from P0 to P11 is drawn",
@@ -2209,9 +2209,41 @@ group("front panel");
     return d.link === false && d.rx === 0 && d.tx === 0;
   })());
 
-  check("the panel is gated on being a T12S",
-    C.hasFrontPanel("T12S") && C.hasFrontPanel("GRISM-T12S") &&
-    !C.hasFrontPanel("G8S") && !C.hasFrontPanel("HL1") && !C.hasFrontPanel(""));
+  check("the panel is drawn for the models that have one",
+    C.hasFrontPanel("T12S") && C.hasFrontPanel("GRISM-T12S") && C.hasFrontPanel("G8S") &&
+    !C.hasFrontPanel("HL1") && !C.hasFrontPanel(""));
+  check("each model gets its own chassis",
+    C.panelModel("T12S") === "T12S" && C.panelModel("G8S") === "G8S" && C.panelModel("HL1") === null);
+
+  /* The G8S: eight copper jacks in four pairs, management on the right rather
+     than the left, and the two bypass lamps the box carries. */
+  const G = C.panelLayout("G8S");
+  const gy = (n) => G.cages.find((c) => c.name === n).y;
+  const gx = (n) => G.cages.find((c) => c.name === n).x;
+  check("eight ports, P0 to P7", G.cages.length === 8 &&
+    Array.from({ length: 8 }, (_, i) => "P" + i).every((n) => G.cages.some((c) => c.name === n)));
+  check("odd above even, and each pair in one column",
+    [[1, 0], [3, 2], [5, 4], [7, 6]].every(([o, e]) => gy("P" + o) < gy("P" + e) && gx("P" + o) === gx("P" + e)));
+  check("the pairs run left to right", gx("P0") < gx("P2") && gx("P2") < gx("P4") && gx("P4") < gx("P6"));
+  check("its management port is on the right, unlike the T12S",
+    G.mgmt.x > gx("P7") && L.mgmt.x < L.cages.find((c) => c.name === "P0").x);
+  check("copper jacks, not cages", G.kind === "rj45" && G.cages.every((c) => c.kind === "rj45") &&
+    L.kind === "sfp" && L.cages.every((c) => c.kind === "sfp"));
+  check("a lamp per bypass pair", (G.lamps ?? []).length === 2 &&
+    G.lamps.map((x) => x.pair).join(",") === "1,2");
+  check("the T12S has no bypass lamps", (L.lamps ?? []).length === 0);
+  const gclash = [];
+  const gboxes = [...G.cages, { name: "MGMT", ...G.mgmt }];
+  for (let i = 0; i < gboxes.length; i++) for (let j = i + 1; j < gboxes.length; j++) {
+    const a = gboxes[i], b = gboxes[j];
+    if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) gclash.push(a.name + "/" + b.name);
+  }
+  check("nothing overlaps on the G8S either", gclash.length === 0, gclash.join(" "));
+  check("everything is inside the G8S canvas",
+    gboxes.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= G.width && b.y + b.h <= G.height));
+  check("states are keyed to the model asked for",
+    Object.keys(C.panelStates([], "G8S")).length === 8 &&
+    Object.keys(C.panelStates([], "T12S")).length === 12);
 }
 
 for (const lang of Object.keys(I18N)) {
@@ -2221,6 +2253,8 @@ for (const lang of Object.keys(I18N)) {
   // dark lamps mean two different things and the page has to say which
   check(`${lang} distinguishes "nothing read" from "all down"`,
     !!I18N[lang]["panel.noData"] && !!I18N[lang]["panel.stale"] && !!I18N[lang]["panel.unknown"]);
+  check(`${lang} says what a bypass lamp means`,
+    !!I18N[lang]["panel.keyBypass"] && !!I18N[lang]["panel.bypassOn"] && !!I18N[lang]["panel.bypassOff"]);
 }
 
 /* ---------- hook order ---------- */

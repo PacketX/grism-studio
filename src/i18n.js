@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.72.0";
+export const STUDIO_VERSION = "2.73.0";
 
 export const I18N = {
   en: {
@@ -262,6 +262,8 @@ export const I18N = {
     // traffic statistics page
     "panel.title": "Front panel", "panel.mgmt": "MGMT",
     "panel.note": "The ports as they sit on the box. A lit light is a link that is up; the arrows light while traffic is moving in or out.",
+    "panel.keyBypass": "bypass on", "panel.bypassOn": "bypass on — traffic goes around the device",
+    "panel.bypassOff": "bypass off — traffic goes through the device",
     "panel.unknown": "state unknown", "panel.noData": "No port statistics yet — the lamps are dark because nothing has been read, not because every link is down.",
     "panel.stale": "The last read failed, so these lamps are as they were, not as they are.",
     "panel.keyUp": "link up", "panel.keyDown": "link down", "panel.keyRx": "traffic in", "panel.keyTx": "traffic out",
@@ -789,6 +791,8 @@ export const I18N = {
     // traffic statistics page
     "panel.title": "前面板", "panel.mgmt": "MGMT",
     "panel.note": "依照機器實際的配置排列。亮燈表示該埠連線正常,箭頭在有流量進出時亮起。",
+    "panel.keyBypass": "旁路開啟", "panel.bypassOn": "旁路開啟 — 流量繞過本機",
+    "panel.bypassOff": "旁路關閉 — 流量經過本機",
     "panel.unknown": "狀態未知", "panel.noData": "還沒有讀到埠統計 — 燈號是暗的,是因為還沒讀到資料,不是因為每個埠都斷線。",
     "panel.stale": "最後一次讀取失敗,燈號停在上一次的狀態,不代表現在。",
     "panel.keyUp": "連線正常", "panel.keyDown": "未連線", "panel.keyRx": "流量進", "panel.keyTx": "流量出",
