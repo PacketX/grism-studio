@@ -2296,6 +2296,61 @@ group("front panel");
     Object.keys(C.panelStates([], "T12S")).length === 12);
 }
 
+/* ---------- simulate page: port buttons sized by how many there are -------- */
+group("simulate panel density");
+{
+  check("a small device gets the roomy size, a dense one the small size",
+    C.panelDensity(8) === "lg" && C.panelDensity(14) === "md" &&
+    C.panelDensity(24) === "sm" && C.panelDensity(48) === "xs");
+  // the two devices this ships to must not land in the same bucket, or the
+  // buttons do not visibly answer to how many ports there are
+  check("the G8S panel is roomier than the T12S one",
+    C.panelDensity(12) === "lg" && C.panelDensity(16) === "md");
+  check("nothing silly for an empty or missing count",
+    C.panelDensity(0) === "lg" && C.panelDensity(undefined) === "lg");
+  {
+    const { readFileSync: rf } = await import("node:fs");
+    const css = rf(new URL("./GrismStudio.css", import.meta.url), "utf8");
+    const widthOf = (sel) => {
+      const i = css.indexOf(sel);
+      if (i < 0) return null;
+      const m = /--dp-w\s*:\s*(\d+)px/.exec(css.slice(i, css.indexOf("}", i)));
+      return m ? +m[1] : null;
+    };
+    const w = { base: widthOf(".dev-panel{"), lg: widthOf("[data-dense=lg]"), md: widthOf("[data-dense=md]"),
+      sm: widthOf("[data-dense=sm]"), xs: widthOf("[data-dense=xs]") };
+    check("every density the code can return is styled",
+      ["lg", "md", "sm", "xs"].every((k) => w[k] > 0), JSON.stringify(w));
+    // more ports must never mean a bigger button, or the row wraps
+    check("the sizes go down as the port count goes up",
+      w.lg > w.md && w.md > w.sm && w.sm > w.xs, JSON.stringify(w));
+    // a button still has to be clickable at the densest setting
+    check("even the densest button stays a usable target", w.xs >= 36);
+    check("the port button reads its width from the density variable",
+      /\.dev-port\{[^}]*min-width:var\(--dp-w\)/.test(css.replace(/\s*\n\s*/g, "")));
+  }
+  /* The stream: packets keep arriving until stopped, and each one is routed by
+     the filter switches as they stand when it enters. Both of those live in a
+     rAF loop, so guard the two properties that make them true. */
+  {
+    const { readFileSync: rf } = await import("node:fs");
+    const jsx = rf(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+    const spawn = /SPAWN_MS\s*=\s*(\d+)/.exec(jsx);
+    const minDur = /MIN_DUR\s*=\s*(\d+)/.exec(jsx);
+    check("arrivals are spaced by their own interval", !!spawn && +spawn[1] > 0);
+    // a gap longer than the shortest trip would leave the device empty between packets
+    check("the stream never runs dry", spawn && minDur && +spawn[1] < +minDur[1],
+      spawn && minDur ? `${spawn[1]} vs ${minDur[1]}` : "missing");
+    // each launch reads the route from the ref, not from the render it started in
+    check("a packet's route is resolved as it launches",
+      /const plan = planRef\.current/.test(jsx));
+    // changing a switch mid-stream must divert the next packet, not stop the stream
+    const eff = jsx.slice(jsx.indexOf("planRef.current = animPlan"), jsx.indexOf("}, [animPlan]);"));
+    check("a filter change does not stop the stream",
+      /if \(!animPlan\)/.test(eff) && !/^\s*setPlayState\("idle"\);/m.test(eff.split("if (!animPlan)")[0]));
+  }
+}
+
 for (const lang of Object.keys(I18N)) {
   check(`${lang} names the panel and its legend`,
     !!I18N[lang]["panel.title"] && !!I18N[lang]["panel.mgmt"] &&

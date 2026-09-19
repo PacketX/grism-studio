@@ -3609,6 +3609,19 @@ const T12S_BLOCKS = [
 ];
 const T12S_RIGHT = ["P8", "P9", "P10", "P11"];
 
+/* How much room a port button on the simulate page can take. Sizing by count
+   rather than by a fixed width is what keeps a 32-port device on one row and
+   still gives a 12-port one a target worth clicking. */
+export function panelDensity(portCount) {
+  const n = Number(portCount) || 0;
+  // thresholds are about columns, not ports: the panel stacks two per column,
+  // so 12 ports is six columns and has width to spare at the roomy size
+  if (n <= 12) return "lg";
+  if (n <= 20) return "md";
+  if (n <= 32) return "sm";
+  return "xs";
+}
+
 /* Which models have their chassis drawn. Named for what it decides, rather
    than borrowing the speed switch's predicate, which is about something else. */
 export const hasFrontPanel = (model) => !!panelModel(model);

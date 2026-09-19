@@ -549,10 +549,19 @@
 .sim-resizer-grip{width:36px; height:3px; border-radius:99px; background:var(--line-2);}
 .sim-resizer:hover .sim-resizer-grip{background:var(--accent);}
 .sim-page .sim-layout{flex:1; min-height:0;}
-.dev-panel{flex:0 0 auto; padding:18px 20px; background:var(--panel-2);}
-.dev-chassis{max-width:1240px; margin:0 auto; background:linear-gradient(180deg,var(--panel),var(--panel-2)); border:1px solid var(--line-2); border-radius:12px; padding:14px 18px; box-shadow:inset 0 1px 0 var(--hover-faint), 0 6px 20px -12px rgba(0,0,0,.5);}
+/* Port buttons size themselves to how many there are: a 12-port broker can
+   afford big targets, a 32-port one cannot. Density picks the size variables;
+   every rule below reads them, so the panel stays one row and stays short. */
+.dev-panel{flex:0 0 auto; padding:10px 18px; background:var(--panel-2);
+  --dp-w:58px; --dp-h:46px; --dp-fs:13px; --dp-pad:7px 8px 6px; --dp-colgap:11px; --dp-rowgap:44px;}
+.dev-panel[data-dense=lg]{--dp-w:92px; --dp-h:56px; --dp-fs:16px; --dp-pad:9px 14px 7px; --dp-colgap:13px;}
+.dev-panel[data-dense=md]{--dp-w:70px; --dp-h:50px; --dp-fs:14px; --dp-pad:8px 10px 6px;}
+.dev-panel[data-dense=sm]{--dp-w:50px; --dp-h:43px; --dp-fs:12px; --dp-pad:6px 5px 5px; --dp-colgap:9px;}
+.dev-panel[data-dense=xs]{--dp-w:39px; --dp-h:38px; --dp-fs:11px; --dp-pad:5px 3px 4px; --dp-colgap:8px;}
+.dev-panel[data-dense=xs] .dev-port-role{display:none;}
+.dev-chassis{max-width:1240px; margin:0 auto; background:linear-gradient(180deg,var(--panel),var(--panel-2)); border:1px solid var(--line-2); border-radius:12px; padding:9px 14px 10px; box-shadow:inset 0 1px 0 var(--hover-faint), 0 6px 20px -12px rgba(0,0,0,.5);}
 .dev-brand{font-family:var(--mono); font-size:12px; letter-spacing:.12em; color:var(--txt-dim);}
-.dev-chassis-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+.dev-chassis-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
 .dev-head-btns{display:flex; gap:6px;}
 .dev-flip{background:transparent; border:1px solid var(--line-2); color:var(--txt-dim); border-radius:6px; padding:4px 11px; font-size:11px; font-family:var(--mono);}
 .dev-flip:hover{border-color:var(--accent); color:var(--accent);}
@@ -565,21 +574,21 @@
 .dev-packet-core{fill:var(--accent); }
 .dev-packet-glow{fill:var(--accent); opacity:.35;}
 .dev-port-area{display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap;}
-.dev-port-cols{display:flex; flex-wrap:wrap; gap:60px 8px;}
+.dev-port-cols{display:flex; flex-wrap:wrap; gap:var(--dp-rowgap) 8px;}
 .dev-loop-group{display:flex; flex-direction:column; gap:6px; padding-left:18px; margin-left:auto; border-left:1px dashed var(--line-2);}
 .dev-loop-label{font-family:var(--mono); font-size:9px; letter-spacing:.16em; color:#e0b24a; text-align:center;}
 .dev-port.loop{border-color:#e0b24a;}
 .dev-port.loop .dev-port-led{background:#e0b24a; box-shadow:0 0 8px rgba(224,178,74,.7);}
 .dev-port-role.loop{color:#e0b24a;}
-.dev-port-col{display:flex; flex-direction:column; gap:14px;}
+.dev-port-col{display:flex; flex-direction:column; gap:var(--dp-colgap);}
 .dev-port-slot{display:flex; justify-content:center;}
-.dev-port-empty{display:block; min-width:58px; height:50px;}
+.dev-port-empty{display:block; min-width:var(--dp-w); height:var(--dp-h);}
 .dev-logo{color:var(--accent);}
 .dev-model{color:var(--txt-faint); letter-spacing:.08em;}
-.dev-port{position:relative; display:flex; flex-direction:column; align-items:center; gap:4px; min-width:58px; padding:9px 8px 7px; background:var(--bg); border:1.5px solid var(--line-2); border-radius:8px; transition:.12s;}
+.dev-port{position:relative; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:var(--dp-w); padding:var(--dp-pad); background:var(--bg); border:1.5px solid var(--line-2); border-radius:8px; transition:.12s;}
 .dev-port:hover{border-color:var(--accent); transform:translateY(-1px);}
 .dev-port-led{width:8px; height:8px; border-radius:99px; background:var(--line-2); transition:.12s;}
-.dev-port-name{font-family:var(--mono); font-size:13px; font-weight:600; color:var(--txt);}
+.dev-port-name{font-family:var(--mono); font-size:var(--dp-fs); font-weight:600; color:var(--txt);}
 .dev-port-role{font-family:var(--mono); font-size:8px; letter-spacing:.06em; color:var(--txt-faint);}
 .dev-port.in .dev-port-led{background:var(--match); box-shadow:0 0 8px var(--match);}
 .dev-port.in{border-color:var(--match);}
@@ -597,7 +606,7 @@
 .dev-port.from .dev-port-name{color:#a7f3d0;}
 @keyframes dev-next-pulse{0%,100%{box-shadow:0 0 0 1px var(--accent), 0 0 12px -2px var(--accent);}50%{box-shadow:0 0 0 1px var(--accent), 0 0 22px 2px var(--accent);}}
 @keyframes dev-from-pulse{0%,100%{box-shadow:0 0 0 1px rgba(167,243,208,.6), 0 0 8px -2px rgba(167,243,208,.6);}50%{box-shadow:0 0 0 1px rgba(167,243,208,.85), 0 0 16px 0 rgba(167,243,208,.85);}}
-.dev-legend{display:flex; gap:14px; margin-top:12px; padding-top:10px; border-top:1px solid var(--line);}
+.dev-legend{display:flex; gap:14px; align-items:center; margin:0 auto 0 18px;}
 .dev-leg{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--txt-faint); font-family:var(--mono);}
 .dev-leg-dot{width:7px; height:7px; border-radius:99px;}
 .dev-leg.in .dev-leg-dot{background:var(--match);}
@@ -1435,17 +1444,12 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 
 /* ---- SD-WAN tunnel card ----------------------------------------------- */
 .sdw-block + .sdw-block { margin-top: 22px; }
-.sdw-ports { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 2px; }
+.sdw-ports { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; margin: 10px 0 2px; }
 .sdw-ports-label { font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--txt-faint); margin-right: 4px; }
-.sdw-port { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  border: 1px solid var(--line-2); border-radius: 99px; padding: 3px 10px 3px 8px;
-  font-size: 12.5px; color: var(--txt-dim); }
-.sdw-port:hover { border-color: var(--accent); color: var(--accent); }
-/* a selected port is what the firmware will actually look up by name */
-.sdw-port.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.sdw-port.on .mono { color: var(--accent-ink); }
-.sdw-port input { margin: 0; }
+  color: var(--txt-faint); margin-right: 4px; padding-top: 12px; }
+/* the picker itself is the chain inspector's, so the two places that choose a
+   set of ports look and behave the same; it only needs room to sit in */
+.sdw-ports .acc { flex: 1 1 260px; min-width: 220px; max-width: 460px; }
 
 .sdw-tpl { margin: 10px 0 0; font-size: 12.5px; color: var(--txt-dim); }
 .sdw-tpl .link-btn { border: 0; background: none; padding: 0; font: inherit;

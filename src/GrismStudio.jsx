@@ -42,7 +42,7 @@ import {
   parseVports, vportProblems, buildVportConfigSet,
   nextVport,
   t12sPanelLayout, panelStates,
-  hasFrontPanel, panelPortState,
+  hasFrontPanel, panelPortState, panelDensity,
   panelLayout,
 } from "./grism-core.js";
 
@@ -2644,13 +2644,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                         <span className="sdw-ports-label">{tr("set.sdwanPorts")}</span>
                         {ports.length === 0
                           ? <span className="dim">{tr("set.loading")}</span>
-                          : ports.map((n) => (
-                            <label className={"sdw-port" + (picked.includes(n) ? " on" : "")} key={n}>
-                              <input type="checkbox" checked={picked.includes(n)}
-                                onChange={() => setSysField(portKey, togglePortInList(sys[portKey], n))} />
-                              <span className="mono">{n}</span>
-                            </label>
-                          ))}
+                          : <CheckAccordion label={tr("set.sdwanPickPorts")} alwaysMulti
+                              items={ports.map((n) => ({ id: n, b: n, on: picked.includes(n) }))}
+                              onToggle={(n) => setSysField(portKey, togglePortInList(sys[portKey], n))}
+                              onSetOne={(n) => setSysField(portKey, n ?? "")}
+                              onAll={(on) => setSysField(portKey, on ? formatPortList(ports) : "")}
+                              t={tr} />}
                       </div>
                       {/* The card configures correlation; the pipeline that actually
                           unwraps and re-wraps the traffic is a separate document,
@@ -5712,7 +5711,7 @@ function CollapseSection({ label, active, children }) {
 }
 
 function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false,
-  joiner, onJoiner, joinerOptions, joinerLabel, joinerText, prefix, extra, t }) {
+  alwaysMulti = false, joiner, onJoiner, joinerOptions, joinerLabel, joinerText, prefix, extra, t }) {
   const tr = t || ((k) => k);
   // the chosen rows, named, for the header -- listed up to a few, then counted
   const chosenAll = items.filter((it) => it.on)
@@ -5720,7 +5719,9 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
   const chosen = chosenAll;
   const [open, setOpen] = useState(defaultOpen);
   const picked = items.filter((it) => it.on).length;
-  const [multi, setMulti] = useState(picked > 1); // default single, unless already multiple
+  // default single, unless already multiple -- except where the underlying field
+  // is a list (port sets), which has no single-value state to fall back to
+  const [multi, setMulti] = useState(alwaysMulti || picked > 1);
   // if the current value becomes multiple (e.g. selecting a different node that
   // already has several), reflect that by switching the picker to multi mode.
   useEffect(() => { if (picked > 1) setMulti(true); }, [picked]);
@@ -5753,10 +5754,12 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
       </button>
       {open && <div className="acc-body">
         <div className="acc-toolbar">
-          <label className="acc-multi">
-            <input type="checkbox" checked={multi} onChange={(e) => e.target.checked ? setMulti(true) : switchToSingle()} />
-            multi-select
-          </label>
+          {!alwaysMulti && (
+            <label className="acc-multi">
+              <input type="checkbox" checked={multi} onChange={(e) => e.target.checked ? setMulti(true) : switchToSingle()} />
+              multi-select
+            </label>
+          )}
           {/* how the chosen rows combine -- and/or for filters, duplicate or
               load balance for ports. Only meaningful once there are two. */}
           {onJoiner && picked > 1 && (
@@ -6959,6 +6962,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 
   // number extracted from a port name (P0 -> 0); ports without a number get their own column
   const portNum = (p) => { const m = /(\d+)/.exec(p); return m ? +m[1] : null; };
+  const density = panelDensity(portOptions.length);
   // Build columns two ports at a time. Ports are grouped by prefix (P, V, …) so
   // different families don't mix; each group is sorted low→high and chunked into
   // pairs — 1st+2nd share a column, 3rd+4th the next, and so on, regardless of
@@ -7010,7 +7014,9 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   const [prevDevSet, setPrevDevSet] = useState(() => new Set());     // source IPSs
   const [playState, setPlayState] = useState("idle"); // 'idle' | 'playing' | 'paused'
   const rafRef = useRef(0);
-  const animRef = useRef({ paths: null, dur: 0, elapsed: 0, last: 0, trailBufs: [] });
+  // packets currently inside the device, each with the route it was launched on
+  const animRef = useRef({ packets: [], last: 0, sinceSpawn: 0, seq: 0 });
+  const planRef = useRef(animPlan);
 
   // measure port + inline-device anchor points relative to the wrapper, then
   // build a cable path (port edge → device top) for each lead. Also snapshot
@@ -7051,6 +7057,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
       });
       const ch = chassisRef.current;
       if (ch) { const cb = ch.getBoundingClientRect(); geo.center = { x: cb.left + cb.width / 2 - wb.left, y: cb.top + cb.height / 2 - wb.top }; }
+      geo.wrapH = wb.height;   // how far a packet may travel before it is clipped
       const portEdges = (name) => {
         const el = portRefs.current[name];
         if (!el) return null;
@@ -7146,11 +7153,18 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 
   // stop any running animation on unmount
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
-  // if the traced route changes (ingress / filters / inlines), reset playback
+  /* Keep the newest route where the spawner can reach it. Changing a filter
+     switch mid-stream is not a reason to restart: packets already inside keep
+     the route they entered on, and the next one to arrive picks up the new one.
+     Losing the ingress port is different -- there is then nothing to send. */
   useEffect(() => {
-    cancelAnimationFrame(rafRef.current);
-    animRef.current = { paths: null, dur: 0, elapsed: 0, last: 0, trailBufs: [] };
-    setPlayState("idle"); setPackets([]); setTrails([]); setActiveDev(null); setNextPortSet(new Set()); setNextDevSet(new Set()); setPrevPortSet(new Set()); setPrevDevSet(new Set());
+    planRef.current = animPlan;
+    if (!animPlan) {
+      cancelAnimationFrame(rafRef.current);
+      animRef.current = { packets: [], last: 0, sinceSpawn: 0, seq: 0 };
+      setPlayState("idle"); setPackets([]); setTrails([]); setActiveDev(null);
+      setNextPortSet(new Set()); setNextDevSet(new Set()); setPrevPortSet(new Set()); setPrevDevSet(new Set());
+    }
   }, [animPlan]);
 
   // Map the semantic animation plan to concrete coordinates using measured
@@ -7173,60 +7187,86 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   // several ports); each animates its own packet simultaneously.
   const buildAllWaypoints = () => {
     const geo = geomRef.current;
-    if (!animPlan || !animPlan.paths || !geo.center) return null;
+    const plan = planRef.current;              // read at launch, not at play
+    if (!plan || !plan.paths || !geo.center) return null;
     const OUT = 46;
+    /* Outside the port, away from the chassis -- but never past the edge of the
+       panel, which is scroll-clipped: a packet that starts there is invisible
+       until it is already inside the device. */
+    const H = geo.wrapH || 0;
     const outsidePt = (port) => {
       const p = geo.ports[port]; if (!p) return null;
-      if (p.row === "top") return { x: p.x, y: (p.topEdge ?? p.y) - OUT };
-      return { x: p.x, y: (p.bottomEdge ?? p.y) + OUT };
+      if (p.row === "top") return { x: p.x, y: Math.max(7, (p.topEdge ?? p.y) - OUT) };
+      return { x: p.x, y: H ? Math.min(H - 7, (p.bottomEdge ?? p.y) + OUT) : (p.bottomEdge ?? p.y) + OUT };
     };
-    const lists = animPlan.paths.map((nodes) => nodesToPts(nodes, outsidePt, geo)).filter(Boolean);
+    const lists = plan.paths.map((nodes) => nodesToPts(nodes, outsidePt, geo)).filter(Boolean);
     return lists.length ? lists : null;
   };
 
-  // advance every path's packet by the shared elapsed time; aggregate highlights
-  // (active IPS, next/prev ports & IPSs) across all packets. Returns true when all
-  // packets have reached the end.
-  const applyFrame = (elapsedMs) => {
+  // advance every packet in flight by its own elapsed time; aggregate highlights
+  // (active IPS, next/prev ports & IPSs) across all of them.
+  const applyFrame = () => {
     const A = animRef.current;
-    if (!A.paths) return true;
-    const positions = [];
+    const positions = [], trailsOut = [];
     const activeDevs = new Set(), nextP = new Set(), nextD = new Set(), prevP = new Set(), prevD = new Set();
-    let allDone = true;
-    A.paths.forEach((path, idx) => {
-      const { pts, segs, total, dur } = path;
-      const t = Math.min(1, elapsedMs / dur);
-      if (t < 1) allDone = false;
+    A.packets.forEach((pk) => {
+      const { pts, segs, total, dur } = pk;
+      const t = Math.min(1, pk.elapsed / dur);
       let dist = t * total, i = 0;
       while (i < segs.length && dist > segs[i]) { dist -= segs[i]; i++; }
       let pos;
       if (i >= segs.length) pos = pts[pts.length - 1];
       else { const f = segs[i] ? dist / segs[i] : 0; pos = { x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f }; }
       positions.push(pos);
-      const buf = A.trailBufs[idx] || (A.trailBufs[idx] = []);
-      buf.push(pos); while (buf.length > 14) buf.shift();
+      pk.trail.push(pos); while (pk.trail.length > 14) pk.trail.shift();
+      trailsOut.push(pk.trail.slice());
       const a = pts[i], b = pts[Math.min(i + 1, pts.length - 1)];
       if (a && b && a.dev && a.dev === b.dev) activeDevs.add(a.dev);
       for (let k = i + 1; k < pts.length; k++) { if (pts[k].dev) { nextD.add(pts[k].dev); break; } if (pts[k].port) { nextP.add(pts[k].port); break; } }
       for (let k = i; k >= 0; k--) { if (pts[k].dev) { prevD.add(pts[k].dev); break; } if (pts[k].port) { prevP.add(pts[k].port); break; } }
     });
     setPackets(positions);
-    setTrails(A.trailBufs.map((b) => b.slice()));
+    setTrails(trailsOut);
     setActiveDev(activeDevs.size ? [...activeDevs][0] : null);
     setNextPortSet(nextP); setNextDevSet(nextD); setPrevPortSet(prevP); setPrevDevSet(prevD);
-    return allDone;
   };
 
   const clearAnim = () => { setPackets([]); setTrails([]); setActiveDev(null); setNextPortSet(new Set()); setNextDevSet(new Set()); setPrevPortSet(new Set()); setPrevDevSet(new Set()); };
 
-  const runLoop = () => {
+  // Travel time is distance-based so short hops feel snappy, but it's clamped at
+  // both ends: without a ceiling, a packet routed through an inline device or a
+  // LOOP port covers so much distance that the animation drags.
+  const SPEED = 320;      // px/sec for ordinary distances
+  const MIN_DUR = 650, MAX_DUR = 2000;
+  const SPAWN_MS = 520;   // gap between arrivals -- a steady stream, never empty
+
+  /* Launch one arrival: its route is resolved from the plan as it stands right
+     now, so the filter switches decide where THIS packet goes. A chain that
+     fans out to several ports launches one packet per branch. */
+  const spawn = () => {
+    const lists = buildAllWaypoints();
+    if (!lists || !lists.length) return false;
     const A = animRef.current;
-    A.last = performance.now();
+    lists.forEach((pts) => {
+      const segs = []; let total = 0;
+      for (let i = 0; i < pts.length - 1; i++) { const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y; const len = Math.hypot(dx, dy); segs.push(len); total += len; }
+      const dur = Math.min(MAX_DUR, Math.max(MIN_DUR, (total / SPEED) * 1000));
+      A.packets.push({ id: ++A.seq, pts, segs, total, dur, elapsed: 0, trail: [] });
+    });
+    return true;
+  };
+
+  const runLoop = () => {
+    animRef.current.last = performance.now();
     const tick = (now) => {
-      const A2 = animRef.current;
-      A2.elapsed += now - A2.last; A2.last = now;
-      const done = applyFrame(A2.elapsed);
-      if (done) { setPlayState("idle"); setTimeout(clearAnim, 550); return; }
+      const A = animRef.current;
+      const dt = Math.min(64, now - A.last);   // a backgrounded tab must not jump
+      A.last = now;
+      A.sinceSpawn += dt;
+      if (A.sinceSpawn >= SPAWN_MS) { A.sinceSpawn = 0; spawn(); }
+      A.packets.forEach((pk) => { pk.elapsed += dt; });
+      A.packets = A.packets.filter((pk) => pk.elapsed < pk.dur);   // gone off the far end
+      applyFrame();
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -7234,35 +7274,17 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 
   const play = () => {
     cancelAnimationFrame(rafRef.current);
-    const lists = buildAllWaypoints();
-    if (!lists || !lists.length) return;
-    // Travel time is distance-based so short hops feel snappy, but it's clamped at
-    // both ends: without a ceiling, a packet routed through an inline device or a
-    // LOOP port covers so much distance that the animation drags.
-    const SPEED = 320;      // px/sec for ordinary distances
-    const MIN_DUR = 650, MAX_DUR = 2000;
-    let maxDur = 0;
-    const paths = lists.map((pts) => {
-      const segs = []; let total = 0;
-      for (let i = 0; i < pts.length - 1; i++) { const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y; const len = Math.hypot(dx, dy); segs.push(len); total += len; }
-      const dur = Math.min(MAX_DUR, Math.max(MIN_DUR, (total / SPEED) * 1000));
-      maxDur = Math.max(maxDur, dur);
-      return { pts, segs, total, dur };
-    });
-    animRef.current = { paths, dur: maxDur, elapsed: 0, last: 0, trailBufs: paths.map(() => []) };
+    animRef.current = { packets: [], last: 0, sinceSpawn: 0, seq: 0 };
+    if (!spawn()) return;                   // no geometry yet / nothing to trace
     setPlayState("playing");
     runLoop();
   };
 
   const pause = () => { cancelAnimationFrame(rafRef.current); setPlayState("paused"); };
-  const resume = () => {
-    if (!animRef.current.paths) { play(); return; }
-    setPlayState("playing");
-    runLoop();
-  };
+  const resume = () => { setPlayState("playing"); runLoop(); };
   const stop = () => {
     cancelAnimationFrame(rafRef.current);
-    animRef.current = { paths: null, dur: 0, elapsed: 0, last: 0, trailBufs: [] };
+    animRef.current = { packets: [], last: 0, sinceSpawn: 0, seq: 0 };
     setPlayState("idle");
     clearAnim();
   };
@@ -7284,7 +7306,7 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
   };
 
   return (
-    <div className="dev-panel">
+    <div className="dev-panel" data-dense={density}>
       <div className="dev-wrap" ref={wrapRef}>
         <svg className="dev-cables" width="100%" height="100%">
           {cables.map((c) => {
@@ -7303,6 +7325,14 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
         <div className="dev-chassis" ref={chassisRef}>
           <div className="dev-chassis-head">
             <div className="dev-brand"><span className="dev-logo">◇</span> GRISM<span className="dev-model"> · packet broker</span></div>
+            {/* the legend rides in the head rather than taking a row of its own,
+                which is height the chain view below needs more than it does */}
+            <div className="dev-legend">
+              <span className="dev-leg in"><span className="dev-leg-dot" />ingress</span>
+              <span className="dev-leg out"><span className="dev-leg-dot" />output</span>
+              <span className="dev-leg both"><span className="dev-leg-dot" />both</span>
+              <span className="dev-leg idle"><span className="dev-leg-dot" />unused</span>
+            </div>
             <div className="dev-head-btns">
               {playState === "idle" && <button className="dev-play" onClick={play} disabled={!animPlan} title={animPlan ? tr("sim.playTip") : tr("sim.selectIngress")}>{tr("sim.play")}</button>}
               {playState === "playing" && <button className="dev-play" onClick={pause} title={tr("sim.pauseTip")}>{tr("sim.pause")}</button>}
@@ -7367,12 +7397,6 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
                 </div>
               </div>
             )}
-          </div>
-          <div className="dev-legend">
-            <span className="dev-leg in"><span className="dev-leg-dot" />ingress</span>
-            <span className="dev-leg out"><span className="dev-leg-dot" />output</span>
-            <span className="dev-leg both"><span className="dev-leg-dot" />both</span>
-            <span className="dev-leg idle"><span className="dev-leg-dot" />unused</span>
           </div>
         </div>
 

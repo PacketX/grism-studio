@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.78.0";
+export const STUDIO_VERSION = "2.79.0";
 
 export const I18N = {
   en: {
@@ -226,6 +226,7 @@ export const I18N = {
     "set.sdwanCorrelate": "Correlate tunnelled sessions",
     "set.sdwanDecap": "Decapsulate this tunnel before filters run",
     "set.sdwanPorts": "Arrives on",
+    "set.sdwanPickPorts": "choose ports",
     "set.sdwanNoPorts": "Correlation is on but no port is selected, so nothing will be correlated.",
     "set.sdwanUnknownPort": "This device has no port named",
     "set.tplConfirmTitle": "Open this template?",
@@ -428,8 +429,8 @@ export const I18N = {
     "sim.noFilters": "No filters referenced.",
     "sim.notDefined": "not defined in this config",
     "sim.play": "▶ play", "sim.pause": "⏸ pause", "sim.resume": "▶ resume", "sim.stop": "⏹ stop",
-    "sim.playTip": "Animate a packet along the traced path", "sim.selectIngress": "Select an ingress port first",
-    "sim.pauseTip": "Pause", "sim.resumeTip": "Resume", "sim.stopTip": "Stop",
+    "sim.playTip": "Send a steady stream of packets; each one takes the path the filter switches give it as it enters", "sim.selectIngress": "Select an ingress port first",
+    "sim.pauseTip": "Freeze the packets in flight", "sim.resumeTip": "Resume", "sim.stopTip": "Stop sending",
     "sim.addInline": "+ inline device (IPS, etc.)",
     "sim.namePh": "name (e.g. IPS)", "sim.portA": "port A", "sim.portB": "port B",
     "sim.add": "add", "sim.cancel": "cancel",
@@ -755,6 +756,7 @@ export const I18N = {
     "set.sdwanCorrelate": "關聯通道內的連線",
     "set.sdwanDecap": "在篩選器之前解封裝此通道",
     "set.sdwanPorts": "進入埠",
+    "set.sdwanPickPorts": "選擇進入埠",
     "set.sdwanNoPorts": "已開啟關聯但沒有選擇任何埠,實際上不會關聯到任何流量。",
     "set.sdwanUnknownPort": "本機沒有這個連接埠:",
     "set.tplConfirmTitle": "要開啟這個範本?",
@@ -955,8 +957,8 @@ export const I18N = {
     "sim.noFilters": "沒有引用任何篩選器。",
     "sim.notDefined": "此設定中未定義",
     "sim.play": "▶ 播放", "sim.pause": "⏸ 暫停", "sim.resume": "▶ 繼續", "sim.stop": "⏹ 停止",
-    "sim.playTip": "沿追蹤路徑動畫呈現封包", "sim.selectIngress": "請先選擇入口埠",
-    "sim.pauseTip": "暫停", "sim.resumeTip": "繼續", "sim.stopTip": "停止",
+    "sim.playTip": "持續送出封包,每個封包依進入當下的篩選器 match/not-match 決定去向", "sim.selectIngress": "請先選擇入口埠",
+    "sim.pauseTip": "凍結進行中的封包", "sim.resumeTip": "繼續", "sim.stopTip": "停止送出",
     "sim.addInline": "+ inline 裝置(IPS 等)",
     "sim.namePh": "名稱(例如 IPS)", "sim.portA": "埠 A", "sim.portB": "埠 B",
     "sim.add": "新增", "sim.cancel": "取消",
