@@ -562,9 +562,22 @@ export function serializeChain(chain) {
     }
     return lines.join("\n");
   }
-  return `<chain>\n  <in${vlanAttrs(chain.inVlan)}>${inPorts}</in>\n${body(chain.tree, 1)}\n</chain>`;
+  /* An unset tree makes body() return null, and interpolating that writes the
+     literal text "null" into the config -- well-formed, so nothing downstream
+     objects, and the device parses it as chain text. Emit the chain without a
+     body instead; chainProblems reports the empty chain. */
+  const inner = body(chain.tree, 1);
+  return `<chain>\n  <in${vlanAttrs(chain.inVlan)}>${inPorts}</in>` + (inner ? `\n${inner}` : "") + `\n</chain>`;
 }
 export function chainProblems(tree, out) {
+  // A chain whose root is unset routes nothing at all. It used to serialise as
+  // the literal text "null"; now it serialises as an empty chain, which is
+  // quiet -- so say it here rather than let the user submit a chain that does
+  // nothing.
+  if (!tree || isUnset(tree)) {
+    out.push({ id: tree?.id, msg: `chain has no filter test or output` });
+    return out;
+  }
   (function walk(n) {
     if (!n) return;
     if (n.t === "branch") {
@@ -835,8 +848,8 @@ export const OUT_MODS = [
   { k: "modify_src_default_mac", label: "Source MAC = device MAC", kind: "flag", grp: "rewrite" },
   { k: "modify_dstip2nat", label: "Dest IP from NAT table", kind: "flag", grp: "rewrite" },
   { k: "modify_tcp_syn_mss", label: "Rewrite TCP SYN MSS", kind: "int", ph: "1400", grp: "rewrite" },
-  { k: "Q", label: "VLAN tag (Q)", kind: "vlanop", ph: "10", grp: "rewrite", defOp: "add" },
-  { k: "QinQ", label: "VLAN tag (QinQ)", kind: "vlanop", ph: "20", grp: "rewrite", defOp: "add" },
+  { k: "Q", label: "VLAN tag (Q)", kind: "vlanop", ph: "10", grp: "rewrite", defOp: "replace" },
+  { k: "QinQ", label: "VLAN tag (QinQ)", kind: "vlanop", ph: "20", grp: "rewrite", defOp: "replace" },
   { k: "gateway", label: "Gateway (ARP for MAC)", kind: "ip", ph: "192.168.1.1", grp: "rewrite" },
   { k: "stripping", label: "Strip header/tag", kind: "enum", opts: STRIP_TYPES, grp: "rewrite" },
   { k: "tagging", label: "Add tag", kind: "enum", opts: TAG_TYPES, grp: "rewrite" },
@@ -873,7 +886,11 @@ export const OUT_MODS = [
   { k: "nvgre_type", label: "NVGRE type", kind: "enum", opts: NVGRE_TYPES, grp: "nvgre" },
 ];
 export const OUT_MOD_INDEX = Object.fromEntries(OUT_MODS.map((m) => [m.k, m]));
-export const VLAN_OPS = ["add","replace","remove"];
+/* The firmware knows two: runxml2fc.c matches "replace" and "add" and nothing
+   else. A third value would serialise to an attribute it ignores, leaving the
+   packet untouched with nothing on screen to say so -- stripping=vlan is the
+   mechanism that actually removes a tag. */
+export const VLAN_OPS = ["add","replace"];
 export const mkOutputMod = (k) => {
   const meta = OUT_MOD_INDEX[k];
   const mod = { id: nid(), k, val: meta?.opts?.[0] ?? "", op: meta?.kind === "vlanop" ? meta.defOp : undefined };
@@ -907,10 +924,13 @@ export function serializeOutput(o) {
     const sp = attrStr ? " " + attrStr : "";
     if (meta.kind === "flag") lines.push(`  <${m.k}${sp}/>`);
     else if (meta.kind === "vlanop") {
+      /* Always write the type. An absent attribute leaves the firmware's
+         vlan.type at its memset 0, which is PACKET_TYPE_VLANID_REPLACE
+         (common.h:221) -- so omitting it for "add" shipped the opposite of
+         what the card showed, overwriting the customer VLAN instead of
+         pushing a second tag. */
       const op = m.op || meta.defOp;
-      if (op === "remove") lines.push(`  <${m.k} type="remove"></${m.k}>`);
-      else if (op === "add") lines.push(`  <${m.k}>${esc(m.val)}</${m.k}>`); // add is default → omit type
-      else lines.push(`  <${m.k} type="${op}">${esc(m.val)}</${m.k}>`);
+      lines.push(`  <${m.k} type="${op}">${esc(m.val)}</${m.k}>`);
     }
     else lines.push(`  <${m.k}${sp}>${esc(m.val)}</${m.k}>`);
   });
@@ -924,7 +944,11 @@ export function outputProblems(o, out) {
     if (meta.kind === "enum" || meta.kind === "flag") return;
     if (meta.kind === "vlanop") {
       const op = m.op || meta.defOp;
-      if (op === "remove") return; // no value needed
+      // a config written before "remove" was dropped still parses; say so
+      if (!VLAN_OPS.includes(op)) {
+        out.push({ id: m.id, msg: `the firmware has no "${op}" mode -- use Strip header/tag`, label: meta.label });
+        return;
+      }
       const msg = validate("vlan", m.val);
       if (msg) out.push({ id: m.id, msg, label: meta.label });
       return;
@@ -1071,8 +1095,11 @@ export function serializeInput(inp) {
     }
     // shared playback fields
     ["time", "speed", "msinterval"].forEach((k) => { const v = inp.fields?.[k]; if (v != null && v !== "") lines.push(`  <${k}>${esc(v)}</${k}>`); });
-    // played-files handling is only meaningful in scandir mode
-    if (mode === "scandir") {
+    /* Both modes: input_flush writes playedFilesHandle into the I line whatever
+       the source is (runxml2fc.c:124) and main.c applies it once the replay
+       count reaches zero, so keeping it for scandir only silently dropped the
+       setting from a filepath input on the next submit. */
+    {
       const h = inp.fields?.playedFilesHandle;
       if (h) lines.push(`  <playedFilesHandle>${esc(h)}</playedFilesHandle>`);
       if (h === "move") { const mv = inp.fields?.playedFilesMoveTo; if (mv) lines.push(`  <playedFilesMoveTo>${esc(mv)}</playedFilesMoveTo>`); }
@@ -1135,6 +1162,32 @@ export function serializeRun(doc) {
    editable document. Mirrors each serializer exactly. Throws on malformed
    XML or an unexpected shape so the caller can surface a clear message
    rather than loading a half-parsed, misleading model. */
+/* Give every item a unique positive id, keeping the ones that already are. */
+function renumber(list) {
+  const taken = new Set();
+  (list ?? []).forEach((it) => {
+    const id = Number(it?.id);
+    if (Number.isInteger(id) && id > 0 && !taken.has(id)) taken.add(id);
+  });
+  let next = 1;
+  (list ?? []).forEach((it) => {
+    if (!it) return;
+    const id = Number(it.id);
+    if (Number.isInteger(id) && id > 0 && taken.has(id) && !it._renumbered) {
+      taken.delete(id);          // first claimant keeps it; a later duplicate does not
+      it.id = id;
+      it._renumbered = true;
+      return;
+    }
+    while (taken.has(next)) next++;
+    it.id = next;
+    it._renumbered = true;
+    taken.add(next);
+  });
+  (list ?? []).forEach((it) => { if (it) delete it._renumbered; });
+  return list;
+}
+
 export function parseRun(xmlText) {
   const dom = parseXml(xmlText);
   const perr = dom.querySelector("parsererror");
@@ -1199,7 +1252,10 @@ export function parseRun(xmlText) {
       const meta = OUT_MOD_INDEX[k];
       if (!meta) { warnings.push(`unknown output modifier <${k}>`); return; }
       if (meta.kind === "vlanop") {
-        mods.push({ id: nid(), k, val: c.textContent.trim(), op: c.getAttribute("type") || meta.defOp });
+        // no type attribute on the wire means the firmware's default, which is
+        // replace -- the same rule the serialiser above now writes explicitly
+        mods.push({ id: nid(), k, val: c.textContent.trim(),
+          op: c.getAttribute("type") || (meta.kind === "vlanop" ? "replace" : meta.defOp) });
       } else {
         const mod = { id: nid(), k, val: c.textContent.trim() };
         if (meta.attrs) { mod.attrs = {}; meta.attrs.forEach((a) => { const v = c.getAttribute(a.name); mod.attrs[a.name] = v != null ? v : (a.def ?? ""); }); }
@@ -1339,6 +1395,14 @@ export function parseRun(xmlText) {
   // back out on the next Export/Submit and silently added forwarding the device
   // never had. Both tabs render their own empty state, so return what the XML
   // actually said and let the UI offer the "+ New" button.
+  /* Ids are how the editor tells two items apart -- which one an edit patches,
+     which one delete removes, which React key a row gets, which entry the
+     change diff looks up. <input> and <action> deliberately carry no id on the
+     wire (the firmware does not need one), and a hand-written config can leave
+     one off anywhere, so anything that arrives without a unique id gets one
+     here. Ids the XML did give are kept, so a device round trip does not
+     renumber what the user is looking at. */
+  [filters, inputs, outputs, actions, chains].forEach(renumber);
   return { doc: { filters, inputs, outputs, actions, chains }, warnings };
 }
 

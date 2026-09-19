@@ -2360,6 +2360,68 @@ group("simulate panel density");
   }
 }
 
+/* ---------- audit fixes: the document model ------------------------------- */
+group("ids survive a round trip");
+{
+  const p = (x) => C.parseRun(x).doc;
+  const d = p(`<run><input id="1" type="replayPcap" name="A"/><input id="2" type="replayPcap" name="B"/>`
+    + `<action id="1" name="a1"/><action id="2" name="a2"/></run>`);
+  const back = p(C.serializeRun(d));
+  /* <input> and <action> carry no id on the wire by design, so the parser has
+     to hand out its own -- without them both rows share id 0 and an edit or a
+     delete hits whichever the lookup finds first. */
+  check("inputs come back with distinct ids", new Set(back.inputs.map((i) => i.id)).size === 2);
+  check("actions come back with distinct ids", new Set(back.actions.map((a) => a.id)).size === 2);
+  check("and in the order they were written",
+    back.inputs.map((i) => i.name).join() === "A,B" && back.actions.map((a) => a.name).join() === "a1,a2");
+  // an id the XML did give is identity the user may be looking at: keep it
+  check("ids the config states are kept", p('<run><filter id="7"/><filter id="9"/></run>')
+    .filters.map((f) => f.id).join() === "7,9");
+  check("a duplicate id is only honoured once",
+    new Set(p('<run><filter id="3"/><filter id="3"/><filter/></run>').filters.map((f) => f.id)).size === 3);
+}
+
+group("VLAN tag operations");
+{
+  const p = (x) => C.parseRun(x).doc;
+  const qOf = (doc) => C.serializeRun(doc).replace(/\s*\n\s*/g, " ").match(/<Q[^<]*<\/Q>/)[0];
+  /* An absent type attribute leaves the firmware's vlan.type at 0, and
+     common.h defines 0 as REPLACE -- so "add" without the attribute shipped
+     the opposite of what the card showed. */
+  check("add writes its type out",
+    qOf(p('<run><output id="1"><port>P1</port><Q type="add">100</Q></output></run>')) === '<Q type="add">100</Q>');
+  check("replace writes its type out",
+    qOf(p('<run><output id="1"><port>P1</port><Q type="replace">100</Q></output></run>')) === '<Q type="replace">100</Q>');
+  check("a tag with no type reads back as replace, the way the firmware reads it",
+    p('<run><output id="1"><port>P1</port><Q>100</Q></output></run>').outputs[0].mods[0].op === "replace");
+  // the firmware matches "replace" and "add" and nothing else
+  check("only the two the firmware implements are offered", C.VLAN_OPS.join() === "add,replace");
+  check("a config carrying the old remove is flagged rather than silently doing nothing", (() => {
+    const doc = p('<run><output id="1"><port>P1</port><Q type="remove"></Q></output></run>');
+    const probs = []; C.outputProblems(doc.outputs[0], probs);
+    return probs.some((x) => /remove/.test(x.msg));
+  })());
+}
+
+group("replay inputs and empty chains");
+{
+  const p = (x) => C.parseRun(x).doc;
+  // the firmware applies playedFilesHandle to a filepath list too
+  const files = p('<run><input type="replayPcap" name="A"><port>P0</port><filepath>/a.pcap</filepath>'
+    + '<playedFilesHandle>delete</playedFilesHandle></input></run>');
+  check("played-files handling survives in files mode",
+    /playedFilesHandle>delete</.test(C.serializeRun(files)));
+  const moved = p('<run><input type="replayPcap" name="A"><port>P0</port><filepath>/a.pcap</filepath>'
+    + '<playedFilesHandle>move</playedFilesHandle><playedFilesMoveTo>/done</playedFilesMoveTo></input></run>');
+  check("and so does where they move to", /playedFilesMoveTo>\/done</.test(C.serializeRun(moved)));
+  /* body() returns null for an unset tree; interpolating it wrote the literal
+     text "null" into the config, which is well-formed so nothing objected. */
+  const bare = C.serializeRun(p('<run><chain><in>P0</in></chain></run>'));
+  check("a body-less chain does not serialise the word null", !/null/.test(bare), bare);
+  check("and it is reported rather than silently submitted",
+    C.chainProblems(null, []).length === 1);
+}
+
 /* ---------- settings page: the header travels with the scroll -------------- */
 group("settings sticky header");
 {

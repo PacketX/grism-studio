@@ -1691,6 +1691,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const [fwFile, setFwFile] = React.useState(null);
   const [fw, setFw] = React.useState({ model: "", version: "", available: "", checked: false });
   const [dl, setDl] = React.useState(null);          // firmware download progress
+  const [dlErr, setDlErr] = React.useState("");      // why it stopped, if it did
   const [fwChecking, setFwChecking] = React.useState(false);
 
   const load = React.useCallback(async () => {
@@ -1812,23 +1813,39 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     // Kick the transfer off and start watching straight away — the request itself
     // stays open for the whole download, so waiting on it would leave the progress
     // bar hidden until the file had already arrived.
+    setDlErr("");
     fetch(`/grism/task/update_download?version=${encodeURIComponent(version)}`, { credentials: "include" })
-      .catch((e) => warnFetch("firmware download", e));
+      .then((res) => { if (!res.ok) { setDlErr("HTTP " + res.status); setDl(null); } })
+      .catch((e) => { warnFetch("firmware download", e); setDlErr(String(e.message || e)); setDl(null); });
     setDl({ done: 0, total: 0, ratio: 0, complete: false });
   }, []);
+  /* Key the poll on whether it should be running, not on the progress object:
+     parseDownloadProgress returns a fresh literal every time, so depending on
+     `dl` tore this effect down and rebuilt it on every answer -- and the rebuild
+     calls poll() immediately, turning a once-a-second poll into back-to-back
+     requests at whatever rate the device could answer. */
+  const dlActive = !!dl && !dl.complete;
   React.useEffect(() => {
-    if (!dl || dl.complete) return;
+    if (!dlActive) return;
     let alive = true;
+    let quiet = 0;                            // ticks with nothing to report
     const poll = async () => {
       try {
         const res = await fetch("/grism/task/update_download_check", { credentials: "include" });
-        if (res.ok && alive) setDl(parseDownloadProgress(await res.text()));
+        if (!res.ok) { if (alive) setDlErr("HTTP " + res.status); return; }
+        if (!alive) return;
+        const next = parseDownloadProgress(await res.text());
+        // A download that never reports a byte is a download that is not
+        // happening -- say so rather than sit at 0 B for as long as the tab is open.
+        quiet = next.total > 0 ? 0 : quiet + 1;
+        if (quiet >= 30) { setDlErr("no progress"); setDl(null); return; }
+        setDl(next);
       } catch { /* transient — the next tick tries again */ }
     };
     poll();                                   // report progress without waiting a tick
     const id = setInterval(poll, 1000);
     return () => { alive = false; clearInterval(id); };
-  }, [dl]);
+  }, [dlActive]);
 
   const loadViews = React.useCallback(async () => {
     try {
@@ -1853,9 +1870,15 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   }, []);
   React.useEffect(() => {
     if (!loggedIn || section !== "packet") return;
-    if (!hb) { loadHeartbeat(); return; }
-    loadHbStatus(hb.targets);
-  }, [loggedIn, section, hb, loadHeartbeat, loadHbStatus]);
+    if (!hb) loadHeartbeat();
+  }, [loggedIn, section, hb, loadHeartbeat]);
+  /* The status read is about the targets the device has, not about what is
+     being typed into the form. Keyed on `hb` it fired one request per keystroke;
+     hbBase only changes when the settings are loaded or applied. */
+  React.useEffect(() => {
+    if (!loggedIn || section !== "packet" || !hbBase) return;
+    loadHbStatus(hbBase.targets);
+  }, [loggedIn, section, hbBase, loadHbStatus]);
 
   const loadLogging = React.useCallback(async () => {
     try {
@@ -2001,6 +2024,14 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   React.useEffect(() => {
     if (!waitPhase || waitPhase === "done") return;
     let alive = true;
+    /* One failed read is not the device going away. Applying an image rewrites
+       scripts/pywww underneath a running manage.py, which reloads and answers
+       500 (or refuses the connection) for a few seconds -- and a single such
+       tick used to be enough to call the device "rebooting", so the very next
+       success declared the update complete while it was still flashing. Only a
+       run of failures long enough to outlast that reload counts as gone. */
+    const DOWN_TICKS = 3;                     // × 2s, comfortably past a reload
+    let downRun = 0;
     const ping = async () => {
       let up = false;
       try {
@@ -2009,9 +2040,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         up = res.ok;
       } catch { up = false; }
       if (!alive) return;
+      downRun = up ? 0 : downRun + 1;
+      const goneFor = downRun;
       setWait((w) => {
         if (!w || w.phase === "done") return w;
-        if (!up) return w.phase === "rebooting" ? w : { ...w, phase: "rebooting" };
+        if (!up) {
+          return (goneFor >= DOWN_TICKS && w.phase !== "rebooting") ? { ...w, phase: "rebooting" } : w;
+        }
         // Reachable only means finished if it had gone away first. The device is
         // still answering for the first moments of an update, and treating that
         // as success would flash "complete" before anything had happened.
@@ -2043,7 +2078,15 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   };
   const submitPower = async (url, kind) => {
     setSubmit({ state: "sending", msg: "" });
-    try { await fetch(url, { method: "POST", credentials: "include" }); } catch { /* expected */ }
+    /* Same rule as uploadAndWait: a real HTTP status means the device answered
+       and refused -- pywww returns 401 for a guest or a read-only account -- so
+       show why instead of locking the page behind "restarting" for a restart
+       that will never happen. A thrown fetch means the connection went away,
+       which for these two endpoints means it is already on its way down. */
+    try {
+      const res = await fetch(url, { method: "POST", credentials: "include" });
+      if (!res.ok) { setSubmit({ state: "error", msg: "HTTP " + res.status }); return; }
+    } catch { /* connection dropped -- the device is going */ }
     setSubmit({ state: "idle", msg: "" });
     setPowered(kind);
   };
@@ -2880,8 +2923,14 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                     <input value={views[key + "Host"]} placeholder="192.168.1.10"
                       onChange={(e) => setViews((o) => ({ ...o, [key + "Host"]: e.target.value }))} /></label>
                   <label className="ml" style={{ flex: "0 1 120px" }}><span>{tr("set.bkPort")}</span>
-                    <input type="number" min="1" max="65535" value={views[key + "Port"]}
-                      onChange={(e) => setViews((o) => ({ ...o, [key + "Port"]: Number(e.target.value) || defPort }))} /></label>
+                    {/* Number(...)||defPort snapped an emptied box straight back
+                        to 1812 with the caret at the end, so backspacing to
+                        retype produced 18125. Hold the raw value; the submit
+                        path and viewsProblems coerce and validate it. */}
+                    <input type="number" min="1" max="65535" value={views[key + "Port"] ?? ""}
+                      onChange={(e) => setViews((o) => ({ ...o, [key + "Port"]:
+                        e.target.value === "" ? "" : Number(e.target.value) }))}
+                      onBlur={(e) => { if (e.target.value === "") setViews((o) => ({ ...o, [key + "Port"]: defPort })); }} /></label>
                   <label className="ml"><span>{tr("set.authSecret")}</span>
                     <input type="password" value={views[key + "Secret"]} placeholder={tr("common.optional")}
                       onChange={(e) => setViews((o) => ({ ...o, [key + "Secret"]: e.target.value }))} /></label>
@@ -3192,6 +3241,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 <span className="mono">{fmtBytes(dl.done)} / {fmtBytes(dl.total)}</span>
               </div>
             )}
+            {/* a refused or stalled download used to leave the bar at 0 B with
+                nothing said, and the poll running for as long as the tab stayed open */}
+            {dlErr && <p className="set-hint err">{tr("set.fwDownloadFailed")}: {dlErr}</p>}
             <div className="set-actions">
               {/* the device queries the update server, which can take a moment */}
               <button className="copy-btn" disabled={submit.state === "sending" || fwChecking}
@@ -3410,22 +3462,44 @@ function usePolledJson(url, loggedIn, { transform, defaultSec = 10, prefKey = "r
   const refreshSec = followSec ?? ownSec;
   React.useEffect(() => { if (followSec == null) writePref(prefKey, ownSec); }, [prefKey, ownSec, followSec]);
 
+  /* Two things a plain setInterval gets wrong against a slow device: it fires
+     whether or not the last request came back, so requests stack up; and the
+     answers can arrive out of order, so a late older sample overwrites a newer
+     one and the counters visibly go backwards. A sequence number drops stale
+     answers, and re-arming after each response means only one is ever in
+     flight. */
+  const seqRef = React.useRef(0);
   const load = React.useCallback(async () => {
+    const mine = ++seqRef.current;
     setState((s) => (s === "ok" ? "ok" : "loading"));
     try {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const json = await res.json();
+      if (mine !== seqRef.current) return;             // a newer read already answered
       setData(transform ? transform(json) : json);
       setState("ok"); setUpdatedAt(new Date()); setErrMsg("");
-    } catch (e) { setState("error"); setErrMsg(String(e.message || e)); }
+    } catch (e) {
+      if (mine !== seqRef.current) return;
+      setState("error"); setErrMsg(String(e.message || e));
+    }
   }, [url]);
 
   React.useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
   React.useEffect(() => {
     if (!loggedIn) return;
-    const id = setInterval(load, Math.max(1, Number(refreshSec) || 5) * 1000);
-    return () => clearInterval(id);
+    let alive = true, timer = 0;
+    const gap = Math.max(1, Number(refreshSec) || 5) * 1000;
+    const arm = () => { timer = setTimeout(tick, gap); };
+    const tick = async () => {
+      if (!alive) return;
+      // a hidden tab is not being read; polling it only costs the device
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") { arm(); return; }
+      await load();
+      if (alive) arm();
+    };
+    arm();
+    return () => { alive = false; clearTimeout(timer); };
   }, [refreshSec, loggedIn, load]);
 
   return { data, state, errMsg, updatedAt, refreshSec, setRefreshSec, reload: load };
@@ -3828,7 +3902,23 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
   const fPoll = usePolledJson("/grism/task/get_filter_counter", loggedIn, { followSec: poll.refreshSec });
   // heartbeat: the status rows are positional, so the target list labels them
   const hbPoll = usePolledJson("/grism/task/get_heartbeat_status", loggedIn, { followSec: poll.refreshSec });
-  const hbCfg = usePolledJson("/grism/task/get_config", loggedIn, { followSec: poll.refreshSec });
+  /* The target list only labels the status rows, and it changes when someone
+     edits the settings -- not every tick. Polling the whole configuration
+     document alongside the counters re-downloaded it every refresh, on a device
+     that is already the slow part, for a card that is not even drawn when there
+     are no targets. */
+  const [hbTargets, setHbTargets] = React.useState([]);
+  React.useEffect(() => {
+    if (!loggedIn) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/grism/task/get_config", { credentials: "include" });
+        if (res.ok && alive) setHbTargets(parseHeartbeat(await res.json()).targets);
+      } catch { /* the rows simply stay unlabelled */ }
+    })();
+    return () => { alive = false; };
+  }, [loggedIn]);
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
 
@@ -3836,7 +3926,6 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
   const v6 = summarizeSessions(poll.data?.sessionsv6, { v6: true });
   const pkts = summarizePacketTypes(poll.data?.packet_type_counter);
   const filters = summarizeFilterCounters(fPoll.data?.filter_counter);
-  const hbTargets = parseHeartbeat(hbCfg.data).targets;
   const hbRows = heartbeatStatusRows(hbTargets, parseHeartbeatStatus(hbPoll.data));
 
   const family = (info, label, protoLabel) => info && (
@@ -5312,19 +5401,24 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
                   ))}
                 </span>}
               </div>
-              <div className="mod-row">
-                <span className="mod-key">{tr("in.afterReplay")}</span>
-                <select className="mod-val" value={inp.fields?.playedFilesHandle ?? ""} onChange={(e) => setField("playedFilesHandle", e.target.value)}>
-                  <option value="">—</option><option value="delete">delete</option><option value="move">move</option>
-                </select>
-                <code className="mod-tag">&lt;playedFilesHandle&gt;</code>
-              </div>
-              {inp.fields?.playedFilesHandle === "move" && <div className="mod-row">
-                <span className="mod-key">{tr("in.moveTo")}</span>
-                <input className="mod-val" value={inp.fields?.playedFilesMoveTo ?? ""} placeholder="H1/in/played" onChange={(e) => setField("playedFilesMoveTo", e.target.value)} />
-                <code className="mod-tag">&lt;playedFilesMoveTo&gt;</code>
-              </div>}
             </>}
+
+            {/* The firmware applies this to a named file list as well as to a
+                scanned directory, so it belongs to both modes -- shown only in
+                scandir, it was invisible in files mode and then dropped from the
+                document on the next submit. */}
+            <div className="mod-row">
+              <span className="mod-key">{tr("in.afterReplay")}</span>
+              <select className="mod-val" value={inp.fields?.playedFilesHandle ?? ""} onChange={(e) => setField("playedFilesHandle", e.target.value)}>
+                <option value="">—</option><option value="delete">delete</option><option value="move">move</option>
+              </select>
+              <code className="mod-tag">&lt;playedFilesHandle&gt;</code>
+            </div>
+            {inp.fields?.playedFilesHandle === "move" && <div className="mod-row">
+              <span className="mod-key">{tr("in.moveTo")}</span>
+              <input className="mod-val" value={inp.fields?.playedFilesMoveTo ?? ""} placeholder="H1/in/played" onChange={(e) => setField("playedFilesMoveTo", e.target.value)} />
+              <code className="mod-tag">&lt;playedFilesMoveTo&gt;</code>
+            </div>}
 
             {/* shared playback fields */}
             {["time", "speed", "msinterval"].map((k) => renderField(INPUT_FIELD_INDEX[k]))}
