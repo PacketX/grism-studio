@@ -550,8 +550,11 @@
 .sim-resizer:hover .sim-resizer-grip{background:var(--accent);}
 .sim-page .sim-layout{flex:1; min-height:0;}
 /* Port buttons size themselves to how many there are: a 12-port broker can
-   afford big targets, a 32-port one cannot. Density picks the size variables;
-   every rule below reads them, so the panel stays one row and stays short. */
+   afford bigger targets, a 32-port one cannot. Density picks the size
+   variables; every rule below reads them, so the panel stays one row and stays
+   short. The top of the scale is a deliberate ceiling rather than whatever the
+   width allows -- with few ports there is room to make them enormous, and a
+   72px port reads as a mistake, not as generosity. */
 /* The simulate page used to name its colours inline, which meant it only had
    a dark theme: in light they landed at 1.2-1.9:1 and the "just left" port name
    was effectively invisible. Same hues, darkened to clear 4.5:1 on the light
@@ -562,8 +565,8 @@
   --sim-in-bg:rgba(var(--accent-2-rgb),.07); --sim-out-bg:rgba(157,23,77,.05); }
 .dev-panel{flex:0 0 auto; padding:10px 18px; background:var(--panel-2);
   --dp-w:58px; --dp-h:46px; --dp-fs:13px; --dp-pad:7px 8px 6px; --dp-colgap:11px; --dp-rowgap:44px;}
-.dev-panel[data-dense=lg]{--dp-w:92px; --dp-h:56px; --dp-fs:16px; --dp-pad:9px 14px 7px; --dp-colgap:13px;}
-.dev-panel[data-dense=md]{--dp-w:70px; --dp-h:50px; --dp-fs:14px; --dp-pad:8px 10px 6px;}
+.dev-panel[data-dense=lg]{--dp-w:72px; --dp-h:50px; --dp-fs:14.5px; --dp-pad:8px 11px 6px; --dp-colgap:12px;}
+.dev-panel[data-dense=md]{--dp-w:62px; --dp-h:47px; --dp-fs:13.5px; --dp-pad:7px 9px 6px;}
 .dev-panel[data-dense=sm]{--dp-w:50px; --dp-h:43px; --dp-fs:12px; --dp-pad:6px 5px 5px; --dp-colgap:9px;}
 .dev-panel[data-dense=xs]{--dp-w:39px; --dp-h:38px; --dp-fs:11px; --dp-pad:5px 3px 4px; --dp-colgap:8px;}
 .dev-panel[data-dense=xs] .dev-port-role{display:none;}

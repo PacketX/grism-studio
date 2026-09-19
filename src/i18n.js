@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.82.0";
+export const STUDIO_VERSION = "2.83.0";
 
 export const I18N = {
   en: {
@@ -563,6 +563,11 @@ export const I18N = {
     "sim.discard": "discard",
     "sim.default": "default",
     "sim.packetOn": "Packet on",
+    "sim.noRoute": "device default (no explicit route)",
+    "sim.unspecified": "unspecified — device default",
+    "sim.dropped": "dropped (out 0)",
+    "sim.matchUnspec": "match side unspecified — device default",
+    "sim.notMatchUnspec": "not-match side unspecified — device default",
     "out.removeMod": "Remove modifier",
     "out.noMods": "Type {type} takes no modifiers.",
     "out.noValue": "no value",
@@ -1135,6 +1140,11 @@ export const I18N = {
     "sim.discard": "丟棄",
     "sim.default": "預設",
     "sim.packetOn": "封包從",
+    "sim.noRoute": "裝置預設(未指定路徑)",
+    "sim.unspecified": "未指定 — 採用裝置預設",
+    "sim.dropped": "丟棄 (out 0)",
+    "sim.matchUnspec": "符合的那一側未指定 — 採用裝置預設",
+    "sim.notMatchUnspec": "不符合的那一側未指定 — 採用裝置預設",
     "out.removeMod": "移除修改器",
     "out.noMods": "類型 {type} 不接受任何修改器。",
     "out.noValue": "無值",

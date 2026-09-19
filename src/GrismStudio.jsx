@@ -7132,12 +7132,15 @@ function evalFids(fids, fidOp, states) {
 function simulateChain(chain, states, filterAlt) {
   const steps = [];
   let node = chain.tree;
-  let outcome = { kind: "default", text: "device default (no explicit route)" };
+  /* The outcome describes itself with a key rather than a sentence: this runs
+     in a Chinese UI, and prose built here cannot be translated where it is
+     shown. `text` stays for the cases that are already a port list. */
+  let outcome = { kind: "default", key: "sim.noRoute" };
   let guard = 0;
   while (node && guard++ < 200) {
-    if (isUnset(node)) { outcome = { kind: "default", text: "unspecified — device default" }; break; }
+    if (isUnset(node)) { outcome = { kind: "default", key: "sim.unspecified" }; break; }
     if (node.t === "out") {
-      if (isDrop(node)) outcome = { kind: "drop", text: "dropped (out 0)" };
+      if (isDrop(node)) outcome = { kind: "drop", key: "sim.dropped" };
       else outcome = { kind: "out", text: node.ports, mode: node.mode, lb: node.lb };
       break;
     }
@@ -7146,7 +7149,10 @@ function simulateChain(chain, states, filterAlt) {
       const alt = node.fids.split(",").map((t) => { const id = t.trim().replace(/^!/, ""); const neg = t.trim().startsWith("!"); return (neg ? "!" : "") + (filterAlt[id] || id); }).join(node.fidOp === "and" ? " AND " : " OR ");
       steps.push({ id: node.id, fids: node.fids, alt, matched });
       const nextNode = matched ? node.match : node.notmatch;
-      if (!nextNode || isUnset(nextNode)) { outcome = { kind: "default", text: `${matched ? "match" : "not-match"} side unspecified — device default` }; break; }
+      if (!nextNode || isUnset(nextNode)) {
+        outcome = { kind: "default", key: matched ? "sim.matchUnspec" : "sim.notMatchUnspec" };
+        break;
+      }
       node = nextNode;
       continue;
     }
@@ -7728,6 +7734,8 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
     .map((tok) => { const d = destLabel(tok, outIdx); return d ? `${tok} → ${d}` : ""; })
     .filter(Boolean);
   const tr = t || ((k) => k);
+  // a port list stays as it is; anything else names a translated sentence
+  const outcomeText = (o) => (o.key ? tr(o.key) : o.text);
   // all filter ids to offer as switches: defined here + referenced-but-undefined
   const filterIds = useMemo(() => {
     const s = new Set(doc.filters.map((f) => "F" + f.id));
@@ -7931,10 +7939,10 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
               <div className="sim-arrow">↓</div>
               <div className={"sim-node out " + outcome.kind}>
                 <span className="sim-node-k">{outcome.kind === "out" ? (outcome.mode === "loadBalance" ? tr("sim.loadBalance") : tr("sim.output")) : outcome.kind === "drop" ? tr("sim.discard") : tr("sim.default")}</span>
-                <span className="sim-node-v">{outcome.text}{outcome.kind === "out" && outcome.mode === "loadBalance" ? ` (${outcome.lb})` : ""}</span>
+                <span className="sim-node-v">{outcomeText(outcome)}{outcome.kind === "out" && outcome.mode === "loadBalance" ? ` (${outcome.lb})` : ""}</span>
                 {/* "O2" is a reference; say which port it leaves by, and what it
                     was called, as the overview flow does */}
-                {destLines(outcome.text).map((line, k) => (
+                {destLines(outcome.text ?? "").map((line, k) => (
                   <span className="sim-node-dest" key={k}>{line}</span>
                 ))}
               </div>
@@ -7942,8 +7950,8 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
             <div className="sim-summary">
               {tr("sim.packetOn")} <code>{inPort}</code>
               {steps.length > 0 && <> → {steps.map((s, j) => <span key={j}>{j > 0 ? ", " : ""}<code>{s.fids}</code> {s.matched ? tr("sim.match") : tr("sim.notMatch")}</span>)}</>}
-              {" → "}<b className={"sim-out-" + outcome.kind}>{outcome.text}</b>
-              {destLines(outcome.text).length > 0 && <span className="sim-summary-dest"> ({destLines(outcome.text).join("; ")})</span>}
+              {" → "}<b className={"sim-out-" + outcome.kind}>{outcomeText(outcome)}</b>
+              {destLines(outcome.text ?? "").length > 0 && <span className="sim-summary-dest"> ({destLines(outcome.text ?? "").join("; ")})</span>}
             </div>
           </div>
         ))}

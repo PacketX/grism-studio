@@ -2326,6 +2326,9 @@ group("simulate panel density");
       w.lg > w.md && w.md > w.sm && w.sm > w.xs, JSON.stringify(w));
     // a button still has to be clickable at the densest setting
     check("even the densest button stays a usable target", w.xs >= 36);
+    /* And a ceiling at the other end: with few ports there is width to make
+       them enormous, which reads as a mistake rather than as generosity. */
+    check("no port button grows past the ceiling", w.lg <= 76, `lg is ${w.lg}px`);
     check("the port button reads its width from the density variable",
       /\.dev-port\{[^}]*min-width:var\(--dp-w\)/.test(css.replace(/\s*\n\s*/g, "")));
   }
@@ -2460,6 +2463,17 @@ group("VLAN tag operations");
     p('<run><output id="1"><port>P1</port><Q>100</Q></output></run>').outputs[0].mods[0].op === "replace");
   // the firmware matches "replace" and "add" and nothing else
   check("only the two the firmware implements are offered", C.VLAN_OPS.join() === "add,replace");
+  /* Two different defaults, deliberately: a new modifier starts on "add",
+     which is what the user reaches for, and now serialises that explicitly --
+     while a tag that arrives with no attribute at all still reads back as
+     replace, because that is what the firmware does with it. */
+  check("a new VLAN modifier starts on add", C.mkOutputMod("Q").op === "add" && C.mkOutputMod("QinQ").op === "add");
+  check("and writes that out", (() => {
+    const doc = p('<run><output id="1"><port>P1</port></output></run>');
+    doc.outputs[0].mods = [C.mkOutputMod("Q")];
+    doc.outputs[0].mods[0].val = "100";
+    return /<Q type="add">100<\/Q>/.test(C.serializeRun(doc));
+  })());
   check("a config carrying the old remove is flagged rather than silently doing nothing", (() => {
     const doc = p('<run><output id="1"><port>P1</port><Q type="remove"></Q></output></run>');
     const probs = []; C.outputProblems(doc.outputs[0], probs);
