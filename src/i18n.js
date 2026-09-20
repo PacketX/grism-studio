@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.90.0";
+export const STUDIO_VERSION = "2.91.0";
 
 export const I18N = {
   en: {
@@ -40,7 +40,6 @@ export const I18N = {
     "tab.trafficMec": "MEC Mapping Table",
     "mec.note": "Which S1AP/NGAP session each user address belongs to, as the device currently has it. The device returns one page at a time; rows are in its own table order, so they can shift between refreshes as sessions come and go.",
     "mec.perPage": "Rows",
-    "mec.every": "every",
     "mec.showAll": "Include rows with no UE address",
     "mec.inTable": "Items",
     "mec.truncated": "This page came back short because the device filled its reply buffer. Choose a smaller page size to see the rest.",
@@ -689,7 +688,6 @@ export const I18N = {
     "tab.trafficMec": "MEC 對應表",
     "mec.note": "每個用戶位址目前屬於哪一組 S1AP/NGAP 連線。裝置一次回傳一頁,順序是裝置表格本身的順序,因此連線增減時各頁內容會位移。",
     "mec.perPage": "每頁筆數",
-    "mec.every": "每",
     "mec.showAll": "包含尚無 UE 位址的項目",
     "mec.inTable": "項目",
     "mec.truncated": "這一頁被裝置的回應緩衝區截斷了,請改用較小的每頁筆數來看完整內容。",

@@ -1642,9 +1642,17 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 /* ---- MEC mapping table ------------------------------------------------
    A page of a table that may hold a million rows: the counts above it, the
    pager below. The pager is one row on a desktop and wraps on a phone. */
+/* The search controls sit together on the left; the two device-changing
+   buttons are pushed to the far right by .mec-filter-gap, away from them. */
 .mec-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin: 0 0 16px; }
+/* the address and "include the ones without one" are one decision */
+.mec-filter-group { display: flex; align-items: flex-end; gap: 10px; }
+.mec-filter-group .set-check { margin: 0 0 6px; white-space: nowrap; }
 .mec-filters .ml { margin: 0; }
-.mec-filters input { width: 170px; }
+/* only the text boxes: an unqualified width stretched the checkbox itself,
+   which pushed its label a hundred pixels clear of it and everything after it
+   along with it */
+.mec-filters input[type=text] { width: 170px; }
 .mec-filters input[inputmode=numeric] { width: 90px; }
 /* the two device-changing buttons sit apart from the search controls */
 .mec-filter-gap { flex: 1 1 24px; }

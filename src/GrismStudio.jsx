@@ -7860,16 +7860,20 @@ function MecTab({ loggedIn, t }) {
      interval is theirs to change. */
   const [auto, setAuto] = React.useState(true);
   const [every, setEvery] = React.useState(5);
+  const [updatedAt, setUpdatedAt] = React.useState(null);
   // filters, applied by the device: a UE address or subnet, and an idle time
   // with the comparison the firmware implements (at most / longer than)
   const [ue, setUe] = React.useState("");
   const [all, setAll] = React.useState(false);     // include rows with no UE address
-  const [idleOp, setIdleOp] = React.useState("gt");
-  const [idleSecs, setIdleSecs] = React.useState("");
+  /* The view an operator wants first is the sessions that are still current,
+     so the filter starts at "idle at most an hour". Emptying the seconds box
+     shows everything. */
+  const [idleOp, setIdleOp] = React.useState("le");
+  const [idleSecs, setIdleSecs] = React.useState("3600");
   const [confirm, setConfirm] = React.useState(null);   // { kind: "idle" | "all" }
   const [cleared, setCleared] = React.useState("");
   const seq = React.useRef(0);
-  const filters = React.useRef({ ue: "", all: false, idleOp: "gt", idleSecs: "" });
+  const filters = React.useRef({ ue: "", all: false, idleOp: "le", idleSecs: "3600" });
   filters.current = { ue, all, idleOp, idleSecs };
 
   const read = React.useCallback(async (wantPage, wantSize) => {
@@ -7882,7 +7886,7 @@ function MecTab({ loggedIn, t }) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       const parsed = parseS1apItems(await res.json());
       if (mine !== seq.current) return;               // a newer read already answered
-      setData(parsed); setErr("");
+      setData(parsed); setErr(""); setUpdatedAt(new Date());
       /* The table can shrink between reads -- the idle sweep runs, or someone
          clears it -- so a page that no longer exists comes back to the last one
          that does, and reads again rather than showing an empty screen. */
@@ -7900,11 +7904,11 @@ function MecTab({ loggedIn, t }) {
      result set. */
   const applyFilters = () => { setPage(1); read(1, size); };
   const clearFilters = () => {
-    setUe(""); setAll(false); setIdleOp("gt"); setIdleSecs("");
-    filters.current = { ue: "", all: false, idleOp: "gt", idleSecs: "" };
+    setUe(""); setAll(false); setIdleOp("le"); setIdleSecs("3600");
+    filters.current = { ue: "", all: false, idleOp: "le", idleSecs: "3600" };
     setPage(1); read(1, size);
   };
-  const filtered = !!String(ue).trim() || all || /^\d+$/.test(String(idleSecs).trim());
+  const filtered = !!String(ue).trim() || all || String(idleSecs).trim() !== "3600" || idleOp !== "le";
   /* Clearing by idle time only means anything for rows idle LONGER than the
      number given -- that is what the device does with it. Offering the button
      next to "at most" would invite clearing everything that is still in use. */
@@ -7934,7 +7938,7 @@ function MecTab({ loggedIn, t }) {
   React.useEffect(() => { if (loggedIn) read(page, size); }, [loggedIn, page, size, read]);
   React.useEffect(() => {
     if (!auto || !loggedIn) return;
-    const id = setInterval(() => read(page, size), Math.max(1, every) * 1000);
+    const id = setInterval(() => read(page, size), Math.max(1, Number(every) || 5) * 1000);
     return () => clearInterval(id);
   }, [auto, every, loggedIn, page, size, read]);
 
@@ -7952,13 +7956,15 @@ function MecTab({ loggedIn, t }) {
       <div className="sys-head">
         <h2 className="sys-title">{tr("tab.trafficMec")}</h2>
         <div className="sys-controls">
+          {updatedAt && <span className="sys-updated">{tr("tf.updated")} {updatedAt.toLocaleTimeString()}</span>}
           <label className="sys-auto"><input type="checkbox" checked={auto}
             onChange={(e) => setAuto(e.target.checked)} /> {tr("sys.auto")}</label>
-          <label className="ml"><span>{tr("mec.every")}</span>
-            <select value={every} disabled={!auto} onChange={(e) => setEvery(+e.target.value)}>
-              {[5, 10, 30, 60].map((n) => <option key={n} value={n}>{n}s</option>)}
-            </select>
-          </label>
+          {/* typed, like the interface page: five seconds suits a busy device
+              and thirty suits a quiet one, and neither is worth a dropdown */}
+          <label className="tf-interval">{tr("tf.every")}
+            <input type="number" min="1" value={every} disabled={!auto}
+              onChange={(e) => setEvery(e.target.value)} />
+            {tr("tf.seconds")}</label>
           <button className="sys-refresh" onClick={() => read(page, size)} disabled={busy}>
             {busy ? tr("sys.refreshing") : tr("sys.refresh")}</button>
         </div>
@@ -7966,6 +7972,7 @@ function MecTab({ loggedIn, t }) {
       <p className="page-note">{tr("mec.note")}</p>
 
       <div className="mec-filters">
+        <div className="mec-filter-group">
         <label className="ml"><span>{tr("mec.ueFilter")}</span>
           <input type="text" value={ue} placeholder="172.16.0.0/16"
             onChange={(e) => setUe(e.target.value)}
@@ -7974,6 +7981,7 @@ function MecTab({ loggedIn, t }) {
             address; the ones still being set up are invisible */}
         <label className="set-check"><input type="checkbox" checked={all} disabled={!!String(ue).trim()}
           onChange={(e) => setAll(e.target.checked)} /> {tr("mec.showAll")}</label>
+        </div>
         <label className="ml"><span>{tr("mec.idleFilter")}</span>
           <select value={idleOp} onChange={(e) => setIdleOp(e.target.value)}>
             <option value="le">{tr("mec.idleLe")}</option>
