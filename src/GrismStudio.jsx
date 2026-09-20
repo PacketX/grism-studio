@@ -37,6 +37,9 @@ import {
   hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   MEC_ARG_KEYS, mecProblems, dedupProblems,
+  parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
+  s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
+  S1AP_PAGE_SIZES, S1AP_PAGE_DEFAULT,
   outputIndex, destLabel,
   parseL2greCorrelation,
   suggestName,
@@ -146,7 +149,7 @@ export default function GrismStudio() {
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
     { id: "pipeline", tabs: ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
-    { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre"] },
+    { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre", "trafficMec"] },
     { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
   const tabWorkspace = (tb) => (WORKSPACES.find((w) => w.tabs.includes(tb)) ?? WORKSPACES[0]).id;
@@ -292,6 +295,7 @@ export default function GrismStudio() {
   // <args><grel2Correlation>, read from the same get_config the port list comes
   // from. Declared here so hasL2gre below can see it.
   const [l2greOn, setL2greOn] = useState(false);
+  const [s1cOn, setS1cOn] = useState(false);            // <args><s1cCorrelation>
   const [deviceModel, setDeviceModel] = useState("");   // <args><model>, for panels that are model-specific
   useEffect(() => {
     if (workspace !== "traffic" || !login.who) return;
@@ -313,6 +317,8 @@ export default function GrismStudio() {
   const hasL2gre = l2greOn || (l2gre?.rows.length ?? 0) > 0;
   // a table that empties while it is open would otherwise leave a blank tab
   useEffect(() => { if (tab === "trafficL2gre" && !hasL2gre) setTab("trafficPorts"); }, [tab, hasL2gre]);
+  // and the same for the MEC page if correlation is switched off while it is open
+  useEffect(() => { if (tab === "trafficMec" && !s1cOn) setTab("trafficPorts"); }, [tab, s1cOn]);
 
   // Why the session ended, when something other than the logout button ended it.
   // Set as the tab that triggered it unmounts, so it has to live out here.
@@ -515,6 +521,9 @@ export default function GrismStudio() {
       // whether the device is correlating L2GRE at all -- the table page is only
       // worth showing when it is, or when it still holds rows from when it was
       setL2greOn((cfg.args ?? {}).grel2Correlation === true);
+      // the MEC mapping table is only meaningful while S1AP/NGAP correlation
+      // is on: with it off the device builds no items at all
+      setS1cOn((cfg.args ?? {}).s1cCorrelation === true);
       setDeviceModel(String((cfg.args ?? {}).model ?? ""));
       const targets = (cfg.heartbeat?.target ?? [])
         .map((t) => ({ id: t.id, sendPort: t.sendPort, receivePort: t.receivePort }))
@@ -713,7 +722,8 @@ export default function GrismStudio() {
                 {open && w.id === "traffic" && (
                   <nav className="tabs ws-tabs">
                     {["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries",
-                      ...(hasL2gre ? ["trafficL2gre"] : [])].map((k) => (
+                      ...(hasL2gre ? ["trafficL2gre"] : []),
+                      ...(s1cOn ? ["trafficMec"] : [])].map((k) => (
                       <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
                         {t("tab." + k)}
                       </button>
@@ -988,6 +998,9 @@ export default function GrismStudio() {
         )}
         {tab === "trafficL2gre" && (
           <L2greTab data={l2gre} correlating={l2greOn} onData={setL2gre} t={t} />
+        )}
+        {tab === "trafficMec" && (
+          <MecTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "capture" && (
           <CaptureTab loggedIn={!!login.who} t={t}
@@ -7824,6 +7837,262 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
 /* ============================================================
    L2GRE correlation — which tunnel each inner MAC was seen inside
    ============================================================ */
+/* ============================================================
+   MEC mapping table — the S1AP/NGAP item table, a page at a time
+   ------------------------------------------------------------
+   The table holds up to a million rows and the firmware builds its answer in a
+   64KB buffer, so the page asks for a window (offset/limit) rather than the
+   whole thing, and reads the matched total back to know how many pages there
+   are. Auto-refresh is off by default here, unlike the counter pages: rows move
+   under a reader who is on page 7 of 400, and re-sorting the ground under them
+   every five seconds is not a service.
+   ============================================================ */
+function MecTab({ loggedIn, t }) {
+  const tr = t || ((k) => k);
+  const [data, setData] = React.useState(null);      // null = not read yet
+  const [page, setPage] = React.useState(1);
+  const [size, setSize] = React.useState(S1AP_PAGE_DEFAULT);
+  const [jump, setJump] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [auto, setAuto] = React.useState(false);
+  // filters, applied by the device: a UE address or subnet, and an idle time
+  // with the comparison the firmware implements (at most / longer than)
+  const [ue, setUe] = React.useState("");
+  const [idleOp, setIdleOp] = React.useState("le");
+  const [idleSecs, setIdleSecs] = React.useState("");
+  const [confirm, setConfirm] = React.useState(null);   // { kind: "idle" | "all" }
+  const [cleared, setCleared] = React.useState("");
+  const seq = React.useRef(0);
+  const filters = React.useRef({ ue: "", idleOp: "le", idleSecs: "" });
+  filters.current = { ue, idleOp, idleSecs };
+
+  const read = React.useCallback(async (wantPage, wantSize) => {
+    const mine = ++seq.current;
+    setBusy(true);
+    try {
+      const f = filters.current;
+      const res = await fetch(`/grism/task/get_s1ap_items?${s1apQuery({ page: wantPage, size: wantSize, ...f })}`,
+        { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const parsed = parseS1apItems(await res.json());
+      if (mine !== seq.current) return;               // a newer read already answered
+      setData(parsed); setErr("");
+      /* The table can shrink between reads -- the idle sweep runs, or someone
+         clears it -- so a page that no longer exists comes back to the last one
+         that does, and reads again rather than showing an empty screen. */
+      const clamped = s1apClampPage(wantPage, parsed.matched, wantSize);
+      if (clamped !== wantPage) setPage(clamped);
+    } catch (e) {
+      if (mine === seq.current) setErr(String(e.message || e));
+    } finally {
+      if (mine === seq.current) setBusy(false);
+    }
+  }, []);
+
+  /* The filters are part of what a page means, so changing one starts again at
+     the first page rather than leaving the reader on page 7 of a different
+     result set. */
+  const applyFilters = () => { setPage(1); read(1, size); };
+  const clearFilters = () => {
+    setUe(""); setIdleOp("le"); setIdleSecs("");
+    filters.current = { ue: "", idleOp: "le", idleSecs: "" };
+    setPage(1); read(1, size);
+  };
+  const filtered = !!String(ue).trim() || /^\d+$/.test(String(idleSecs).trim());
+  const ueProblem = s1apUeFilterProblem(ue);
+  const idleProblem = s1apIdleProblem(idleSecs);
+
+  /* Both clears are the device's own: one drops the rows that have been idle
+     longer than the number given, the other empties the S1AP tables outright.
+     Destructive, so both go through a confirmation. */
+  const runClear = async (kind) => {
+    setConfirm(null); setBusy(true);
+    try {
+      const url = kind === "idle"
+        ? `/grism/task/clear_s1ap_items?max-idle=${encodeURIComponent(String(idleSecs).trim() || "0")}`
+        : "/grism/task/clear_s1ap_tables";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setCleared(kind);
+      setTimeout(() => setCleared(""), 2500);
+      setPage(1); await read(1, size);
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setBusy(false); }
+  };
+
+  React.useEffect(() => { if (loggedIn) read(page, size); }, [loggedIn, page, size, read]);
+  React.useEffect(() => {
+    if (!auto || !loggedIn) return;
+    const id = setInterval(() => read(page, size), 5000);
+    return () => clearInterval(id);
+  }, [auto, loggedIn, page, size, read]);
+
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+
+  const rows = data?.rows ?? [];
+  const matched = data?.matched ?? 0;
+  const pages = s1apPageCount(matched, size);
+  const first = matched === 0 ? 0 : (page - 1) * size + 1;
+  const last = Math.min(matched, (page - 1) * size + rows.length);
+  const go = (n) => { const next = s1apClampPage(n, matched, size); setJump(""); setPage(next); };
+
+  return (
+    <div className="sys-wrap">
+      <div className="sys-head">
+        <h2 className="sys-title">{tr("tab.trafficMec")}</h2>
+        <div className="sys-controls">
+          <label className="ml"><span>{tr("mec.perPage")}</span>
+            <select value={size} onChange={(e) => { setPage(1); setSize(+e.target.value); }}>
+              {S1AP_PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <label className="sys-auto"><input type="checkbox" checked={auto}
+            onChange={(e) => setAuto(e.target.checked)} /> {tr("sys.auto")}</label>
+          <button className="sys-refresh" onClick={() => read(page, size)} disabled={busy}>
+            {busy ? tr("sys.refreshing") : tr("sys.refresh")}</button>
+        </div>
+      </div>
+      <p className="page-note">{tr("mec.note")}</p>
+
+      <div className="mec-filters">
+        <label className="ml"><span>{tr("mec.ueFilter")}</span>
+          <input type="text" value={ue} placeholder="100.64.0.9 / 100.64.0.0/16"
+            onChange={(e) => setUe(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !ueProblem && !idleProblem) applyFilters(); }} /></label>
+        <label className="ml"><span>{tr("mec.idleFilter")}</span>
+          <select value={idleOp} onChange={(e) => setIdleOp(e.target.value)}>
+            <option value="le">{tr("mec.idleLe")}</option>
+            <option value="gt">{tr("mec.idleGt")}</option>
+          </select></label>
+        <label className="ml"><span>{tr("mec.idleSecs")}</span>
+          <input type="text" inputMode="numeric" value={idleSecs} placeholder="600"
+            onChange={(e) => setIdleSecs(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !ueProblem && !idleProblem) applyFilters(); }} /></label>
+        <button className="sys-refresh" disabled={busy || !!ueProblem || !!idleProblem}
+          onClick={applyFilters}>{tr("mec.search")}</button>
+        {filtered && <button className="copy-btn" disabled={busy} onClick={clearFilters}>{tr("mec.clearFilter")}</button>}
+        {/* both of these change the device, so they sit apart from the search */}
+        <span className="mec-filter-gap" />
+        <button className="copy-btn" disabled={busy || !/^\d+$/.test(String(idleSecs).trim())}
+          title={tr("mec.clearIdleTip")}
+          onClick={() => setConfirm({ kind: "idle" })}>{tr("mec.clearIdle")}</button>
+        <button className="del" disabled={busy} onClick={() => setConfirm({ kind: "all" })}>{tr("mec.clearAll")}</button>
+      </div>
+      {ueProblem && <p className="set-hint err">{tr("mec.ueFilterBad")}</p>}
+      {idleProblem && <p className="set-hint err">{tr("mec.idleSecsBad")}</p>}
+      {cleared && <div className="set-ok-banner">{tr(cleared === "idle" ? "mec.clearedIdle" : "mec.clearedAll")}</div>}
+
+      {err && <div className="sys-err">{tr("set.loadFailed")}: {err}</div>}
+      {data === null && !err && <p className="sys-note dim">{tr("set.loading")}</p>}
+
+      {data && (
+        <div className="mec-summary">
+          <span>{tr("mec.inTable")} <b className="mono">{fmtCount(data.used)}</b>
+            <span className="dim"> / {fmtCount(data.capacity)}</span></span>
+          <span>{tr("mec.teidTable")} <b className="mono">{fmtCount(data.teid[0])}</b>
+            <span className="dim"> / {fmtCount(data.teid[1])}</span></span>
+          <span>{tr("mec.sipTable")} <b className="mono">{fmtCount(data.sip[0])}</b>
+            <span className="dim"> / {fmtCount(data.sip[1])}</span></span>
+        </div>
+      )}
+      {/* The firmware fills a 64KB buffer; when that ends the page rather than
+          the data, the page is short and the reader has to be told why. */}
+      {data?.truncated && <p className="set-hint warn">{tr("mec.truncated")}</p>}
+
+      {data && rows.length === 0 && <p className="sys-note dim">{tr("mec.empty")}</p>}
+
+      {rows.length > 0 && <div className="tf-table-wrap">
+        <table className="tf-table">
+          {/* The device does not say whether a row came from S1AP or NGAP --
+              the isngap bit is not on the wire -- so the identity columns name
+              both. The request/response E-RAB pair is the uplink and downlink
+              GTP tunnel respectively. */}
+          <thead><tr>
+            <th>{tr("mec.mmeUeId")}</th>
+            <th>{tr("mec.ranUeId")}</th>
+            <th>{tr("mec.plmnId")}</th>
+            <th>{tr("mec.cellId")}</th>
+            <th>{tr("mec.spid")}</th>
+            <th>{tr("mec.ulTeid")}</th>
+            <th>{tr("mec.ulIp")}</th>
+            <th>{tr("mec.dlTeid")}</th>
+            <th>{tr("mec.dlIp")}</th>
+            <th>{tr("mec.ueIp")}</th>
+            <th>{tr("mec.idle")}</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={`${data.offset}-${i}`}>
+                <td className="mono">{r.mmeid}</td>
+                <td className="mono">{r.enbid}</td>
+                {/* verbatim: the firmware prints this decimal when it can
+                    decode the PLMN and as raw BCD hex when it cannot, and the
+                    two are indistinguishable here */}
+                <td className="mono">{r.plmnid}</td>
+                <td className="mono">{r.cellid}</td>
+                {/* 0 is a real SPID as far as this table can tell: the field is
+                    left at zero when the setup carried none */}
+                <td className="mono">{r.spid}</td>
+                <td className="mono">{r.reqTeid}</td>
+                <td className="mono">{r.reqIp}</td>
+                <td className="mono">{r.resTeid}</td>
+                <td className="mono">{r.resIp}</td>
+                <td className="mono">{r.ueIp || "—"}</td>
+                <td className="mono">{fmtIdle(r.idle)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>}
+
+      {confirm && (
+        <div className="modal-scrim" onClick={() => setConfirm(null)}>
+          <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{tr(confirm.kind === "idle" ? "mec.clearIdleTitle" : "mec.clearAllTitle")}</div>
+            <p className="modal-body">{confirm.kind === "idle"
+              ? tr("mec.clearIdleBody").replace("{n}", String(idleSecs).trim())
+              : tr("mec.clearAllBody")}</p>
+            <button className="opt drop" onClick={() => runClear(confirm.kind)}>
+              <span className="opt-name">{tr(confirm.kind === "idle" ? "mec.clearIdle" : "mec.clearAll")}</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setConfirm(null)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
+
+      {data && (
+        <div className="mec-pager">
+          {/* exact, not compacted: this is a row range the reader may want to
+              compare or type into the page box */}
+          <span className="mec-range">{tr("mec.showing")
+            .replace("{from}", fmtCount(first)).replace("{to}", fmtCount(last)).replace("{total}", fmtCount(matched))}</span>
+          <div className="mec-pager-btns">
+            <button className="copy-btn" disabled={page <= 1 || busy} onClick={() => go(page - 1)}>{tr("mec.prev")}</button>
+            {s1apPageList(page, pages).map((n, i) => (n === "gap"
+              ? <span className="mec-gap" key={"g" + i}>…</span>
+              : <button key={n} className={"mec-page" + (n === page ? " on" : "")}
+                  disabled={busy} onClick={() => go(n)}>{n}</button>))}
+            <button className="copy-btn" disabled={page >= pages || busy} onClick={() => go(page + 1)}>{tr("mec.next")}</button>
+          </div>
+          <form className="mec-jump" onSubmit={(e) => {
+            e.preventDefault();
+            const n = s1apParsePage(jump, matched, size);
+            if (n !== null) go(n);
+          }}>
+            <label className="ml"><span>{tr("mec.jump")}</span>
+              <input type="text" inputMode="numeric" value={jump} placeholder={String(page)}
+                onChange={(e) => setJump(e.target.value)} /></label>
+            <button className="copy-btn" type="submit"
+              disabled={busy || s1apParsePage(jump, matched, size) === null}>{tr("mec.go")}</button>
+            <span className="dim">{tr("mec.ofPages").replace("{n}", fmtCount(pages))}</span>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function L2greTab({ data, correlating, onData, t }) {
   const tr = t || ((k) => k);
   const rows = data?.rows ?? [];

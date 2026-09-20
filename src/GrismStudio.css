@@ -1638,3 +1638,31 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .fp-lbl.lamp { font-size: 7.5px; fill: var(--fp-label); text-anchor: start; }
 .fp-port.byp .fp-cage { stroke: var(--fp-tx); stroke-dasharray: 3 2; stroke-width: 1.5; }
 .fp-key .fp-key-byp { background: var(--fp-tx); }
+
+/* ---- MEC mapping table ------------------------------------------------
+   A page of a table that may hold a million rows: the counts above it, the
+   pager below. The pager is one row on a desktop and wraps on a phone. */
+.mec-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin: 0 0 16px; }
+.mec-filters .ml { margin: 0; }
+.mec-filters input { width: 170px; }
+.mec-filters input[inputmode=numeric] { width: 90px; }
+/* the two device-changing buttons sit apart from the search controls */
+.mec-filter-gap { flex: 1 1 24px; }
+.mec-summary { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0 0 14px;
+  font-size: 13px; color: var(--txt-dim); }
+.mec-summary b { color: var(--txt); }
+.mec-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mec-range { font-size: 13px; color: var(--txt-dim); }
+.mec-pager-btns { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.mec-page { min-width: 32px; padding: 4px 8px; border: 1px solid var(--line-2);
+  background: transparent; color: var(--txt-dim); border-radius: 6px;
+  font-family: var(--mono); font-size: 12.5px; cursor: pointer; }
+.mec-page:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+/* the page you are on is a state, not a button to press again */
+.mec-page.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.mec-page:disabled { opacity: .55; cursor: default; }
+.mec-gap { color: var(--txt-faint); padding: 0 2px; }
+.mec-jump { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.mec-jump input { width: 72px; }
+.mec-jump .ml { margin: 0; }

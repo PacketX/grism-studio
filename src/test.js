@@ -1070,7 +1070,10 @@ check("no Chinese entry is left in English", (() => {
   // only escaped this check for being shorter than the four-letter threshold.
   const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
     "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass",
-    "MGMT", "MEC (S1AP/NGAP · GTP)"]);
+    "MGMT", "MEC (S1AP/NGAP · GTP)",
+    // 3GPP column names, written the same way in both languages
+    "MME/AMF UE ID", "RAN UE ID", "PLMN ID", "CELL ID", "SPID",
+    "UL GTP TEID", "UL GTP IPv4", "DL GTP TEID", "DL GTP IPv4", "UE IPv4"]);
   const same = Object.keys(I18N.en).filter((k) =>
     I18N["zh-TW"][k] === I18N.en[k] && !shared.has(I18N.en[k]) && /[A-Za-z]{4,}/.test(I18N.en[k]));
   if (same.length) console.log("    untranslated:", same.join(", "));
@@ -2393,6 +2396,107 @@ group("everything on screen is translatable");
     for (const m of line.matchAll(attr)) if (!ALLOW.some((r) => r.test(m[2]))) found.push(`${i + 1}: ${m[1]}="${m[2]}"`);
   });
   check("no hard-coded English is rendered", found.length === 0, found.slice(0, 6).join(" | "));
+}
+
+/* ---------- the MEC mapping table, a page at a time ------------------------ */
+group("S1AP item paging");
+{
+  const payload = {
+    ts: 1789881232508,
+    s1ap_items: [{ mmeid: 7, enbid: 1234, "erab5-req-ipv4": "10.0.0.1", "erab5-req-teid": "0000a1b2",
+      "erab5-res-ipv4": "10.0.0.2", "erab5-res-teid": "0000c3d4", spid: 1, plmnid: "46692",
+      cellid: "88", "ue-ipv4": "100.64.0.9", idle: 42 }],
+    s1ap_items_count: [51234, 1000000],
+    s1ap_items_matched: 51234,
+    s1ap_items_page: [100, 1],
+    s1ap_items_truncated: 0,
+    s1ap_items_teid_count: [12, 1000000],
+    s1ap_items_sip_count: [3, 1000000],
+  };
+  const p = C.parseS1apItems(payload);
+  check("a row keeps every field an operator needs", (() => {
+    const r = p.rows[0];
+    return r.mmeid === 7 && r.enbid === 1234 && r.reqIp === "10.0.0.1" && r.reqTeid === "0000a1b2"
+      && r.resIp === "10.0.0.2" && r.resTeid === "0000c3d4" && r.plmnid === "46692"
+      && r.cellid === "88" && r.ueIp === "100.64.0.9" && r.idle === 42;
+  })());
+  check("the counts come through", p.matched === 51234 && p.offset === 100 && p.used === 51234 && p.capacity === 1000000);
+  check("truncation is a flag, not a guess", p.truncated === false &&
+    C.parseS1apItems({ ...payload, s1ap_items_truncated: 1 }).truncated === true);
+  /* A device whose firmware predates paging answers without the new fields;
+     then what came back is all there was. */
+  check("an older firmware still reads", (() => {
+    const old = C.parseS1apItems({ ts: 1, s1ap_items: [payload.s1ap_items[0]], s1ap_items_count: [1, 1000000] });
+    return old.matched === 1 && old.offset === 0 && old.returned === 1 && old.truncated === false;
+  })());
+  check("nothing throws on an empty or broken payload",
+    C.parseS1apItems({}).rows.length === 0 && C.parseS1apItems(null).matched === 0);
+
+  // page arithmetic
+  check("pages are counted from the matched rows",
+    C.s1apPageCount(51234, 50) === 1025 && C.s1apPageCount(100, 50) === 2 && C.s1apPageCount(101, 50) === 3);
+  check("an empty table is still page 1 of 1", C.s1apPageCount(0, 50) === 1);
+  check("the window is what the device gets asked for",
+    JSON.stringify(C.s1apWindow(1, 50)) === '{"offset":0,"limit":50}' &&
+    JSON.stringify(C.s1apWindow(7, 50)) === '{"offset":300,"limit":50}');
+  /* The table changes under the reader -- entries are cleared, the sweep runs.
+     Page 40 of a table that now has 12 pages is page 12, not a blank screen. */
+  check("a page past the end comes back to the last one", C.s1apClampPage(40, 600, 50) === 12);
+  check("and never below the first", C.s1apClampPage(0, 600, 50) === 1 && C.s1apClampPage(-3, 600, 50) === 1);
+
+  // the pager control
+  check("the pager shows the ends and the neighbourhood",
+    JSON.stringify(C.s1apPageList(1, 1)) === "[1]" &&
+    JSON.stringify(C.s1apPageList(50, 1025)) === '[1,"gap",48,49,50,51,52,"gap",1025]');
+  /* A gap standing in for a single number is worse than the number: it costs
+     the same room and takes a click to reach what it hid. */
+  check("a one-number gap is filled in instead",
+    JSON.stringify(C.s1apPageList(1, 5)) === "[1,2,3,4,5]" &&
+    JSON.stringify(C.s1apPageList(2, 6)) === "[1,2,3,4,5,6]");
+  check("but a real gap stays a gap", C.s1apPageList(1, 40).includes("gap"));
+  // a typed page: anything that is not one must not move the reader
+  check("typing a page number jumps to it", C.s1apParsePage("7", 600, 50) === 7);
+  check("typing past the end lands on the last page", C.s1apParsePage("999", 600, 50) === 12);
+  check("typing nonsense does nothing",
+    C.s1apParsePage("", 600, 50) === null && C.s1apParsePage("abc", 600, 50) === null &&
+    C.s1apParsePage("-2", 600, 50) === null && C.s1apParsePage("3.5", 600, 50) === null);
+  check("the sizes offered include the default", C.S1AP_PAGE_SIZES.includes(C.S1AP_PAGE_DEFAULT));
+
+  /* The query the device is asked. "all" matters: without it the firmware
+     drops every row that has no UE address yet (statistics.c). */
+  check("a plain page asks for everything, windowed",
+    C.s1apQuery({ page: 3, size: 50 }) === "ue-ipv4=all&offset=100&limit=50");
+  check("a UE filter replaces the all",
+    C.s1apQuery({ page: 1, size: 25, ue: "100.64.0.9" }).startsWith("ue-ipv4=100.64.0.9&"));
+  check("a subnet goes through as written",
+    decodeURIComponent(C.s1apQuery({ ue: "100.64.0.0/16" })).includes("ue-ipv4=100.64.0.0/16"));
+  // the firmware's pair: great-than=1 keeps rows idle longer than max-idle
+  check("idle at most sends great-than=0",
+    C.s1apQuery({ idleSecs: "600", idleOp: "le" }).includes("max-idle=600&great-than=0"));
+  check("idle longer than sends great-than=1",
+    C.s1apQuery({ idleSecs: "600", idleOp: "gt" }).includes("max-idle=600&great-than=1"));
+  check("an empty or zero idle is no filter at all",
+    !C.s1apQuery({ idleSecs: "" }).includes("max-idle") && !C.s1apQuery({ idleSecs: "0" }).includes("max-idle"));
+
+  /* An address the firmware cannot parse drops every row, which reads as an
+     empty table rather than as a typo -- so it is caught here. */
+  check("a plain address and a subnet are accepted",
+    C.s1apUeFilterProblem("100.64.0.9") === null && C.s1apUeFilterProblem("100.64.0.0/16") === null &&
+    C.s1apUeFilterProblem("100.64.0.0/255.255.0.0") === null);
+  check("blank and all are accepted",
+    C.s1apUeFilterProblem("") === null && C.s1apUeFilterProblem("all") === null);
+  check("nonsense is caught",
+    !!C.s1apUeFilterProblem("banana") && !!C.s1apUeFilterProblem("100.64.0") &&
+    !!C.s1apUeFilterProblem("300.1.1.1") && !!C.s1apUeFilterProblem("10.0.0.0/33"));
+  check("idle seconds must be a whole number",
+    C.s1apIdleProblem("600") === null && C.s1apIdleProblem("") === null && !!C.s1apIdleProblem("5m"));
+
+  // a row range is a count, not a tile figure: 51,234 rather than 51.23K
+  check("counts are grouped, not compacted",
+    C.fmtCount(51234) === "51,234" && C.fmtCount(0) === "0" && C.fmtCount(1000000) === "1,000,000");
+  check("idle time reads at a glance",
+    C.fmtIdle(0) === "0s" && C.fmtIdle(45) === "45s" && C.fmtIdle(200) === "3m 20s" &&
+    C.fmtIdle(7500) === "2h 05m" && C.fmtIdle(200000) === "2d 07h");
 }
 
 /* ---------- MEC and deduplication ports ----------------------------------- */

@@ -3449,6 +3449,161 @@ export const formatPortSpeed = (speed) =>
    (main.c:1458). The GTP decapsulation flag lives with the other in-tunnels.
    ============================================================ */
 
+/* ============================================================
+   MEC mapping table — the S1AP/NGAP item table, a page at a time
+   ------------------------------------------------------------
+   get_s1ap_items answers with the rows the filters matched, windowed by the
+   offset/limit the caller asked for (statistics.c). The counts matter as much
+   as the rows: `matched` is how many rows the filters accepted in total, which
+   is the only way to know how many pages there are, and `truncated` says the
+   firmware's 64KB buffer ended the page rather than the data -- a short page
+   that is not the last one.
+   ============================================================ */
+
+/* A plain grouped number: 51,234. fmtNum compacts to 51.23K, which is right
+   for a counter tile and wrong for "showing 1-50 of 51,234" -- a row count the
+   reader may want to compare or type into the page box. */
+export const fmtCount = (n) => {
+  const v = Math.max(0, Math.floor(Number(n) || 0));
+  return v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
+/* The UE address filter is matched by ipv4_in_ipv4str (src/utils-inline.h:95):
+   an address on its own, or a subnet as a.b.c.d/24 or a.b.c.d/255.255.255.0.
+   Anything else makes inet_addr fail and every row drop out, which looks like
+   an empty table rather than a typo -- so check it here. */
+export function s1apUeFilterProblem(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw || raw === "all") return null;
+  const [addr, mask, ...rest] = raw.split("/");
+  if (rest.length) return { kind: "syntax" };
+  const isIp = (v) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v) && v.split(".").every((o) => +o >= 0 && +o <= 255);
+  if (!isIp(addr)) return { kind: "syntax" };
+  if (mask === undefined) return null;
+  if (/^\d{1,2}$/.test(mask)) return +mask <= 32 ? null : { kind: "prefix" };
+  return isIp(mask) ? null : { kind: "mask" };
+}
+
+export const s1apIdleProblem = (text) => {
+  const raw = String(text ?? "").trim();
+  if (!raw) return null;
+  return /^\d+$/.test(raw) ? null : { kind: "syntax" };
+};
+
+/* The query the page sends. Built here so the filters, the window and the
+   "all" default are one testable thing rather than string concatenation
+   spread through the component. */
+export function s1apQuery({ page = 1, size = S1AP_PAGE_DEFAULT, ue = "", idleOp = "le", idleSecs = "" } = {}) {
+  const { offset, limit } = s1apWindow(page, size);
+  const q = new URLSearchParams();
+  // "all" is the firmware's way of saying "include rows that have no UE
+  // address yet"; an empty filter would drop them instead
+  q.set("ue-ipv4", String(ue ?? "").trim() || "all");
+  const secs = String(idleSecs ?? "").trim();
+  if (/^\d+$/.test(secs) && +secs > 0) {
+    q.set("max-idle", secs);
+    // great-than=1 keeps rows idle for longer than this; anything else keeps
+    // the rows at or below it (statistics.c)
+    q.set("great-than", idleOp === "gt" ? "1" : "0");
+  }
+  q.set("offset", String(offset));
+  q.set("limit", String(limit));
+  return q.toString();
+}
+
+/* Seconds since a row was last touched, in a form that reads at a glance:
+   "42s", "7m 12s", "3h 05m", "2d 04h". Idle time is the column an operator
+   scans for stale entries, so it has to be comparable at a glance. */
+export function fmtIdle(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return `${m}m ${String(rs).padStart(2, "0")}s`;
+  const h = Math.floor(m / 60), rm = m % 60;
+  if (h < 24) return `${h}h ${String(rm).padStart(2, "0")}m`;
+  const d = Math.floor(h / 24), rh = h % 24;
+  return `${d}d ${String(rh).padStart(2, "0")}h`;
+}
+
+export const S1AP_PAGE_SIZES = [25, 50, 100, 200];
+export const S1AP_PAGE_DEFAULT = 50;
+
+const s1apNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+export function parseS1apItems(payload) {
+  const p = payload ?? {};
+  const rows = Array.isArray(p.s1ap_items) ? p.s1ap_items : [];
+  const pair = (v) => (Array.isArray(v) ? [s1apNum(v[0]), s1apNum(v[1])] : [0, 0]);
+  const page = pair(p.s1ap_items_page);
+  /* A firmware without paging answers without these; then what came back is
+     all there was, and the row count is the best "matched" available. */
+  const matched = p.s1ap_items_matched == null ? rows.length : s1apNum(p.s1ap_items_matched);
+  return {
+    ts: s1apNum(p.ts),
+    rows: rows.map((r) => ({
+      mmeid: r?.mmeid ?? "", enbid: r?.enbid ?? "",
+      reqIp: r?.["erab5-req-ipv4"] ?? "", reqTeid: r?.["erab5-req-teid"] ?? "",
+      resIp: r?.["erab5-res-ipv4"] ?? "", resTeid: r?.["erab5-res-teid"] ?? "",
+      spid: r?.spid ?? "", plmnid: r?.plmnid ?? "", cellid: r?.cellid ?? "",
+      ueIp: r?.["ue-ipv4"] ?? "", idle: s1apNum(r?.idle),
+    })),
+    matched,
+    offset: page[0],
+    returned: page[1] || rows.length,
+    truncated: !!s1apNum(p.s1ap_items_truncated),
+    used: pair(p.s1ap_items_count)[0],
+    capacity: pair(p.s1ap_items_count)[1],
+    teid: pair(p.s1ap_items_teid_count),
+    sip: pair(p.s1ap_items_sip_count),
+  };
+}
+
+/* How many pages `matched` rows make at this size -- at least one, so an empty
+   table still reads as "page 1 of 1" rather than "page 1 of 0". */
+export const s1apPageCount = (matched, size) =>
+  Math.max(1, Math.ceil(Math.max(0, s1apNum(matched)) / Math.max(1, s1apNum(size) || 1)));
+
+/* Keep a page number inside the table. Used on every move, and again when the
+   table shrinks under the reader -- page 40 of a table that now has 12 pages
+   is page 12, not an empty screen. */
+export const s1apClampPage = (page, matched, size) =>
+  Math.min(s1apPageCount(matched, size), Math.max(1, Math.floor(s1apNum(page)) || 1));
+
+/* The window to ask the device for. */
+export function s1apWindow(page, size) {
+  const n = Math.max(1, s1apNum(size) || 1);
+  return { offset: (Math.max(1, Math.floor(s1apNum(page)) || 1) - 1) * n, limit: n };
+}
+
+/* The page numbers a pager should offer: the ends, the current neighbourhood,
+   and a gap marker where numbers were left out. */
+export function s1apPageList(current, pages, span = 2) {
+  const last = Math.max(1, Math.floor(s1apNum(pages)) || 1);
+  const cur = Math.min(last, Math.max(1, Math.floor(s1apNum(current)) || 1));
+  const want = new Set([1, last]);
+  for (let i = cur - span; i <= cur + span; i++) if (i >= 1 && i <= last) want.add(i);
+  const nums = [...want].sort((a, b) => a - b);
+  const out = [];
+  nums.forEach((n, i) => {
+    const prev = nums[i - 1];
+    // a gap that hides exactly one number is worse than the number itself
+    if (i > 0 && n - prev === 2) out.push(prev + 1);
+    else if (i > 0 && n - prev > 1) out.push("gap");
+    out.push(n);
+  });
+  return out;
+}
+
+/* What a typed page number means. Anything that is not a page is no move at
+   all, rather than jumping to 1 and losing the reader's place. */
+export function s1apParsePage(text, matched, size) {
+  const raw = String(text ?? "").trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const n = +raw;
+  if (n < 1) return null;
+  return s1apClampPage(n, matched, size);
+}
+
 export const MEC_ARG_KEYS = [
   "s1cCorrelation", "flowExtensionGtpTunnelhdr",
   "s1apItemsClearIdleCron", "s1apItemsClearIdleMax",
