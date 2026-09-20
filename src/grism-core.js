@@ -3493,12 +3493,16 @@ export const s1apIdleProblem = (text) => {
 /* The query the page sends. Built here so the filters, the window and the
    "all" default are one testable thing rather than string concatenation
    spread through the component. */
-export function s1apQuery({ page = 1, size = S1AP_PAGE_DEFAULT, ue = "", idleOp = "le", idleSecs = "" } = {}) {
+export function s1apQuery({ page = 1, size = S1AP_PAGE_DEFAULT, ue = "", all = false, idleOp = "le", idleSecs = "" } = {}) {
   const { offset, limit } = s1apWindow(page, size);
   const q = new URLSearchParams();
-  // "all" is the firmware's way of saying "include rows that have no UE
-  // address yet"; an empty filter would drop them instead
-  q.set("ue-ipv4", String(ue ?? "").trim() || "all");
+  /* Three states, and the firmware spells them differently: a filter is the
+     address or subnet itself; empty means every row that has a UE address;
+     and the literal "all" is the only way to include the rows that do not
+     have one yet (statistics.c). Empty is the default because a row with no
+     UE address says nothing about a subscriber. */
+  const typed = String(ue ?? "").trim();
+  q.set("ue-ipv4", typed || (all ? "all" : ""));
   const secs = String(idleSecs ?? "").trim();
   if (/^\d+$/.test(secs) && +secs > 0) {
     q.set("max-idle", secs);

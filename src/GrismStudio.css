@@ -1663,6 +1663,8 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .mec-page.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .mec-page:disabled { opacity: .55; cursor: default; }
 .mec-gap { color: var(--txt-faint); padding: 0 2px; }
+.mec-size { margin: 0 !important; }
+.mec-size select { min-width: 68px; }
 .mec-jump { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .mec-jump input { width: 72px; }
 .mec-jump .ml { margin: 0; }

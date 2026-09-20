@@ -2464,12 +2464,17 @@ group("S1AP item paging");
 
   /* The query the device is asked. "all" matters: without it the firmware
      drops every row that has no UE address yet (statistics.c). */
-  check("a plain page asks for everything, windowed",
-    C.s1apQuery({ page: 3, size: 50 }) === "ue-ipv4=all&offset=100&limit=50");
-  check("a UE filter replaces the all",
-    C.s1apQuery({ page: 1, size: 25, ue: "100.64.0.9" }).startsWith("ue-ipv4=100.64.0.9&"));
+  /* Empty is the default: rows that have a UE address. "all" is the firmware's
+     word for including the rows that do not have one yet, and it only goes on
+     the wire when it is asked for. */
+  check("by default it asks for the rows that have a UE address",
+    C.s1apQuery({ page: 3, size: 50 }) === "ue-ipv4=&offset=100&limit=50");
+  check("including the addressless rows is an explicit all",
+    C.s1apQuery({ page: 1, size: 50, all: true }).startsWith("ue-ipv4=all&"));
+  check("a typed filter wins over both",
+    C.s1apQuery({ page: 1, size: 25, ue: "100.64.0.9", all: true }).startsWith("ue-ipv4=100.64.0.9&"));
   check("a subnet goes through as written",
-    decodeURIComponent(C.s1apQuery({ ue: "100.64.0.0/16" })).includes("ue-ipv4=100.64.0.0/16"));
+    decodeURIComponent(C.s1apQuery({ ue: "172.16.0.0/16" })).includes("ue-ipv4=172.16.0.0/16"));
   // the firmware's pair: great-than=1 keeps rows idle longer than max-idle
   check("idle at most sends great-than=0",
     C.s1apQuery({ idleSecs: "600", idleOp: "le" }).includes("max-idle=600&great-than=0"));
