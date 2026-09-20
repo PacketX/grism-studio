@@ -2646,10 +2646,13 @@ group("VLAN tag operations");
 group("replay inputs and empty chains");
 {
   const p = (x) => C.parseRun(x).doc;
-  // the firmware applies playedFilesHandle to a filepath list too
+  /* The form offers played-files handling for a scanned directory only, but a
+     config written elsewhere may carry it on a file list -- the firmware acts
+     on it either way (input_flush), so parsing and serialising must not throw
+     the setting away. Switching the mode in the form is what clears it. */
   const files = p('<run><input type="replayPcap" name="A"><port>P0</port><filepath>/a.pcap</filepath>'
     + '<playedFilesHandle>delete</playedFilesHandle></input></run>');
-  check("played-files handling survives in files mode",
+  check("an imported file-list input keeps its played-files setting",
     /playedFilesHandle>delete</.test(C.serializeRun(files)));
   const moved = p('<run><input type="replayPcap" name="A"><port>P0</port><filepath>/a.pcap</filepath>'
     + '<playedFilesHandle>move</playedFilesHandle><playedFilesMoveTo>/done</playedFilesMoveTo></input></run>');

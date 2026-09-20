@@ -5597,7 +5597,16 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
           {inp.type === "replayPcap" && <>
             <div className="mod-row">
               <span className="mod-key">{tr("in.source")}</span>
-              <select className="mod-val" value={inp.pcapMode || "files"} onChange={(e) => patch({ pcapMode: e.target.value })}>
+              {/* Switching to a file list takes the played-files handling with
+                  it: the firmware would still act on it, and a setting that is
+                  applied but cannot be seen is how the last one went wrong. */}
+              <select className="mod-val" value={inp.pcapMode || "files"} onChange={(e) => {
+                const mode = e.target.value;
+                if (mode !== "files") { patch({ pcapMode: mode }); return; }
+                const fields = { ...(inp.fields ?? {}) };
+                delete fields.playedFilesHandle; delete fields.playedFilesMoveTo;
+                patch({ pcapMode: mode, fields });
+              }}>
                 <option value="files">{tr("in.fileList")}</option>
                 <option value="scandir">{tr("in.scanDir")}</option>
               </select>
@@ -5649,24 +5658,23 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
                   ))}
                 </span>}
               </div>
+              {/* What to do with a file once it has been replayed. Offered for a
+                  scanned directory only: a named file list is a list someone
+                  chose, and deleting or moving its files out from under it is
+                  not what that choice means. */}
+              <div className="mod-row">
+                <span className="mod-key">{tr("in.afterReplay")}</span>
+                <select className="mod-val" value={inp.fields?.playedFilesHandle ?? ""} onChange={(e) => setField("playedFilesHandle", e.target.value)}>
+                  <option value="">—</option><option value="delete">delete</option><option value="move">move</option>
+                </select>
+                <code className="mod-tag">&lt;playedFilesHandle&gt;</code>
+              </div>
+              {inp.fields?.playedFilesHandle === "move" && <div className="mod-row">
+                <span className="mod-key">{tr("in.moveTo")}</span>
+                <input className="mod-val" value={inp.fields?.playedFilesMoveTo ?? ""} placeholder="H1/in/played" onChange={(e) => setField("playedFilesMoveTo", e.target.value)} />
+                <code className="mod-tag">&lt;playedFilesMoveTo&gt;</code>
+              </div>}
             </>}
-
-            {/* The firmware applies this to a named file list as well as to a
-                scanned directory, so it belongs to both modes -- shown only in
-                scandir, it was invisible in files mode and then dropped from the
-                document on the next submit. */}
-            <div className="mod-row">
-              <span className="mod-key">{tr("in.afterReplay")}</span>
-              <select className="mod-val" value={inp.fields?.playedFilesHandle ?? ""} onChange={(e) => setField("playedFilesHandle", e.target.value)}>
-                <option value="">—</option><option value="delete">delete</option><option value="move">move</option>
-              </select>
-              <code className="mod-tag">&lt;playedFilesHandle&gt;</code>
-            </div>
-            {inp.fields?.playedFilesHandle === "move" && <div className="mod-row">
-              <span className="mod-key">{tr("in.moveTo")}</span>
-              <input className="mod-val" value={inp.fields?.playedFilesMoveTo ?? ""} placeholder="H1/in/played" onChange={(e) => setField("playedFilesMoveTo", e.target.value)} />
-              <code className="mod-tag">&lt;playedFilesMoveTo&gt;</code>
-            </div>}
 
             {/* shared playback fields */}
             {["time", "speed", "msinterval"].map((k) => renderField(INPUT_FIELD_INDEX[k]))}
