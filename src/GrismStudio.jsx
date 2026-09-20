@@ -46,7 +46,7 @@ import {
   parseVports, vportProblems, buildVportConfigSet,
   nextVport,
   t12sPanelLayout, panelStates,
-  hasFrontPanel, panelPortState, panelDensity,
+  hasFrontPanel, panelPortState, panelDensity, portMacMap,
   panelLayout,
 } from "./grism-core.js";
 
@@ -1798,6 +1798,21 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     return cfgReq.current;
   }, []);
 
+  /* Hardware addresses for the interface table. Read once per visit: they are
+     burned into the port, not a live counter. */
+  const [portMacs, setPortMacs] = React.useState({});
+  React.useEffect(() => {
+    if (!loggedIn || section !== "ports") return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/grism/task/get_port_mac", { credentials: "include" });
+        if (res.ok && alive) setPortMacs(portMacMap(await res.json()));
+      } catch { /* the column simply stays empty */ }
+    })();
+    return () => { alive = false; };
+  }, [loggedIn, section]);
+
   const loadPorts = React.useCallback(async () => {
     try {
       const [cfg, statRes] = await Promise.all([
@@ -2328,6 +2343,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 <table className="tf-table">
                   <thead><tr>
                     <th className="tf-num">{tr("set.ifidx")}</th><th>{tr("set.port")}</th>
+                    <th>{tr("set.portMac")}</th>
                     <th>{tr("tf.link")}</th><th>{tr("tf.speed")}</th>
                     <th>{tr("tf.desc")}</th><th>{tr("set.enabled")}</th>
                   </tr></thead>
@@ -2355,6 +2371,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                             );
                           })()}
                         </td>
+                        <td className="mono">{portMacs[p.name] || <span className="dim">—</span>}</td>
                         <td>{p.linkUp == null ? <span className="dim">—</span>
                           : <span className={"tf-link " + (p.linkUp ? "up" : "down")}>{p.linkUp ? tr("tf.up") : tr("tf.down")}</span>}</td>
                         <td className="mono">{p.speed ? fmtSpeed(p.speed) : "—"}</td>

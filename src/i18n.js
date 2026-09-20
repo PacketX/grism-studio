@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.92.0";
+export const STUDIO_VERSION = "2.93.0";
 
 export const I18N = {
   en: {
@@ -315,6 +315,7 @@ export const I18N = {
     "set.confirmApplyTitle": "Apply these settings?",
     "set.confirmApplyBody": "The changes will be written to the device and take effect immediately.",
     "set.interfaces": "Interfaces", "set.port": "Port", "set.ifidx": "Index",
+    "set.portMac": "MAC address",
     "set.vlan": "Members / VLAN", "set.enabled": "Enabled",
     "set.portsChanged": "changed", "set.revert": "Revert", "set.applyPorts": "Apply interface settings",
     "set.confirmPortsTitle": "Apply interface settings?",
@@ -963,6 +964,7 @@ export const I18N = {
     "set.confirmApplyTitle": "套用這些設定?",
     "set.confirmApplyBody": "變更會寫入裝置並立即生效。",
     "set.interfaces": "介面", "set.port": "埠", "set.ifidx": "索引",
+    "set.portMac": "MAC 位址",
     "set.vlan": "成員 / VLAN", "set.enabled": "啟用",
     "set.portsChanged": "筆變更", "set.revert": "還原", "set.applyPorts": "套用介面設定",
     "set.confirmPortsTitle": "套用介面設定?",

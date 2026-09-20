@@ -2504,6 +2504,24 @@ group("S1AP item paging");
     C.fmtIdle(7500) === "2h 05m" && C.fmtIdle(200000) === "2d 07h");
 }
 
+/* ---------- port hardware addresses ---------------------------------------- */
+group("port MAC lookup");
+{
+  const payload = { ts: 1, port_mac: [[0, "40:60:5a:02:df:66", "P0"], [1, "40:60:5a:02:df:67", "P1"]],
+    management_port_mac: [[0, "40:60:5a:02:df:65", "M0"]] };
+  const m = C.portMacMap(payload);
+  // the settings page shows one table, so both lists fold into one map
+  check("data and management ports are in the same map",
+    m.P0 === "40:60:5a:02:df:66" && m.P1 === "40:60:5a:02:df:67" && m.M0 === "40:60:5a:02:df:65");
+  check("a device that reports neither gives an empty map",
+    Object.keys(C.portMacMap({})).length === 0 && Object.keys(C.portMacMap(null)).length === 0);
+  // a short or blank row is dropped rather than becoming an empty cell
+  check("malformed rows are ignored", (() => {
+    const bad = C.portMacMap({ port_mac: [[0, "aa:bb"], [1, "", "P1"], [2, "cc:dd:ee:ff:00:11", "P2"], "nope"] });
+    return Object.keys(bad).join() === "P2";
+  })());
+}
+
 /* ---------- MEC and deduplication ports ----------------------------------- */
 group("MEC settings");
 {

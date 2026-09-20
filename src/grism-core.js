@@ -2756,6 +2756,21 @@ export function parsePortMacs(payload) {
     .filter((r) => r.mac);
 }
 
+/* Every port's hardware address, keyed by port name. The payload keeps the
+   data ports and the management ones in separate lists (port_mac and
+   management_port_mac) with the same [index, mac, name] shape; the settings
+   page shows one table, so they come back as one map. */
+export function portMacMap(payload) {
+  const out = {};
+  const take = (rows) => (rows ?? [])
+    .filter((r) => Array.isArray(r) && r.length >= 3)
+    .forEach((r) => { const name = String(r[2] ?? "").trim(), mac = String(r[1] ?? "").trim();
+      if (name && mac) out[name] = mac; });
+  take(payload?.port_mac);
+  take(payload?.management_port_mac);
+  return out;
+}
+
 /* Seed a generator: the stock defaults plus the first two device MACs, so the
    frames it emits carry real addresses rather than placeholders. */
 export function trafficGenDefaults(macPayload) {
