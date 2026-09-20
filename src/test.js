@@ -2504,6 +2504,23 @@ group("S1AP item paging");
     C.fmtIdle(7500) === "2h 05m" && C.fmtIdle(200000) === "2d 07h");
 }
 
+/* ---------- version strings as daemons print them --------------------------- */
+group("service version strings");
+{
+  /* The label repeats what the row already says; the column is narrow and the
+     whole line stays in the tooltip. */
+  check("a labelled version keeps only the number",
+    C.shortVersion("nginx version: nginx/1.22.1") === "1.22.1" &&
+    C.shortVersion("NET-SNMP version:  5.5.2.1") === "5.5.2.1");
+  // OpenSSH names two products on one line; taking it apart would lose one
+  check("a line naming two products is left alone",
+    C.shortVersion("OpenSSH_10.2p1, OpenSSL 1.1.1t  7 Feb 2023") === "OpenSSH_10.2p1, OpenSSL 1.1.1t  7 Feb 2023");
+  check("a bare number is already short", C.shortVersion("1.0.0") === "1.0.0");
+  check("busybox keeps its banner", C.shortVersion("BusyBox v1.20.2 (2014-09-11) multi-call binary.")
+    === "BusyBox v1.20.2 (2014-09-11) multi-call binary.");
+  check("nothing in, nothing out", C.shortVersion("") === "" && C.shortVersion(null) === "");
+}
+
 /* ---------- port hardware addresses ---------------------------------------- */
 group("port MAC lookup");
 {

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.93.0";
+export const STUDIO_VERSION = "2.95.0";
 
 export const I18N = {
   en: {
@@ -311,6 +311,7 @@ export const I18N = {
     "set.inTunnels": "In-tunnel inspection",
     "set.inTunnelsNote": "Look inside these encapsulations so filters can match the inner packet.",
     "set.service": "Service", "set.snmp": "SNMP", "set.readCommunity": "Read community",
+    "set.svcVersion": "Version",
     "set.snmpNote": "Community string for SNMP reads. MIB file:",
     "set.confirmApplyTitle": "Apply these settings?",
     "set.confirmApplyBody": "The changes will be written to the device and take effect immediately.",
@@ -960,6 +961,7 @@ export const I18N = {
     "set.inTunnels": "穿隧內容檢查",
     "set.inTunnelsNote": "解開這些封裝,讓篩選器能比對內層封包。",
     "set.service": "服務", "set.snmp": "SNMP", "set.readCommunity": "讀取社群字串",
+    "set.svcVersion": "版本",
     "set.snmpNote": "SNMP 讀取用的社群字串。MIB 檔:",
     "set.confirmApplyTitle": "套用這些設定?",
     "set.confirmApplyBody": "變更會寫入裝置並立即生效。",

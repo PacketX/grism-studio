@@ -46,7 +46,7 @@ import {
   parseVports, vportProblems, buildVportConfigSet,
   nextVport,
   t12sPanelLayout, panelStates,
-  hasFrontPanel, panelPortState, panelDensity, portMacMap,
+  hasFrontPanel, panelPortState, panelDensity, portMacMap, shortVersion,
   panelLayout,
 } from "./grism-core.js";
 
@@ -1888,6 +1888,21 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     if (section === "services" && !svc) loadServices();
   }, [loggedIn, section, sys, svc, zones.length, loadSys, loadZones, loadServices]);
 
+  /* What each service says it is. grism answers over the RPC, so it is the
+     running binary speaking; the rest are what the device can tell us. */
+  const [svcVersions, setSvcVersions] = React.useState({});
+  React.useEffect(() => {
+    if (!loggedIn || section !== "services") return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/grism/task/get_service_versions", { credentials: "include" });
+        if (res.ok && alive) setSvcVersions(await res.json());
+      } catch { /* the column simply stays empty */ }
+    })();
+    return () => { alive = false; };
+  }, [loggedIn, section]);
+
   // model and running version for the firmware page
   React.useEffect(() => {
     if (!loggedIn || section !== "firmware" || fw.version) return;
@@ -3333,11 +3348,25 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <h3 className="sys-card-title">{tr("set.services")} <span className="sys-card-metric">{svc.filter((x) => x.enable).length}/{svc.length}</span></h3>
               <div className="tf-table-wrap">
                 <table className="tf-table">
-                  <thead><tr><th>{tr("set.service")}</th><th>{tr("tf.desc")}</th><th>{tr("set.enabled")}</th></tr></thead>
+                  <thead><tr><th>{tr("set.service")}</th><th>{tr("set.svcVersion")}</th>
+                    <th>{tr("tf.desc")}</th><th>{tr("set.enabled")}</th></tr></thead>
                   <tbody>
                     {svc.map((x, i) => (
                       <tr key={x.name} className={x.enable ? "" : "port-off"}>
                         <td className="tf-name mono">{x.name}</td>
+                        {/* Only the services that can say; the rest keep a dash
+                            rather than an empty cell. The WWW service is two
+                            programs -- nginx in front of pywww -- and pywww is
+                            not a service of its own, so both are named here. */}
+                        <td className="mono svc-ver">{(() => {
+                          const v = svcVersions[x.name];
+                          const behind = x.name === "pyhttpd" ? svcVersions.pywww : null;
+                          if (!v && !behind) return <span className="dim">—</span>;
+                          return (<>
+                            {v && <span title={v}>{shortVersion(v)}</span>}
+                            {behind && <span className="svc-ver-2" title={"pywww " + behind}>pywww {behind}</span>}
+                          </>);
+                        })()}</td>
                         <td className="dim">{x.description || "—"}</td>
                         <td><input type="checkbox" checked={x.enable}
                           onChange={(e) => setSvc((l) => l.map((y, j) => j === i ? { ...y, enable: e.target.checked } : y))} /></td>

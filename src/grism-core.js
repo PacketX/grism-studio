@@ -2756,7 +2756,20 @@ export function parsePortMacs(payload) {
     .filter((r) => r.mac);
 }
 
-/* Every port's hardware address, keyed by port name. The payload keeps the
+/* Version strings as the daemons print them: "nginx version: nginx/1.22.1",
+   "NET-SNMP version:  5.5.2.1". The label repeats what the row already says,
+   so the column keeps the number and the tooltip keeps the whole line. */
+export function shortVersion(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return "";
+  const m = /^(?:[A-Za-z0-9_.-]+ )?version:?\s*(.+)$/i.exec(raw);
+  const body = (m ? m[1] : raw).trim();
+  // "nginx/1.22.1" -> "1.22.1", but leave "OpenSSH_10.2p1, OpenSSL ..." alone
+  const slash = /^([A-Za-z0-9_.-]+)\/(\S+)$/.exec(body);
+  return slash ? slash[2] : body;
+}
+
+/* Every port's hardware address, keyed by port name./* Every port's hardware address, keyed by port name. The payload keeps the
    data ports and the management ones in separate lists (port_mac and
    management_port_mac) with the same [index, mac, name] shape; the settings
    page shows one table, so they come back as one map. */
