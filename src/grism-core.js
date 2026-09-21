@@ -2269,8 +2269,13 @@ export function parseServices(cfg) {
    device decides the same thing again on its side -- this list is what the
    page offers and what it tells the reader to expect, not the authority. */
 export const COMPONENT_TARGETS = [
-  { id: "grism-studio", labelKey: "set.upStudio", noteKey: "set.upStudioNote", marker: "index.html" },
-  { id: "pyhttpd", labelKey: "set.upPywww", noteKey: "set.upPywwwNote", marker: "manage.py" },
+  { id: "grism-studio", labelKey: "set.upStudio", noteKey: "set.upStudioNote",
+    file: "grism-studio.tgz", marker: "index.html" },
+  /* pywww and the nginx.conf in front of it are one component: a view is only
+     reachable if nginx lists it, so an update that carried one without the
+     other would install an endpoint that answers nothing. */
+  { id: "pywww", labelKey: "set.upPywww", noteKey: "set.upPywwwNote",
+    file: "pywww.tgz", marker: "pywww/manage.py" },
 ];
 
 /* The packet application is what the box is. Switching it off leaves a device
@@ -2286,7 +2291,9 @@ export function parseServiceStatus(payload) {
   const out = {};
   Object.entries(raw).forEach(([name, v]) => {
     const state = String(v?.state ?? "unknown");
-    out[name] = { state, pids: Array.isArray(v?.pids) ? v.pids : [] };
+    out[name] = { state, pids: Array.isArray(v?.pids) ? v.pids : [],
+      // what it is listening on, when it listens on anything
+      ports: Array.isArray(v?.ports) ? v.ports.map(String) : [] };
   });
   return out;
 }
@@ -2302,6 +2309,7 @@ export function serviceRowState(service, status) {
   return {
     state: running ? "running" : "stopped",
     pids: st.pids ?? [],
+    ports: st.ports ?? [],
     // enabled but not there, or switched off and still up
     mismatch: !!service?.enable !== running,
   };

@@ -2776,9 +2776,10 @@ group("service state, beside what the configuration asks for");
   } });
   check("the device's answer is read as given",
     status.grism.state === "running" && status.snmpd.state === "stopped" && status.grism.pids[0] === 1467);
-  check("a service that is on and up is simply running",
-    JSON.stringify(C.serviceRowState({ name: "sshd", enable: true }, status)) ===
-    JSON.stringify({ state: "running", pids: [1470], mismatch: false }));
+  check("a service that is on and up is simply running", (() => {
+    const r = C.serviceRowState({ name: "sshd", enable: true }, status);
+    return r.state === "running" && r.pids.join() === "1470" && r.mismatch === false;
+  })());
   /* The two things worth pointing at: enabled and dead, or switched off and
      still there until the next boot. */
   check("enabled but not running is a mismatch",
@@ -2801,9 +2802,21 @@ group("service state, beside what the configuration asks for");
     Object.keys(C.parseServiceStatus({})).length === 0);
   // the packet application is the device; there is no state with it off
   check("grism has no toggle", C.ALWAYS_ON_SERVICES.has("grism") && !C.ALWAYS_ON_SERVICES.has("sshd"));
-  check("each update target names the file it expects",
-    C.COMPONENT_TARGETS.map((t) => t.id).join() === "grism-studio,pyhttpd" &&
-    C.COMPONENT_TARGETS[0].marker === "index.html" && C.COMPONENT_TARGETS[1].marker === "manage.py");
+  check("each update target names its file and what identifies it",
+    C.COMPONENT_TARGETS.map((t) => t.id).join() === "grism-studio,pywww" &&
+    C.COMPONENT_TARGETS[0].file === "grism-studio.tgz" && C.COMPONENT_TARGETS[0].marker === "index.html" &&
+    C.COMPONENT_TARGETS[1].file === "pywww.tgz" && C.COMPONENT_TARGETS[1].marker === "pywww/manage.py");
+  /* The ports come from the sockets the process holds, so a service that
+     listens on nothing simply has none -- not a guess from its name. */
+  const withPorts = C.parseServiceStatus({ service_status: {
+    sshd: { state: "running", pids: [1], ports: ["TCP 22"] },
+    snmpd: { state: "running", pids: [2], ports: ["UDP 161", "TCP 199"] },
+    lldpd: { state: "running", pids: [3] },
+  } });
+  check("the ports come through in order", withPorts.snmpd.ports.join() === "UDP 161,TCP 199");
+  check("a row carries them", C.serviceRowState({ name: "sshd", enable: true }, withPorts).ports[0] === "TCP 22");
+  check("a service that listens on nothing has none",
+    C.serviceRowState({ name: "lldpd", enable: true }, withPorts).ports.length === 0);
 }
 
 group("NOT holds a group, so it can be added to");

@@ -1974,6 +1974,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
      one: the code doing the upload is the code being replaced, so the page has
      to be reloaded afterwards rather than carrying on. */
   const [upload, setUpload] = React.useState({ target: "grism-studio", file: null, state: "idle", msg: "" });
+  const upTarget = COMPONENT_TARGETS.find((c) => c.id === upload.target);
   const uploadComponent = async () => {
     if (!upload.file) return;
     setUpload((o) => ({ ...o, state: "sending", msg: "" }));
@@ -3703,7 +3704,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <div className="tf-table-wrap">
                 <table className="tf-table">
                   <thead><tr><th>{tr("set.service")}</th><th>{tr("set.svcState")}</th>
-                    <th>{tr("set.svcVersion")}</th>
+                    <th>{tr("set.svcPorts")}</th><th>{tr("set.svcVersion")}</th>
                     <th>{tr("tf.desc")}</th><th>{tr("set.enabled")}</th></tr></thead>
                   <tbody>
                     {svc.map((x, i) => (
@@ -3720,6 +3721,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                               {tr(st.state === "running" ? "set.svcRunning" : "set.svcStopped")}</span>
                             {st.mismatch && <span className="svc-mismatch" title={tr(x.enable ? "set.svcShouldRun" : "set.svcShouldStop")}>!</span>}
                           </>);
+                        })()}</td>
+                        {/* the sockets it is actually listening on, read from
+                            the process rather than assumed from its name */}
+                        <td className="mono svc-ports">{(() => {
+                          const ports = serviceRowState(x, svcStatus).ports ?? [];
+                          return ports.length ? ports.join(" · ") : <span className="dim">—</span>;
                         })()}</td>
                         {/* Only the services that can say; the rest keep a dash
                             rather than an empty cell. The WWW service is two
@@ -3774,7 +3781,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                     disabled={upload.state === "sending"}
                     onChange={(e) => setUpload((o) => ({ ...o, file: e.target.files?.[0] ?? null, state: "idle", msg: "" }))} /></label>
               </div>
-              <p className="set-hint">{tr(COMPONENT_TARGETS.find((c) => c.id === upload.target)?.noteKey ?? "")}</p>
+              {/* what to upload, and what is installed now */}
+              <p className="set-hint"><code>{upTarget?.file}</code> — {tr(upTarget?.noteKey ?? "")}
+                {upload.target === "pywww" && svcVersions.pywww &&
+                  <span className="svc-ver-2">{tr("set.upCurrent")} {svcVersions.pywww}</span>}
+                {upload.target === "grism-studio" &&
+                  <span className="svc-ver-2">{tr("set.upCurrent")} {STUDIO_VERSION}</span>}
+              </p>
               {upload.state === "error" && <p className="set-hint err">{tr("set.upFailed")}: {upload.msg}</p>}
               {/* The page that did the upload is the page that was replaced, so
                   it is stale from this moment on -- say so instead of pretending

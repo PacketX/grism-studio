@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.112.0";
+export const STUDIO_VERSION = "2.113.0";
 
 export const I18N = {
   en: {
@@ -318,6 +318,7 @@ export const I18N = {
     "set.inTunnelsNote": "Look inside these encapsulations so filters can match the inner packet.",
     "set.service": "Service", "set.snmp": "SNMP", "set.readCommunity": "Read community",
     "set.svcState": "State", "set.svcRunning": "running", "set.svcStopped": "not running",
+    "set.svcPorts": "Listening on",
     "set.svcShouldRun": "Enabled in the configuration but not running.",
     "set.svcShouldStop": "Switched off in the configuration but still running — it stops at the next boot.",
     "set.svcAlwaysOn": "always on",
@@ -326,9 +327,10 @@ export const I18N = {
     "set.upNote": "Upload a build of one component on its own, without reflashing the whole image. The file is checked before anything is replaced.",
     "set.upTarget": "Component", "set.upFile": "File",
     "set.upStudio": "Web interface (grism-studio)",
-    "set.upStudioNote": "grism-studio.tgz — the built web interface, as build.sh packs it into an image.",
-    "set.upPywww": "Web server (pyhttpd / pywww)",
-    "set.upPywwwNote": "A tarball of scripts/pywww. nginx is reloaded afterwards; pywww reloads itself.",
+    "set.upStudioNote": "the built web interface, the same one build.sh packs into an image.",
+    "set.upPywww": "Web API and its nginx configuration (pywww)",
+    "set.upPywwwNote": "the web API and the nginx.conf that decides which of its endpoints are reachable — build.sh writes it beside grism-bin.tgz. nginx only takes the new configuration if it accepts it, and the session database is left where it is.",
+    "set.upCurrent": "installed now:",
     "set.upGo": "Upload and update", "set.upSending": "uploading…",
     "set.upFailed": "Update failed",
     "set.upDone": "Updated.",
@@ -1048,6 +1050,7 @@ export const I18N = {
     "set.inTunnelsNote": "解開這些封裝,讓篩選器能比對內層封包。",
     "set.service": "服務", "set.snmp": "SNMP", "set.readCommunity": "讀取社群字串",
     "set.svcState": "運作狀態", "set.svcRunning": "執行中", "set.svcStopped": "未執行",
+    "set.svcPorts": "通訊埠",
     "set.svcShouldRun": "設定為啟用,但目前沒有在執行。",
     "set.svcShouldStop": "設定為停用,但目前仍在執行 — 下次開機才會停止。",
     "set.svcAlwaysOn": "必要服務",
@@ -1056,9 +1059,10 @@ export const I18N = {
     "set.upNote": "上傳單一元件的更新檔,不必重新燒錄整個韌體。檔案會先檢查過才會取代現有內容。",
     "set.upTarget": "元件", "set.upFile": "檔案",
     "set.upStudio": "網頁介面 (grism-studio)",
-    "set.upStudioNote": "grism-studio.tgz — 建置好的網頁介面,與 build.sh 打包進韌體的是同一份。",
-    "set.upPywww": "網頁伺服器 (pyhttpd / pywww)",
-    "set.upPywwwNote": "scripts/pywww 的壓縮檔。更新後會重新載入 nginx,pywww 會自行重新載入。",
+    "set.upStudioNote": "建置好的網頁介面,與 build.sh 打包進韌體的是同一份。",
+    "set.upPywww": "網頁 API 與它的 nginx 設定 (pywww)",
+    "set.upPywwwNote": "網頁 API,以及決定哪些路徑可以被呼叫的 nginx.conf — build.sh 會和 grism-bin.tgz 一起產生。新的 nginx 設定要通過 nginx 自己的檢查才會生效,連線工作階段的資料庫則不會被覆蓋。",
+    "set.upCurrent": "目前安裝:",
     "set.upGo": "上傳並更新", "set.upSending": "上傳中…",
     "set.upFailed": "更新失敗",
     "set.upDone": "已更新。",

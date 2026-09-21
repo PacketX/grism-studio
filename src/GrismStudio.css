@@ -1789,3 +1789,6 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 /* a service whose state disagrees with what the configuration asks for */
 .svc-mismatch{display:inline-block; margin-left:7px; font-weight:700; color:var(--warn); cursor:help;}
 .ml.wide{flex:1 1 320px;}
+
+/* the sockets a service is listening on */
+.svc-ports{white-space:nowrap; font-size:12px;}
