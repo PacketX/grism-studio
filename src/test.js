@@ -2120,31 +2120,41 @@ group("virtual ports");
     xml.includes("<ports type=\"add\"><name>V3</name><port>P6,P7</port><vlanid>103</vlanid></ports>"));
   check("member ports are trimmed", xml.includes("<port>P6,P7</port>") && !xml.includes(" , "));
   check("a delete names the port it removes", xml.includes('<ports type="delete" name="V0" />'));
-  check("no vlan means no <vlanid>",
-    !C.buildVportConfigSet({ adds: [{ name: "V9", ports: "P0" }] }).includes("<vlanid>"));
+  check("every row carries its vlan tag",
+    (C.buildVportConfigSet({ adds: [{ name: "V9", ports: "P0", vlanid: "9" }] }).match(/<vlanid>9<\/vlanid>/g) ?? []).length === 1);
 
   const dev = ["P0", "P1", "P6", "P7"];
   const kinds = (o) => C.vportProblems({ ...o, devicePorts: dev }).map((x) => x.kind).join(" ");
   check("a good row has no problems", kinds({ adds: [{ name: "V9", ports: "P6,P7", vlanid: "103" }] }) === "");
-  check("the vlan is optional", kinds({ adds: [{ name: "V9", ports: "P6" }] }) === "");
+  /* The VLAN id is what the group is addressed by, so a row without one is
+     not a virtual port yet -- it is required rather than optional. */
+  check("the vlan is required", kinds({ adds: [{ name: "V9", ports: "P6" }] }) === "noVlan" &&
+    kinds({ adds: [{ name: "V9", ports: "P6", vlanid: "" }] }) === "noVlan" &&
+    kinds({ adds: [{ name: "V9", ports: "P6", vlanid: " " }] }) === "noVlan");
+  check("and missing is reported as missing, not as malformed",
+    kinds({ adds: [{ name: "V9", ports: "P6" }] }) !== "badVlan");
   check("a name has to look like V3",
-    kinds({ adds: [{ name: "x9", ports: "P6" }] }) === "badName" &&
-    kinds({ adds: [{ name: "", ports: "P6" }] }) === "noName");
+    kinds({ adds: [{ name: "x9", ports: "P6", vlanid: "9" }] }) === "badName" &&
+    kinds({ adds: [{ name: "", ports: "P6", vlanid: "9" }] }) === "noName");
   /* A name already in use would collide -- unless the port holding it is being
      removed in the same submit, which is one configSet and so one moment. */
   check("a name in use is a problem",
-    kinds({ adds: [{ name: "V3", ports: "P6" }], existing: [{ name: "V3" }] }) === "duplicate");
+    kinds({ adds: [{ name: "V3", ports: "P6", vlanid: "9" }], existing: [{ name: "V3" }] }) === "duplicate");
   check("unless that port is being removed at the same time",
-    kinds({ adds: [{ name: "V3", ports: "P6" }], existing: [{ name: "V3" }], deletes: ["V3"] }) === "");
+    kinds({ adds: [{ name: "V3", ports: "P6", vlanid: "9" }], existing: [{ name: "V3" }], deletes: ["V3"] }) === "");
   check("two new rows cannot share a name",
-    kinds({ adds: [{ name: "V9", ports: "P6" }, { name: "V9", ports: "P7" }] }) === "duplicate");
+    kinds({ adds: [{ name: "V9", ports: "P6", vlanid: "9" }, { name: "V9", ports: "P7", vlanid: "10" }] }) === "duplicate");
   check("members are required and must exist on the device",
-    kinds({ adds: [{ name: "V9", ports: "" }] }) === "noPorts" &&
-    kinds({ adds: [{ name: "V9", ports: "P6,P99" }] }) === "unknownPort");
+    kinds({ adds: [{ name: "V9", ports: "", vlanid: "9" }] }) === "noPorts" &&
+    kinds({ adds: [{ name: "V9", ports: "P6,P99", vlanid: "9" }] }) === "unknownPort");
   check("a vlan id is 1..4094",
     kinds({ adds: [{ name: "V9", ports: "P6", vlanid: "0" }] }) === "badVlan" &&
     kinds({ adds: [{ name: "V9", ports: "P6", vlanid: "4095" }] }) === "badVlan" &&
     kinds({ adds: [{ name: "V9", ports: "P6", vlanid: "4094" }] }) === "");
+  /* The row the + button offers next: stepping from a row without a vlan
+     leaves the field empty, which the page then refuses to apply. */
+  check("a stepped row carries the next vlan",
+    C.nextVport({ name: "V3", ports: "P6,P7", vlanid: "103" }).vlanid === "104");
 }
 
 for (const lang of Object.keys(I18N)) {

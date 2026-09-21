@@ -4121,8 +4121,12 @@ export function vportProblems({ adds = [], deletes = [], existing = [], devicePo
     if (known.size) for (const p of ports) {
       if (!known.has(p)) out.push({ row: i, kind: "unknownPort", port: p });
     }
+    /* The VLAN id is what a virtual port is for: it is the tag the group is
+       addressed by, and a member added without one is not reachable as a
+       virtual port at all. So it is required, not optional. */
     const v = String(a?.vlanid ?? "").trim();
-    if (v !== "" && !(/^\d+$/.test(v) && +v >= 1 && +v <= 4094)) out.push({ row: i, kind: "badVlan", vlan: v });
+    if (v === "") out.push({ row: i, kind: "noVlan" });
+    else if (!(/^\d+$/.test(v) && +v >= 1 && +v <= 4094)) out.push({ row: i, kind: "badVlan", vlan: v });
   });
   return out;
 }
@@ -4133,7 +4137,7 @@ export function buildVportConfigSet({ adds = [], deletes = [] } = {}) {
       const vlan = String(a?.vlanid ?? "").trim();
       return `      <ports type="add"><name>${esc(String(a?.name ?? "").trim())}</name>` +
         `<port>${esc(vportPortList(a?.ports).join(","))}</port>` +
-        (vlan ? `<vlanid>${esc(vlan)}</vlanid>` : "") + `</ports>`;
+        `<vlanid>${esc(vlan)}</vlanid></ports>`;
     }),
     ...deletes.map((n) => `      <ports type="delete" name="${esc(n)}" />`),
   ];

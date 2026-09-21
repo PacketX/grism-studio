@@ -1665,6 +1665,7 @@ function vportProblemText(p, tr) {
   if (p.kind === "duplicate") return `${tr("set.vpErrDup")} ${p.name}`;
   if (p.kind === "noPorts") return tr("set.vpErrNoPorts");
   if (p.kind === "unknownPort") return `${tr("set.sdwanUnknownPort")} ${p.port}`;
+  if (p.kind === "noVlan") return tr("set.vpErrNoVlan");
   if (p.kind === "badVlan") return tr("set.vpErrVlan");
   return "";
 }
@@ -2804,8 +2805,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                           <label className="vp-f wide"><span>{tr("set.vportPorts")}</span>
                             <input value={a.ports} placeholder="P6,P7"
                               onChange={(e) => setVpAdd(i, { ports: e.target.value })} /></label>
-                          <label className="vp-f"><span>{tr("set.vportVlan")}</span>
-                            <input value={a.vlanid} inputMode="numeric" placeholder={tr("common.optional")}
+                          <label className="vp-f"><span>{tr("set.vportVlan")} <b className="req">*</b></span>
+                            <input value={a.vlanid} inputMode="numeric" placeholder="1–4094" required
+                              aria-invalid={mine.some((x) => x.kind === "noVlan" || x.kind === "badVlan")}
                               onChange={(e) => setVpAdd(i, { vlanid: e.target.value.trim() })} /></label>
                           <button className="icon-btn" aria-label={tr("common.delete")}
                             onClick={() => setVpAdds((rows) => rows.filter((_, j) => j !== i))}>✕</button>
