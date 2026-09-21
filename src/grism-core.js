@@ -3541,15 +3541,23 @@ export const switchPanelName = (name) => {
   return m ? "V" + m[1] : String(name ?? "");
 };
 
-/* The bonds in front-panel terms: one wide port where the box has four cages.
-   Ordered as the cages are, so the drawing can find their positions. */
-export function switchBonds(rows) {
-  return Object.entries(bondVictims(rows)).map(([master, b]) => ({
-    master: switchPanelName(master),
-    speed: b.speed,
-    members: [master, ...b.ports].sort((a, c) => Number(a.slice(2)) - Number(c.slice(2)))
-      .map(switchPanelName),
-  }));
+/* The bonds in front-panel terms, read from the statistics the traffic page
+   already has: the engine reports a bonded master at 40G or 100G and each port
+   whose lanes it took at nothing at all. That is the whole signal, so the page
+   does not ask the switch -- get_switch_interface walks the transceiver of
+   every cage over I2C, which is not a thing to do beside a five-second poll.
+
+   Which ports can bond is a property of the chassis, so the layout says. */
+export function statsBonds(stats, model) {
+  const groups = panelLayout(model).bondGroups;
+  if (!groups) return [];
+  const by = new Map((stats ?? []).filter((s) => s && s.name).map((s) => [String(s.name), s]));
+  return Object.entries(groups).flatMap(([master, members]) => {
+    const speed = String(by.get(master)?.speed ?? "");
+    if (!BOND_SPEEDS.includes(speed)) return [];
+    return [{ master, speed,
+      members: [master, ...members].sort((a, c) => Number(a.slice(1)) - Number(c.slice(1))) }];
+  });
 }
 
 /* The bond a front-panel port belongs to, if any -- for the traffic table,
@@ -4158,6 +4166,10 @@ export function q16PanelLayout() {
     model: "Q16", kind: "sfp",
     // no bypass pairs on this chassis
     lamps: [],
+    /* the four that can bond four lanes into one port, and what each takes
+       with it -- the switch's own grouping, in the names on the box */
+    bondGroups: Object.fromEntries(Object.entries(LANE_GROUPS)
+      .map(([m, g]) => [switchPanelName(m), g.map(switchPanelName)])),
     width: afterCages + 60,
     height: TOP_Y * 2 + CAGE_H * 2 + GAP_Y + 2,
     // MGMT sits to the right of the cages, level between the two rows

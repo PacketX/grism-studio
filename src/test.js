@@ -2645,15 +2645,31 @@ group("switch interface");
   // the switch says 0/N, the front of the box says VN
   check("switch names map to panel names",
     C.switchPanelName("0/13") === "V13" && C.switchPanelName("H1") === "H1");
-  const bonds = C.switchBonds(rows);
+  /* The traffic page reads the bonding off the counters it already has rather
+     than asking the switch: the engine reports the master at its bonded speed
+     and the three whose lanes it took at 0. */
+  const stats = [
+    { name: "V0", speed: 0 }, { name: "V1", speed: 100000 }, { name: "V2", speed: 0 },
+    { name: "V3", speed: 0 }, { name: "V4", speed: 1000 }, { name: "V5", speed: 25000 },
+    { name: "V13", speed: 40000 }, { name: "V12", speed: 0 },
+    { name: "V14", speed: 0 }, { name: "V15", speed: 0 },
+  ];
+  const bonds = C.statsBonds(stats, "Q16");
   check("a bond is one port covering four, in panel names",
-    bonds.length === 1 && bonds[0].master === "V1" && bonds[0].speed === "100000" &&
+    bonds.length === 2 && bonds[0].master === "V1" && bonds[0].speed === "100000" &&
     bonds[0].members.join() === "V0,V1,V2,V3");
+  check("40G bonds the same way", bonds[1].master === "V13" && bonds[1].speed === "40000" &&
+    bonds[1].members.join() === "V12,V13,V14,V15");
+  check("an ordinary speed on a master is no bond",
+    C.statsBonds(stats.map((r) => r.name === "V1" ? { ...r, speed: 25000 } : r), "Q16").length === 1);
+  check("a chassis whose cages do not bond never claims one",
+    C.statsBonds(stats, "T12S").length === 0 && C.statsBonds(stats, "").length === 0);
+  check("no statistics, no claim", C.statsBonds([], "Q16").length === 0);
   check("the traffic table can tell a member from the master",
     C.bondTag(bonds, "V2").master === "V1" && C.bondTag(bonds, "V4") === null);
   {
     const L = C.panelLayout("Q16");
-    const M = C.bondPanelLayout(L, bonds);
+    const M = C.bondPanelLayout(L, [bonds[0]]);
     check("the panel draws the bond as one cage, not four",
       M.cages.length === L.cages.length - 3);
     const wide = M.cages.find((c) => c.name === "V1");

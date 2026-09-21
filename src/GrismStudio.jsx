@@ -38,7 +38,7 @@ import {
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   MEC_ARG_KEYS, mecProblems, dedupProblems,
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
-  bondVictims, switchBonds, bondPanelLayout, cpssService, dbmText, bondTag,
+  bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
@@ -4293,10 +4293,7 @@ function TrafficTab({ loggedIn, t, model = "" }) {
   const [bypassed, setBypassed] = React.useState(new Set());
   // the same answer keyed by pair, for the front panel's BYP lamps
   const [bypassedPairs, setBypassedPairs] = React.useState(null);   // null = the device would not say
-  /* On a board with a switch in front, four cages can be bonded into one port.
-     Read from the switch rather than guessed from the statistics: a bonded
-     member reports itself as an ordinary port that is permanently down. */
-  const [bonds, setBonds] = React.useState([]);
+
 
   React.useEffect(() => {
     if (!loggedIn) { setBypassed(new Set()); setBypassedPairs(null); return; }
@@ -4345,12 +4342,6 @@ function TrafficTab({ loggedIn, t, model = "" }) {
       (json.interfaces || []).forEach((grp) => (grp.ports || []).forEach((p) => { if (p.name) map[p.name] = p.description || ""; }));
       setDescs(map);
       setDevModel(String((json.args ?? {}).model ?? ""));
-      if ((json.args ?? {}).cpss !== true) { setBonds([]); return; }
-      /* Only on the boards that have one, and only when the page loads or is
-         refreshed by hand: reading this walks the transceiver of every cage
-         over I2C, which is not something to do every few seconds. */
-      const sw = await fetch("/grism/task/get_switch_interface", { credentials: "include" });
-      if (sw.ok) setBonds(switchBonds(parseSwitchInterfaces(await sw.json())));
     } catch (e) { warnFetch("port descriptions", e); }
   }, []);
 
@@ -4362,6 +4353,10 @@ function TrafficTab({ loggedIn, t, model = "" }) {
     const id = setInterval(load, ms);
     return () => clearInterval(id);
   }, [refreshSec, loggedIn, load]);
+
+  /* Four cages bonded into one port, as the counters themselves report it: the
+     master at 40G or 100G, the three it took at nothing. No extra request. */
+  const bonds = React.useMemo(() => statsBonds(rows, model || devModel), [rows, model, devModel]);
 
   // split V-ports (virtual, name starts with "V") from the rest. When any exist,
   // show them on their own and let the user reveal the physical ports too.
