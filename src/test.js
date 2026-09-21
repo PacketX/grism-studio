@@ -2628,15 +2628,62 @@ group("switch interface");
   })());
   check("a broken payload gives no rows",
     C.parseSwitchInterfaces({}).length === 0 && C.parseSwitchInterfaces(null).length === 0);
-  /* The back end shuts the three siblings down when a master runs at 100G
-     (views.py's hundred_g_mapping), so the page has to say so beforehand. */
-  const victims = C.hundredGVictims(rows);
+  /* The back end shuts the three siblings down when a master bonds its lanes
+     (views.py's hundred_g_mapping, which acts on 40G exactly as on 100G), so
+     the page has to say so beforehand. */
+  const victims = C.bondVictims(rows);
   check("a 100G port names the ports it takes with it",
-    JSON.stringify(victims) === JSON.stringify({ "0/1": ["0/0", "0/2", "0/3"] }));
-  check("and says nothing when none is at 100G",
-    Object.keys(C.hundredGVictims(rows.map((r) => ({ ...r, speed: "25000" })))).length === 0);
+    JSON.stringify(victims) === JSON.stringify({ "0/1": { speed: "100000", ports: ["0/0", "0/2", "0/3"] } }));
+  check("40G takes them too -- four lanes either way",
+    JSON.stringify(C.bondVictims(rows.map((r) => r.name === "0/1" ? { ...r, speed: "40000" } : r)))
+      === JSON.stringify({ "0/1": { speed: "40000", ports: ["0/0", "0/2", "0/3"] } }));
+  check("and says nothing when none is bonded",
+    Object.keys(C.bondVictims(rows.map((r) => ({ ...r, speed: "25000" })))).length === 0);
+  check("25G does not bond", C.BOND_SPEEDS.join() === "40000,100000");
   check("only the four masters can do it",
-    Object.keys(C.HUNDRED_G_GROUPS).join() === "0/1,0/5,0/9,0/13");
+    Object.keys(C.LANE_GROUPS).join() === "0/1,0/5,0/9,0/13");
+  // the switch says 0/N, the front of the box says VN
+  check("switch names map to panel names",
+    C.switchPanelName("0/13") === "V13" && C.switchPanelName("H1") === "H1");
+  const bonds = C.switchBonds(rows);
+  check("a bond is one port covering four, in panel names",
+    bonds.length === 1 && bonds[0].master === "V1" && bonds[0].speed === "100000" &&
+    bonds[0].members.join() === "V0,V1,V2,V3");
+  check("the traffic table can tell a member from the master",
+    C.bondTag(bonds, "V2").master === "V1" && C.bondTag(bonds, "V4") === null);
+  {
+    const L = C.panelLayout("Q16");
+    const M = C.bondPanelLayout(L, bonds);
+    check("the panel draws the bond as one cage, not four",
+      M.cages.length === L.cages.length - 3);
+    const wide = M.cages.find((c) => c.name === "V1");
+    const four = ["V0", "V1", "V2", "V3"].map((n) => L.cages.find((c) => c.name === n));
+    check("and it covers exactly the four it swallowed",
+      wide.bond === "100000" &&
+      wide.x === Math.min(...four.map((c) => c.x)) &&
+      wide.y === Math.min(...four.map((c) => c.y)) &&
+      wide.x + wide.w === Math.max(...four.map((c) => c.x + c.w)) &&
+      wide.y + wide.h === Math.max(...four.map((c) => c.y + c.h)));
+    check("no bonds leaves the drawing alone", C.bondPanelLayout(L, []) === L);
+  }
+  // an empty cage reads "-inf dBm", which is not a measurement
+  check("no light reads as a dash, a real level reads as itself",
+    C.dbmText("-inf dBm") === "" && C.dbmText("-2.1 dBm") === "-2.1 dBm" && C.dbmText(null) === "");
+  // the switch service, as systemctl describes it
+  check("a running service is running and not broken", (() => {
+    const s = C.cpssService({ active: "active", sub: "running", enabled: "enabled", pid: "9302" });
+    return s.running && !s.broken && s.known && s.pid === "9302";
+  })());
+  check("a dead one says so", (() => {
+    const s = C.cpssService({ active: "failed", sub: "failed", pid: "0" });
+    return !s.running && s.broken && s.known && s.pid === "";
+  })());
+  check("activating is not yet running",
+    C.cpssService({ active: "active", sub: "auto-restart" }).broken === true);
+  check("a probe that failed is unknown, not down", (() => {
+    const s = C.cpssService(null);
+    return !s.known && !s.running && !s.broken;
+  })());
   // the device reads its own output back, so send the same shape
   const body = C.switchInterfacePayload(rows);
   check("apply sends name, enable, speed and fec",

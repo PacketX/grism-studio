@@ -38,7 +38,8 @@ import {
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   MEC_ARG_KEYS, mecProblems, dedupProblems,
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
-  hundredGVictims, SWITCH_MODES, SWITCH_RESTART_SECONDS,
+  bondVictims, switchBonds, bondPanelLayout, cpssService, dbmText, bondTag,
+  SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
   S1AP_PAGE_SIZES, S1AP_PAGE_DEFAULT,
@@ -1668,6 +1669,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const [swErr, setSwErr] = React.useState("");
   // seconds left of the switch restart; the page is held while it counts down
   const [swWait, setSwWait] = React.useState(0);
+  const [cpssSvc, setCpssSvc] = React.useState(null);   // systemctl show cpss
 
   const [rawCfg, setRawCfg] = React.useState(null);   // for the port pickers
   // LAN bypass: only some models have the relays, so the section appears only
@@ -2314,11 +2316,22 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       setSwText(text); setSwTextBase(text); setSwErr("");
     } catch (e) { setSwErr(String(e.message || e)); setSwText(""); }
   }, []);
+  /* The switch is a service of its own, started at boot and restarted by every
+     change below. It can also die while being reconfigured, and when it does
+     the ports simply go dark -- so the page asks, and offers the restart. */
+  const loadCpssSvc = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_cpss_service", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setCpssSvc(cpssService(await res.json()));
+    } catch { setCpssSvc(cpssService(null)); }
+  }, []);
   React.useEffect(() => {
     if (!loggedIn || section !== "switchif") return;
+    if (cpssSvc === null) loadCpssSvc();
     if (switchMode === "custom") { if (swText === null) loadSwitchCustom(); }
     else if (swRows === null) loadSwitchIf();
-  }, [loggedIn, section, switchMode, swRows, swText, loadSwitchIf, loadSwitchCustom]);
+  }, [loggedIn, section, switchMode, swRows, swText, cpssSvc, loadSwitchIf, loadSwitchCustom, loadCpssSvc]);
 
   /* Every one of these restarts the cpss service, which takes about twenty
      seconds and drops the links while it runs. Hold the page for that long and
@@ -2356,6 +2369,17 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       if (!res.ok) throw new Error("HTTP " + res.status);
       setSubmit({ state: "idle", msg: "" });
       holdForSwitch(() => { setSwText(null); loadSwitchCustom(); });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+  const restartCpss = async () => {
+    setSubmit({ state: "sending", msg: "" }); setSwErr("");
+    try {
+      const res = await fetch("/grism/task/set_cpss_restart", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.text()).trim() || "HTTP " + res.status);
+      setSubmit({ state: "idle", msg: "" });
+      holdForSwitch(() => {
+        setCpssSvc(null); setSwRows(null); setSwBase(null); setSwText(null);
+      });
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
   };
   /* Changing mode is two things: the symlink cpss actually reads, and the
@@ -2454,6 +2478,33 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
       {section === "switchif" && (
         <div className="set-forms">
+          {/* First, because when the switch has died this is the only thing on
+              the page worth reading: everything below it reports a switch that
+              is not answering. */}
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.cpssSvc")}</h3>
+            <p className="set-hint">{tr("set.cpssSvcNote")}</p>
+            <div className="cpss-state">
+              <span className={"tf-link " + (!cpssSvc?.known ? "" : cpssSvc.running && !cpssSvc.broken ? "up" : "down")}>
+                {!cpssSvc ? tr("set.loading")
+                  : !cpssSvc.known ? tr("set.cpssUnknown")
+                  : cpssSvc.running && !cpssSvc.broken ? tr("set.cpssRunning") : tr("set.cpssStopped")}
+              </span>
+              {cpssSvc?.known && <>
+                {cpssSvc.sub && <span className="mono dim">{cpssSvc.sub}</span>}
+                {cpssSvc.pid && <span className="mono dim">PID {cpssSvc.pid}</span>}
+                {cpssSvc.since && <span className="dim">{tr("set.cpssSince")} {cpssSvc.since}</span>}
+                {cpssSvc.enabled && <span className="dim">{tr("set.cpssBoot")}: {cpssSvc.enabled}</span>}
+              </>}
+              <button className="copy-btn" disabled={swWait > 0} onClick={() => { setCpssSvc(null); loadCpssSvc(); }}>
+                {tr("set.load")}</button>
+              <button className="sys-refresh" disabled={submit.state === "sending" || swWait > 0}
+                onClick={() => setConfirm({ kind: "cpssRestart" })}>{tr("set.cpssRestart")}</button>
+            </div>
+            {cpssSvc?.known && cpssSvc.broken &&
+              <p className="set-hint warn">{tr("set.cpssDownNote")}</p>}
+          </section>
+
           <section className="sys-card">
             <h3 className="sys-card-title">{tr("set.switchIf")}</h3>
             <p className="set-hint">{tr("set.switchIfNote")}</p>
@@ -2476,53 +2527,63 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <h3 className="sys-card-title">{tr("set.switchPorts")}</h3>
               {swRows === null ? <p className="sys-note dim">{tr("set.loading")}</p> : (() => {
                 const changed = switchIfaceChanged(swBase ?? [], swRows);
-                const victims = hundredGVictims(swRows);
-                const forced = new Set(Object.values(victims).flat());
+                const victims = bondVictims(swRows);
+                const forced = new Set(Object.values(victims).flatMap((b) => b.ports));
                 const setRow = (name, patch) => setSwRows((rows) =>
                   rows.map((r) => r.name === name ? { ...r, ...patch } : r));
                 return (<>
                   <div className="tf-table-wrap">
                     <table className="tf-table">
                       <thead><tr>
-                        <th>{tr("set.switchPort")}</th><th>{tr("set.enabled")}</th>
+                        <th>{tr("set.switchPort")}</th>
                         <th>{tr("tf.link")}</th><th>{tr("tf.speed")}</th><th>FEC</th>
-                        <th>{tr("set.switchGbic")}</th><th>{tr("set.switchPower")}</th>
+                        <th>{tr("set.switchGbicPn")}</th><th>{tr("set.switchGbicSn")}</th>
+                        <th>{tr("set.switchRx")}</th><th>{tr("set.switchTx")}</th>
+                        <th>{tr("set.enabled")}</th>
                       </tr></thead>
                       <tbody>
-                        {swRows.map((r) => (
-                          <tr key={r.name} className={r.enable ? "" : "port-off"}>
+                        {swRows.map((r) => {
+                          /* A port one of its neighbours has taken the lanes of.
+                             Its own settings mean nothing until that one drops
+                             back below 40G, so they are shown but not offered. */
+                          const eaten = forced.has(r.name);
+                          return (
+                          <tr key={r.name} className={r.enable && !eaten ? "" : "port-off"}>
                             <td className="tf-name mono">{r.name}</td>
-                            <td><input type="checkbox" checked={r.enable}
-                              onChange={(e) => setRow(r.name, { enable: e.target.checked })} /></td>
                             <td>{<span className={"tf-link " + (r.link ? "up" : "down")}>
                               {r.link ? tr("tf.up") : tr("tf.down")}</span>}</td>
-                            <td><select value={r.speed} onChange={(e) => setRow(r.name, { speed: e.target.value })}>
+                            <td><select value={r.speed} disabled={eaten}
+                              onChange={(e) => setRow(r.name, { speed: e.target.value })}>
                               {[...new Set([r.speed, ...r.speedSupport])].filter(Boolean)
                                 .map((v) => <option key={v} value={v}>{fmtSpeed(v)}</option>)}
                             </select></td>
-                            <td><select value={r.fec} onChange={(e) => setRow(r.name, { fec: e.target.value })}>
+                            <td><select value={r.fec} disabled={eaten}
+                              onChange={(e) => setRow(r.name, { fec: e.target.value })}>
                               {[...new Set([r.fec, ...r.fecSupport])].filter(Boolean)
                                 .map((v) => <option key={v} value={v}>{v}</option>)}
                             </select></td>
-                            <td className="mono svc-ver">{r.gbicPn
-                              ? <span title={r.gbicPn + " / " + r.gbicSn}>{r.gbicPn}</span>
-                              : <span className="dim">—</span>}</td>
-                            <td className="mono svc-ver">{r.gbicPn || r.rx
-                              ? <span title={`RX ${r.rx} · TX ${r.tx}`}>{r.rx}</span>
-                              : <span className="dim">—</span>}</td>
-                          </tr>
-                        ))}
+                            {/* the transceiver, as it identifies itself; empty
+                                on an empty cage, which is a dash not a blank */}
+                            <td className="mono svc-ver">{r.gbicPn || <span className="dim">—</span>}</td>
+                            <td className="mono svc-ver">{r.gbicSn || <span className="dim">—</span>}</td>
+                            <td className="mono svc-ver">{dbmText(r.rx) || <span className="dim">—</span>}</td>
+                            <td className="mono svc-ver">{dbmText(r.tx) || <span className="dim">—</span>}</td>
+                            <td><input type="checkbox" checked={r.enable} disabled={eaten}
+                              onChange={(e) => setRow(r.name, { enable: e.target.checked })} /></td>
+                          </tr>);
+                        })}
                       </tbody>
                     </table>
                   </div>
                   {/* the back end forces these down whether the page says so or
                       not, so the page says so */}
-                  {Object.entries(victims).map(([master, group]) => (
+                  {Object.entries(victims).map(([master, b]) => (
                     <p className="set-hint warn" key={master}>
-                      {tr("set.switch100g").replace("{port}", master).replace("{ports}", group.join(", "))}
+                      {tr("set.switchBond").replace("{port}", master)
+                        .replace("{speed}", fmtSpeed(b.speed)).replace("{ports}", b.ports.join(", "))}
                     </p>
                   ))}
-                  {forced.size > 0 && <p className="set-hint">{tr("set.switch100gNote")}</p>}
+                  {forced.size > 0 && <p className="set-hint">{tr("set.switchBondNote")}</p>}
                   <div className="set-actions">
                     <span className="set-changed">{changed.length
                       ? `${changed.length} ${tr("set.portsChanged")}` : ""}</span>
@@ -3780,9 +3841,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
-              : ["switchMode", "switchRows", "switchCustom"].includes(confirm.kind)
+              : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
               : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
@@ -3811,6 +3872,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               if (k === "switchMode") { applySwitchMode(confirm.mode); return; }
               if (k === "switchRows") { applySwitchRows(); return; }
               if (k === "switchCustom") { applySwitchCustom(); return; }
+              if (k === "cpssRestart") { restartCpss(); return; }
               if (k === "vport") { submitVports(); return; }
               if (k === "speed") { submitSpeed(); return; }
               if (k === "bypass") {
@@ -4099,9 +4161,12 @@ function BreakdownTable({ rows, keyLabel, labelOf, tr, limit = 10 }) {
 /* ============================================================
    T12S front panel — the ports as they sit on the box
    ============================================================ */
-function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = false, t }) {
+function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, bonds, stale = false, t }) {
   const tr = t || ((k) => k);
-  const L = panelLayout(model);
+  /* Four cages bonded into one port are drawn as one cage. Four cages of which
+     three are permanently dark would be the same picture as a board with three
+     dead links, which is a different and alarming claim. */
+  const L = bondPanelLayout(panelLayout(model), bonds);
   const st = panelStates(stats, model);
   const topRow = Math.min(...L.cages.map((c) => c.y));
   /* Nothing read yet, or nothing readable: the lamps say nothing rather than
@@ -4158,8 +4223,16 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = f
             return (
               <g key={c.name} className={"fp-port" + (!blind && s.link ? " up" : "")
                 + (bypassedPorts?.has(c.name) ? " byp" : "")}>
-                <rect x={c.x} y={c.y} width={c.w} height={c.h} rx="3" className="fp-cage" />
-                {c.kind === "rj45" ? (
+                <rect x={c.x} y={c.y} width={c.w} height={c.h} rx="3"
+                  className={"fp-cage" + (c.bond ? " bond" : "")} />
+                {c.bond ? (
+                  /* still four cages on the box, so still four openings --
+                     inside one outline, which is the port */
+                  c.slots.map((s2, i) => (
+                    <rect key={i} x={s2.x + 5} y={s2.y + 5} width={s2.w - 10} height={s2.h - 16}
+                      rx="1.5" className="fp-slot" />
+                  ))
+                ) : c.kind === "rj45" ? (
                   /* a jack: the opening with the latch notch cut into its top */
                   <path className="fp-slot" d={`M ${c.x + 8} ${c.y + 4}
                     h ${c.w - 16} v ${c.h - 14} h -${c.w - 16} z
@@ -4168,7 +4241,7 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = f
                   <rect x={c.x + 5} y={c.y + 5} width={c.w - 10} height={c.h - 16} rx="1.5" className="fp-slot" />
                 )}
                 {/* the state in words, for anyone not reading the colours */}
-                <title>{`${c.name} — ${blind ? tr("panel.unknown")
+                <title>{`${c.name}${c.bond ? " · " + fmtSpeed(c.bond) + " (" + c.members.join(", ") + ")" : ""} — ${blind ? tr("panel.unknown")
                   : s.link ? [tr("panel.keyUp"), moving(s.rx) && tr("panel.keyRx"), moving(s.tx) && tr("panel.keyTx")]
                     .filter(Boolean).join(", ")
                   : tr("panel.keyDown")}${bypassedPorts?.has(c.name) ? " · " + tr("tf.bypass") : ""}`}</title>
@@ -4179,7 +4252,8 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, stale = f
                   className={"fp-act rx" + (!blind && moving(s.rx) ? " on" : "")} />
                 <path d={`M ${cx + 1} ${c.y + c.h - 3} l 4 -5 l 4 5 z`}
                   className={"fp-act tx" + (!blind && moving(s.tx) ? " on" : "")} />
-                <text x={cx} y={labelAbove ? c.y - 5 : c.y + c.h + 11} className="fp-lbl">{c.name}</text>
+                <text x={cx} y={labelAbove ? c.y - 5 : c.y + c.h + 11} className="fp-lbl">
+                  {c.bond ? `${c.name} · ${fmtSpeed(c.bond)}` : c.name}</text>
               </g>
             );
           })}
@@ -4219,6 +4293,10 @@ function TrafficTab({ loggedIn, t, model = "" }) {
   const [bypassed, setBypassed] = React.useState(new Set());
   // the same answer keyed by pair, for the front panel's BYP lamps
   const [bypassedPairs, setBypassedPairs] = React.useState(null);   // null = the device would not say
+  /* On a board with a switch in front, four cages can be bonded into one port.
+     Read from the switch rather than guessed from the statistics: a bonded
+     member reports itself as an ordinary port that is permanently down. */
+  const [bonds, setBonds] = React.useState([]);
 
   React.useEffect(() => {
     if (!loggedIn) { setBypassed(new Set()); setBypassedPairs(null); return; }
@@ -4267,6 +4345,12 @@ function TrafficTab({ loggedIn, t, model = "" }) {
       (json.interfaces || []).forEach((grp) => (grp.ports || []).forEach((p) => { if (p.name) map[p.name] = p.description || ""; }));
       setDescs(map);
       setDevModel(String((json.args ?? {}).model ?? ""));
+      if ((json.args ?? {}).cpss !== true) { setBonds([]); return; }
+      /* Only on the boards that have one, and only when the page loads or is
+         refreshed by hand: reading this walks the transceiver of every cage
+         over I2C, which is not something to do every few seconds. */
+      const sw = await fetch("/grism/task/get_switch_interface", { credentials: "include" });
+      if (sw.ok) setBonds(switchBonds(parseSwitchInterfaces(await sw.json())));
     } catch (e) { warnFetch("port descriptions", e); }
   }, []);
 
@@ -4312,7 +4396,7 @@ function TrafficTab({ loggedIn, t, model = "" }) {
       {hasFrontPanel(model || devModel) && (
         <FrontPanel model={model || devModel} stats={rows}
           mgmtStat={rows.find((r) => r.name === "H1")}
-          bypassed={bypassedPairs} bypassedPorts={bypassed}
+          bypassed={bypassedPairs} bypassedPorts={bypassed} bonds={bonds}
           stale={state === "error"} t={t} />
       )}
 
@@ -4349,6 +4433,7 @@ function TrafficTab({ loggedIn, t, model = "" }) {
                 const errs = (Number(r.inErrors) || 0);
                 const inDrops = (Number(r.inDrops) || 0), outDrops = (Number(r.outDrops) || 0);
                 const open = expanded === r.idx;
+                const bond = bondTag(bonds, r.name);
                 return (
                   <React.Fragment key={r.idx}>
                     <tr className={"tf-row" + (open ? " open" : "")} onClick={() => setExpanded(open ? null : r.idx)}>
@@ -4356,6 +4441,12 @@ function TrafficTab({ loggedIn, t, model = "" }) {
                       <td className="tf-name">{r.name}
                         {bypassed.has(r.name) &&
                           <span className="tf-bypass" title={tr("tf.bypassTip")}>{tr("tf.bypass")}</span>}
+                        {/* bonded away: the counters below are real but will
+                            never move, because the lanes belong to another port */}
+                        {bond &&
+                          <span className="tf-bypass bond" title={tr("tf.bondedTip")
+                            .replace("{port}", bond.master).replace("{speed}", fmtSpeed(bond.speed))}>
+                            {bond.master === r.name ? fmtSpeed(bond.speed) : "→ " + bond.master}</span>}
                       </td>
                       <td className="tf-desc">{descs[r.name] || "—"}</td>
                       <td><span className={"tf-link " + (up ? "up" : "down")}>{up ? tr("tf.up") : tr("tf.down")}</span></td>

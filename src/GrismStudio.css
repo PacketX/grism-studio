@@ -1691,3 +1691,13 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
   border-radius: 8px; font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-wrap: normal;
   overflow-x: auto; }
 .sw-custom:focus { outline: none; border-color: var(--accent); }
+
+/* a bonded cage: one port where the box has four, drawn wider and marked so it
+   does not read as an ordinary cage that happens to be large */
+.fp-cage.bond { stroke-dasharray: none; filter: brightness(1.12); }
+.tf-bypass.bond { background: #1f4f63; color: #cfeaf6; }
+/* the switch service line: state, then what systemd says about it */
+.cpss-state { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 2px; }
+.cpss-state .tf-link { flex: 0 0 auto; }
+.cpss-state button { margin-left: auto; }
+.cpss-state button + button { margin-left: 8px; }

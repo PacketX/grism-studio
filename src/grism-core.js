@@ -3492,11 +3492,13 @@ export const formatPortSpeed = (speed) =>
 export const SWITCH_MODES = ["normal", "custom"];
 export const SWITCH_RESTART_SECONDS = 20;
 
-/* The four ports that can run at 100G, each of which swallows the three next
-   to it when it does (views.py's hundred_g_mapping). A port listed here is not
-   independent: setting the master to 100000 forces its siblings down, and the
-   back end does that whether or not the page says so -- so the page says so. */
-export const HUNDRED_G_GROUPS = {
+/* The four ports that can bond four lanes into one, each swallowing the three
+   next to it when it does (views.py's hundred_g_mapping). Both 40G and 100G
+   take all four lanes -- 4x10G and 4x25G -- so both do the swallowing, which
+   is what the back end forces whether or not the page says so. So it says so.
+   A port listed here is not independent. */
+export const BOND_SPEEDS = ["40000", "100000"];
+export const LANE_GROUPS = {
   "0/1": ["0/0", "0/2", "0/3"],
   "0/5": ["0/4", "0/6", "0/7"],
   "0/9": ["0/8", "0/10", "0/11"],
@@ -3522,14 +3524,91 @@ export function parseSwitchInterfaces(payload) {
 
 /* Which ports this setting will take down with it, so the page can say it
    before the switch restarts rather than after. */
-export function hundredGVictims(rows) {
+export function bondVictims(rows) {
   const out = {};
   (rows ?? []).forEach((r) => {
-    const group = HUNDRED_G_GROUPS[r.name];
-    if (group && r.speed === "100000") out[r.name] = group;
+    const group = LANE_GROUPS[r.name];
+    if (group && BOND_SPEEDS.includes(r.speed)) out[r.name] = { speed: r.speed, ports: group };
   });
   return out;
 }
+
+/* The switch calls its ports 0/N; the front of the box calls the same port VN.
+   One is what the configuration file says, the other is what is silkscreened
+   next to the cage, and the traffic page speaks the second. */
+export const switchPanelName = (name) => {
+  const m = /^0\/(\d+)$/.exec(String(name ?? ""));
+  return m ? "V" + m[1] : String(name ?? "");
+};
+
+/* The bonds in front-panel terms: one wide port where the box has four cages.
+   Ordered as the cages are, so the drawing can find their positions. */
+export function switchBonds(rows) {
+  return Object.entries(bondVictims(rows)).map(([master, b]) => ({
+    master: switchPanelName(master),
+    speed: b.speed,
+    members: [master, ...b.ports].sort((a, c) => Number(a.slice(2)) - Number(c.slice(2)))
+      .map(switchPanelName),
+  }));
+}
+
+/* The bond a front-panel port belongs to, if any -- for the traffic table,
+   where a bonded-away port otherwise reads as an ordinary port that is down. */
+export const bondTag = (bonds, name) =>
+  (bonds ?? []).find((b) => b.members.includes(name)) ?? null;
+
+/* Redraw the panel with each bond as a single cage covering the four it took.
+   Four ports bonded into one is not four ports that happen to be down, and a
+   panel that draws them as cages with dark lamps says the wrong thing. */
+export function bondPanelLayout(layout, bonds) {
+  if (!layout || !(bonds ?? []).length) return layout;
+  const by = new Map(layout.cages.map((c) => [c.name, c]));
+  const eaten = new Set();
+  const merged = [];
+  bonds.forEach((b) => {
+    const cages = b.members.map((n) => by.get(n)).filter(Boolean);
+    if (cages.length < 2) return;            // nothing to merge on this chassis
+    const x = Math.min(...cages.map((c) => c.x));
+    const y = Math.min(...cages.map((c) => c.y));
+    const w = Math.max(...cages.map((c) => c.x + c.w)) - x;
+    const h = Math.max(...cages.map((c) => c.y + c.h)) - y;
+    b.members.forEach((n) => eaten.add(n));
+    merged.push({ name: b.master, x, y, w, h, kind: by.get(b.master)?.kind ?? layout.kind,
+      bond: b.speed, members: b.members,
+      /* where the cages it covers actually are, so the drawing can still show
+         four openings in one port rather than one large empty box */
+      slots: cages.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })) });
+  });
+  if (!merged.length) return layout;
+  return { ...layout, cages: [...layout.cages.filter((c) => !eaten.has(c.name)), ...merged] };
+}
+
+/* systemctl show, as the page needs it. "unknown" is its own answer: the probe
+   failing is not the same claim as the service being down. */
+export function cpssService(payload) {
+  const p = payload ?? {};
+  const active = String(p.active ?? "unknown");
+  return {
+    active,
+    sub: String(p.sub ?? ""),
+    enabled: String(p.enabled ?? ""),
+    since: String(p.since ?? ""),
+    pid: String(p.pid ?? "0") === "0" ? "" : String(p.pid),
+    running: active === "active",
+    known: active !== "unknown" && active !== "",
+    /* "failed", or active with a sub-state that is not running (activating,
+       auto-restart): both mean the switch is not answering right now. */
+    broken: active === "failed" || active === "inactive" ||
+      (active === "active" && !!p.sub && p.sub !== "running"),
+  };
+}
+
+/* "-inf dBm" is what a cage with no light in it reads. It is the absence of a
+   measurement rather than a very small one, so the page shows a dash. */
+export const dbmText = (v) => {
+  const s = String(v ?? "").trim();
+  return !s || /inf/i.test(s) ? "" : s;
+};
 
 /* What the apply button sends: the same shape the device answered with, since
    set_switch_interface reads its own output back. */
