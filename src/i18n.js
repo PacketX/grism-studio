@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.110.0";
+export const STUDIO_VERSION = "2.111.0";
 
 export const I18N = {
   en: {
@@ -248,6 +248,9 @@ export const I18N = {
     "set.acctConfirmDeleteTitle": "Delete this account?", "set.acctConfirmDeleteBody": "The account is removed from the device immediately. This cannot be undone.",
     "set.acctChangePw": "Change my password", "set.acctOldPassword": "Current password", "set.acctNewPassword": "New password",
     "set.acctChangedSignOut": "Password changed — the device ended this session, so you have been signed out. Sign in again with the new password.",
+    "set.changePwTitle": "Change the password?",
+    "set.changePwBody": "This session ends as soon as it changes — sign in again with the new password.",
+    "set.changePwWho": "Account: {user}",
     "set.acctChangePwGo": "Change password", "set.acctChanged": "Password changed.", "set.acctCreated": "Account created.",
     "set.acctDeleted": "Account deleted.", "set.acctNone": "No accounts returned.",
     "set.acctWhoUnknown": "Cannot tell which account is signed in, so the password cannot be changed from here.",
@@ -956,6 +959,9 @@ export const I18N = {
     "set.acctConfirmDeleteTitle": "刪除這個帳號?", "set.acctConfirmDeleteBody": "帳號會立即從裝置移除,且無法復原。",
     "set.acctChangePw": "變更我的密碼", "set.acctOldPassword": "目前密碼", "set.acctNewPassword": "新密碼",
     "set.acctChangedSignOut": "密碼已變更 — 裝置已結束這個連線階段,因此已將你登出。請用新密碼重新登入。",
+    "set.changePwTitle": "要變更密碼嗎?",
+    "set.changePwBody": "變更後這個工作階段會立刻結束 — 請用新密碼重新登入。",
+    "set.changePwWho": "帳號:{user}",
     "set.acctChangePwGo": "變更密碼", "set.acctChanged": "密碼已變更。", "set.acctCreated": "帳號已建立。",
     "set.acctDeleted": "帳號已刪除。", "set.acctNone": "沒有取得任何帳號。",
     "set.acctWhoUnknown": "無法判斷目前登入的帳號,因此無法在此變更密碼。",
