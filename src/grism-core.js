@@ -277,7 +277,11 @@ export const lastFindField = (node) => {
   return "ip.addr";
 };
 export const mkGroup = (op) => ({ id: nid(), t: op, children: [mkFind()] });
-export const mkNot = () => ({ id: nid(), t: "not", children: [mkFind()] });
+/* A NOT wraps exactly one sub-expression (run.xsd's notType), so what it holds
+   decides whether anything can be added to it afterwards. A bare find is a
+   dead end -- the editor offers no way to put a second condition beside it --
+   so the group goes in first and the condition inside that. */
+export const mkNot = () => ({ id: nid(), t: "not", children: [mkGroup("or")] });
 
 export function tUpdate(node, id, fn) {
   if (node.id === id) return fn(node);
@@ -323,17 +327,64 @@ export function serializeFilter(f) {
 /* ===================== human-readable summary (Overview page) ===================== */
 // A short readable description of a filter's boolean tree, e.g.
 // "TCP port == 443 OR UDP port == 443" or "country == CN,RU AND NOT (ip == …)".
-export function describeCriterion(node, t) {
-  const tr = t || ((k) => ({ "crit.and": "AND", "crit.or": "OR", "crit.not": "NOT", "crit.matchAll": "(matches all)", "crit.matchAny": "(matches any)" }[k] || k));
+/* Which heartbeat target a condition is about.
+
+   The two heartbeat fields name a target in different ways, and the firmware
+   resolves both to the same thing -- an index into the configured targets, in
+   config order (fc.c:3523 via config_heartbeat_target_seek_idx):
+
+     heartbeat.target.miss.id   the target's own id
+     heartbeat.target.miss.nth  that index directly, counted from 0
+
+   An id with no target is worth saying out loud: seek_idx returns 0 when it
+   finds nothing, so the filter silently watches the FIRST target instead of
+   the one that was meant. */
+export function heartbeatTarget(field, val, targets) {
+  if (!Array.isArray(targets) || !targets.length) return null;   // nothing to resolve against yet
+  const n = Number(String(val ?? "").trim());
+  if (!Number.isFinite(n) || String(val ?? "").trim() === "") return null;
+  if (field === "heartbeat.target.miss.id") {
+    const hit = targets.find((x) => Number(x.id) === n);
+    return hit ? { target: hit } : { missing: true };
+  }
+  if (field === "heartbeat.target.miss.nth") {
+    const hit = targets[n];                                      // 0-based, config order
+    return hit ? { target: hit } : { missing: true };
+  }
+  return null;
+}
+
+/* How that target reads: the hop it watches, and its description if it has
+   one. "P1 → P2" is the same shape the filter editor's picker uses. */
+export function heartbeatHopText(hit, tr) {
+  if (!hit) return "";
+  if (hit.missing) return tr("crit.hbMissing");
+  const t = hit.target;
+  const hop = [t.sendPort, t.receivePort].every(Boolean) ? `${t.sendPort} → ${t.receivePort}` : "";
+  const bits = [hop, t.description].filter(Boolean);
+  /* Only when the configuration actually says so. A target list that does not
+     carry the flag must not have every target reported as switched off. */
+  if (t.enable === false) bits.push(tr("crit.hbOff"));
+  return bits.join(" · ");
+}
+
+export function describeCriterion(node, t, hbTargets) {
+  const tr = t || ((k) => ({ "crit.and": "AND", "crit.or": "OR", "crit.not": "NOT", "crit.matchAll": "(matches all)", "crit.matchAny": "(matches any)",
+    "crit.hbMissing": "(no such target in the configuration)", "crit.hbOff": "disabled" }[k] || k));
   if (!node) return "";
   if (node.t === "find") {
     const f = FIELD_INDEX[node.field]; const kind = f?.kind ?? "str";
     const label = f?.label ?? node.field;
     if (kind === "exists") return label;
-    return `${label} ${node.rel || "=="} ${node.val || "?"}`;
+    const base = `${label} ${node.rel || "=="} ${node.val || "?"}`;
+    /* A heartbeat condition names a target by number, which says nothing about
+       what is being watched. Resolve it against the configuration so the
+       condition reads as the hop it is about. */
+    const hop = heartbeatHopText(heartbeatTarget(node.field, node.val, hbTargets), tr);
+    return hop ? `${base} (${hop})` : base;
   }
   const AND = tr("crit.and"), OR = tr("crit.or");
-  const kids = (node.children ?? []).map((c) => describeCriterion(c, t)).filter(Boolean);
+  const kids = (node.children ?? []).map((c) => describeCriterion(c, t, hbTargets)).filter(Boolean);
   if (node.t === "not") return `${tr("crit.not")} (${kids.join(", ")})`;
   if (!kids.length) return node.t === "and" ? tr("crit.matchAll") : tr("crit.matchAny");
   const joiner = node.t === "and" ? ` ${AND} ` : ` ${OR} `;
@@ -389,7 +440,7 @@ export function outDestinations(ports, outputs, t) {
 
    A reference to a filter that is not defined is reported as such rather than
    skipped: an unresolved id is exactly what someone hovering wants to find. */
-export function branchConditions(fids, filters, t) {
+export function branchConditions(fids, filters, t, hbTargets) {
   const tr = t || ((k) => k);
   const by = new Map((filters ?? []).map((f) => ["F" + f.id, f]));
   return String(fids || "").split(",").map((s) => s.trim()).filter(Boolean).map((tok) => {
@@ -399,7 +450,7 @@ export function branchConditions(fids, filters, t) {
     return {
       id, neg,
       name: f ? (f.name || f.alt || "") : "",
-      cond: f ? describeCriterion(f.root, t) : "",
+      cond: f ? describeCriterion(f.root, t, hbTargets) : "",
       missing: !f,
       /* An empty <or> matches everything -- legal, and the one case where a
          filter with no conditions is not a mistake but is worth saying. */
@@ -463,8 +514,8 @@ export function destLabel(tok, index) {
 }
 
 // Whole-document overview: counts, per-filter conditions, per-chain routing, ports used.
-export function describeDoc(doc, t) {
-  const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: describeCriterion(f.root, t) }));
+export function describeDoc(doc, t, hbTargets) {
+  const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: describeCriterion(f.root, t, hbTargets) }));
   const filterNames = Object.fromEntries(filters.map((f) => [f.id, f.name]));
   const outputInfo = outputIndex(doc);
   const chains = (doc.chains ?? []).map((c) => ({ ingress: c.ports || "P0", rules: summarizeChainTree(c.tree), flow: summarizeChain(c.tree) }));

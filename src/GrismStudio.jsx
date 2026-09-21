@@ -544,8 +544,12 @@ export default function GrismStudio() {
       // is on: with it off the device builds no items at all
       setS1cOn((cfg.args ?? {}).s1cCorrelation === true);
       setDeviceModel(String((cfg.args ?? {}).model ?? ""));
+      /* enable and description come along: a condition that names a target is
+         read against this list, and "which hop, is it even on" is the whole
+         reason for looking it up. */
       const targets = (cfg.heartbeat?.target ?? [])
-        .map((t) => ({ id: t.id, sendPort: t.sendPort, receivePort: t.receivePort }))
+        .map((t) => ({ id: t.id, sendPort: t.sendPort, receivePort: t.receivePort,
+          enable: t.enable === true, description: String(t.description ?? "").trim() }))
         .filter((t) => t.id != null);
       setHbTargets(targets);
       const storages = (cfg.storages ?? []).filter((s) => s.enable).map((s) => s.name).filter(Boolean);
@@ -1002,7 +1006,7 @@ export default function GrismStudio() {
           </div>
         )}
         {tab === "overview" && (
-          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t} loggedIn={!!login.who}
+          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t} loggedIn={!!login.who} hbTargets={hbTargets}
             onOpenTemplates={() => setShowTemplates(true)}
             onGoto={goTab} />
         )}
@@ -1062,7 +1066,8 @@ export default function GrismStudio() {
             setChainTreeFor={setChainTreeFor} setDoc={setDoc} touched={changes?.chains?.touched}
             activeChain={activeChain} setActiveChain={setActiveChain}
             t={t}
-            portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null} />
+            portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null}
+            hbTargets={hbTargets} />
         )}
         {tab === "simulate" && (
           <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} loopPorts={loopPorts} t={t}
@@ -1096,9 +1101,9 @@ export default function GrismStudio() {
 /* ============================================================
    Overview tab — auto-generated explanation of the current doc
    ============================================================ */
-function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, onOpenTemplates }) {
+function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, onOpenTemplates, hbTargets }) {
   const tr = t || ((k) => k);
-  const info = useMemo(() => describeDoc(doc, tr), [doc, lang]);
+  const info = useMemo(() => describeDoc(doc, tr, hbTargets), [doc, lang, hbTargets]);
   const [filtersOpen, setFiltersOpen] = React.useState(false); // Overview: show all filters vs first few
 
   /* templateName holds the English title -- it is the key the gallery is looked
@@ -6632,7 +6637,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, t, touched }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, hbTargets, t, touched }) {
   const tr = t || ((k) => k);
   // {name} placeholders, so a translation can put the value where its own
   // grammar needs it rather than where English happened to put it
@@ -6929,7 +6934,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
      chain -- and reading the chain is the whole point of the picture. */
   const [tip, setTip] = React.useState(null);   // { x, y, rows, op }
   const showTip = (ev, node) => {
-    const rows = node.t === "branch" ? branchConditions(node.fids, doc.filters, tr) : [];
+    const rows = node.t === "branch" ? branchConditions(node.fids, doc.filters, tr, hbTargets) : [];
     const outs = node.t === "out" ? outDestinations(node.ports, doc.outputs, tr) : [];
     if (!rows.length && !outs.length) return;
     const box = ev.currentTarget.getBoundingClientRect();

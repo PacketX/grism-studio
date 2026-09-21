@@ -2766,6 +2766,76 @@ group("switch interface");
 }
 
 /* ---------- MEC and deduplication ports ----------------------------------- */
+group("NOT holds a group, so it can be added to");
+{
+  const n = C.mkNot();
+  check("a new NOT wraps a group, not a bare condition",
+    n.t === "not" && n.children.length === 1 && n.children[0].t === "or");
+  check("and that group starts with one condition",
+    n.children[0].children.length === 1 && n.children[0].children[0].t === "find");
+  /* run.xsd's notType takes exactly one sub-expression, and or/and are among
+     them -- so the nesting is what the firmware already accepts. */
+  const doc = { filters: [{ id: 1, name: "x", sessionBase: "no", root: { t: "or", children: [n] } }],
+    outputs: [], inputs: [], actions: [], chains: [] };
+  const xml = C.serializeRun(doc);
+  check("it serialises as <not><or><find/></or></not>",
+    /<not>\s*<or>\s*<find[^>]*\/>\s*<\/or>\s*<\/not>/.test(xml), xml.split("\n").slice(1, 9).join(" "));
+  check("and comes back the same way", (() => {
+    const back = C.parseRun(xml).doc.filters[0].root;
+    const not = back.children[0];
+    return not.t === "not" && not.children[0].t === "or" && not.children[0].children[0].t === "find";
+  })());
+}
+
+group("heartbeat conditions name the hop they watch");
+{
+  /* The firmware turns both heartbeat fields into an index into the configured
+     targets (fc.c:3523). A number on screen says nothing about what is being
+     watched, so the configuration is what turns it back into a hop. */
+  const targets = [
+    { id: 4, enable: true, sendPort: "P0", receivePort: "P1", description: "east link" },
+    { id: 7, enable: false, sendPort: "P2", receivePort: "P3", description: "" },
+  ];
+  const en = makeT("en");
+  const idFind = (val) => ({ t: "or", children: [{ t: "find", field: "heartbeat.target.miss.id", rel: "==", val }] });
+  check("an id resolves to its ports and description",
+    /P0 → P1/.test(C.describeCriterion(idFind("4"), en, targets)) &&
+    /east link/.test(C.describeCriterion(idFind("4"), en, targets)),
+    C.describeCriterion(idFind("4"), en, targets));
+  check("a disabled target says so",
+    /disabled/.test(C.describeCriterion(idFind("7"), en, targets)), C.describeCriterion(idFind("7"), en, targets));
+  /* seek_idx returns 0 for an id it cannot find, so the filter quietly watches
+     the first target rather than nothing at all -- worth saying. */
+  check("an id that is not configured is called out",
+    /no such target/.test(C.describeCriterion(idFind("99"), en, targets)), C.describeCriterion(idFind("99"), en, targets));
+  check("nth counts from zero over the configured targets", (() => {
+    const nth = (val) => ({ t: "or", children: [{ t: "find", field: "heartbeat.target.miss.nth", rel: "==", val }] });
+    return /P0 → P1/.test(C.describeCriterion(nth("0"), en, targets)) &&
+      /P2 → P3/.test(C.describeCriterion(nth("1"), en, targets)) &&
+      /no such target/.test(C.describeCriterion(nth("2"), en, targets));
+  })());
+  check("with no configuration loaded it stays a plain number",
+    C.describeCriterion(idFind("4"), en) === "Heartbeat miss (target id) == 4" &&
+    C.describeCriterion(idFind("4"), en, []) === "Heartbeat miss (target id) == 4");
+  check("other fields are untouched by any of this",
+    C.describeCriterion({ t: "or", children: [{ t: "find", field: "tcp.port", rel: "==", val: "4" }] }, en, targets)
+      === "TCP port (src or dst) == 443".replace("443", "4"));
+  check("the hop reaches the chain hover", (() => {
+    const filters = [{ id: 1, name: "hb", root: idFind("4") }];
+    return /P0 → P1/.test(C.branchConditions("F1", filters, en, targets)[0].cond);
+  })());
+  check("and the overview's filter list", (() => {
+    const doc = { filters: [{ id: 1, name: "hb", root: idFind("4") }], chains: [], outputs: [] };
+    return /P0 → P1/.test(C.describeDoc(doc, en, targets).filters[0].cond);
+  })());
+  check("a list that does not carry the enable flag claims nothing about it",
+    !/disabled/.test(C.describeCriterion(idFind("4"), en,
+      [{ id: 4, sendPort: "P0", receivePort: "P1" }])));
+  check("a target with no ports set does not invent an arrow",
+    !/→/.test(C.describeCriterion(idFind("8"), en,
+      [{ id: 8, enable: true, sendPort: "", receivePort: "", description: "half set" }])));
+}
+
 group("what a chain node is doing");
 {
   const filters = [
