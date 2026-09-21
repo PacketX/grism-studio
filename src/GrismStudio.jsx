@@ -3440,7 +3440,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   try {
                     const res = await fetch("/grism/task/backup", { method: "POST", credentials: "include" });
                     if (!res.ok) throw new Error("HTTP " + res.status);
-                    setBackupUrl("/file_manager/preview?download=1&file=/tmp/grism-backup.tgz");
+                    // pywww serves the file the backup just wrote; the Go app's file
+                    // manager, which used to hand it over, is gone
+                    setBackupUrl("/grism/task/download_backup");
                     setSubmit({ state: "idle", msg: "" });
                   } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
                 }}>{tr("set.bkCreate")}</button>
