@@ -889,9 +889,6 @@ export default function GrismStudio() {
                   </div>
                 </div>
 
-                <a className="acct-item acct-legacy" href="/index.html">
-                  {t("acct.legacy")}<span className="acct-legacy-arrow" aria-hidden="true">↗</span>
-                </a>
                 <div className="acct-foot">GRISM Studio {STUDIO_VERSION}</div>
               </div>
             </>

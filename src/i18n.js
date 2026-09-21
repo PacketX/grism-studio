@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.96.0";
+export const STUDIO_VERSION = "2.97.0";
 
 export const I18N = {
   en: {
@@ -389,7 +389,6 @@ export const I18N = {
     "chg.tabTip": "This section has unapplied changes", "chg.rowTip": "Changed since the config was loaded",
     "undo.tip": "Undo / redo edits on this tab", "undo.undo": "Undo (Ctrl/Cmd+Z)", "undo.redo": "Redo (Ctrl/Cmd+Shift+Z)",
     "user.signedIn": "Signed in as",
-    "acct.legacy": "Switch to the classic interface",
     "acct.language": "Language", "acct.theme": "Appearance", "acct.light": "Light", "acct.dark": "Dark", "btn.loadRunningTip": "Fetch and load the config currently running on the device",
     "tmpl.tip": "Start from a ready-made configuration",
     "tmpl.lead": "Start from a working pattern. Applying a template loads its filters and chain into the document — then refine them in the other tabs.",
@@ -1039,7 +1038,6 @@ export const I18N = {
     "chg.tabTip": "此區有尚未套用的變更", "chg.rowTip": "自載入設定後已變更",
     "undo.tip": "復原 / 重做此分頁的編輯", "undo.undo": "復原 (Ctrl/Cmd+Z)", "undo.redo": "重做 (Ctrl/Cmd+Shift+Z)",
     "user.signedIn": "登入身分",
-    "acct.legacy": "切換到舊版介面",
     "acct.language": "語言", "acct.theme": "外觀", "acct.light": "日間", "acct.dark": "夜間", "btn.loadRunningTip": "抓取並載入裝置目前執行中的設定",
     "tmpl.tip": "從現成的設定範本開始",
     "tmpl.lead": "從一個可用的範例開始。套用範本會把它的篩選器和鏈結載入到文件中,再到其他分頁調整。",
