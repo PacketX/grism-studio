@@ -1070,7 +1070,7 @@ check("no Chinese entry is left in English", (() => {
   // only escaped this check for being shorter than the four-letter threshold.
   const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
     "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass",
-    "MGMT", "MEC (S1AP/NGAP · GTP)",
+    "MGMT", "MGMT (USB)", "MEC (S1AP/NGAP · GTP)",
     // 3GPP column names, written the same way in both languages
     "MME/AMF UE ID", "RAN UE ID", "PLMN ID", "CELL ID", "SPID",
     "UL GTP TEID", "UL GTP IPv4", "DL GTP TEID", "DL GTP IPv4", "UE IPv4"]);
@@ -2294,9 +2294,78 @@ group("front panel");
   check("nothing overlaps on the G8S either", gclash.length === 0, gclash.join(" "));
   check("everything is inside the G8S canvas",
     gboxes.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= G.width && b.y + b.h <= G.height));
+  /* The Q16: sixteen SFP cages in two blocks, odd above even, exactly as the
+     numbers are printed on the box. The cages are the device's V0-V15 -- the
+     physical front ports are aggregated behind P0-P7, so drawing them by P
+     name would light the wrong slot. */
+  {
+    const Q = C.q16PanelLayout();
+    check("the Q16 has sixteen cages", Q.cages.length === 16);
+    check("named for the ports the device reports",
+      Q.cages.map((c) => c.name).sort((a, b) => +a.slice(1) - +b.slice(1)).join() ===
+      Array.from({ length: 16 }, (_, i) => "V" + i).join());
+    const topY = Math.min(...Q.cages.map((c) => c.y));
+    check("odd numbers on top, even below", Q.cages.every((c) =>
+      (+c.name.slice(1) % 2 === 1) === (c.y === topY)));
+    // two blocks of eight: the gap between them is wider than between cages
+    const xs = [...new Set(Q.cages.map((c) => c.x))].sort((a, b) => a - b);
+    const gaps = xs.slice(1).map((x, i) => x - xs[i]);
+    check("two blocks of eight", gaps.filter((g) => g > Math.min(...gaps)).length === 1);
+    const qboxes = [...Q.cages, { name: "MGMT", ...Q.mgmt }];
+    const qclash = [];
+    for (let i = 0; i < qboxes.length; i++) for (let j = i + 1; j < qboxes.length; j++) {
+      const a = qboxes[i], b = qboxes[j];
+      if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) qclash.push(a.name + "/" + b.name);
+    }
+    check("nothing overlaps on the Q16", qclash.length === 0, qclash.join(" "));
+    check("everything is inside its canvas",
+      qboxes.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= Q.width && b.y + b.h <= Q.height));
+    check("the management jack is to the right of every cage",
+      Q.mgmt.x > Math.max(...Q.cages.map((c) => c.x + c.w)));
+    // this chassis has no bypass relays, and the panel must not invent lamps
+    check("no bypass lamps are drawn", (Q.lamps ?? []).length === 0);
+    check("the model is recognised", C.panelModel("Q16") === "Q16" && C.hasFrontPanel("Q16"));
+  }
+  /* The T4G12 (ET2500) numbers its jacks down each column -- P0 above P1 --
+     which is the opposite of every other chassis here. Getting this backwards
+     would light the wrong jack on a box whose ports are its whole purpose. */
+  {
+    const T = C.t4g12PanelLayout();
+    const topY = Math.min(...T.cages.map((c) => c.y));
+    check("the T4G12 has sixteen ports", T.cages.length === 16);
+    check("even numbers on top, odd below -- unlike the others",
+      T.cages.every((c) => (+c.name.slice(1) % 2 === 0) === (c.y === topY)));
+    check("P0 sits above P1", (() => {
+      const p0 = T.cages.find((c) => c.name === "P0"), p1 = T.cages.find((c) => c.name === "P1");
+      return p0.x === p1.x && p0.y < p1.y;
+    })());
+    // twelve copper, four fibre, as the box carries them
+    check("twelve copper jacks and four SFP",
+      T.cages.filter((c) => c.kind === "rj45").length === 12 &&
+      T.cages.filter((c) => c.kind === "sfp").map((c) => c.name).join() === "P12,P13,P14,P15");
+    check("the SFP cages are to the right of the copper",
+      Math.min(...T.cages.filter((c) => c.kind === "sfp").map((c) => c.x)) >
+      Math.max(...T.cages.filter((c) => c.kind === "rj45").map((c) => c.x)));
+    /* Its management interface is a USB adapter, not a jack on the chassis --
+       the panel says so rather than drawing a port that is not there. */
+    check("the management interface is marked as USB", T.mgmt.kind === "usb");
+    check("and sits outside the ports", T.mgmt.x > Math.max(...T.cages.map((c) => c.x + c.w)));
+    const tboxes = [...T.cages, { name: "USB", ...T.mgmt }];
+    const tclash = [];
+    for (let i = 0; i < tboxes.length; i++) for (let j = i + 1; j < tboxes.length; j++) {
+      const a = tboxes[i], b = tboxes[j];
+      if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) tclash.push(a.name + "/" + b.name);
+    }
+    check("nothing overlaps on the T4G12", tclash.length === 0, tclash.join(" "));
+    check("everything is inside its canvas",
+      tboxes.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= T.width && b.y + b.h <= T.height));
+    check("the model is recognised", C.panelModel("T4G12") === "T4G12" && C.hasFrontPanel("T4G12"));
+  }
   check("states are keyed to the model asked for",
     Object.keys(C.panelStates([], "G8S")).length === 8 &&
-    Object.keys(C.panelStates([], "T12S")).length === 12);
+    Object.keys(C.panelStates([], "T12S")).length === 12 &&
+    Object.keys(C.panelStates([], "Q16")).length === 16 &&
+    Object.keys(C.panelStates([], "T4G12")).length === 16);
 }
 
 /* ---------- simulate page: port buttons sized by how many there are -------- */

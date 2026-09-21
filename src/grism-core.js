@@ -3954,6 +3954,8 @@ export function panelModel(model) {
   const m = String(model ?? "").toUpperCase();
   if (m.includes("T12S")) return "T12S";
   if (m.includes("G8S")) return "G8S";
+  if (m.includes("Q16")) return "Q16";
+  if (m.includes("T4G12")) return "T4G12";
   return null;
 }
 
@@ -3977,6 +3979,73 @@ export function g8sPanelLayout() {
       { id: "BYP-1", x: 76, y: TOP_Y + 9, pair: 1 },
       { id: "BYP-2", x: 76, y: TOP_Y + JACK_H + GAP_Y + 9, pair: 2 },
     ],
+    cages,
+  };
+}
+
+/* The Q16: sixteen SFP cages in two blocks of eight, odd above even, with the
+   management jack to their right. The numbers printed on the box are 0-15 and
+   the device reports those cages as V0-V15 -- the physical front ports are
+   aggregated, so P0-P7 are the groups behind them, not the slots. Drawing the
+   cage by the name the statistics use is what lets a lit cage mean anything. */
+export function q16PanelLayout() {
+  const CAGE_W = 40, CAGE_H = 17, GAP_X = 2, GAP_Y = 7, TOP_Y = 15;
+  const X0 = 96, BLOCK_GAP = 16;
+  const cages = [];
+  [0, 1].forEach((b) => {
+    const x0 = X0 + b * (4 * (CAGE_W + GAP_X) + BLOCK_GAP);
+    for (let i = 0; i < 4; i++) {
+      const n = b * 8 + i * 2;                       // 0,2,4,6 then 8,10,12,14
+      const x = x0 + i * (CAGE_W + GAP_X);
+      cages.push({ name: "V" + (n + 1), x, y: TOP_Y, w: CAGE_W, h: CAGE_H, kind: "sfp" });
+      cages.push({ name: "V" + n, x, y: TOP_Y + CAGE_H + GAP_Y, w: CAGE_W, h: CAGE_H, kind: "sfp" });
+    }
+  });
+  const afterCages = X0 + 2 * (4 * (CAGE_W + GAP_X)) + BLOCK_GAP;
+  return {
+    model: "Q16", kind: "sfp",
+    // no bypass pairs on this chassis
+    lamps: [],
+    width: afterCages + 60,
+    height: TOP_Y * 2 + CAGE_H * 2 + GAP_Y + 2,
+    // MGMT sits to the right of the cages, level between the two rows
+    mgmt: { x: afterCages + 14, y: TOP_Y + (CAGE_H + GAP_Y) / 2, w: 28, h: 17 },
+    cages,
+  };
+}
+
+/* The T4G12 (ET2500): eight copper jacks in a block of four columns, four more
+   in a block of two, then two SFP cages each holding an upper and a lower port.
+   Numbering runs down each column -- P0 above P1 -- which is the opposite of
+   every other chassis here, where the odd number sits on top. It is printed
+   that way on the box, so it is drawn that way.
+
+   The management interface is not on the chassis at all: it is a USB network
+   adapter in the front USB socket, so it is drawn outside the case, plugged in
+   rather than built in. */
+export function t4g12PanelLayout() {
+  const W = 34, H = 17, GAP_X = 3, GAP_Y = 7, TOP_Y = 15;
+  const X0 = 60, BLOCK_GAP = 14;
+  const cages = [];
+  const column = (x, top, bottom, kind) => {
+    cages.push({ name: top, x, y: TOP_Y, w: W, h: H, kind });
+    cages.push({ name: bottom, x, y: TOP_Y + H + GAP_Y, w: W, h: H, kind });
+  };
+  let x = X0;
+  for (let i = 0; i < 4; i++) { column(x, "P" + (i * 2), "P" + (i * 2 + 1), "rj45"); x += W + GAP_X; }
+  x += BLOCK_GAP;
+  for (let i = 0; i < 2; i++) { column(x, "P" + (8 + i * 2), "P" + (9 + i * 2), "rj45"); x += W + GAP_X; }
+  x += BLOCK_GAP;
+  // the two SFP cages: each is one column carrying an upper and a lower port
+  for (let i = 0; i < 2; i++) { column(x, "P" + (12 + i * 2), "P" + (13 + i * 2), "sfp"); x += W + GAP_X; }
+  const usbX = x + BLOCK_GAP + 10;
+  return {
+    model: "T4G12", kind: "rj45",
+    lamps: [],
+    width: usbX + 54,
+    height: TOP_Y * 2 + H * 2 + GAP_Y + 2,
+    // an adapter in the USB socket, drawn clear of the chassis
+    mgmt: { x: usbX, y: TOP_Y + (H + GAP_Y) / 2, w: 30, h: 17, kind: "usb" },
     cages,
   };
 }
@@ -4022,8 +4091,13 @@ export function panelPortState(stat) {
   return { present: true, link, rx, tx, speed: stat.speed == null ? null : Number(stat.speed) };
 }
 
-export const panelLayout = (model) =>
-  panelModel(model) === "G8S" ? g8sPanelLayout() : t12sPanelLayout();
+export const panelLayout = (model) => {
+  const m = panelModel(model);
+  if (m === "G8S") return g8sPanelLayout();
+  if (m === "Q16") return q16PanelLayout();
+  if (m === "T4G12") return t4g12PanelLayout();
+  return t12sPanelLayout();
+};
 
 export const panelStates = (stats, model) => {
   const by = new Map((stats ?? []).filter((s) => s && s.name).map((s) => [String(s.name), s]));

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.97.0";
+export const STUDIO_VERSION = "2.98.0";
 
 export const I18N = {
   en: {
@@ -333,6 +333,7 @@ export const I18N = {
     "set.submitFailed": "Submit failed",
     // traffic statistics page
     "panel.title": "Front panel", "panel.mgmt": "MGMT",
+    "panel.mgmtUsb": "MGMT (USB)",
     "panel.note": "The ports as they sit on the box. A lit light is a link that is up; the arrows light while traffic is moving in or out.",
     "panel.keyBypass": "bypass on", "panel.bypassOn": "bypass on — traffic goes around the device",
     "panel.bypassOff": "bypass off — traffic goes through the device",
@@ -982,6 +983,7 @@ export const I18N = {
     "set.submitFailed": "送出失敗",
     // traffic statistics page
     "panel.title": "前面板", "panel.mgmt": "MGMT",
+    "panel.mgmtUsb": "MGMT (USB)",
     "panel.note": "依照機器實際的配置排列。亮燈表示該埠連線正常,箭頭在有流量進出時亮起。",
     "panel.keyBypass": "旁路開啟", "panel.bypassOn": "旁路開啟 — 流量繞過本機",
     "panel.bypassOff": "旁路關閉 — 流量經過本機",
