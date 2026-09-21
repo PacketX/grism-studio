@@ -3478,6 +3478,79 @@ export const formatPortSpeed = (speed) =>
    ============================================================ */
 
 /* ============================================================
+   Switch interface (cpss)
+   ------------------------------------------------------------
+   Only the boards with a Marvell switch in front of the packet engine have
+   this: <args><cpss> says so. The switch is driven by a config file, and
+   /usr/marvell/default.config is a symlink to whichever of the two the device
+   is using -- normal.config, which the Studio edits field by field, or
+   custom.config, which it edits as text. Either way applying restarts the cpss
+   service, which takes about twenty seconds and drops every link while it
+   happens.
+   ============================================================ */
+
+export const SWITCH_MODES = ["normal", "custom"];
+export const SWITCH_RESTART_SECONDS = 20;
+
+/* The four ports that can run at 100G, each of which swallows the three next
+   to it when it does (views.py's hundred_g_mapping). A port listed here is not
+   independent: setting the master to 100000 forces its siblings down, and the
+   back end does that whether or not the page says so -- so the page says so. */
+export const HUNDRED_G_GROUPS = {
+  "0/1": ["0/0", "0/2", "0/3"],
+  "0/5": ["0/4", "0/6", "0/7"],
+  "0/9": ["0/8", "0/10", "0/11"],
+  "0/13": ["0/12", "0/14", "0/15"],
+};
+
+export function parseSwitchInterfaces(payload) {
+  const rows = Array.isArray(payload?.interfaces) ? payload.interfaces : [];
+  return rows.map((r) => ({
+    name: String(r?.name ?? ""),
+    enable: r?.enable === true,
+    link: r?.link === true,
+    speed: String(r?.speed ?? ""),
+    speedSupport: Array.isArray(r?.speed_support) ? r.speed_support.map(String) : [],
+    fec: String(r?.fec ?? ""),
+    fecSupport: Array.isArray(r?.fec_support) ? r.fec_support.map(String) : [],
+    gbicPn: String(r?.gbic_part_number ?? ""),
+    gbicSn: String(r?.gbic_serial ?? ""),
+    rx: String(r?.gbic_rx_power ?? ""),
+    tx: String(r?.gbic_tx_power ?? ""),
+  })).filter((r) => r.name);
+}
+
+/* Which ports this setting will take down with it, so the page can say it
+   before the switch restarts rather than after. */
+export function hundredGVictims(rows) {
+  const out = {};
+  (rows ?? []).forEach((r) => {
+    const group = HUNDRED_G_GROUPS[r.name];
+    if (group && r.speed === "100000") out[r.name] = group;
+  });
+  return out;
+}
+
+/* What the apply button sends: the same shape the device answered with, since
+   set_switch_interface reads its own output back. */
+export const switchInterfacePayload = (rows) => ({
+  interfaces: (rows ?? []).map((r) => ({
+    name: r.name, enable: !!r.enable, speed: r.speed, fec: r.fec,
+  })),
+});
+
+export const switchIfaceChanged = (base, cur) => {
+  const was = new Map((base ?? []).map((r) => [r.name, r]));
+  return (cur ?? []).filter((r) => {
+    const b = was.get(r.name);
+    return b && (b.enable !== r.enable || b.speed !== r.speed || b.fec !== r.fec);
+  });
+};
+
+/* The file the mode maps to; the symlink is repointed at it. */
+export const switchModeFile = (mode) => (mode === "custom" ? "custom.config" : "normal.config");
+
+/* ============================================================
    MEC mapping table — the S1AP/NGAP item table, a page at a time
    ------------------------------------------------------------
    get_s1ap_items answers with the rows the filters matched, windowed by the

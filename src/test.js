@@ -2608,6 +2608,55 @@ group("port MAC lookup");
   })());
 }
 
+/* ---------- switch interface (cpss) ---------------------------------------- */
+group("switch interface");
+{
+  const payload = { interfaces: [
+    { name: "0/0", enable: true, link: false, speed: "1000", speed_support: ["1000", "10000", "25000"],
+      fec: "None", fec_support: ["None", "FC", "RS", "RS-544"], gbic_part_number: "", gbic_serial: "",
+      gbic_rx_power: "-inf dBm", gbic_tx_power: "-inf dBm" },
+    { name: "0/1", enable: false, link: true, speed: "100000", speed_support: ["1000", "10000", "25000", "40000", "100000"],
+      fec: "RS", fec_support: ["None", "RS"], gbic_part_number: "PN1", gbic_serial: "SN1",
+      gbic_rx_power: "-2.1 dBm", gbic_tx_power: "-1.8 dBm" },
+  ] };
+  const rows = C.parseSwitchInterfaces(payload);
+  check("both ports come through", rows.length === 2);
+  check("what the operator can change is kept apart from what they cannot", (() => {
+    const r = rows[1];
+    return r.enable === false && r.link === true && r.speed === "100000" &&
+      r.speedSupport.includes("100000") && r.fec === "RS" && r.gbicPn === "PN1" && r.rx === "-2.1 dBm";
+  })());
+  check("a broken payload gives no rows",
+    C.parseSwitchInterfaces({}).length === 0 && C.parseSwitchInterfaces(null).length === 0);
+  /* The back end shuts the three siblings down when a master runs at 100G
+     (views.py's hundred_g_mapping), so the page has to say so beforehand. */
+  const victims = C.hundredGVictims(rows);
+  check("a 100G port names the ports it takes with it",
+    JSON.stringify(victims) === JSON.stringify({ "0/1": ["0/0", "0/2", "0/3"] }));
+  check("and says nothing when none is at 100G",
+    Object.keys(C.hundredGVictims(rows.map((r) => ({ ...r, speed: "25000" })))).length === 0);
+  check("only the four masters can do it",
+    Object.keys(C.HUNDRED_G_GROUPS).join() === "0/1,0/5,0/9,0/13");
+  // the device reads its own output back, so send the same shape
+  const body = C.switchInterfacePayload(rows);
+  check("apply sends name, enable, speed and fec",
+    JSON.stringify(body.interfaces[0]) === JSON.stringify({ name: "0/0", enable: true, speed: "1000", fec: "None" }));
+  check("and nothing the device would not accept",
+    Object.keys(body.interfaces[0]).join() === "name,enable,speed,fec");
+  check("only the edited rows count as changed", (() => {
+    const cur = rows.map((r) => r.name === "0/0" ? { ...r, speed: "10000" } : r);
+    const ch = C.switchIfaceChanged(rows, cur);
+    return ch.length === 1 && ch[0].name === "0/0";
+  })());
+  check("a link coming up on its own is not a change",
+    C.switchIfaceChanged(rows, rows.map((r) => ({ ...r, link: !r.link }))).length === 0);
+  // the mode is a symlink to one of two files
+  check("each mode names its file",
+    C.switchModeFile("normal") === "normal.config" && C.switchModeFile("custom") === "custom.config");
+  check("an unknown mode falls back to the normal file", C.switchModeFile("") === "normal.config");
+  check("the restart is announced with the time it takes", C.SWITCH_RESTART_SECONDS === 20);
+}
+
 /* ---------- MEC and deduplication ports ----------------------------------- */
 group("MEC settings");
 {

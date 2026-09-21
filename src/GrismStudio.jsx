@@ -37,6 +37,8 @@ import {
   hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   MEC_ARG_KEYS, mecProblems, dedupProblems,
+  parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
+  hundredGVictims, SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
   S1AP_PAGE_SIZES, S1AP_PAGE_DEFAULT,
@@ -1656,6 +1658,17 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const [hbRows, setHbRows] = React.useState([]);   // status rows lined up with targets
   const [lg, setLg] = React.useState(null);        // NetFlow / syslog / DPI logging
   const [lgBase, setLgBase] = React.useState(null);
+  /* Switch interfaces. Two shapes behind one section: the normal file, which
+     the device hands over already parsed into rows, and the custom one, which
+     is the cpss config text itself. Applying either restarts the switch. */
+  const [swRows, setSwRows] = React.useState(null);
+  const [swBase, setSwBase] = React.useState(null);
+  const [swText, setSwText] = React.useState(null);
+  const [swTextBase, setSwTextBase] = React.useState("");
+  const [swErr, setSwErr] = React.useState("");
+  // seconds left of the switch restart; the page is held while it counts down
+  const [swWait, setSwWait] = React.useState(0);
+
   const [rawCfg, setRawCfg] = React.useState(null);   // for the port pickers
   // LAN bypass: only some models have the relays, so the section appears only
   // when the config says so. null = not read yet, true/false = the relay state.
@@ -1670,6 +1683,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
      filled once one of the sections that needs it has loaded. getConfig caches,
      so asking here costs nothing. */
   const [devModel, setDevModel] = React.useState("");
+  /* <args><cpss> -- the board has a Marvell switch in front of the packet
+     engine -- and which of its two config files it is running. */
+  const [hasCpss, setHasCpss] = React.useState(false);
+  const [switchMode, setSwitchMode] = React.useState("normal");
   const bypassHw = React.useMemo(() => bypassSupport(devModel), [devModel]);
   // port name -> the pair it is wired into, so the interfaces table can say so
   const bypassPairOf = React.useMemo(() => {
@@ -2113,9 +2130,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   // which render evaluates in place — declared later, that is a TDZ error and the
   // whole Settings tab fails to render.
   React.useEffect(() => {
-    if (!loggedIn) { setDevModel(""); return; }
-    getConfig().then((cfg) => setDevModel(String((cfg.args && cfg.args.model) || cfg.model || "")))
-      .catch(() => setDevModel(""));
+    if (!loggedIn) { setDevModel(""); setHasCpss(false); setSwitchMode("normal"); return; }
+    getConfig().then((cfg) => {
+      setDevModel(String((cfg.args && cfg.args.model) || cfg.model || ""));
+      // the switch section's nav entry needs this before any section loads
+      setHasCpss(cfg?.args?.cpss === true);
+      setSwitchMode(String(cfg?.args?.switch_interface || "normal"));
+    }).catch(() => { setDevModel(""); setHasCpss(false); });
   }, [loggedIn, getConfig]);
   // read the relays once when either section opens; they do not move on their own
   React.useEffect(() => {
@@ -2277,6 +2298,85 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     return (ports ?? []).some((p) => base.has(p.name) && !!base.get(p.name).enable !== !!p.enable);
   }, [portsBase, ports]);
 
+  const loadSwitchIf = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_switch_interface", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const rows = parseSwitchInterfaces(await res.json());
+      setSwRows(rows); setSwBase(rows); setSwErr("");
+    } catch (e) { setSwErr(String(e.message || e)); setSwRows([]); setSwBase([]); }
+  }, []);
+  const loadSwitchCustom = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_switch_interface_custom", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const text = await res.text();
+      setSwText(text); setSwTextBase(text); setSwErr("");
+    } catch (e) { setSwErr(String(e.message || e)); setSwText(""); }
+  }, []);
+  React.useEffect(() => {
+    if (!loggedIn || section !== "switchif") return;
+    if (switchMode === "custom") { if (swText === null) loadSwitchCustom(); }
+    else if (swRows === null) loadSwitchIf();
+  }, [loggedIn, section, switchMode, swRows, swText, loadSwitchIf, loadSwitchCustom]);
+
+  /* Every one of these restarts the cpss service, which takes about twenty
+     seconds and drops the links while it runs. Hold the page for that long and
+     then read back, rather than letting someone apply twice into a switch that
+     is still coming up. */
+  const holdForSwitch = (after) => {
+    setSwWait(SWITCH_RESTART_SECONDS);
+    const id = setInterval(() => setSwWait((n) => {
+      if (n > 1) return n - 1;
+      clearInterval(id);
+      after?.();
+      return 0;
+    }), 1000);
+  };
+  const applySwitchRows = async () => {
+    setSubmit({ state: "sending", msg: "" }); setSwErr("");
+    try {
+      const res = await fetch("/grism/task/set_switch_interface", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(switchInterfacePayload(swRows)),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setSubmit({ state: "idle", msg: "" });
+      holdForSwitch(() => { setSwRows(null); setSwBase(null); loadSwitchIf(); });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+  const applySwitchCustom = async () => {
+    setSubmit({ state: "sending", msg: "" }); setSwErr("");
+    try {
+      const res = await fetch("/grism/task/submit_switch_interface_custom", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "text/plain" }, body: swText ?? "",
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setSubmit({ state: "idle", msg: "" });
+      holdForSwitch(() => { setSwText(null); loadSwitchCustom(); });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+  /* Changing mode is two things: the symlink cpss actually reads, and the
+     record of it in <args> so the device comes back up the same way. */
+  const applySwitchMode = async (mode) => {
+    setSubmit({ state: "sending", msg: "" }); setSwErr("");
+    try {
+      const body = new URLSearchParams();
+      body.set("data", buildArgsConfigSet({ switch_interface: mode }));
+      const w = await fetch("/grism/task/submit_config", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!w.ok) throw new Error("HTTP " + w.status);
+      const r = await fetch(`/grism/task/set_cpss_config_default?path=${encodeURIComponent(switchModeFile(mode))}`,
+        { credentials: "include" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      setSubmit({ state: "idle", msg: "" });
+      setSwitchMode(mode);
+      holdForSwitch(() => { setSwRows(null); setSwBase(null); setSwText(null); });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+
   const pageRef = React.useRef(null);
   /* A new section starts at its first card. The page owns the scroll, so
      switching sections used to leave it wherever the last one had been read
@@ -2311,6 +2411,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
           <div className="set-seg">
             <button className={section === "system" ? "on" : ""} onClick={() => setSection("system")}>{tr("set.system")}</button>
             <button className={section === "ports" ? "on" : ""} onClick={() => setSection("ports")}>{tr("set.interfaces")}</button>
+            {/* only the boards with a Marvell switch in front of the packet
+                engine have this; <args><cpss> is how they say so */}
+            {hasCpss && (
+              <button className={section === "switchif" ? "on" : ""}
+                onClick={() => setSection("switchif")}>{tr("set.switchIf")}</button>
+            )}
             <button className={section === "packet" ? "on" : ""} onClick={() => setSection("packet")}>{tr("set.packet")}</button>
             <button className={section === "auth" ? "on" : ""} onClick={() => setSection("auth")}>{tr("set.auth")}</button>
             <button className={section === "logging" ? "on" : ""} onClick={() => setSection("logging")}>{tr("set.logging")}</button>
@@ -2345,6 +2451,111 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {state === "error" && <div className="sys-err">{tr("set.loadFailed")}: {errMsg}</div>}
       {submit.state === "error" && <div className="sys-err">{tr("set.submitFailed")}: {submit.msg}</div>}
       {submit.state === "ok" && <div className="set-ok-banner">{tr("set.applied")}</div>}
+
+      {section === "switchif" && (
+        <div className="set-forms">
+          <section className="sys-card">
+            <h3 className="sys-card-title">{tr("set.switchIf")}</h3>
+            <p className="set-hint">{tr("set.switchIfNote")}</p>
+            {/* Which of the two config files the switch is reading. Changing it
+                repoints the symlink and restarts the switch, so it is a
+                confirmation rather than a plain toggle. */}
+            <div className="set-grid">
+              <label className="ml"><span>{tr("set.switchMode")}</span>
+                <select value={switchMode} disabled={submit.state === "sending" || swWait > 0}
+                  onChange={(e) => setConfirm({ kind: "switchMode", mode: e.target.value })}>
+                  {SWITCH_MODES.map((m) => <option key={m} value={m}>{tr("set.switchMode." + m)}</option>)}
+                </select></label>
+            </div>
+            <p className="set-hint">{tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}</p>
+            {swErr && <div className="sys-err">{tr("set.loadFailed")}: {swErr}</div>}
+          </section>
+
+          {switchMode !== "custom" ? (
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.switchPorts")}</h3>
+              {swRows === null ? <p className="sys-note dim">{tr("set.loading")}</p> : (() => {
+                const changed = switchIfaceChanged(swBase ?? [], swRows);
+                const victims = hundredGVictims(swRows);
+                const forced = new Set(Object.values(victims).flat());
+                const setRow = (name, patch) => setSwRows((rows) =>
+                  rows.map((r) => r.name === name ? { ...r, ...patch } : r));
+                return (<>
+                  <div className="tf-table-wrap">
+                    <table className="tf-table">
+                      <thead><tr>
+                        <th>{tr("set.switchPort")}</th><th>{tr("set.enabled")}</th>
+                        <th>{tr("tf.link")}</th><th>{tr("tf.speed")}</th><th>FEC</th>
+                        <th>{tr("set.switchGbic")}</th><th>{tr("set.switchPower")}</th>
+                      </tr></thead>
+                      <tbody>
+                        {swRows.map((r) => (
+                          <tr key={r.name} className={r.enable ? "" : "port-off"}>
+                            <td className="tf-name mono">{r.name}</td>
+                            <td><input type="checkbox" checked={r.enable}
+                              onChange={(e) => setRow(r.name, { enable: e.target.checked })} /></td>
+                            <td>{<span className={"tf-link " + (r.link ? "up" : "down")}>
+                              {r.link ? tr("tf.up") : tr("tf.down")}</span>}</td>
+                            <td><select value={r.speed} onChange={(e) => setRow(r.name, { speed: e.target.value })}>
+                              {[...new Set([r.speed, ...r.speedSupport])].filter(Boolean)
+                                .map((v) => <option key={v} value={v}>{fmtSpeed(v)}</option>)}
+                            </select></td>
+                            <td><select value={r.fec} onChange={(e) => setRow(r.name, { fec: e.target.value })}>
+                              {[...new Set([r.fec, ...r.fecSupport])].filter(Boolean)
+                                .map((v) => <option key={v} value={v}>{v}</option>)}
+                            </select></td>
+                            <td className="mono svc-ver">{r.gbicPn
+                              ? <span title={r.gbicPn + " / " + r.gbicSn}>{r.gbicPn}</span>
+                              : <span className="dim">—</span>}</td>
+                            <td className="mono svc-ver">{r.gbicPn || r.rx
+                              ? <span title={`RX ${r.rx} · TX ${r.tx}`}>{r.rx}</span>
+                              : <span className="dim">—</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* the back end forces these down whether the page says so or
+                      not, so the page says so */}
+                  {Object.entries(victims).map(([master, group]) => (
+                    <p className="set-hint warn" key={master}>
+                      {tr("set.switch100g").replace("{port}", master).replace("{ports}", group.join(", "))}
+                    </p>
+                  ))}
+                  {forced.size > 0 && <p className="set-hint">{tr("set.switch100gNote")}</p>}
+                  <div className="set-actions">
+                    <span className="set-changed">{changed.length
+                      ? `${changed.length} ${tr("set.portsChanged")}` : ""}</span>
+                    <button className="copy-btn" disabled={!changed.length}
+                      onClick={() => setSwRows(swBase)}>{tr("set.revert")}</button>
+                    <button className="sys-refresh"
+                      disabled={submit.state === "sending" || swWait > 0 || !changed.length}
+                      onClick={() => setConfirm({ kind: "switchRows" })}>
+                      {submit.state === "sending" ? tr("set.submitting") : tr("set.apply")}</button>
+                  </div>
+                </>);
+              })()}
+            </section>
+          ) : (
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.switchCustom")}</h3>
+              <p className="set-hint">{tr("set.switchCustomNote")}</p>
+              {swText === null ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
+                <textarea className="sw-custom mono" value={swText} spellCheck={false}
+                  onChange={(e) => setSwText(e.target.value)} />
+                <div className="set-actions">
+                  <button className="copy-btn" disabled={swText === swTextBase}
+                    onClick={() => setSwText(swTextBase)}>{tr("set.revert")}</button>
+                  <button className="sys-refresh"
+                    disabled={submit.state === "sending" || swWait > 0 || swText === swTextBase || !swText.trim()}
+                    onClick={() => setConfirm({ kind: "switchCustom" })}>
+                    {submit.state === "sending" ? tr("set.submitting") : tr("set.apply")}</button>
+                </div>
+              </>)}
+            </section>
+          )}
+        </div>
+      )}
 
       {section === "ports" && (
         <div className="set-ports">
@@ -3569,8 +3780,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
-            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}` : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
+              : ["switchMode", "switchRows", "switchCustom"].includes(confirm.kind)
+              ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
+              : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -3594,6 +3808,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               /* Loading a template replaces the pipeline document, which is not
                  what this page is about -- so say so before leaving it. */
               if (k === "template") { onUseTemplate(confirm.tpl); return; }
+              if (k === "switchMode") { applySwitchMode(confirm.mode); return; }
+              if (k === "switchRows") { applySwitchRows(); return; }
+              if (k === "switchCustom") { applySwitchCustom(); return; }
               if (k === "vport") { submitVports(); return; }
               if (k === "speed") { submitSpeed(); return; }
               if (k === "bypass") {
@@ -3717,6 +3934,17 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
           </div>
         </div>
       )}
+      {swWait > 0 && (
+        <div className="apply-overlay">
+          <div className="apply-card">
+            <div className="apply-spinner" />
+            <div className="apply-msg">{tr("set.switchRestarting")}</div>
+            <div className="apply-sub">{tr("set.switchRestartingBody")}</div>
+            <div className="apply-phase">{tr("set.switchSeconds").replace("{n}", String(swWait))}</div>
+          </div>
+        </div>
+      )}
+
       {powered && (
         <div className="apply-overlay">
           <div className="apply-card">

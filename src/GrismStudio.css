@@ -1684,3 +1684,10 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .fp-usb-socket { fill: var(--fp-slot); stroke: var(--fp-line); stroke-width: 1; }
 .fp-usb-lead { stroke: var(--fp-line); stroke-width: 1.5; stroke-linecap: round; }
 .fp-mgmt.usb { stroke-dasharray: 3 2; }
+
+/* the cpss config, edited as the text it is */
+.sw-custom { width: 100%; min-height: 360px; resize: vertical; padding: 10px 12px;
+  background: var(--bg); color: var(--txt); border: 1px solid var(--line-2);
+  border-radius: 8px; font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-wrap: normal;
+  overflow-x: auto; }
+.sw-custom:focus { outline: none; border-color: var(--accent); }
