@@ -2766,6 +2766,46 @@ group("switch interface");
 }
 
 /* ---------- MEC and deduplication ports ----------------------------------- */
+group("service state, beside what the configuration asks for");
+{
+  const status = C.parseServiceStatus({ service_status: {
+    grism: { state: "running", pids: [1467] },
+    sshd: { state: "running", pids: [1470] },
+    snmpd: { state: "stopped", pids: [] },
+    lldpd: { state: "unknown" },
+  } });
+  check("the device's answer is read as given",
+    status.grism.state === "running" && status.snmpd.state === "stopped" && status.grism.pids[0] === 1467);
+  check("a service that is on and up is simply running",
+    JSON.stringify(C.serviceRowState({ name: "sshd", enable: true }, status)) ===
+    JSON.stringify({ state: "running", pids: [1470], mismatch: false }));
+  /* The two things worth pointing at: enabled and dead, or switched off and
+     still there until the next boot. */
+  check("enabled but not running is a mismatch",
+    C.serviceRowState({ name: "snmpd", enable: true }, status).mismatch === true);
+  check("disabled but still running is a mismatch too",
+    C.serviceRowState({ name: "grism", enable: false }, status).mismatch === true);
+  check("disabled and stopped is not",
+    C.serviceRowState({ name: "snmpd", enable: false }, status).mismatch === false);
+  /* Some services have no process of their own -- xmlrpc runs inside grism,
+     backup is a cron job -- and "stopped" would be a claim, not a reading. */
+  check("unknown stays unknown and never reads as a mismatch", (() => {
+    const a = C.serviceRowState({ name: "lldpd", enable: true }, status);
+    const b = C.serviceRowState({ name: "xmlrpc", enable: true }, status);
+    return a.state === "unknown" && !a.mismatch && b.state === "unknown" && !b.mismatch;
+  })());
+  check("nothing read yet is unknown, not stopped",
+    C.serviceRowState({ name: "sshd", enable: true }, {}).state === "unknown");
+  check("a broken payload yields no claims",
+    Object.keys(C.parseServiceStatus(null)).length === 0 &&
+    Object.keys(C.parseServiceStatus({})).length === 0);
+  // the packet application is the device; there is no state with it off
+  check("grism has no toggle", C.ALWAYS_ON_SERVICES.has("grism") && !C.ALWAYS_ON_SERVICES.has("sshd"));
+  check("each update target names the file it expects",
+    C.COMPONENT_TARGETS.map((t) => t.id).join() === "grism-studio,pyhttpd" &&
+    C.COMPONENT_TARGETS[0].marker === "index.html" && C.COMPONENT_TARGETS[1].marker === "manage.py");
+}
+
 group("NOT holds a group, so it can be added to");
 {
   const n = C.mkNot();

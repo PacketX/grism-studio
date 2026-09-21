@@ -2265,6 +2265,48 @@ export function parseServices(cfg) {
   })).filter((s) => s.name && !HIDDEN_SERVICES.has(s.name));
 }
 
+/* What a manual update may replace, and what the file for it looks like. The
+   device decides the same thing again on its side -- this list is what the
+   page offers and what it tells the reader to expect, not the authority. */
+export const COMPONENT_TARGETS = [
+  { id: "grism-studio", labelKey: "set.upStudio", noteKey: "set.upStudioNote", marker: "index.html" },
+  { id: "pyhttpd", labelKey: "set.upPywww", noteKey: "set.upPywwwNote", marker: "manage.py" },
+];
+
+/* The packet application is what the box is. Switching it off leaves a device
+   that boots, answers the web page and forwards nothing, which is not a state
+   anyone wants and not one the page should offer -- so it has no toggle. */
+export const ALWAYS_ON_SERVICES = new Set(["grism"]);
+
+/* What the device says is actually running, beside what the configuration says
+   should be. The two disagree more often than one would like: a service can be
+   enabled and dead, or disabled and still up until the next boot. */
+export function parseServiceStatus(payload) {
+  const raw = payload?.service_status ?? {};
+  const out = {};
+  Object.entries(raw).forEach(([name, v]) => {
+    const state = String(v?.state ?? "unknown");
+    out[name] = { state, pids: Array.isArray(v?.pids) ? v.pids : [] };
+  });
+  return out;
+}
+
+/* Reading a row: what the configuration asks for against what is there.
+   "unknown" is its own answer -- some services have no process of their own
+   (xmlrpc runs inside grism, backup is a cron job), and saying "stopped" for
+   those would be a claim rather than a reading. */
+export function serviceRowState(service, status) {
+  const st = status?.[service?.name];
+  if (!st || st.state === "unknown") return { state: "unknown", mismatch: false };
+  const running = st.state === "running";
+  return {
+    state: running ? "running" : "stopped",
+    pids: st.pids ?? [],
+    // enabled but not there, or switched off and still up
+    mismatch: !!service?.enable !== running,
+  };
+}
+
 /* Which services the user toggled. */
 export function changedServices(original, edited) {
   const base = new Map((original ?? []).map((s) => [s.name, s]));

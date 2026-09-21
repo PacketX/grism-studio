@@ -39,6 +39,7 @@ import {
   MEC_ARG_KEYS, mecProblems, dedupProblems,
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
+  parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
@@ -1952,6 +1953,43 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   /* What each service says it is. grism answers over the RPC, so it is the
      running binary speaking; the rest are what the device can tell us. */
   const [svcVersions, setSvcVersions] = React.useState({});
+  /* And whether it is actually running, which the configuration cannot say.
+     Re-read on a timer: a service that dies while the page is open is exactly
+     what someone on this page is looking for. */
+  const [svcStatus, setSvcStatus] = React.useState({});
+  const loadSvcStatus = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_service_status", { credentials: "include" });
+      if (res.ok) setSvcStatus(parseServiceStatus(await res.json()));
+    } catch { /* the column says "unknown", which is the truth here */ }
+  }, []);
+  React.useEffect(() => {
+    if (!loggedIn || section !== "services") return;
+    loadSvcStatus();
+    const id = setInterval(loadSvcStatus, 5000);
+    return () => clearInterval(id);
+  }, [loggedIn, section, loadSvcStatus]);
+
+  /* Replacing a component with an uploaded build. The web UI is the awkward
+     one: the code doing the upload is the code being replaced, so the page has
+     to be reloaded afterwards rather than carrying on. */
+  const [upload, setUpload] = React.useState({ target: "grism-studio", file: null, state: "idle", msg: "" });
+  const uploadComponent = async () => {
+    if (!upload.file) return;
+    setUpload((o) => ({ ...o, state: "sending", msg: "" }));
+    try {
+      const body = new FormData();
+      body.append("target", upload.target);
+      body.append("file", upload.file);
+      const res = await fetch("/grism/task/upload_component", { method: "POST", credentials: "include", body });
+      if (!res.ok) throw new Error((await res.text()).trim() || "HTTP " + res.status);
+      setUpload((o) => ({ ...o, state: "done", file: null, msg: "" }));
+      loadSvcStatus();
+      setSvcVersions({});
+      fetch("/grism/task/get_service_versions", { credentials: "include" })
+        .then((r) => r.ok && r.json().then(setSvcVersions)).catch(() => {});
+    } catch (e) { setUpload((o) => ({ ...o, state: "error", msg: String(e.message || e) })); }
+  };
   React.useEffect(() => {
     if (!loggedIn || section !== "services") return;
     let alive = true;
@@ -3664,12 +3702,25 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <h3 className="sys-card-title">{tr("set.services")} <span className="sys-card-metric">{svc.filter((x) => x.enable).length}/{svc.length}</span></h3>
               <div className="tf-table-wrap">
                 <table className="tf-table">
-                  <thead><tr><th>{tr("set.service")}</th><th>{tr("set.svcVersion")}</th>
+                  <thead><tr><th>{tr("set.service")}</th><th>{tr("set.svcState")}</th>
+                    <th>{tr("set.svcVersion")}</th>
                     <th>{tr("tf.desc")}</th><th>{tr("set.enabled")}</th></tr></thead>
                   <tbody>
                     {svc.map((x, i) => (
                       <tr key={x.name} className={x.enable ? "" : "port-off"}>
                         <td className="tf-name mono">{x.name}</td>
+                        {/* what is actually there, beside what the config asks
+                            for -- the two disagree more often than one expects */}
+                        <td>{(() => {
+                          const st = serviceRowState(x, svcStatus);
+                          if (st.state === "unknown") return <span className="dim">—</span>;
+                          return (<>
+                            <span className={"tf-link " + (st.state === "running" ? "up" : "down")}
+                              title={st.pids?.length ? "PID " + st.pids.join(", ") : undefined}>
+                              {tr(st.state === "running" ? "set.svcRunning" : "set.svcStopped")}</span>
+                            {st.mismatch && <span className="svc-mismatch" title={tr(x.enable ? "set.svcShouldRun" : "set.svcShouldStop")}>!</span>}
+                          </>);
+                        })()}</td>
                         {/* Only the services that can say; the rest keep a dash
                             rather than an empty cell. The WWW service is two
                             programs -- nginx in front of pywww -- and pywww is
@@ -3684,8 +3735,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                           </>);
                         })()}</td>
                         <td className="dim">{x.description || "—"}</td>
-                        <td><input type="checkbox" checked={x.enable}
-                          onChange={(e) => setSvc((l) => l.map((y, j) => j === i ? { ...y, enable: e.target.checked } : y))} /></td>
+                        {/* The packet application has no switch: a device with
+                            it off forwards nothing, which is not a configuration
+                            anyone means to make. */}
+                        <td>{ALWAYS_ON_SERVICES.has(x.name)
+                          ? <span className="dim" title={tr("set.svcAlwaysOnTip")}>{tr("set.svcAlwaysOn")}</span>
+                          : <input type="checkbox" checked={x.enable}
+                              onChange={(e) => setSvc((l) => l.map((y, j) => j === i ? { ...y, enable: e.target.checked } : y))} />}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -3697,6 +3753,42 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   onClick={() => setSvc(svcBase)}>{tr("set.revert")}</button>
                 <button className="sys-refresh" disabled={submit.state === "sending" || changedServices(svcBase, svc).length === 0}
                   onClick={() => setConfirm({ kind: "services" })}>{tr("set.apply")}</button>
+              </div>
+            </section>
+
+            {/* Updating a component by hand: the same build that goes into a
+                firmware image, uploaded on its own. Kept beside the services
+                it updates rather than on the firmware page, which is about the
+                whole image. */}
+            <section className="sys-card">
+              <h3 className="sys-card-title">{tr("set.upTitle")}</h3>
+              <p className="set-hint">{tr("set.upNote")}</p>
+              <div className="set-grid">
+                <label className="ml"><span>{tr("set.upTarget")}</span>
+                  <select value={upload.target} disabled={upload.state === "sending"}
+                    onChange={(e) => setUpload({ target: e.target.value, file: null, state: "idle", msg: "" })}>
+                    {COMPONENT_TARGETS.map((c) => <option key={c.id} value={c.id}>{tr(c.labelKey)}</option>)}
+                  </select></label>
+                <label className="ml wide"><span>{tr("set.upFile")}</span>
+                  <input type="file" accept=".tgz,.tar.gz,application/gzip"
+                    disabled={upload.state === "sending"}
+                    onChange={(e) => setUpload((o) => ({ ...o, file: e.target.files?.[0] ?? null, state: "idle", msg: "" }))} /></label>
+              </div>
+              <p className="set-hint">{tr(COMPONENT_TARGETS.find((c) => c.id === upload.target)?.noteKey ?? "")}</p>
+              {upload.state === "error" && <p className="set-hint err">{tr("set.upFailed")}: {upload.msg}</p>}
+              {/* The page that did the upload is the page that was replaced, so
+                  it is stale from this moment on -- say so instead of pretending
+                  the new build is what is on screen. */}
+              {upload.state === "done" && (
+                <p className="set-hint ok">{tr(upload.target === "grism-studio" ? "set.upDoneStudio" : "set.upDone")}
+                  {upload.target === "grism-studio" &&
+                    <button className="copy-btn" onClick={() => window.location.reload()}>{tr("set.upReload")}</button>}
+                </p>
+              )}
+              <div className="set-actions">
+                <button className="sys-refresh" disabled={!upload.file || upload.state === "sending"}
+                  onClick={() => setConfirm({ kind: "upload", target: upload.target, name: upload.file?.name ?? "" })}>
+                  {upload.state === "sending" ? tr("set.upSending") : tr("set.upGo")}</button>
               </div>
             </section>
 
@@ -3888,11 +3980,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw","upload"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
-              : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+              : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -3928,6 +4020,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 setBypassMode(bypassHw, confirm.pair, !confirm.on);
                 return;
               }
+              if (k === "upload") { uploadComponent(); return; }
               if (k === "changePw") {
                 setPw({ old: "", next: "", confirm: "" });
                 changeOwnPassword(confirm.old, confirm.next);
