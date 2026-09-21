@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.104.0";
+export const STUDIO_VERSION = "2.105.0";
 
 export const I18N = {
   en: {
@@ -97,6 +97,7 @@ export const I18N = {
     "sess.note": "Total sessions is the maximum the device supports; concurrent is how many are open right now, and usage is the share of that capacity in use. Protocol and port breakdowns show the busiest entries first — sessions is the live count, bytes the traffic those sessions are carrying. Filter counters show how many packets each filter evaluated and how many it matched.",
     "svc.title": "Flow services", "svc.public": "Public", "svc.private": "Private",
     "svc.scope": "Scope", "svc.service": "Service", "svc.hosts": "Top 100 hosts", "svc.host": "Host",
+    "svc.loading": "Reading the flow service table…",
     "svc.none": "No services reported.",
     "svc.note": "Services are identified by the ports their traffic uses. Click a row to see the hosts behind it — the top 100 talkers by traffic, newest data each refresh. Public covers traffic to and from the internet; private covers traffic that stays inside your network.",
     "ctry.title": "Traffic by country", "ctry.country": "Country", "ctry.packets": "Packets",
@@ -105,6 +106,7 @@ export const I18N = {
     "tab.settings": "Settings",
     "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System",
     // system status page
+    "sys.loadingStatus": "Reading the device status…",
     "sys.title": "System status", "sys.needLogin": "Sign in to the device to view system status.",
     "sys.refresh": "Refresh", "sys.refreshing": "refreshing…", "sys.auto": "Auto-refresh",
     "sys.lastUpdated": "Updated", "sys.loadFailed": "Couldn't load system status",
@@ -316,6 +318,7 @@ export const I18N = {
     "set.confirmApplyTitle": "Apply these settings?",
     "set.confirmApplyBody": "The changes will be written to the device and take effect immediately.",
     "set.interfaces": "Interfaces", "set.port": "Port", "set.ifidx": "Index",
+    "set.switchLoading": "Reading the switch — it checks every transceiver, which takes a moment",
     "set.switchIf": "Switch Interface",
     "set.switchIfNote": "The Marvell switch in front of the packet engine. It reads one of two configuration files: the normal one, edited port by port below, or a custom one written by hand.",
     "set.switchMode": "Configuration",
@@ -795,6 +798,7 @@ export const I18N = {
     "sess.note": "總連線數是裝置支援的最大連線數量,在線數是目前開啟中的連線,使用率則是已用掉的容量比例。協定與埠的明細依繁忙程度排序,「連線數」為目前在線數,「位元組」為這些連線承載的流量。篩選器計數顯示每個篩選器比對了多少封包、命中多少。",
     "svc.title": "流量服務", "svc.public": "公開", "svc.private": "私有",
     "svc.scope": "範圍", "svc.service": "服務", "svc.hosts": "TOP 100 主機", "svc.host": "主機",
+    "svc.loading": "正在讀取流量服務表…",
     "svc.none": "未回報任何服務。",
     "svc.note": "服務是依流量使用的埠號辨識。點選任一列可看到其背後的主機——依流量排序的前 100 名,每次更新都是最新資料。「公開」是與網際網路往來的流量,「私有」則是留在內部網路的流量。",
     "ctry.title": "各國流量", "ctry.country": "國家", "ctry.packets": "封包數",
@@ -803,6 +807,7 @@ export const I18N = {
     "tab.settings": "設定",
     "ws.overview": "總覽", "ws.pipeline": "封包處理", "ws.traffic": "流量統計", "ws.system": "系統",
     // system status page
+    "sys.loadingStatus": "正在讀取裝置狀態…",
     "sys.title": "系統狀態", "sys.needLogin": "登入裝置以檢視系統狀態。",
     "sys.refresh": "重新整理", "sys.refreshing": "整理中…", "sys.auto": "自動重整",
     "sys.lastUpdated": "更新於", "sys.loadFailed": "無法載入系統狀態",
@@ -1014,6 +1019,7 @@ export const I18N = {
     "set.confirmApplyTitle": "套用這些設定?",
     "set.confirmApplyBody": "變更會寫入裝置並立即生效。",
     "set.interfaces": "介面", "set.port": "埠", "set.ifidx": "索引",
+    "set.switchLoading": "正在讀取交換器 — 會逐一檢查每個光模組,需要幾秒",
     "set.switchIf": "交換器介面",
     "set.switchIfNote": "封包引擎前端的 Marvell 交換器。它讀取兩種設定檔其中之一:一般模式(在下方逐埠設定),或自訂模式(直接編輯設定文字)。",
     "set.switchMode": "設定方式",

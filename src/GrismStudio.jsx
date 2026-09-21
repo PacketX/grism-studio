@@ -88,6 +88,22 @@ function writePref(key, value) {
    Escape closes the topmost by firing the close its own scrim already carries;
    focus moves inside on open and back to the opener on close; tab cycles
    within the panel; and the panel is marked up as a dialog. */
+/* A few reads genuinely take a second or two: the system status gathers
+   sensors, the switch walks the transceiver of every cage over I2C, and the
+   flow service table is built on the device. Those three say so while they
+   wait; everything else answers fast enough that a spinner would only
+   flicker. Block form stands in for content that is not there yet, inline
+   form sits next to a label that is. */
+function Spinner({ label, inline = false }) {
+  if (inline) return <span className="spin" role="status" aria-label={label} />;
+  return (
+    <div className="spin-block" role="status" aria-live="polite">
+      <span className="spin" aria-hidden="true" />
+      {label && <span className="spin-label">{label}</span>}
+    </div>
+  );
+}
+
 function ModalA11y() {
   React.useEffect(() => {
     let opener = null;
@@ -1290,11 +1306,16 @@ function SystemStatusTab({ loggedIn, t }) {
         <div className="sys-controls">
           {updatedAt && <span className="sys-updated">{tr("sys.lastUpdated")} {updatedAt.toLocaleTimeString()}</span>}
           <label className="sys-auto"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> {tr("sys.auto")}</label>
-          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>{state === "loading" ? tr("sys.refreshing") : tr("sys.refresh")}</button>
+          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>
+            {state === "loading" && <Spinner inline label={tr("sys.refreshing")} />}
+            {state === "loading" ? tr("sys.refreshing") : tr("sys.refresh")}</button>
         </div>
       </div>
 
       {state === "error" && <div className="sys-err">{tr("sys.loadFailed")}: {errMsg}</div>}
+
+      {/* the first read, with nothing on the page behind it yet */}
+      {state === "loading" && !status && <Spinner label={tr("sys.loadingStatus")} />}
 
       {(dev.model || dev.version || dev.serial || dev.machineId) && (
         <div className="sys-summary sys-identity">
@@ -2543,7 +2564,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
           {switchMode !== "custom" ? (
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.switchPorts")}</h3>
-              {swRows === null ? <p className="sys-note dim">{tr("set.loading")}</p> : (() => {
+              {swRows === null ? <Spinner label={tr("set.switchLoading")} /> : (() => {
                 const changed = switchIfaceChanged(swBase ?? [], swRows);
                 const victims = bondVictims(swRows);
                 const forced = new Set(Object.values(victims).flatMap((b) => b.ports));
@@ -2619,7 +2640,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.switchCustom")}</h3>
               <p className="set-hint">{tr("set.switchCustomNote")}</p>
-              {swText === null ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
+              {swText === null ? <Spinner label={tr("set.switchLoading")} /> : (<>
                 <textarea className="sw-custom mono" value={swText} spellCheck={false}
                   onChange={(e) => setSwText(e.target.value)} />
                 <div className="set-actions">
@@ -4063,6 +4084,11 @@ function usePolledJson(url, loggedIn, { transform, defaultSec = 10, prefKey = "r
      answers, and re-arming after each response means only one is ever in
      flight. */
   const seqRef = React.useRef(0);
+  /* The polled state stays "ok" across refreshes on purpose -- a page that
+     flickered "loading" every few seconds would be unreadable. But a refresh
+     the user pressed is worth showing, and on a slow read it is several
+     seconds of apparently nothing happening, so that one is tracked apart. */
+  const [reloading, setReloading] = React.useState(false);
   const load = React.useCallback(async () => {
     const mine = ++seqRef.current;
     setState((s) => (s === "ok" ? "ok" : "loading"));
@@ -4078,6 +4104,10 @@ function usePolledJson(url, loggedIn, { transform, defaultSec = 10, prefKey = "r
       setState("error"); setErrMsg(String(e.message || e));
     }
   }, [url]);
+  const reload = React.useCallback(async () => {
+    setReloading(true);
+    try { await load(); } finally { setReloading(false); }
+  }, [load]);
 
   React.useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
   React.useEffect(() => {
@@ -4096,7 +4126,7 @@ function usePolledJson(url, loggedIn, { transform, defaultSec = 10, prefKey = "r
     return () => { alive = false; clearTimeout(timer); };
   }, [refreshSec, loggedIn, load]);
 
-  return { data, state, errMsg, updatedAt, refreshSec, setRefreshSec, reload: load };
+  return { data, state, errMsg, updatedAt, refreshSec, setRefreshSec, reload, reloading };
 }
 
 /* The header every traffic page shares: title, last-updated, interval, refresh. */
@@ -4115,8 +4145,10 @@ function TrafficHead({ title, tr, poll, onClear }) {
           <button className="del" disabled={busy} onClick={() => setAsking(true)}>
             {busy ? tr("tf.clearing") : tr("tf.clear")}</button>
         )}
-        <button className="sys-refresh" onClick={poll.reload} disabled={poll.state === "loading"}>
-          {poll.state === "loading" ? tr("tf.refreshing") : tr("tf.refresh")}</button>
+        <button className="sys-refresh" onClick={poll.reload}
+          disabled={poll.state === "loading" || poll.reloading}>
+          {(poll.state === "loading" || poll.reloading) && <Spinner inline label={tr("tf.refreshing")} />}
+          {poll.state === "loading" || poll.reloading ? tr("tf.refreshing") : tr("tf.refresh")}</button>
       </div>
       {asking && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setAsking(false)}>
@@ -4728,7 +4760,8 @@ function TrafficServicesTab({ loggedIn, t }) {
       <p className="page-note">{tr("svc.note")}</p>
       {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
 
-      {services.length === 0 ? <p className="sys-note dim">{tr("svc.none")}</p> : (
+      {poll.state === "loading" && !poll.data ? <Spinner label={tr("svc.loading")} />
+        : services.length === 0 ? <p className="sys-note dim">{tr("svc.none")}</p> : (
         <div className="tf-table-wrap">
           <table className="tf-table">
             <thead><tr>
