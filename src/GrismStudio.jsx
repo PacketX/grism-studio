@@ -22,7 +22,7 @@ import {
   mkAction, mkActionMod, mkChain, firstTwoPorts, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
-  dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  branchConditions, outDestinations, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
@@ -6924,6 +6924,23 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
        never looked again. Creating the first chain does not remount the tab,
        so ctrl+wheel stayed dead until the user switched tabs and back. */
   }, [chain]);
+  /* Hovering a filter node shows what it is testing. The node can only fit
+     "F1,!F3", which is enough to find the filter and not enough to read the
+     chain -- and reading the chain is the whole point of the picture. */
+  const [tip, setTip] = React.useState(null);   // { x, y, rows, op }
+  const showTip = (ev, node) => {
+    const rows = node.t === "branch" ? branchConditions(node.fids, doc.filters, tr) : [];
+    const outs = node.t === "out" ? outDestinations(node.ports, doc.outputs, tr) : [];
+    if (!rows.length && !outs.length) return;
+    const box = ev.currentTarget.getBoundingClientRect();
+    const host = paneRef.current?.getBoundingClientRect();
+    if (!host) return;
+    /* Positioned off the node's own box rather than off the model, so zoom and
+       pan need no arithmetic here: the browser has already done it. */
+    setTip({ x: box.left - host.left + paneRef.current.scrollLeft + box.width / 2,
+             y: box.top - host.top + paneRef.current.scrollTop,
+             rows, outs, op: node.fidOp === "and" ? tr("crit.and") : tr("crit.or") });
+  };
   const center = (n) => ({ x: n._x + NODE_W / 2 + PAD, y: n._y + PAD });
   const byId = Object.fromEntries(placed.map((n) => [n.id, n]));
 
@@ -7021,7 +7038,10 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               </g>;
             }
             const x = c.x - NODE_W / 2, y = c.y - NODE_H / 2, drop = isDrop(n), bad = problemIds.has(n.id);
-            return <g key={n.id} className={`gnode ${n.t}${drop ? " drop" : ""}${bad ? " bad" : ""}${isSel ? " sel" : ""}`} onClick={(ev) => { ev.stopPropagation(); setSelId(n.id); }}>
+            return <g key={n.id} className={`gnode ${n.t}${drop ? " drop" : ""}${bad ? " bad" : ""}${isSel ? " sel" : ""}`}
+              onClick={(ev) => { ev.stopPropagation(); setSelId(n.id); }}
+              onMouseEnter={(ev) => showTip(ev, n)}
+              onMouseLeave={() => setTip(null)}>
               <rect x={x} y={y} width={NODE_W} height={NODE_H} rx="9" />
               {bad && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
               {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">{tr("ch.capIngress")}</text><text x={c.x} y={c.y + 12} className="n-main">{n.ports}</text></>}
@@ -7030,6 +7050,28 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             </g>;
           })}
         </svg>
+        {tip && (
+          <div className="ch-tip" style={{ left: tip.x, top: tip.y }} role="tooltip">
+            {/* a custom output: what it does to the packet, which is the
+                reason it exists rather than being a plain port */}
+            {(tip.outs ?? []).map((o) => (
+              <div className="ch-tip-row" key={o.id}>
+                <span className="ch-tip-id out">{o.id}{o.port ? ` → ${o.port}` : ""}</span>
+                {o.name && <span className="ch-tip-name">{o.name}</span>}
+                <span className="ch-tip-cond">{o.actions.join(" · ")}</span>
+              </div>
+            ))}
+            {tip.rows.map((r, i) => (
+              <div className="ch-tip-row" key={r.id + i}>
+                <span className={"ch-tip-id" + (r.neg ? " neg" : "") + (r.missing ? " miss" : "")}>
+                  {(r.neg ? "!" : "") + r.id}</span>
+                {r.name && <span className="ch-tip-name">{r.name}</span>}
+                <span className={"ch-tip-cond" + (r.missing ? " miss" : "")}>{r.cond}</span>
+                {i < tip.rows.length - 1 && <span className="ch-tip-op">{tip.op}</span>}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <aside className="chain-rail">

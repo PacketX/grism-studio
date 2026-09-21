@@ -339,6 +339,75 @@ export function describeCriterion(node, t) {
   const joiner = node.t === "and" ? ` ${AND} ` : ` ${OR} `;
   return kids.length > 1 ? kids.map((k) => (k.includes(` ${AND} `) || k.includes(` ${OR} `) ? `(${k})` : k)).join(joiner) : kids[0];
 }
+/* What a custom output actually does to a packet, in one short line per
+   action. The chain node can only show "O1(P5)": that names the output and
+   its port, and says nothing about the rewriting, tagging or encapsulation
+   that is the reason for defining an output rather than naming a port.
+
+   The labels are OUT_MODS' own, which is what the outputs tab shows, so the
+   two read the same way. */
+export function outputActions(o, t) {
+  const tr = t || ((k) => k);
+  const out = [];
+  (o?.mods ?? []).filter((m) => m && m.k).forEach((m) => {
+    const meta = OUT_MOD_INDEX[m.k];
+    const label = meta?.label ?? m.k;
+    const val = String(m.val ?? "").trim();
+    /* A VLAN modifier carries the operation as well as the id, and "replace"
+       against "add" is the whole difference between two very similar outputs. */
+    const op = m.op ? String(m.op) : "";
+    const attrs = Object.entries(m.attrs ?? {})
+      .filter(([, v]) => v && v !== "no").map(([k, v]) => (v === "yes" ? k : `${k}=${v}`));
+    out.push([label, op, val, attrs.join(" ")].filter(Boolean).join(" ").trim());
+  });
+  // the output's own attributes: encapsulation type, MTU, the stop-after timer
+  const oa = o?.oattrs ?? {};
+  Object.entries(oa).forEach(([k, v]) => {
+    const val = String(v ?? "").trim();
+    if (val) out.push(`${k} ${val}`);
+  });
+  if (!out.length) out.push(tr("ch.tipPlainOut"));
+  return out;
+}
+
+/* The outputs a chain's <out> names, resolved. Plain ports are left out: the
+   node already shows them and there is nothing more to say about one. */
+export function outDestinations(ports, outputs, t) {
+  const by = new Map((outputs ?? []).map((o) => ["O" + o.id, o]));
+  return String(ports || "").split(",").map((s) => s.trim()).filter(Boolean)
+    .filter((tok) => by.has(tok))
+    .map((tok) => {
+      const o = by.get(tok);
+      return { id: tok, port: o.port || "", name: o.name || o.alt || "", actions: outputActions(o, t) };
+    });
+}
+
+/* What a branch node is actually testing, filter by filter, for the hover on
+   the chain canvas. The node itself can only show "F1,!F3" -- enough to find
+   the filter but not to read the chain -- so this resolves each reference to
+   its name and its conditions.
+
+   A reference to a filter that is not defined is reported as such rather than
+   skipped: an unresolved id is exactly what someone hovering wants to find. */
+export function branchConditions(fids, filters, t) {
+  const tr = t || ((k) => k);
+  const by = new Map((filters ?? []).map((f) => ["F" + f.id, f]));
+  return String(fids || "").split(",").map((s) => s.trim()).filter(Boolean).map((tok) => {
+    const neg = tok.startsWith("!");
+    const id = tok.replace(/^!/, "");
+    const f = by.get(id);
+    return {
+      id, neg,
+      name: f ? (f.name || f.alt || "") : "",
+      cond: f ? describeCriterion(f.root, t) : "",
+      missing: !f,
+      /* An empty <or> matches everything -- legal, and the one case where a
+         filter with no conditions is not a mistake but is worth saying. */
+      empty: !!f && !hasAnyFind(f.root),
+    };
+  }).map((x) => ({ ...x, cond: x.missing ? tr("ch.tipMissing") : x.empty ? tr("ch.tipEmpty") : x.cond }));
+}
+
 // Flatten a chain's decision tree into readable routing rules, e.g.
 // [{ test: "F1", match: "P1", notmatch: "(next)" }, …] plus a terminal.
 // Turn a chain's decision tree into a structure the Overview can lay out. Returns

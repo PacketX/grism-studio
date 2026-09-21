@@ -1768,3 +1768,20 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
   .tf-num.moved.a, .tf-num.moved.b{animation:none; background:rgba(var(--accent-rgb),.10);}
   .tf-live.a, .tf-live.b{animation:none;}
 }
+
+/* What a node is testing or doing, on hover. The node itself can only fit an
+   id -- enough to find the filter or output, not enough to read the chain. */
+.ch-tip{position:absolute; transform:translate(-50%, -100%); margin-top:-10px; z-index:6;
+  pointer-events:none; max-width:420px; padding:8px 11px; border-radius:9px;
+  background:var(--panel); border:1px solid var(--line); box-shadow:0 10px 30px -12px rgba(0,0,0,.45);
+  font-size:12px; line-height:1.5; color:var(--txt);}
+.ch-tip-row{display:flex; align-items:baseline; gap:7px; flex-wrap:wrap;}
+.ch-tip-row + .ch-tip-row{margin-top:3px;}
+.ch-tip-id{font-family:var(--mono); font-weight:700; color:var(--accent); flex:0 0 auto;}
+.ch-tip-id.neg{color:var(--warn);}
+.ch-tip-id.miss{color:var(--danger, #c0392b);}
+.ch-tip-id.out{color:var(--accent);}
+.ch-tip-name{color:var(--txt-dim);}
+.ch-tip-cond{font-family:var(--mono);}
+.ch-tip-cond.miss{color:var(--danger, #c0392b);}
+.ch-tip-op{font-weight:700; color:var(--txt-dim); font-size:11px;}

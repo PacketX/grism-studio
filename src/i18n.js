@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.107.0";
+export const STUDIO_VERSION = "2.108.0";
 
 export const I18N = {
   en: {
@@ -701,6 +701,9 @@ export const I18N = {
     "ch.dropNote": "0 discards the packet outright, which is not the same as leaving it unspecified.",
     "ch.portsDefaultNote": "Default list — sign in to load the device\u2019s actual ports.",
     "ch.zoomIn": "Zoom in", "ch.zoomOut": "Zoom out", "ch.zoomReset": "Back to 100%",
+    "ch.tipMissing": "no filter with this id is defined",
+    "ch.tipEmpty": "no conditions — matches everything",
+    "ch.tipPlainOut": "forwards unchanged",
     "ch.zoomFit": "fit to view", "ch.zoomFitTip": "Scale the drawing until the whole chain fits the pane. Ctrl + scroll zooms too.",
     "ch.filtersReferenced": "Filters referenced",
     "ch.vlanOp": "VLAN operation", "ch.vlanId": "VLAN id",
@@ -1402,6 +1405,9 @@ export const I18N = {
     "ch.dropNote": "選擇 0 代表明確丟棄,與「未指定」不同。",
     "ch.portsDefaultNote": "這是預設清單 — 登入後會載入裝置實際的連接埠。",
     "ch.zoomIn": "放大", "ch.zoomOut": "縮小", "ch.zoomReset": "回到 100%",
+    "ch.tipMissing": "沒有這個 id 的篩選器",
+    "ch.tipEmpty": "沒有任何條件 — 會比對到全部",
+    "ch.tipPlainOut": "原樣轉送,不做任何改寫",
     "ch.zoomFit": "縮放至適合", "ch.zoomFitTip": "縮放到整條鏈結剛好放進畫面。也可以用 Ctrl + 滾輪縮放。",
     "ch.filtersReferenced": "引用的篩選器",
     "ch.vlanOp": "VLAN 操作", "ch.vlanId": "VLAN 編號",

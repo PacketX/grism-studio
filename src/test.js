@@ -2766,6 +2766,54 @@ group("switch interface");
 }
 
 /* ---------- MEC and deduplication ports ----------------------------------- */
+group("what a chain node is doing");
+{
+  const filters = [
+    { id: 1, name: "web", root: { t: "or", children: [
+      { t: "find", field: "tcp.port", rel: "==", val: "443" }] } },
+    { id: 3, name: "", root: { t: "and", children: [] } },
+  ];
+  const rows = C.branchConditions("F1,!F3,F9", filters, makeT("en"));
+  check("every reference is resolved, in order", rows.map((r) => r.id).join() === "F1,F3,F9");
+  check("a filter reads as its name and its conditions",
+    rows[0].name === "web" && /443/.test(rows[0].cond), rows[0].cond);
+  check("a negated reference says so", rows[1].neg === true && rows[0].neg === false);
+  /* An empty <or> matches everything -- legal, and worth saying rather than
+     showing an empty line. */
+  check("an empty filter says it matches everything",
+    rows[1].empty && /matches everything/.test(rows[1].cond), rows[1].cond);
+  check("a reference to nothing is reported, not skipped",
+    rows[2].missing && /no filter/.test(rows[2].cond), rows[2].cond);
+  check("nothing to resolve yields nothing", C.branchConditions("", filters).length === 0 &&
+    C.branchConditions(null, filters).length === 0);
+
+  /* An output is worth hovering only when it is one: a plain port is already
+     printed on the node. */
+  const outputs = [
+    { id: 1, name: "mirror", port: "P5", mods: [
+      { k: "Q", val: "100", op: "add" },
+      { k: "stripping", val: "vxlan" },
+      { k: "modify_srcip", val: "10.1.1.1", attrs: { nat: "yes", sessionDir: "no" } }],
+      oattrs: { stl: "60" } },
+    { id: 2, name: "plain", port: "P6", mods: [], oattrs: {} },
+  ];
+  const outs = C.outDestinations("O1,P3", outputs, makeT("en"));
+  check("only defined outputs are described", outs.length === 1 && outs[0].id === "O1");
+  check("the port it sends to comes along", outs[0].port === "P5" && outs[0].name === "mirror");
+  check("every action is named, with its operation and value",
+    outs[0].actions.some((a) => /VLAN tag \(Q\) add 100/.test(a)) &&
+    outs[0].actions.some((a) => /Strip header\/tag vxlan/.test(a)), outs[0].actions.join(" | "));
+  check("an attribute that is set is kept, one that is not is dropped",
+    outs[0].actions.some((a) => /Modify source IP 10\.1\.1\.1 nat/.test(a)) &&
+    !outs[0].actions.some((a) => /sessionDir/.test(a)), outs[0].actions.join(" | "));
+  check("the output's own attributes are listed too",
+    outs[0].actions.some((a) => a === "stl 60"));
+  check("an output that does nothing says so",
+    /forwards unchanged/.test(C.outDestinations("O2", outputs, makeT("en"))[0].actions[0]));
+  check("a node that names only ports has nothing to add",
+    C.outDestinations("P1,P2", outputs).length === 0);
+}
+
 group("traffic that is moving");
 {
   /* The rates are rounded to two decimals, so a port carrying a few packets a
