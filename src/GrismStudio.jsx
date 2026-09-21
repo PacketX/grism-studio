@@ -38,7 +38,7 @@ import {
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   MEC_ARG_KEYS, mecProblems, dedupProblems,
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
-  bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag,
+  bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
@@ -4421,6 +4421,21 @@ function TrafficTab({ loggedIn, t, model = "" }) {
     return () => clearInterval(id);
   }, [refreshSec, loggedIn, load]);
 
+  /* Which ports carried something since the last poll, so the table can show
+     it moving rather than just holding large numbers. The parity flips on each
+     poll: the two classes carry the same animation, and swapping between them
+     is what restarts it without remounting a cell. */
+  const prevSample = React.useRef(new Map());
+  const [moved, setMoved] = React.useState({});
+  const [beat, setBeat] = React.useState(0);
+  React.useEffect(() => {
+    const { moved: m, next } = portMovement(prevSample.current, rows);
+    prevSample.current = next;
+    setMoved(m);
+    setBeat((n) => n + 1);
+  }, [rows]);
+  const flow = (name, dir) => moved[name]?.[dir] ? " moved " + (beat % 2 ? "a" : "b") : "";
+
   /* Four cages bonded into one port, as the counters themselves report it: the
      master at 40G or 100G, the three it took at nothing. No extra request. */
   const bonds = React.useMemo(() => statsBonds(rows, model || devModel), [rows, model, devModel]);
@@ -4501,6 +4516,9 @@ function TrafficTab({ loggedIn, t, model = "" }) {
                     <tr className={"tf-row" + (open ? " open" : "")} onClick={() => setExpanded(open ? null : r.idx)}>
                       <td className="tf-expander"><span className="tf-caret" aria-hidden="true">{open ? "▾" : "▸"}</span></td>
                       <td className="tf-name">{r.name}
+                        {moved[r.name] &&
+                          <span className={"tf-live" + (beat % 2 ? " a" : " b")} title={tr("tf.movingTip")}
+                            aria-label={tr("tf.movingTip")} />}
                         {bypassed.has(r.name) &&
                           <span className="tf-bypass" title={tr("tf.bypassTip")}>{tr("tf.bypass")}</span>}
                         {/* bonded away: the counters below are real but will
@@ -4513,12 +4531,12 @@ function TrafficTab({ loggedIn, t, model = "" }) {
                       <td className="tf-desc">{descs[r.name] || "—"}</td>
                       <td><span className={"tf-link " + (up ? "up" : "down")}>{up ? tr("tf.up") : tr("tf.down")}</span></td>
                       <td className="mono">{r.speed ? fmtSpeed(r.speed) : "—"}</td>
-                      <td className="tf-num"><b>{(Number(r.inMbps) || 0).toFixed(2)}</b> <span className="tf-unit">Mbps</span></td>
-                      <td className="tf-num"><b>{(Number(r.outMbps) || 0).toFixed(2)}</b> <span className="tf-unit">Mbps</span></td>
-                      <td className="tf-num mono">{fmtNum(r.inPackets)}</td>
-                      <td className="tf-num mono">{fmtNum(r.outPackets)}</td>
-                      <td className="tf-num mono">{fmtBytes(r.inBytes)}</td>
-                      <td className="tf-num mono">{fmtBytes(r.outBytes)}</td>
+                      <td className={"tf-num" + flow(r.name, "in")}><b>{(Number(r.inMbps) || 0).toFixed(2)}</b> <span className="tf-unit">Mbps</span></td>
+                      <td className={"tf-num" + flow(r.name, "out")}><b>{(Number(r.outMbps) || 0).toFixed(2)}</b> <span className="tf-unit">Mbps</span></td>
+                      <td className={"tf-num mono" + flow(r.name, "in")}>{fmtNum(r.inPackets)}</td>
+                      <td className={"tf-num mono" + flow(r.name, "out")}>{fmtNum(r.outPackets)}</td>
+                      <td className={"tf-num mono" + flow(r.name, "in")}>{fmtBytes(r.inBytes)}</td>
+                      <td className={"tf-num mono" + flow(r.name, "out")}>{fmtBytes(r.outBytes)}</td>
                       <td className={"tf-num mono" + (inDrops ? " tf-bad" : "")}>{fmtNum(inDrops)}</td>
                       {/* out drops are normal on many setups — keep them in the default text colour */}
                       <td className="tf-num mono">{fmtNum(outDrops)}</td>

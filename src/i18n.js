@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.106.0";
+export const STUDIO_VERSION = "2.107.0";
 
 export const I18N = {
   en: {
@@ -387,6 +387,7 @@ export const I18N = {
     "tf.updated": "Updated", "tf.iface": "Interface", "tf.link": "Link", "tf.up": "up", "tf.down": "down",
     "tf.bypass": "bypass",
     "tf.bypassTip": "This pair is joined by its relay — traffic crosses it without reaching the device, so these counters do not see it.",
+    "tf.movingTip": "Carrying traffic right now — its packet counters moved on the last read.",
     "tf.bondedTip": "{port} runs at {speed} using all four lanes, so these four cages are one port. The others carry nothing.",
     "tf.speed": "Speed", "tf.inRate": "In", "tf.outRate": "Out",
     "tf.inPkts": "In packets", "tf.outPkts": "Out packets", "tf.inBytes": "In bytes", "tf.outBytes": "Out bytes",
@@ -1089,6 +1090,7 @@ export const I18N = {
     "tf.updated": "更新於", "tf.iface": "介面", "tf.link": "連線", "tf.up": "up", "tf.down": "down",
     "tf.bypass": "bypass",
     "tf.bypassTip": "此埠對正由繼電器直接對接,流量不會進入本機,因此這裡的計數看不到它。",
+    "tf.movingTip": "目前有流量 — 上一次讀取時封包計數有增加。",
     "tf.bondedTip": "{port} 以 {speed} 使用全部四條通道,這四個埠等於一個埠,其餘三個不會有流量。",
     "tf.speed": "速率", "tf.inRate": "入", "tf.outRate": "出",
     "tf.inPkts": "入封包", "tf.outPkts": "出封包", "tf.inBytes": "入位元組", "tf.outBytes": "出位元組",

@@ -1746,3 +1746,25 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 /* a field that must be filled in */
 .vp-f .req{color:var(--warn); font-weight:700; margin-left:1px;}
 .vp-f input[aria-invalid="true"]{border-color:var(--warn);}
+
+/* Traffic that is actually moving. The counters are large and change in the
+   last digits, so a page of them looks static even under load; a cell whose
+   port carried something since the last read lights briefly instead. The two
+   classes carry the same animation -- swapping between them on each poll is
+   what makes it play again. */
+.tf-num.moved.a, .tf-num.moved.b{animation:tf-flow 1.1s ease-out;}
+.tf-num.moved.b{animation-name:tf-flow-b;}
+@keyframes tf-flow{from{background:rgba(var(--accent-rgb),.22);}to{background:transparent;}}
+@keyframes tf-flow-b{from{background:rgba(var(--accent-rgb),.22);}to{background:transparent;}}
+/* and a dot beside the port, so a busy port is findable without reading every
+   number in the row */
+.tf-live{display:inline-block; width:7px; height:7px; margin-left:7px; border-radius:50%;
+  background:var(--accent); vertical-align:1px;}
+.tf-live.a{animation:tf-pulse 1.1s ease-out;}
+.tf-live.b{animation:tf-pulse-b 1.1s ease-out;}
+@keyframes tf-pulse{0%{opacity:1; box-shadow:0 0 0 0 rgba(var(--accent-rgb),.55);}100%{opacity:.55; box-shadow:0 0 0 7px rgba(var(--accent-rgb),0);}}
+@keyframes tf-pulse-b{0%{opacity:1; box-shadow:0 0 0 0 rgba(var(--accent-rgb),.55);}100%{opacity:.55; box-shadow:0 0 0 7px rgba(var(--accent-rgb),0);}}
+@media (prefers-reduced-motion: reduce){
+  .tf-num.moved.a, .tf-num.moved.b{animation:none; background:rgba(var(--accent-rgb),.10);}
+  .tf-live.a, .tf-live.b{animation:none;}
+}

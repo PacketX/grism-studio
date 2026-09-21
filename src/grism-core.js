@@ -4392,6 +4392,35 @@ export const panelLayout = (model) => {
   return t12sPanelLayout();
 };
 
+/* What moved since the last poll, per port and per direction.
+
+   The rates alone cannot answer this: they are rounded to two decimals, so a
+   port carrying a few packets a second reads 0.00 Mbps and looks idle, and a
+   steady stream reads the same number twice in a row and looks frozen. The
+   packet counters only ever go up, so a counter that grew is traffic that
+   arrived -- which is the thing the page is being asked to show.
+
+   Returns the next sample map alongside the verdict so the caller keeps one
+   ref and no state that can disagree with it. */
+export function portMovement(prev, rows) {
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const next = new Map();
+  const moved = {};
+  (rows ?? []).forEach((r) => {
+    const name = String(r?.name ?? "");
+    if (!name) return;
+    const sample = { in: num(r.inPackets), out: num(r.outPackets) };
+    next.set(name, sample);
+    const was = prev?.get(name);
+    if (!was) return;                    // first sighting: nothing to compare
+    /* A counter that went down is the device's counters having been cleared,
+       not traffic. Say nothing rather than flashing the whole table. */
+    const din = sample.in - was.in, dout = sample.out - was.out;
+    if (din > 0 || dout > 0) moved[name] = { in: din > 0, out: dout > 0 };
+  });
+  return { moved, next };
+}
+
 export const panelStates = (stats, model) => {
   const by = new Map((stats ?? []).filter((s) => s && s.name).map((s) => [String(s.name), s]));
   return Object.fromEntries(panelLayout(model).cages.map((c) => [c.name, panelPortState(by.get(c.name))]));

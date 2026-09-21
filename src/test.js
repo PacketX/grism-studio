@@ -2766,6 +2766,45 @@ group("switch interface");
 }
 
 /* ---------- MEC and deduplication ports ----------------------------------- */
+group("traffic that is moving");
+{
+  /* The rates are rounded to two decimals, so a port carrying a few packets a
+     second reads 0.00 Mbps -- the packet counters are what says otherwise. */
+  const first = C.portMovement(new Map(), [
+    { name: "P0", inPackets: 10, outPackets: 0 },
+    { name: "P1", inPackets: 0, outPackets: 0 }]);
+  check("the first sample claims nothing: there is nothing to compare with",
+    Object.keys(first.moved).length === 0 && first.next.size === 2);
+  const second = C.portMovement(first.next, [
+    { name: "P0", inPackets: 11, outPackets: 0 },
+    { name: "P1", inPackets: 0, outPackets: 0 }]);
+  check("a counter that grew is traffic, on that port and that direction",
+    JSON.stringify(second.moved) === JSON.stringify({ P0: { in: true, out: false } }));
+  const bothWays = C.portMovement(second.next, [
+    { name: "P0", inPackets: 12, outPackets: 5 },
+    { name: "P1", inPackets: 3, outPackets: 0 }]);
+  check("both directions are reported apart",
+    bothWays.moved.P0.in && bothWays.moved.P0.out && bothWays.moved.P1.in && !bothWays.moved.P1.out);
+  const still = C.portMovement(bothWays.next, [
+    { name: "P0", inPackets: 12, outPackets: 5 },
+    { name: "P1", inPackets: 3, outPackets: 0 }]);
+  check("a port that carried nothing says nothing", Object.keys(still.moved).length === 0);
+  /* Counters going backwards is the device having been cleared, not traffic;
+     flashing the whole table at that moment would be a lie. */
+  const cleared = C.portMovement(still.next, [
+    { name: "P0", inPackets: 0, outPackets: 0 },
+    { name: "P1", inPackets: 0, outPackets: 0 }]);
+  check("clearing the counters is not traffic", Object.keys(cleared.moved).length === 0);
+  check("and the next sample starts from the cleared values",
+    C.portMovement(cleared.next, [{ name: "P0", inPackets: 1, outPackets: 0 }]).moved.P0.in === true);
+  check("a port that appears mid-run is not treated as having moved",
+    Object.keys(C.portMovement(new Map([["P0", { in: 0, out: 0 }]]),
+      [{ name: "P9", inPackets: 400, outPackets: 400 }]).moved).length === 0);
+  check("rows without a name are ignored, and rubbish counts as zero",
+    Object.keys(C.portMovement(new Map(), [{ inPackets: 5 }, { name: "", inPackets: 5 }]).moved).length === 0 &&
+    C.portMovement(new Map([["P0", { in: 0, out: 0 }]]), [{ name: "P0", inPackets: "x" }]).moved.P0 === undefined);
+}
+
 group("F3T1G4 front panel");
 {
   /* ERS5511: three SFP28 and one SFP+ in a row, four copper jacks in two
