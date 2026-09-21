@@ -682,11 +682,18 @@ export default function GrismStudio() {
                   // a tab shows a dot when its section differs from the loaded config
                   const TAB_SECTION = { filters: "filters", inputs: "inputs", outputs: "outputs", actions: "actions", chain: "chains" };
                   const tabBtn = (k) => (
-                    <button key={k} className={"tab" + (tab === k ? " on" : "") + (advKeys.includes(k) ? " adv" : "")} onClick={() => setTab(k)}>
+                    <button key={k} title={k === "export" ? t("tab.exportTip") : undefined}
+                      className={"tab" + (tab === k ? " on" : "") + (advKeys.includes(k) ? " adv" : "")
+                        + (k === "export" && (changes?.total ?? 0) > 0 && tab !== "export" ? " cta" : "")}
+                      onClick={() => setTab(k)}>
                       {t("tab." + k)}
                       {k === "filters" && <span className="tab-badge">{doc.filters.length}</span>}
                       {counts[k] > 0 && <span className="tab-badge">{counts[k]}</span>}
                       {k === "chain" && (doc.chains?.length ?? 0) > 0 && <span className="tab-badge">{doc.chains.length}</span>}
+                      {/* what is waiting to be submitted, on the tab that
+                          submits it -- the step people were missing */}
+                      {k === "export" && (changes?.total ?? 0) > 0 &&
+                        <span className="tab-badge pending">{changes.total}</span>}
                       {(changes?.[TAB_SECTION[k]]?.count ?? 0) > 0 &&
                         <span className="tab-changed" title={t("chg.tabTip")} aria-label={t("chg.tabTip")} />}
                     </button>
@@ -959,6 +966,17 @@ export default function GrismStudio() {
 
       <div className="body">
         <TabErrorBoundary tabKey={tab} label={t("err.tabFailed")} retryLabel={t("err.retry")}>
+        {/* The document lives in the browser until it is submitted, and the
+            submit is on another tab. Nothing on the editing tabs said so, so
+            people finished their work and thought they were done. */}
+        {(changes?.total ?? 0) > 0 && tab !== "export" &&
+          [...PIPELINE_EDIT_TABS, "simulate"].includes(tab) && (
+          <div className="to-export">
+            <span className="to-export-badge">{t("ex.pending")}</span>
+            <span>{t("ex.pendingBody").replace("{n}", String(changes.total))}</span>
+            <button className="to-export-go" onClick={() => goTab("export")}>{t("ex.pendingGo")}</button>
+          </div>
+        )}
         {(tab === "inputs" || tab === "outputs" || tab === "actions") && (
           <div className="adv-note">
             <span className="adv-note-badge">{t("adv.badge")}</span>
@@ -6891,9 +6909,10 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
         })}
         <button className="filter-add" onClick={addChain}>{tr("ch.addChain")}</button>
         {chain && <button className="filter-dup" onClick={() => dupChain(chain)}>{tr("ch.dupChain")}</button>}
-        {chains.length > 1 && (
-          <button className="chain-del" onClick={() => delChain(cid)}>{tr("ch.deleteChain")}</button>
-        )}
+        {/* including the last one: a configuration with no chains is a
+            legitimate thing to build towards, and the empty state offers the
+            way back. Hiding the button left the final chain undeletable. */}
+        {chain && <button className="chain-del" onClick={() => delChain(cid)}>{tr("ch.deleteChain")}</button>}
       </aside>
 
       <section className="canvas-wrap" ref={paneRef} onClick={() => setSelId(null)}>

@@ -429,6 +429,74 @@ export function namesOnly(fids, names) {
   const nm = toks.map((tok) => { const neg = tok.startsWith("!"); const id = tok.replace(/^!/, ""); const n = names[id]; return n ? (neg ? "not " : "") + n : ""; }).filter(Boolean);
   return nm.join(", ");
 }
+/* What the inputs of a document do, in one line each. Kept apart from
+   inferIntent so the overview and anything else can ask for just this. */
+export function inputIntent(doc, t) {
+  const tr = t || ((k) => k);
+  const out = [];
+  const inputs = doc?.inputs ?? [];
+  const portsOf = (list) => [...new Set(list.map((i) => i.port).filter(Boolean))].join(", ");
+  const replay = inputs.filter((i) => i.type === "replayPcap");
+  const gen = inputs.filter((i) => i.type !== "replayPcap");
+  if (replay.length) {
+    /* Where the packets come from: the file names, or the directory being
+       watched. A few is enough to recognise the set by. */
+    const srcs = [];
+    replay.forEach((i) => {
+      if ((i.pcapMode || "files") === "files") {
+        (i.filepaths ?? []).filter(Boolean).forEach((p) => srcs.push(p.split("/").filter(Boolean).pop()));
+      } else if ((i.fields?.scandir || "").trim()) {
+        srcs.push((i.fields.scandir || "").trim() + "/");
+      }
+    });
+    const uniq = [...new Set(srcs)];
+    const shown = uniq.slice(0, 3).join(", ") + (uniq.length > 3 ? ` +${uniq.length - 3}` : "");
+    out.push(tr("intent.replay").replace("{n}", String(replay.length))
+      .replace("{ports}", portsOf(replay) || "—")
+      .replace("{src}", shown || tr("intent.replayNoSrc")));
+    /* The trap in this feature: a replay input transmits out of its port, so
+       unless that port loops back the packets never reach the chains. */
+    out.push(tr("intent.replayOut"));
+  }
+  if (gen.length) {
+    const protos = [...new Set(gen.map((i) => i.fields?.protocol).filter(Boolean))].join(", ");
+    out.push(tr("intent.gen").replace("{n}", String(gen.length))
+      .replace("{ports}", portsOf(gen) || "—")
+      .replace("{proto}", protos || tr("intent.genAnyProto")));
+  }
+  return out;
+}
+
+/* What the actions do. They act at ingress, before any chain sees the packet,
+   or tie two links together -- either way they are easy to forget about when
+   reading a chain, so the front page names them. */
+export function actionIntent(doc, t) {
+  const tr = t || ((k) => k);
+  const out = [];
+  const actions = doc?.actions ?? [];
+  const pairs = actions.filter((a) => a.type === "linkpairs");
+  const proc = actions.filter((a) => a.type !== "linkpairs");
+  if (proc.length) {
+    const ports = [...new Set(proc.map((a) => a.port).filter(Boolean))].join(", ");
+    /* what is actually being done, named rather than counted: "strip vlan,
+       tagging timestamp" tells the reader something "3 modifiers" does not */
+    const what = [...new Set(proc.flatMap((a) => (a.mods ?? []).filter((m) => m && m.k).map((m) => {
+      const val = String(m.val ?? "").trim();
+      return m.k === "stripping" || m.k === "tagging" ? `${m.k} ${val}`.trim()
+        : val ? `${m.k} ${val}` : m.k;
+    })))];
+    const shown = what.slice(0, 3).join(", ") + (what.length > 3 ? ` +${what.length - 3}` : "");
+    out.push(tr("intent.action").replace("{n}", String(proc.length))
+      .replace("{ports}", ports || "—")
+      .replace("{what}", shown || tr("intent.actionNoMods")));
+  }
+  if (pairs.length) {
+    out.push(tr("intent.linkpairs").replace("{n}", String(pairs.length))
+      .replace("{pairs}", pairs.map((a) => `${a.portA}-${a.portB}`).join(", ")));
+  }
+  return out;
+}
+
 // Used for running configs and pasted XML where there's no authored description.
 // Returns an array of short observation strings.
 export function inferIntent(doc, t) {
@@ -436,6 +504,13 @@ export function inferIntent(doc, t) {
   const out = [];
   const chains = doc.chains ?? [];
   const filters = doc.filters ?? [];
+  /* Inputs come first, and before the no-chains exit: they are the one part of
+     a configuration where the device sends packets of its own rather than
+     forwarding what arrives, which is worth saying plainly on the front page.
+     A replay-only document has no chains at all and used to describe itself as
+     nothing whatsoever. */
+  out.push(...inputIntent(doc, tr));
+  out.push(...actionIntent(doc, tr));
   if (!chains.length) return out;
   // map ingress -> set of destination ports (terminal + branch outs)
   const dests = (tree) => { const s = new Set(); (function w(n){ if(!n||n.t==="__unset__")return; if(n.t==="out"){ if(n.ports&&n.ports!=="0") n.ports.split(",").forEach((p)=>s.add(p.trim())); return; } if(n.t==="branch"){ w(n.match); w(n.notmatch); } })(tree); return s; };

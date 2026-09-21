@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.102.0";
+export const STUDIO_VERSION = "2.103.0";
 
 export const I18N = {
   en: {
@@ -460,6 +460,14 @@ export const I18N = {
     "crit.and": "AND", "crit.or": "OR", "crit.not": "NOT",
     "crit.matchAll": "(matches all)", "crit.matchAny": "(matches any)",
     // inferred intent
+    "intent.action": "Processes packets at ingress on {ports} — {n} action(s): {what}. This happens before any chain sees them.",
+    "intent.actionNoMods": "nothing set yet",
+    "intent.linkpairs": "Links {pairs} together — if one of a pair goes down, the other is forced down too ({n} pair(s)).",
+    "intent.replay": "Replays pcap files out of {ports} — {n} replay input(s), from {src}.",
+    "intent.replayNoSrc": "no source set yet",
+    "intent.replayOut": "A replay transmits out of its port rather than injecting as ingress, so the packets only reach the chains if that port loops back.",
+    "intent.gen": "Generates traffic on {ports} — {n} generator input(s), {proto}.",
+    "intent.genAnyProto": "protocol not set",
     "intent.bidir": "Bidirectional forwarding between {pairs} — traffic passes through in both directions.",
     "intent.lb": "Uses load balancing — matched traffic is spread across multiple ports, keeping each session on one port.",
     "intent.drop": "Some traffic is explicitly discarded (dropped).",
@@ -480,6 +488,10 @@ export const I18N = {
     "ex.confirmBodyTmpl": "This configuration came straight from a template and may not be tuned for this device. Submitting will overwrite the device's running config and apply it live.",
     "ex.submitApply": "Submit and apply", "ex.submitAnyway": "I understand — submit anyway",
     "ex.overwriteDesc": "Overwrite and apply the running config on the device.",
+    "ex.pending": "Not submitted",
+    "ex.pendingBody": "{n} changes are in this browser only — the device has not been given them. Submit them from the Export tab.",
+    "ex.pendingGo": "Go to Export →",
+    "tab.exportTip": "Where the configuration is submitted to the device",
     "ex.readyExport": "ready to export", "ex.canSubmit": "— can still submit",
     "ex.xmlOk": "XML is valid", "ex.editHelp": "Edit the XML directly. Format tidies the indentation without changing anything. Apply changes parses it back in — every tab updates to match. Cancel discards your edits.",
     "ex.cantApply": "Couldn't apply", "ex.fixTryAgain": "Fix the XML and try again.",
@@ -1144,6 +1156,14 @@ export const I18N = {
     "crit.and": "且", "crit.or": "或", "crit.not": "非",
     "crit.matchAll": "(全部符合)", "crit.matchAny": "(任一符合)",
     // inferred intent
+    "intent.action": "會在 {ports} 的入口處理封包 — 共 {n} 組 action:{what}。這會在任何鏈結看到封包之前先發生。",
+    "intent.actionNoMods": "尚未設定內容",
+    "intent.linkpairs": "將 {pairs} 綁在一起 — 其中一邊斷線時,另一邊也會被強制斷線(共 {n} 組)。",
+    "intent.replay": "會從 {ports} 重播 pcap — 共 {n} 組重播輸入,來源 {src}。",
+    "intent.replayNoSrc": "尚未設定來源",
+    "intent.replayOut": "重播是由該埠送出,不是直接當成入口流量注入,除非該埠有回接,封包才會進到鏈結。",
+    "intent.gen": "會在 {ports} 產生流量 — 共 {n} 組產生器輸入,{proto}。",
+    "intent.genAnyProto": "未指定協定",
     "intent.bidir": "在 {pairs} 之間雙向轉發 — 流量雙向通過。",
     "intent.lb": "使用負載平衡 — 符合的流量分散到多個埠,同一連線維持在同一埠。",
     "intent.drop": "部分流量被明確丟棄。",
@@ -1164,6 +1184,10 @@ export const I18N = {
     "ex.confirmBodyTmpl": "這份設定直接來自範本,可能未針對此裝置調整。提交將覆蓋裝置執行中的設定並即時套用。",
     "ex.submitApply": "提交並套用", "ex.submitAnyway": "我了解 — 仍要提交",
     "ex.overwriteDesc": "覆蓋並套用裝置上執行中的設定。",
+    "ex.pending": "尚未提交",
+    "ex.pendingBody": "有 {n} 項變更只存在於這個瀏覽器,裝置還沒有收到。請到「匯出」頁面提交。",
+    "ex.pendingGo": "前往匯出 →",
+    "tab.exportTip": "設定完成後在這裡提交到裝置",
     "ex.readyExport": "可以匯出", "ex.canSubmit": "— 仍可提交",
     "ex.xmlOk": "XML 語法正確", "ex.editHelp": "直接編輯 XML。格式化會整理縮排但不改內容。套用變更會把它解析回來 — 每個分頁都會同步更新。取消則放棄編輯。",
     "ex.cantApply": "無法套用", "ex.fixTryAgain": "修正 XML 後再試。",

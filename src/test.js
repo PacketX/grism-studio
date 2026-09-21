@@ -335,7 +335,42 @@ group("inferIntent");
   check("bidirectional pair rendered", en.some((s) => s.includes("P0↔P1")));
   const lb = C.inferIntent({ filters: [], chains: [{ ports: "P0", tree: { t: "out", ports: "P1,P2", mode: "loadBalance" } }] });
   check("load balancing detected", lb.includes("intent.lb"));
-  check("no chains yields nothing", C.inferIntent({ filters: [], chains: [] }).length === 0);
+  check("no chains and nothing else yields nothing", C.inferIntent({ filters: [], chains: [] }).length === 0);
+
+  /* Inputs and actions are the parts of a configuration where the device does
+     something of its own rather than forwarding what arrives, so the front
+     page has to name them -- including on a document with no chains at all. */
+  const replayDoc = { filters: [], chains: [], inputs: [
+    { id: 1, type: "replayPcap", port: "L1", pcapMode: "files", filepaths: ["H1/in/sample.pcap", "H1/in/b.pcap"] },
+    { id: 2, type: "replayPcap", port: "L2", pcapMode: "scandir", fields: { scandir: "H1/in" } },
+  ] };
+  const rp = C.inferIntent(replayDoc, makeT("en"));
+  check("a replay-only document still describes itself", rp.length === 2);
+  check("it names the ports, the count and the files",
+    rp[0].includes("L1, L2") && rp[0].includes("2 replay") &&
+    rp[0].includes("sample.pcap") && rp[0].includes("H1/in/"), rp[0]);
+  check("and warns that a replay transmits rather than injects",
+    /loops back/.test(rp[1]), rp[1]);
+  check("a replay with no file yet says so",
+    C.inferIntent({ chains: [], inputs: [{ id: 1, type: "replayPcap", port: "L1", filepaths: [""] }] },
+      makeT("en"))[0].includes("no source set yet"));
+  const gen = C.inferIntent({ chains: [], inputs: [
+    { id: 1, type: "traffic-gen", port: "P3", fields: { protocol: "UDP" } }] }, makeT("en"));
+  check("a generator is described with its protocol",
+    gen.length === 1 && gen[0].includes("P3") && gen[0].includes("UDP"), gen[0]);
+
+  const acts = C.inferIntent({ chains: [], actions: [
+    { id: 1, type: "input-packet-process", port: "P0", mods: [{ k: "stripping", val: "vlan" }, { k: "maxlen", val: "64" }] },
+    { id: 2, type: "linkpairs", portA: "P1", portB: "P2" },
+  ] }, makeT("en"));
+  check("an ingress action names what it does, not how many things it does",
+    acts[0].includes("P0") && acts[0].includes("stripping vlan") && acts[0].includes("maxlen 64"), acts[0]);
+  check("and says it happens before the chains", /before any chain/.test(acts[0]));
+  check("a link pair is described as the pair it is",
+    acts[1].includes("P1-P2"), acts[1]);
+  check("an empty action does not pretend to do something",
+    C.inferIntent({ chains: [], actions: [{ id: 1, type: "input-packet-process", port: "P0", mods: [] }] },
+      makeT("en"))[0].includes("nothing set yet"));
 }
 
 /* ---------- XML formatting ---------- */

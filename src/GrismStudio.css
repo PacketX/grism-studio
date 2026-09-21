@@ -134,7 +134,7 @@
 .health.warn{color:var(--warn);} .health.warn .dot{background:var(--warn); box-shadow:0 0 8px var(--warn);}
 
 .body{flex:1; min-height:0; display:flex; flex-direction:column;}
-.body > *:not(.adv-note){flex:1; min-height:0;}
+.body > *:not(.adv-note):not(.to-export){flex:1; min-height:0;}
 .adv-note{flex:0 0 auto; display:flex; align-items:center; gap:10px; margin:20px 24px 0; padding:11px 16px; background:var(--warn-bg, rgba(224,178,74,.09)); border:1px solid var(--line); border-radius:10px; font-size:12.5px; color:var(--txt-dim); line-height:1.5;}
 .adv-note-badge{flex:0 0 auto; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--warn); border:1px solid var(--warn); border-radius:99px; padding:2px 9px;}
 
@@ -1701,3 +1701,23 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .cpss-state .tf-link { flex: 0 0 auto; }
 .cpss-state button { margin-left: auto; }
 .cpss-state button + button { margin-left: 8px; }
+
+/* Where the configuration has to go. The document lives in the browser until
+   it is submitted from the export tab, and nothing on the editing tabs used to
+   say so -- so this sits above whichever one is open, until there is nothing
+   waiting, and the export tab itself is marked while anything is. */
+.to-export{flex:0 0 auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin:20px 24px 0; padding:11px 16px; border-radius:10px;
+  background:var(--warn-bg, rgba(224,178,74,.09)); border:1px solid var(--warn);
+  font-size:12.5px; color:var(--txt); line-height:1.5;}
+.to-export-badge{flex:0 0 auto; font-size:10px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--warn); border:1px solid var(--warn);
+  border-radius:99px; padding:2px 9px;}
+.to-export-go{margin-left:auto; flex:0 0 auto; cursor:pointer; font-family:inherit;
+  font-size:12.5px; font-weight:600; padding:6px 13px; border-radius:8px;
+  color:var(--bg); background:var(--warn); border:1px solid var(--warn);}
+.to-export-go:hover{filter:brightness(1.08);}
+.to-export + .filters-layout, .to-export + .chain-layout3{padding-top:14px;}
+/* the tab that submits, while anything is waiting to be submitted */
+.tab.cta{box-shadow:inset 0 -2px 0 var(--warn);}
+.tab-badge.pending{background:var(--warn); color:var(--bg);}
