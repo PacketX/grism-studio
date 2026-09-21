@@ -4212,15 +4212,30 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, bonds, st
               <line x1={L.mgmt.x - 8} y1={L.mgmt.y + L.mgmt.h / 2} x2={L.mgmt.x} y2={L.mgmt.y + L.mgmt.h / 2}
                 className="fp-usb-lead" />
             </>}
-            <rect x={L.mgmt.x} y={L.mgmt.y} width={L.mgmt.w} height={L.mgmt.h} rx="3"
-              className={"fp-mgmt" + (L.mgmt.kind === "usb" ? " usb" : "")} />
-            <rect x={L.mgmt.x + 8} y={L.mgmt.y + L.mgmt.h - 9} width={18} height={6} rx="1" className="fp-mgmt-clip" />
-            {/* the management port has a link light like any other */}
-            <circle cx={L.mgmt.x + 5} cy={L.mgmt.y + L.mgmt.h - 5} r="2.6"
+            {/* Some boxes put a switch hub on the front instead of a single
+                management socket: eight jacks, one interface behind them. Draw
+                what is on the box, but carry one link state -- the interface's
+                -- because that is the only state there is. */}
+            {L.mgmt.jacks ? <>
+              <rect x={L.mgmt.x} y={L.mgmt.y} width={L.mgmt.w} height={L.mgmt.h} rx="3" className="fp-hub-frame" />
+              {L.mgmt.jacks.map((j, i) => (
+                <g key={i}>
+                  <rect x={j.x} y={j.y} width={j.w} height={j.h} rx="2.5" className="fp-mgmt hub" />
+                  <rect x={j.x + 5} y={j.y + j.h - 7} width={j.w - 10} height={4} rx="1" className="fp-mgmt-clip" />
+                </g>
+              ))}
+            </> : <>
+              <rect x={L.mgmt.x} y={L.mgmt.y} width={L.mgmt.w} height={L.mgmt.h} rx="3"
+                className={"fp-mgmt" + (L.mgmt.kind === "usb" ? " usb" : "")} />
+              <rect x={L.mgmt.x + 8} y={L.mgmt.y + L.mgmt.h - 9} width={18} height={6} rx="1" className="fp-mgmt-clip" />
+            </>}
+            {/* the management interface has a link light like any other */}
+            <circle cx={L.mgmt.x + 5} cy={L.mgmt.y + L.mgmt.h - 4} r="2.6"
               className={"fp-led" + (!blind && mgmt.link ? " on" : "")} />
-            <title>{`${tr("panel.mgmt")} — ${blind ? tr("panel.unknown") : mgmt.link ? tr("panel.keyUp") : tr("panel.keyDown")}`}</title>
+            <title>{`${L.mgmt.jacks ? tr("panel.mgmtHub") : tr("panel.mgmt")} — ${blind ? tr("panel.unknown") : mgmt.link ? tr("panel.keyUp") : tr("panel.keyDown")}`}</title>
             <text x={L.mgmt.x + L.mgmt.w / 2} y={L.mgmt.y + L.mgmt.h + 11} className="fp-lbl mgmt">
-              {L.mgmt.kind === "usb" ? tr("panel.mgmtUsb") : tr("panel.mgmt")}</text>
+              {L.mgmt.kind === "usb" ? tr("panel.mgmtUsb")
+                : L.mgmt.jacks ? tr("panel.mgmtM0") : tr("panel.mgmt")}</text>
           </g>
           {/* the lamps this chassis carries, if any -- on a G8S the two bypass
               pairs, whose state the page already knows */}

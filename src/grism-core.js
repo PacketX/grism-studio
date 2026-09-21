@@ -4191,6 +4191,7 @@ export function panelModel(model) {
   if (m.includes("G8S")) return "G8S";
   if (m.includes("Q16")) return "Q16";
   if (m.includes("T4G12")) return "T4G12";
+  if (m.includes("F3T1G4")) return "F3T1G4";
   return null;
 }
 
@@ -4289,6 +4290,54 @@ export function t4g12PanelLayout() {
   };
 }
 
+/* The F3T1G4 (ERS5511): four cages in a row -- three SFP28 at 25G and one
+   SFP+ at 10G -- then four copper jacks in two stacked columns, odd above
+   even. P8-P11 are LOOP ports inside the box with no cage on the front, so
+   they are not drawn.
+
+   The management block is eight RJ45 in two rows of four, and they are a
+   switch hub whose uplink is M0 -- one interface behind eight sockets. So the
+   block is drawn as eight jacks but carries a single link state, which is the
+   only state anything here can report. */
+export function f3t1g4PanelLayout() {
+  const W = 34, H = 17, GAP_X = 3, GAP_Y = 7, TOP_Y = 15;
+  const X0 = 52, BLOCK_GAP = 16;
+  const MID_Y = TOP_Y + (H + GAP_Y) / 2;          // a single row sits between the two
+  const cages = [];
+  let x = X0;
+  // the fibre row: P0-P2 are SFP28, P3 is the SFP+ beside them
+  ["P0", "P1", "P2"].forEach((n) => { cages.push({ name: n, x, y: MID_Y, w: W, h: H, kind: "sfp" }); x += W + GAP_X; });
+  cages.push({ name: "P3", x, y: MID_Y, w: W, h: H, kind: "sfp" });
+  x += W + BLOCK_GAP;
+  // the copper columns, odd on top as on the box
+  for (let i = 0; i < 2; i++) {
+    cages.push({ name: "P" + (5 + i * 2), x, y: TOP_Y, w: W, h: H, kind: "rj45" });
+    cages.push({ name: "P" + (4 + i * 2), x, y: TOP_Y + H + GAP_Y, w: W, h: H, kind: "rj45" });
+    x += W + GAP_X;
+  }
+  /* The hub is one physical block on the box -- a frame with eight sockets in
+     it -- so it is drawn as a frame with eight sockets in it, and the link
+     light goes in the frame where the light is. */
+  const mgmtX = x + BLOCK_GAP;
+  const MW = 22, MH = 14, MGAP = 2, PAD = 5, ROW_GAP = 3;
+  const jacks = [];
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 4; col++) {
+      jacks.push({ x: mgmtX + PAD + col * (MW + MGAP), y: TOP_Y + PAD + row * (MH + ROW_GAP), w: MW, h: MH });
+    }
+  }
+  const mgmtW = 4 * MW + 3 * MGAP + PAD * 2;
+  const mgmtH = 2 * MH + ROW_GAP + PAD * 2;
+  return {
+    model: "F3T1G4", kind: "sfp",
+    lamps: [],
+    width: mgmtX + mgmtW + 14,
+    height: TOP_Y * 2 + H * 2 + GAP_Y + 2,
+    mgmt: { x: mgmtX, y: TOP_Y, w: mgmtW, h: mgmtH, jacks },
+    cages,
+  };
+}
+
 export function t12sPanelLayout() {
   const CAGE_W = 40, CAGE_H = 17, GAP_X = 2, GAP_Y = 7, TOP_Y = 15;
   const cages = [];
@@ -4335,6 +4384,7 @@ export const panelLayout = (model) => {
   if (m === "G8S") return g8sPanelLayout();
   if (m === "Q16") return q16PanelLayout();
   if (m === "T4G12") return t4g12PanelLayout();
+  if (m === "F3T1G4") return f3t1g4PanelLayout();
   return t12sPanelLayout();
 };
 

@@ -1105,7 +1105,7 @@ check("no Chinese entry is left in English", (() => {
   // only escaped this check for being shorter than the four-letter threshold.
   const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
     "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass",
-    "MGMT", "MGMT (USB)", "MEC (S1AP/NGAP · GTP)",
+    "MGMT", "MGMT (USB)", "MGMT (M0)", "MEC (S1AP/NGAP · GTP)",
     // 3GPP column names, written the same way in both languages
     "MME/AMF UE ID", "RAN UE ID", "PLMN ID", "CELL ID", "SPID",
     "UL GTP TEID", "UL GTP IPv4", "DL GTP TEID", "DL GTP IPv4", "UE IPv4"]);
@@ -2756,6 +2756,42 @@ group("switch interface");
 }
 
 /* ---------- MEC and deduplication ports ----------------------------------- */
+group("F3T1G4 front panel");
+{
+  /* ERS5511: three SFP28 and one SFP+ in a row, four copper jacks in two
+     stacked columns with the odd number on top, and a management block that
+     is eight sockets on a switch hub uplinked to M0. P8-P11 are LOOP ports
+     inside the box and have no cage on the front. */
+  const L = C.panelLayout("F3T1G4");
+  check("the model is recognised", C.hasFrontPanel("F3T1G4") && C.panelModel("f3t1g4") === "F3T1G4");
+  check("eight cages, and no LOOP ports among them",
+    L.cages.length === 8 && !L.cages.some((c) => ["P8", "P9", "P10", "P11"].includes(c.name)),
+    L.cages.map((c) => c.name).join(","));
+  check("the first four are fibre, the last four copper",
+    ["P0", "P1", "P2", "P3"].every((n) => L.cages.find((c) => c.name === n).kind === "sfp") &&
+    ["P4", "P5", "P6", "P7"].every((n) => L.cages.find((c) => c.name === n).kind === "rj45"));
+  const at = (n) => L.cages.find((c) => c.name === n);
+  check("the fibre row is one row, left to right",
+    [at("P0"), at("P1"), at("P2"), at("P3")].every((c, i, a) => c.y === a[0].y) &&
+    at("P0").x < at("P1").x && at("P1").x < at("P2").x && at("P2").x < at("P3").x);
+  check("the copper is stacked odd above even",
+    at("P5").y < at("P4").y && at("P7").y < at("P6").y &&
+    at("P5").x === at("P4").x && at("P7").x === at("P6").x && at("P4").x < at("P6").x);
+  check("the fibre sits left of the copper", at("P3").x < at("P4").x);
+  check("the management block is eight sockets in two rows of four",
+    L.mgmt.jacks.length === 8 &&
+    new Set(L.mgmt.jacks.map((j) => j.y)).size === 2 &&
+    new Set(L.mgmt.jacks.map((j) => j.x)).size === 4);
+  check("and it is right of everything else",
+    L.mgmt.x > Math.max(...L.cages.map((c) => c.x + c.w)) && L.width > L.mgmt.x + L.mgmt.w);
+  check("every cage fits inside the chassis",
+    L.cages.every((c) => c.x > 0 && c.x + c.w <= L.width && c.y > 0 && c.y + c.h <= L.height));
+  // the statistics keyed by cage name, as the panel reads them
+  const st = C.panelStates([{ name: "P5", linkStatus: 1, inPackets: 5 }], "F3T1G4");
+  check("a link on a stacked port lands on that port",
+    st.P5.link === true && st.P4.link === false);
+}
+
 group("MEC settings");
 {
   /* The firmware's cron is compared field by field with a single atoi

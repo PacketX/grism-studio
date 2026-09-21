@@ -1721,3 +1721,8 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 /* the tab that submits, while anything is waiting to be submitted */
 .tab.cta{box-shadow:inset 0 -2px 0 var(--warn);}
 .tab-badge.pending{background:var(--warn); color:var(--bg);}
+
+/* a management block that is a switch hub: eight sockets, one interface */
+.fp-mgmt.hub { stroke-width: 1; }
+/* the frame the hub's sockets sit in, as on the box */
+.fp-hub-frame { fill: none; stroke: var(--fp-line, #9aa7b4); stroke-width: 1.2; opacity: .8; }
