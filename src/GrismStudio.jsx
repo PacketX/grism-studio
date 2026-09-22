@@ -4061,7 +4061,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
-              : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : ["restoreFile","factory","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+              : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
+              ? `${tr("set.confirmApplyBody")} ${tr("set.svcWebWarn")}`
+              : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : ["restoreFile","factory","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -4164,6 +4166,27 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               /* The firmware reads the port enable flags at startup, so a
                  port switched on or off does nothing until it restarts. A
                  description-only edit is picked up live and applies as normal. */
+              /* The configuration says what should happen at the next boot;
+                 the service running right now is a separate thing, and until
+                 now the page changed only the first. Apply both, so the row
+                 the user just ticked matches what is actually running. */
+              if (k === "services") {
+                const changes = changedServices(svcBase, svc);
+                submitConfig(buildServicesConfigSet(changes));
+                changes.forEach((x) => {
+                  const body = new URLSearchParams();
+                  body.set("name", x.name);
+                  body.set("enable", x.enable ? "1" : "0");
+                  fetch("/grism/task/set_service_state", { method: "POST", credentials: "include",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" }, body })
+                    .catch(() => { /* stopping the web server drops this very request */ });
+                });
+                if (changes.some((x) => x.name === "pyhttpd" && !x.enable)) {
+                  setWait({ title: tr("set.svcWebStopping"), body: tr("set.svcWebStoppingBody"),
+                            phase: "rebooting", phaseKey: "set.svcPhase." });
+                }
+                return;
+              }
               if (k === "ports" && portEnableChanged) {
                 submitAndReboot(buildPortConfigSet(changedPorts(portsBase, ports)),
                   { title: tr("set.portsApplying"), body: tr("set.portsApplyingBody"), phaseKey: "set.ptPhase." });

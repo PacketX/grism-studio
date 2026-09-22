@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.118.0";
+export const STUDIO_VERSION = "2.119.0";
 
 export const I18N = {
   en: {
@@ -326,6 +326,11 @@ export const I18N = {
     "set.inTunnelsNote": "Look inside these encapsulations so filters can match the inner packet.",
     "set.service": "Service", "set.snmp": "SNMP", "set.readCommunity": "Read community",
     "set.svcState": "State", "set.svcRunning": "running", "set.svcStopped": "not running",
+    "set.svcWebWarn": "pyhttpd is this web interface. Switching it off stops nginx and the API a couple of seconds from now: this page stops working, and the only way back is a shell on the device (grism_init on MIPS, grism_dpdk.py on arm64, or start them by hand).",
+    "set.svcWebStopping": "Stopping the web service",
+    "set.svcWebStoppingBody": "This page is about to stop answering. Sign in over SSH to start it again.",
+    "set.svcPhase.updating": "Applying", "set.svcPhase.rebooting": "The web service is stopping",
+    "set.svcPhase.done": "Stopped",
     "set.svcPorts": "Listening on",
     "set.svcShouldRun": "Enabled in the configuration but not running.",
     "set.svcShouldStop": "Switched off in the configuration but still running — it stops at the next boot.",
@@ -1079,6 +1084,11 @@ export const I18N = {
     "set.inTunnelsNote": "解開這些封裝,讓篩選器能比對內層封包。",
     "set.service": "服務", "set.snmp": "SNMP", "set.readCommunity": "讀取社群字串",
     "set.svcState": "運作狀態", "set.svcRunning": "執行中", "set.svcStopped": "未執行",
+    "set.svcWebWarn": "pyhttpd 就是這個網頁介面。關掉它會在兩秒後停掉 nginx 與 API:這個頁面會失去回應,只能從裝置的命令列救回來(MIPS 用 grism_init、arm64 用 grism_dpdk.py,或手動啟動)。",
+    "set.svcWebStopping": "正在停止網頁服務",
+    "set.svcWebStoppingBody": "這個頁面即將失去回應。請用 SSH 登入裝置重新啟動它。",
+    "set.svcPhase.updating": "套用中", "set.svcPhase.rebooting": "網頁服務停止中",
+    "set.svcPhase.done": "已停止",
     "set.svcPorts": "通訊埠",
     "set.svcShouldRun": "設定為啟用,但目前沒有在執行。",
     "set.svcShouldStop": "設定為停用,但目前仍在執行 — 下次開機才會停止。",
