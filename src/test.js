@@ -2888,10 +2888,20 @@ group("service state, beside what the configuration asks for");
       { name: "grism", enable: true }, { name: "xmlrpc", enable: true }, { name: "sshd", enable: true }] });
     return rows.map((r) => r.name).join() === "grism,sshd";
   })());
-  check("each update target names its file and what identifies it",
-    C.COMPONENT_TARGETS.map((t) => t.id).join() === "grism-studio,pywww" &&
-    C.COMPONENT_TARGETS[0].file === "grism-studio.tgz" && C.COMPONENT_TARGETS[0].marker === "index.html" &&
-    C.COMPONENT_TARGETS[1].file === "pywww.tgz" && C.COMPONENT_TARGETS[1].marker === "pywww/manage.py");
+  check("each update target names its file and what identifies it", (() => {
+    const by = Object.fromEntries(C.COMPONENT_TARGETS.map((t) => [t.id, t]));
+    return C.COMPONENT_TARGETS.map((t) => t.id).join() === "grism-studio,pywww,sshd,mmdb" &&
+      by["grism-studio"].file === "grism-studio.tgz" && by["grism-studio"].marker === "index.html" &&
+      by["pywww"].file === "pywww.tgz" && by["pywww"].marker === "pywww/manage.py" &&
+      by["sshd"].marker === "usr/sbin/sshd";
+  })());
+  /* The country database is one file, not an archive, so the picker has to
+     offer .mmdb -- a file chooser filtered to .tgz cannot see it at all. */
+  check("the file chooser offers what each target actually takes", (() => {
+    const by = Object.fromEntries(C.COMPONENT_TARGETS.map((t) => [t.id, t]));
+    return by["mmdb"].accept === ".mmdb" && by["sshd"].accept === ".tgz" &&
+      by["mmdb"].marker === undefined;
+  })());
   /* The ports come from the sockets the process holds, so a service that
      listens on nothing simply has none -- not a guess from its name. */
   const withPorts = C.parseServiceStatus({ service_status: {

@@ -3802,7 +3802,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                     {COMPONENT_TARGETS.map((c) => <option key={c.id} value={c.id}>{tr(c.labelKey)}</option>)}
                   </select></label>
                 <label className="ml wide"><span>{tr("set.upFile")}</span>
-                  <input type="file" accept=".tgz,.tar.gz,application/gzip"
+                  <input type="file" accept={upTarget?.accept ?? ".tgz,.tar.gz,application/gzip"}
                     disabled={upload.state === "sending"}
                     onChange={(e) => setUpload((o) => ({ ...o, file: e.target.files?.[0] ?? null, state: "idle", msg: "" }))} /></label>
               </div>
@@ -3812,6 +3812,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   <span className="svc-ver-2">{tr("set.upCurrent")} {svcVersions.pywww}</span>}
                 {upload.target === "grism-studio" &&
                   <span className="svc-ver-2">{tr("set.upCurrent")} {STUDIO_VERSION}</span>}
+                {upload.target === "sshd" && svcVersions.sshd &&
+                  <span className="svc-ver-2">{tr("set.upCurrent")} {shortVersion(svcVersions.sshd)}</span>}
               </p>
               {upload.state === "error" && <p className="set-hint err">{tr("set.upFailed")}: {upload.msg}</p>}
               {/* The page that did the upload is the page that was replaced, so

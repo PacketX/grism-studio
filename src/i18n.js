@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.121.0";
+export const STUDIO_VERSION = "2.123.0";
 
 export const I18N = {
   en: {
@@ -344,6 +344,10 @@ export const I18N = {
     "set.upPywww": "Web API and its nginx configuration (pywww)",
     "set.upPywwwNote": "the web API and its nginx.conf.",
     "set.upCurrent": "installed now:",
+    "set.upSshd": "SSH server (sshd)",
+    "set.upSshdNote": "an OpenSSH build for this machine — linux/arm64 for the arm64 boxes, linux/ for the MIPS ones. An archive built for the other architecture is refused. The connection you are on is not disturbed; the daemon restarts so the next one uses the new binary.",
+    "set.upMmdb": "Country database (dbip-country)",
+    "set.upMmdbNote": "the GeoIP database the country filters and counters read. The one it replaces is removed and grism restarts, since it opens the file once at startup.",
     "set.upGo": "Upload and update", "set.upSending": "uploading…",
     "set.upFailed": "Update failed",
     "set.upDone": "Updated.",
@@ -1102,6 +1106,10 @@ export const I18N = {
     "set.upPywww": "網頁 API 與它的 nginx 設定 (pywww)",
     "set.upPywwwNote": "網頁 API 與它的 nginx.conf。",
     "set.upCurrent": "目前安裝:",
+    "set.upSshd": "SSH 伺服器 (sshd)",
+    "set.upSshdNote": "對應這台機器架構的 OpenSSH 封存檔 — arm64 機器用 linux/arm64 下的,MIPS 機器用 linux/ 下的。架構不符會被擋下。目前這條連線不會被中斷;服務會重新啟動,下一條連線才會用到新版。",
+    "set.upMmdb": "國家資料庫 (dbip-country)",
+    "set.upMmdbNote": "國家篩選器與統計讀取的 GeoIP 資料庫。更新後會刪除被取代的舊檔並重新啟動 grism,因為它只在啟動時開啟這個檔案。",
     "set.upGo": "上傳並更新", "set.upSending": "上傳中…",
     "set.upFailed": "更新失敗",
     "set.upDone": "已更新。",

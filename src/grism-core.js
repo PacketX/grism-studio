@@ -2311,6 +2311,11 @@ export const COMPONENT_TARGETS = [
      other would install an endpoint that answers nothing. */
   { id: "pywww", labelKey: "set.upPywww", noteKey: "set.upPywwwNote",
     file: "pywww.tgz", marker: "pywww/manage.py" },
+  { id: "sshd", labelKey: "set.upSshd", noteKey: "set.upSshdNote",
+    file: "ssh-<version>.tgz", marker: "usr/sbin/sshd", accept: ".tgz" },
+  /* Not an archive: one database file, named for the month it was cut. */
+  { id: "mmdb", labelKey: "set.upMmdb", noteKey: "set.upMmdbNote",
+    file: "dbip-country-<YYYY-MM>.mmdb", accept: ".mmdb" },
 ];
 
 /* The packet application is what the box is. Switching it off leaves a device
