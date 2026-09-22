@@ -11,7 +11,7 @@ import {
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
-  heartbeatStatusRows, interfacesToList, listToInterfaces, logSourcePorts,
+  heartbeatStatusRows, heartbeatPortMarks, heartbeatSummary, interfacesToList, listToInterfaces, logSourcePorts,
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
   mkSyslogTarget, parseHeartbeat, parseLogging,
   parseHeartbeatStatus, parseServiceExtras,
@@ -4590,6 +4590,13 @@ function TrafficTab({ loggedIn, t, model = "" }) {
   const [bypassed, setBypassed] = React.useState(new Set());
   // the same answer keyed by pair, for the front panel's BYP lamps
   const [bypassedPairs, setBypassedPairs] = React.useState(null);   // null = the device would not say
+  /* Heartbeat, as a mark beside the ports that carry it. The targets come from
+     the configuration this page already reads; the status is only polled when
+     there is something to poll, so a device with heartbeat off makes no extra
+     request at all. */
+  const [hb, setHb] = React.useState({ enable: false, targets: [] });
+  const [hbStatus, setHbStatus] = React.useState([]);
+  const hbOn = hb.enable && hb.targets.some((tg) => tg.enable);
 
 
   React.useEffect(() => {
@@ -4639,8 +4646,23 @@ function TrafficTab({ loggedIn, t, model = "" }) {
       (json.interfaces || []).forEach((grp) => (grp.ports || []).forEach((p) => { if (p.name) map[p.name] = p.description || ""; }));
       setDescs(map);
       setDevModel(String((json.args ?? {}).model ?? ""));
+      setHb(parseHeartbeat(json));
     } catch (e) { warnFetch("port descriptions", e); }
   }, []);
+
+  React.useEffect(() => {
+    if (!loggedIn || !hbOn) { setHbStatus([]); return; }
+    let live = true;
+    const tick = async () => {
+      try {
+        const res = await fetch("/grism/task/get_heartbeat_status", { credentials: "include" });
+        if (res.ok && live) setHbStatus(parseHeartbeatStatus(await res.json()));
+      } catch { /* a tick that fails leaves the previous marks standing */ }
+    };
+    tick();
+    const id = setInterval(tick, Math.max(1, Number(refreshSec) || 5) * 1000);
+    return () => { live = false; clearInterval(id); };
+  }, [loggedIn, hbOn, refreshSec]);
 
   React.useEffect(() => { if (loggedIn) { load(); loadDescs(); } }, [loggedIn, load, loadDescs]);
   // always live: refresh on the chosen interval
@@ -4669,6 +4691,17 @@ function TrafficTab({ loggedIn, t, model = "" }) {
   /* Four cages bonded into one port, as the counters themselves report it: the
      master at 40G or 100G, the three it took at nothing. No extra request. */
   const bonds = React.useMemo(() => statsBonds(rows, model || devModel), [rows, model, devModel]);
+
+  const hbRows = React.useMemo(() => heartbeatStatusRows(hb.targets, hbStatus), [hb.targets, hbStatus]);
+  const hbMarks = React.useMemo(() => heartbeatPortMarks(hbRows), [hbRows]);
+  const hbSum = heartbeatSummary(hbRows);
+  const hbTip = (m) => {
+    const parts = [];
+    if (m.send.length) parts.push(tr("tf.hbSend").replace("{n}", m.send.join(", ")));
+    if (m.recv.length) parts.push(tr("tf.hbRecv").replace("{n}", m.recv.join(", ")));
+    parts.push(m.down ? tr("tf.hbMissTip") : tr("tf.hbOkTip"));
+    return parts.join(" · ");
+  };
 
   // split V-ports (virtual, name starts with "V") from the rest. When any exist,
   // show them on their own and let the user reveal the physical ports too.
@@ -4715,6 +4748,20 @@ function TrafficTab({ loggedIn, t, model = "" }) {
         </div>
       )}
 
+      {/* one line, below the session figures: the probe is background
+          information until it stops coming back */}
+      {hbRows.length > 0 && (
+        <div className="tf-hb-line">
+          <span className={"tf-hb" + (hbSum.down ? " miss" : "")}>{tr("tf.hb")}</span>
+          <span>{(hbSum.down ? tr("tf.hbLineMiss") : tr("tf.hbLineOk"))
+            .replace("{n}", hbSum.total).replace("{d}", hbSum.down)}</span>
+          {hbSum.down > 0 && (
+            <span className="tf-hb-which mono">{hbRows.filter((r) => !r.up)
+              .map((r) => `#${r.id ?? "?"} ${r.sendPort}→${r.receivePort}`).join(" · ")}</span>
+          )}
+        </div>
+      )}
+
       {hasV && (
         <div className="tf-portfilter">
           <span className="tf-portfilter-label">{tr("tf.vports")} ({vRows.length})</span>
@@ -4753,6 +4800,11 @@ function TrafficTab({ loggedIn, t, model = "" }) {
                           <span className="tf-bypass" title={tr("tf.bypassTip")}>{tr("tf.bypass")}</span>}
                         {/* bonded away: the counters below are real but will
                             never move, because the lanes belong to another port */}
+                        {/* the probe this port carries: quiet while it is
+                            coming back, amber only when it stops */}
+                        {hbMarks[r.name] &&
+                          <span className={"tf-hb" + (hbMarks[r.name].down ? " miss" : "")}
+                            title={hbTip(hbMarks[r.name])}>{tr("tf.hb")}</span>}
                         {bond &&
                           <span className="tf-bypass bond" title={tr("tf.bondedTip")
                             .replace("{port}", bond.master).replace("{speed}", fmtSpeed(bond.speed))}>

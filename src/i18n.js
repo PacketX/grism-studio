@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.124.0";
+export const STUDIO_VERSION = "2.125.0";
 
 export const I18N = {
   en: {
@@ -444,6 +444,11 @@ export const I18N = {
     "tf.bypassTip": "This pair is joined by its relay — traffic crosses it without reaching the device, so these counters do not see it.",
     "tf.movingTip": "Carrying traffic right now — its packet counters moved on the last read.",
     "tf.bondedTip": "{port} runs at {speed} using all four lanes, so these four cages are one port. The others carry nothing.",
+    "tf.hb": "hb",
+    "tf.hbSend": "sends heartbeat {n}", "tf.hbRecv": "receives heartbeat {n}",
+    "tf.hbOkTip": "coming back", "tf.hbMissTip": "not coming back — the target is missed",
+    "tf.hbLineOk": "heartbeat: {n} target(s), all answering",
+    "tf.hbLineMiss": "heartbeat: {d} of {n} target(s) missed",
     "tf.speed": "Speed", "tf.inRate": "In", "tf.outRate": "Out",
     "tf.inPkts": "In packets", "tf.outPkts": "Out packets", "tf.inBytes": "In bytes", "tf.outBytes": "Out bytes",
     "tf.errors": "Errors", "tf.pps": "pps",
@@ -1207,6 +1212,11 @@ export const I18N = {
     "tf.bypassTip": "此埠對正由繼電器直接對接,流量不會進入本機,因此這裡的計數看不到它。",
     "tf.movingTip": "目前有流量 — 上一次讀取時封包計數有增加。",
     "tf.bondedTip": "{port} 以 {speed} 使用全部四條通道,這四個埠等於一個埠,其餘三個不會有流量。",
+    "tf.hb": "hb",
+    "tf.hbSend": "送出 heartbeat {n}", "tf.hbRecv": "接收 heartbeat {n}",
+    "tf.hbOkTip": "有收回", "tf.hbMissTip": "沒有收回 — 目標中斷",
+    "tf.hbLineOk": "heartbeat:{n} 個目標,都有收回",
+    "tf.hbLineMiss": "heartbeat:{n} 個目標中有 {d} 個沒有收回",
     "tf.speed": "速率", "tf.inRate": "入", "tf.outRate": "出",
     "tf.inPkts": "入封包", "tf.outPkts": "出封包", "tf.inBytes": "入位元組", "tf.outBytes": "出位元組",
     "tf.errors": "錯誤", "tf.pps": "pps",

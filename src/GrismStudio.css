@@ -1348,6 +1348,19 @@ a.copy-btn{display:inline-block; text-decoration:none; line-height:1.7;}
   padding:2px 6px; border-radius:99px; border:1px solid var(--warn); color:var(--warn);
   vertical-align:middle;}
 
+/* a port carrying a heartbeat probe. Deliberately quieter than the bypass
+   badge -- no border, dim text -- because on a working device it is true of
+   some port all the time and says nothing new. Amber only once the probe
+   stops coming back. */
+.tf-hb{margin-left:8px; font-family:var(--mono); font-size:10px; line-height:1;
+  letter-spacing:.06em; color:var(--txt-dim); vertical-align:middle; cursor:default;}
+.tf-hb.miss{color:var(--warn);}
+
+.tf-hb-line{display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin:-6px 0 14px; padding:0 2px; font-size:11.5px; color:var(--txt-dim);}
+.tf-hb-line .tf-hb{margin-left:0;}
+.tf-hb-which{color:var(--warn);}
+
 /* a bypass-capable port whose relay is currently open: worth labelling, not
    worth the amber that means "traffic is going around the device right now" */
 .tf-bypass.idle{border-color:var(--line-2); color:var(--txt-dim);}

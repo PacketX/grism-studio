@@ -2535,6 +2535,36 @@ export function heartbeatStatusRows(targets, status) {
   });
 }
 
+/* The same rows seen from the ports' side, for the interface list: which ports
+   carry a probe, in which direction, and whether it is coming back. A target
+   sending and receiving on one port (the common loop test) lands in both lists
+   of the same mark. Ports the device is not probing get no entry at all, so the
+   marks disappear entirely on a device with heartbeat switched off. */
+export function heartbeatPortMarks(rows = []) {
+  const marks = {};
+  const at = (port) => {
+    if (!marks[port]) marks[port] = { send: [], recv: [], up: 0, down: 0 };
+    return marks[port];
+  };
+  rows.forEach((r, i) => {
+    const label = r.id ?? i + 1;
+    const seen = new Set();
+    [["send", r.sendPort], ["recv", r.receivePort]].forEach(([dir, port]) => {
+      if (!port) return;
+      const m = at(port);
+      m[dir].push(label);
+      /* count the target once per port, or a loop test would read as two */
+      if (!seen.has(port)) { seen.add(port); m[r.up ? "up" : "down"] += 1; }
+    });
+  });
+  return marks;
+}
+
+export const heartbeatSummary = (rows = []) => ({
+  total: rows.length,
+  down: rows.filter((r) => !r.up).length,
+});
+
 
 export function heartbeatProblems(hb, problems = []) {
   // Targets are written back positionally and the device itself ships configs with

@@ -953,6 +953,25 @@ group("heartbeat");
   check("status beyond the target list is tolerated",
     C.heartbeatStatusRows([], [{ index: 5, up: true }])[0].id === null);
 
+  /* the same rows seen from the ports, for the interface list */
+  const marks = C.heartbeatPortMarks([
+    { id: 1, up: true, sendPort: "P2", receivePort: "P2" },
+    { id: 3, up: false, sendPort: "P8", receivePort: "P9" },
+  ]);
+  check("a loop target marks its one port in both directions",
+    marks.P2.send[0] === 1 && marks.P2.recv[0] === 1);
+  check("a loop target is only counted once", marks.P2.up === 1 && marks.P2.down === 0);
+  check("a two-port target marks both ends",
+    marks.P8.send[0] === 3 && marks.P8.recv.length === 0 && marks.P9.recv[0] === 3);
+  check("a missed target marks both its ports", marks.P8.down === 1 && marks.P9.down === 1);
+  check("ports with no probe get no mark", marks.P0 === undefined);
+  check("no targets, no marks", Object.keys(C.heartbeatPortMarks([])).length === 0);
+  check("unnumbered targets fall back to their position",
+    C.heartbeatPortMarks([{ up: true, sendPort: "P1", receivePort: "P1" }]).P1.send[0] === 1);
+  const sum = C.heartbeatSummary([{ up: true }, { up: false }, { up: false }]);
+  check("summary counts the missed ones", sum.total === 3 && sum.down === 2);
+  check("summary of nothing is empty", C.heartbeatSummary().total === 0);
+
   // The list is a fixed set of slots: adding reuses the first disabled slot rather
   // than growing the list, and removing just switches that slot off.
   const slots = (l) => l.map((t) => t.id + (t.enable ? "+" : "-")).join(" ");
