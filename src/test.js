@@ -2802,6 +2802,13 @@ group("service state, beside what the configuration asks for");
     Object.keys(C.parseServiceStatus({})).length === 0);
   // the packet application is the device; there is no state with it off
   check("grism has no toggle", C.ALWAYS_ON_SERVICES.has("grism") && !C.ALWAYS_ON_SERVICES.has("sshd"));
+  /* xmlrpc is the interface grism itself listens on, not a service beside it,
+     so a row for it would be a second row for grism. */
+  check("xmlrpc is not listed as a service of its own", (() => {
+    const rows = C.parseServices({ services: [
+      { name: "grism", enable: true }, { name: "xmlrpc", enable: true }, { name: "sshd", enable: true }] });
+    return rows.map((r) => r.name).join() === "grism,sshd";
+  })());
   check("each update target names its file and what identifies it",
     C.COMPONENT_TARGETS.map((t) => t.id).join() === "grism-studio,pywww" &&
     C.COMPONENT_TARGETS[0].file === "grism-studio.tgz" && C.COMPONENT_TARGETS[0].marker === "index.html" &&

@@ -2254,6 +2254,9 @@ export function buildServicesConfigSet(services) {
    either managed by the platform or would cut off the very session being used. */
 export const HIDDEN_SERVICES = new Set([
   "bsem_wd_feed", "telnetd", "ftpd", "packetx_trap_dispatcher", "statistics_backup",
+  // xmlrpc is not a service of its own: it is the interface grism itself
+  // listens on, so a row for it would be a second row for grism.
+  "xmlrpc",
 ]);
 
 /* Services as the UI needs them, in the order the device reports. */
