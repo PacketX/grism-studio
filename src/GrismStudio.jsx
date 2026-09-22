@@ -40,6 +40,7 @@ import {
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
   parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, firmwareRestartsOnly,
+  XMLRPC_PORT,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
@@ -3834,6 +3835,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <label className="set-check"><input type="checkbox" checked={extras.xmlrpc.localhost_only}
                 onChange={(e) => setExtras((o) => ({ ...o, xmlrpc: { localhost_only: e.target.checked } }))} />
                 xmlrpc — {tr("set.localhostOnly")}</label>
+              {/* Not a service of its own: it is the interface grism listens on,
+                  which is why it has no row in the table above. */}
+              <p className="set-hint">{tr("set.xmlrpcNote").replace("{port}", String(XMLRPC_PORT))}</p>
               <div className="oattr-subhead">backup</div>
               <div className="set-grid">
                 {[["host", "set.bkHost"], ["port", "set.bkPort"], ["user", "set.bkUser"],

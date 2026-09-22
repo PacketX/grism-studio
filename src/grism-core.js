@@ -2298,6 +2298,12 @@ export const COMPONENT_TARGETS = [
    anyone wants and not one the page should offer -- so it has no toggle. */
 export const ALWAYS_ON_SERVICES = new Set(["grism"]);
 
+/* The XML-RPC interface is grism's own, not a daemon beside it, and the port
+   is fixed in the firmware rather than configurable: src/main.c and
+   dpdk/init.c both set xargs->port = 9125. Everything on this page that asks
+   the device anything goes through it. */
+export const XMLRPC_PORT = 9125;
+
 /* What the device says is actually running, beside what the configuration says
    should be. The two disagree more often than one would like: a service can be
    enabled and dead, or disabled and still up until the next boot. */

@@ -2818,6 +2818,9 @@ group("service state, beside what the configuration asks for");
   check("grism has no toggle", C.ALWAYS_ON_SERVICES.has("grism") && !C.ALWAYS_ON_SERVICES.has("sshd"));
   /* xmlrpc is the interface grism itself listens on, not a service beside it,
      so a row for it would be a second row for grism. */
+  /* Fixed in the firmware, not configurable: src/main.c:1240 and
+     dpdk/init.c:466 both set xargs->port = 9125. */
+  check("the xmlrpc port is the one the firmware binds", C.XMLRPC_PORT === 9125);
   check("xmlrpc is not listed as a service of its own", (() => {
     const rows = C.parseServices({ services: [
       { name: "grism", enable: true }, { name: "xmlrpc", enable: true }, { name: "sshd", enable: true }] });

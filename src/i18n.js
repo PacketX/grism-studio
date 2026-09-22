@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.115.0";
+export const STUDIO_VERSION = "2.116.0";
 
 export const I18N = {
   en: {
@@ -165,6 +165,7 @@ export const I18N = {
     "set.hbPacket": "Packet data (hex)", "set.hbUp": "up", "set.hbDown": "down", "set.hbUnknown": "no status",
     "set.svcExtras": "Service options", "set.svcExtrasNote": "Extra settings for services that need more than an on/off switch.",
     "set.localhostOnly": "localhost only",
+    "set.xmlrpcNote": "Served by grism itself on TCP {port} — not a service of its own, which is why it has no row above. Everything the web interface asks the device goes through it; restricting it to localhost leaves this page working and shuts out anything else on the network.",
     "set.bkHost": "Host", "set.bkPort": "Port", "set.bkUser": "User",
     "set.bkPass": "Password", "set.bkDir": "Directory", "set.bkCron": "Schedule (cron)",
     "set.apply": "Apply", "set.primary": "Primary", "set.secondary": "Secondary",
@@ -903,6 +904,7 @@ export const I18N = {
     "set.hbPacket": "封包內容 (十六進位)", "set.hbUp": "正常", "set.hbDown": "中斷", "set.hbUnknown": "無狀態",
     "set.svcExtras": "服務選項", "set.svcExtrasNote": "部分服務除了啟用開關外還有其他設定。",
     "set.localhostOnly": "僅限本機",
+    "set.xmlrpcNote": "由 grism 服務本身提供,使用 TCP {port} — 它不是獨立的服務,所以上方表格沒有它的項目。網頁介面對裝置的所有查詢都經由它;設為僅限本機後,這個頁面照常運作,但網路上的其他來源就連不進來。",
     "set.bkHost": "主機", "set.bkPort": "埠", "set.bkUser": "使用者",
     "set.bkPass": "密碼", "set.bkDir": "目錄", "set.bkCron": "排程 (cron)",
     "set.apply": "套用", "set.primary": "主要", "set.secondary": "次要",
