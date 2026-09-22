@@ -5401,7 +5401,7 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
 
       <StorageCrumbs br={br} tr={tr} />
       <div className="tf-table-wrap storage-files">
-        <table className="tf-table">
+        <table className="tf-table cap-table">
           <thead><tr>
             <th>{tr("cap.file")}</th>
             <th className="tf-num">{tr("sess.bytes")}</th>
@@ -5620,7 +5620,7 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
         <StorageCrumbs br={br} tr={tr} />
         {files.length === 0 ? <p className="sys-note dim">{tr("cap.noFiles")}</p> : (
           <div className="tf-table-wrap">
-            <table className="tf-table">
+            <table className="tf-table cap-table">
               <thead><tr>
                 <th>{tr("cap.file")}</th><th className="tf-num">{tr("sess.bytes")}</th>
                 <th>{tr("cap.modified")}</th>
