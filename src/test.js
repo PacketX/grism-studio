@@ -2830,6 +2830,16 @@ group("firmware version, with a build number");
 
 group("how a firmware update ends, per product line");
 {
+  /* The version file is rewritten while the services are still coming back,
+     so the page holds for a fixed spell instead of letting go the moment the
+     number changes. */
+  check("the hold is ten seconds", C.FIRMWARE_RESTART_HOLD_SECONDS === 10);
+  check("what is left of it counts down whole seconds",
+    C.firmwareHoldLeft(10_000, 0) === 10 && C.firmwareHoldLeft(10_000, 4_200) === 6 &&
+    C.firmwareHoldLeft(10_000, 9_100) === 1);
+  check("and never goes negative or claims time on a device that reboots",
+    C.firmwareHoldLeft(10_000, 10_000) === 0 && C.firmwareHoldLeft(10_000, 99_999) === 0 &&
+    C.firmwareHoldLeft(0, 5_000) === 0 && C.firmwareHoldLeft(undefined, 5_000) === 0);
   /* MIPS (6.5.x) restarts the device; arm64 (7.6.x) restarts only the services
      the image replaced, so the page must describe -- and detect -- a different
      thing. The version line is what every device reports that says which. */

@@ -2288,6 +2288,20 @@ export function parseFirmwareVersion(text) {
   };
 }
 
+/* How long the page stays held after an update that restarts services rather
+   than the device.
+
+   The version file is rewritten as the services come back, so the page can see
+   the new version within a second or two -- while nginx is still reloading and
+   the API is still answering 500. Reporting "complete" then is true of the
+   image and useless to the reader, who clicks something and gets an error. The
+   hold runs to the end regardless. */
+export const FIRMWARE_RESTART_HOLD_SECONDS = 10;
+export const firmwareHoldLeft = (holdUntil, now) => {
+  const ms = Number(holdUntil) - Number(now);
+  return Number.isFinite(ms) && ms > 0 ? Math.ceil(ms / 1000) : 0;
+};
+
 /* Which product line a device is, from the version it reports.
 
    The two lines update differently: on MIPS (6.5.x) an image needs the device

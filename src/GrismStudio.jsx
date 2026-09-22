@@ -41,6 +41,7 @@ import {
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
   parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, firmwareRestartsOnly,
   XMLRPC_PORT, SNMP_EXAMPLES, snmpCommand, parseFirmwareVersion,
+  FIRMWARE_RESTART_HOLD_SECONDS, firmwareHoldLeft,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
@@ -2268,6 +2269,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
            update landed is the version it now reports. Only useful when the
            image is a different build; the down-then-up rule still covers a
            reflash of the same one. */
+        if (w.holdUntil && Date.now() < w.holdUntil) {
+          // still inside the hold: say what is happening, not that it is over
+          return w.phase === "rebooting" ? w : { ...w, phase: "rebooting" };
+        }
         if (w.wasVersion && version && version !== w.wasVersion) return { ...w, phase: "done" };
         // Reachable only means finished if it had gone away first. The device is
         // still answering for the first moments of an update, and treating that
@@ -2292,8 +2297,24 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       phase: "updating",
       phaseKey: restartOnly ? "set.fwPhaseR." : "set.fwPhase.",
       wasVersion: fw.version || "",
+      /* The services come back a few seconds apart and the version file is
+         rewritten before the last of them is up, so the page holds for a fixed
+         spell rather than letting go the moment the version changes. */
+      holdUntil: restartOnly ? Date.now() + FIRMWARE_RESTART_HOLD_SECONDS * 1000 : 0,
     };
   };
+
+  /* One tick a second while a hold is running, so the count on screen moves.
+     The poll behind it is every two seconds and would make it stutter. */
+  const holdUntil = wait?.holdUntil ?? 0;
+  const [holdLeft, setHoldLeft] = React.useState(0);
+  React.useEffect(() => {
+    if (!holdUntil) { setHoldLeft(0); return; }
+    const tick = () => setHoldLeft(firmwareHoldLeft(holdUntil, Date.now()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [holdUntil]);
 
   /* POST a file and then hold the page while the device restarts. */
   const uploadAndWait = async (url, file, field, wait) => {
@@ -4228,6 +4249,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <div className="apply-sub">{wait.body}</div>
             <div className={"apply-phase" + (wait.phase === "done" ? " ok" : "")}>
               {tr((wait.phaseKey ?? "set.fwPhase.") + wait.phase)}
+              {holdLeft > 0 && wait.phase !== "done" &&
+                <span className="apply-left"> · {tr("set.fwHoldLeft").replace("{n}", String(holdLeft))}</span>}
             </div>
             {/* A factory reset never reaches "done": the device comes back on its
                 factory address, so the poll against this one can only ever see it
