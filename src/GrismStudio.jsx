@@ -5592,7 +5592,11 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
           <button className="sys-refresh" disabled={problems.length > 0 || running > 0 || applying}
             onClick={() => setAsk({ kind: "start" })}>
             {running > 0 ? tr("cap.running") : tr("cap.start")}</button>
-          <button className="copy-btn" disabled={running === 0 || stopping} onClick={stop}>
+          {/* always live: an instant configuration outlives the countdown this
+              page is showing -- a capture started before the page was opened,
+              or one whose <stl> has run out while its filters stay loaded --
+              and there has to be a way to clear it without starting another. */}
+          <button className="copy-btn" onClick={stop}>
             {stopping ? tr("cap.stopping") : tr("cap.stop")}</button>
         </div>
       </section>
@@ -5684,7 +5688,7 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
             <div className="apply-lock-body">{applying ? tr("cap.applyingBody") : tr("cap.capturingBody")}</div>
             {!applying && <div className="apply-countdown mono">{running}s</div>}
             {!applying && (
-              <button className="copy-btn" disabled={stopping} onClick={stop}>
+              <button className="copy-btn" onClick={stop}>
                 {stopping ? tr("cap.stopping") : tr("cap.stop")}</button>
             )}
           </div>
