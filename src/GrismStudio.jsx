@@ -5286,25 +5286,30 @@ class TabErrorBoundary extends React.Component {
 }
 
 /* Tracks which files are ticked for deletion, forgetting the selection whenever
-   the listing changes so a stale name can't be sent. */
-function useFileSelection(files) {
+   the listing changes so a stale name can't be sent.
+
+   protectPartial holds back the .tmp the device is writing *right now*: deleting
+   it mid-capture leaves the capture running with nowhere to put its packets.
+   Once the capture stops -- or the page is reloaded, which is another way of
+   saying nobody here started one -- a leftover .tmp is just a file, and holding
+   it back would leave something on the volume that cannot be removed. */
+function useFileSelection(files, protectPartial = false) {
   const [marked, setMarked] = React.useState([]);
   const names = files.map((f) => f.name).join("\u0000");
   // keyed on the listing's contents: when the folder changes, drop names that
   // are no longer there so a stale selection can't be submitted
-  React.useEffect(() => { setMarked((m) => m.filter((n) => !isPartialCapture(n) && files.some((f) => !f.isDir && f.name === n))); },
-    [names, files]);
-  /* The .tmp is the capture the device is writing right now. Deleting it out
-     from under the writer leaves a capture running with nowhere to put its
-     packets, so it is not selectable at all -- by hand or by select-all. */
-  const deletable = files.filter((f) => !f.isDir && !isPartialCapture(f.name));
+  React.useEffect(() => { setMarked((m) => m.filter((n) => !(protectPartial && isPartialCapture(n)) && files.some((f) => !f.isDir && f.name === n))); },
+    [names, files, protectPartial]);
+  const held = (name) => protectPartial && isPartialCapture(name);
+  const deletable = files.filter((f) => !f.isDir && !held(f.name));
   return {
     marked, setMarked,
-    toggle: (n) => { if (isPartialCapture(n)) return; setMarked((m) => (m.includes(n) ? m.filter((x) => x !== n) : [...m, n])); },
+    toggle: (n) => { if (held(n)) return; setMarked((m) => (m.includes(n) ? m.filter((x) => x !== n) : [...m, n])); },
     allOn: deletable.length > 0 && marked.length === deletable.length,
     toggleAll: () => setMarked((m) => (m.length === deletable.length ? [] : deletable.map((f) => f.name))),
     clear: () => setMarked([]),
     count: deletable.length,
+    held,
   };
 }
 
@@ -5443,8 +5448,8 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
                       : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
                   </td>
                   <td className="sel-col">
-                    <input type="checkbox" disabled={isPartialCapture(f.name)}
-                      title={isPartialCapture(f.name) ? tr("cap.noDelWriting") : tr("cap.markForDelete")}
+                    <input type="checkbox" disabled={sel.held(f.name)}
+                      title={sel.held(f.name) ? tr("cap.noDelWriting") : tr("cap.markForDelete")}
                       checked={sel.marked.includes(f.name)} onChange={() => sel.toggle(f.name)} />
                   </td>
                 </tr>
@@ -5489,7 +5494,7 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
   const [ask, setAsk] = React.useState(null);       // { kind: "start" | "delete", file? }
   const [applying, setApplying] = React.useState(false);
   const [stopping, setStopping] = React.useState(false);
-  const fileSel = useFileSelection(files);
+  const fileSel = useFileSelection(files, running > 0 || applying);
 
   // while a capture runs, count down and refresh the folder every second
   React.useEffect(() => {
@@ -5636,8 +5641,8 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
                         : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
                     </td>
                     <td className="sel-col"><input type="checkbox" title={tr("cap.markForDelete")}
-                      checked={fileSel.marked.includes(f.name)} disabled={isPartialCapture(f.name)}
-                      title={isPartialCapture(f.name) ? tr("cap.noDelWriting") : tr("cap.markForDelete")}
+                      checked={fileSel.marked.includes(f.name)} disabled={fileSel.held(f.name)}
+                      title={fileSel.held(f.name) ? tr("cap.noDelWriting") : tr("cap.markForDelete")}
                       onChange={() => fileSel.toggle(f.name)} /></td>
                   </tr>
                 ))}

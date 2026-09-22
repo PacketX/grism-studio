@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.129.0";
+export const STUDIO_VERSION = "2.130.0";
 
 export const I18N = {
   en: {
@@ -35,7 +35,7 @@ export const I18N = {
     "cap.delDesc": "The file cannot be recovered",
     "cap.delTitle": "Delete this file?", "cap.delTitleN": "Delete these files?", "cap.selectAll": "Select all", "cap.delSelected": "Delete selected",
     "cap.markForDelete": "Mark for deletion",
-    "cap.noDelWriting": "The device is still writing this file — it can be deleted once the capture ends and it is renamed.", "cap.delBody": "The capture file is removed from the storage volume. This cannot be undone.",
+    "cap.noDelWriting": "The capture running now is writing this file — it can be deleted once the capture ends.", "cap.delBody": "The capture file is removed from the storage volume. This cannot be undone.",
     "tab.trafficPorts": "Interfaces", "tab.trafficSessions": "Sessions",
     "tab.trafficServices": "Services", "tab.trafficCountries": "Countries",
     "tab.trafficL2gre": "L2GRE Correlation",
@@ -803,7 +803,7 @@ export const I18N = {
     "cap.delDesc": "檔案無法復原",
     "cap.delTitle": "刪除這個檔案?", "cap.delTitleN": "刪除這些檔案?", "cap.selectAll": "全選", "cap.delSelected": "刪除選取的檔案",
     "cap.markForDelete": "標記為待刪除",
-    "cap.noDelWriting": "裝置正在寫入這個檔案 — 等側錄結束、檔名改回來之後才能刪除。", "cap.delBody": "側錄檔會從儲存空間移除,且無法復原。",
+    "cap.noDelWriting": "目前這次側錄正在寫入這個檔案 — 等側錄結束後才能刪除。", "cap.delBody": "側錄檔會從儲存空間移除,且無法復原。",
     "tab.trafficPorts": "介面", "tab.trafficSessions": "連線",
     "tab.trafficServices": "服務", "tab.trafficCountries": "國家",
     "tab.trafficL2gre": "L2GRE 對應表",
