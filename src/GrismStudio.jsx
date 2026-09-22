@@ -5494,7 +5494,14 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
   const [ask, setAsk] = React.useState(null);       // { kind: "start" | "delete", file? }
   const [applying, setApplying] = React.useState(false);
   const [stopping, setStopping] = React.useState(false);
-  const fileSel = useFileSelection(files, running > 0 || applying);
+  /* Whether this page has an instant capture loaded on the device. The
+     countdown is not the same thing: <stl> only stops the output emitting, and
+     the configuration -- with the file it is writing -- stays on the device
+     until something replaces it. So the .tmp stays held from the moment the
+     capture is submitted until Stop clears it, or until the page is opened
+     again, which is the only other way this state goes away. */
+  const [loaded, setLoaded] = React.useState(false);
+  const fileSel = useFileSelection(files, loaded);
 
   // while a capture runs, count down and refresh the folder every second
   React.useEffect(() => {
@@ -5521,6 +5528,7 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
       const res = await fetch("/grism/task/submit_instant", { method: "POST", credentials: "include",
         headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
       if (!res.ok) throw new Error("HTTP " + res.status);
+      setLoaded(true);
       // The device needs a moment to apply the configuration. Counting down from
       // the submit would start the clock before the capture does, so wait until
       // it reports it has finished loading.
@@ -5554,6 +5562,7 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
         headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
       if (!res.ok) throw new Error("HTTP " + res.status);
       setRunning(0);
+      setLoaded(false);
       await new Promise((r) => setTimeout(r, 1500));
       listFiles();
     } catch (e) { setErr(String(e.message || e)); }
