@@ -1792,3 +1792,9 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 
 /* the sockets a service is listening on */
 .svc-ports{white-space:nowrap; font-size:12px;}
+
+/* the OID examples on the SNMP card */
+.snmp-ex td{vertical-align:middle;}
+.snmp-oid{font-size:12px; white-space:nowrap;}
+.snmp-copy{text-align:right; width:1%;}
+.snmp-sample{overflow-x:auto; white-space:nowrap;}

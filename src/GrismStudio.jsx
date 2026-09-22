@@ -40,7 +40,7 @@ import {
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
   parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, firmwareRestartsOnly,
-  XMLRPC_PORT,
+  XMLRPC_PORT, SNMP_EXAMPLES, snmpCommand,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
@@ -1700,6 +1700,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const [community, setCommunity] = React.useState("");
   const [communityBase, setCommunityBase] = React.useState("");
   const [extras, setExtras] = React.useState(null);      // xmlrpc / backup service settings
+  const [snmpCopied, setSnmpCopied] = React.useState(null);
   const [extrasBase, setExtrasBase] = React.useState(null);
   const [hb, setHb] = React.useState(null);              // heartbeat settings
   const [hbBase, setHbBase] = React.useState(null);
@@ -3867,6 +3868,36 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 <button className="sys-refresh" disabled={submit.state === "sending" || !community.trim() || community === communityBase}
                   onClick={() => setConfirm({ kind: "snmp" })}>{tr("set.apply")}</button>
               </div>
+
+              {/* A MIB file answers "what exists"; it does not answer "what do I
+                  type to see this port's traffic". These are the OIDs for that,
+                  with the device's own address and community filled in. */}
+              <div className="oattr-subhead">{tr("snmp.exTitle")}</div>
+              <p className="set-hint">{tr("snmp.exNote")}</p>
+              <div className="tf-table-wrap">
+                <table className="tf-table snmp-ex">
+                  <thead><tr><th>{tr("snmp.exWhat")}</th><th>OID</th><th /></tr></thead>
+                  <tbody>
+                    {SNMP_EXAMPLES.map((ex) => (
+                      <tr key={ex.oid}>
+                        <td>{tr(ex.key)}</td>
+                        <td className="mono snmp-oid">{ex.oid}{ex.row && <span className="dim">.&lt;index&gt;</span>}</td>
+                        <td className="snmp-copy">
+                          <button className="copy-btn" onClick={() => {
+                            const cmd = snmpCommand(ex, window.location.hostname, communityBase || community);
+                            navigator.clipboard?.writeText(cmd).catch(() => {});
+                            setSnmpCopied(ex.oid);
+                            setTimeout(() => setSnmpCopied(null), 1500);
+                          }}>{snmpCopied === ex.oid ? tr("ex.copied") : tr("snmp.exCopy")}</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* The trap: the row index is not the port number. */}
+              <p className="set-hint warn">{tr("snmp.exIndexNote")}</p>
+              <p className="set-hint mono snmp-sample">{snmpCommand(SNMP_EXAMPLES[1], window.location.hostname, communityBase || community)}</p>
             </section>
           </>)}
         </div>

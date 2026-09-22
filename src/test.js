@@ -2621,11 +2621,12 @@ group("S1AP item paging");
 /* ---------- version strings as daemons print them --------------------------- */
 group("service version strings");
 {
-  /* The label repeats what the row already says; the column is narrow and the
-     whole line stays in the tooltip. */
-  check("a labelled version keeps only the number",
-    C.shortVersion("nginx version: nginx/1.22.1") === "1.22.1" &&
-    C.shortVersion("NET-SNMP version:  5.5.2.1") === "5.5.2.1");
+  /* The boilerplate goes, the program stays: the row is named for the service
+     (pyhttpd), not for the program answering (nginx), so a bare number would
+     leave the reader guessing which of the two it belongs to. */
+  check("a labelled version keeps the program and the number",
+    C.shortVersion("nginx version: nginx/1.22.1") === "nginx 1.22.1" &&
+    C.shortVersion("NET-SNMP version:  5.5.2.1") === "NET-SNMP 5.5.2.1");
   // OpenSSH names two products on one line; taking it apart would lose one
   check("a line naming two products is left alone",
     C.shortVersion("OpenSSH_10.2p1, OpenSSL 1.1.1t  7 Feb 2023") === "OpenSSH_10.2p1, OpenSSL 1.1.1t  7 Feb 2023");
@@ -2766,6 +2767,41 @@ group("switch interface");
 }
 
 /* ---------- MEC and deduplication ports ----------------------------------- */
+group("SNMP examples");
+{
+  /* Checked against .189 and .151 with a GETNEXT walk: the tree is
+     .1.3.6.1.4.1.49584 > 2 model > 1 grism, the flow table is a column then a
+     row index, and that index starts at 0. */
+  check("the enterprise root is packetx's", C.MIB_ROOT === ".1.3.6.1.4.1.49584");
+  check("the flow table entry is where the counters hang",
+    C.MIB_FLOW_ENTRY === ".1.3.6.1.4.1.49584.2.1.2.1.1");
+  const by = Object.fromEntries(C.SNMP_EXAMPLES.map((e) => [e.key, e]));
+  check("the columns are the ones the sub-agent registers",
+    by["snmp.exName"].oid.endsWith(".3") && by["snmp.exLink"].oid.endsWith(".4") &&
+    by["snmp.exInBytes"].oid.endsWith(".11") && by["snmp.exInMbps"].oid.endsWith(".12") &&
+    by["snmp.exOutBytes"].oid.endsWith(".30") && by["snmp.exOutMbps"].oid.endsWith(".31"));
+  check("the scalars end in .0, as scalars do",
+    by["snmp.exPorts"].oid.endsWith(".2.1.1.0") &&
+    by["snmp.exSessions"].oid.endsWith(".2.1.3.2.0") &&
+    by["snmp.exSessionsV6"].oid.endsWith(".2.1.4.2.0"));
+  /* A column needs a row; a scalar does not, and appending an index to one
+     would simply return nothing. */
+  check("only the per-interface rows ask for an index",
+    C.SNMP_EXAMPLES.filter((e) => e.row).length === 5 && !by["snmp.exPorts"].row &&
+    !by["snmp.exSessions"].row);
+  check("the name column is walked, the rest are got",
+    by["snmp.exName"].walk === true && !by["snmp.exInBytes"].walk);
+  check("the command carries the device and the community", (() => {
+    const cmd = C.snmpCommand(by["snmp.exInBytes"], "192.168.1.189", "packetxsnmp");
+    return cmd === "snmpget -v2c -c packetxsnmp 192.168.1.189 " +
+      ".1.3.6.1.4.1.49584.2.1.2.1.1.11.<index>";
+  })());
+  check("walking one says walk",
+    C.snmpCommand(by["snmp.exName"], "d", "c").startsWith("snmpwalk -v2c -c c d "));
+  check("with nothing known it still reads as a command",
+    C.snmpCommand(by["snmp.exPorts"], "", "") === "snmpget -v2c -c public <device> .1.3.6.1.4.1.49584.2.1.1.0");
+}
+
 group("how a firmware update ends, per product line");
 {
   /* MIPS (6.5.x) restarts the device; arm64 (7.6.x) restarts only the services

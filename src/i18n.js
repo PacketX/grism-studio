@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.116.0";
+export const STUDIO_VERSION = "2.117.0";
 
 export const I18N = {
   en: {
@@ -165,7 +165,7 @@ export const I18N = {
     "set.hbPacket": "Packet data (hex)", "set.hbUp": "up", "set.hbDown": "down", "set.hbUnknown": "no status",
     "set.svcExtras": "Service options", "set.svcExtrasNote": "Extra settings for services that need more than an on/off switch.",
     "set.localhostOnly": "localhost only",
-    "set.xmlrpcNote": "Served by grism itself on TCP {port} — not a service of its own, which is why it has no row above. Everything the web interface asks the device goes through it; restricting it to localhost leaves this page working and shuts out anything else on the network.",
+    "set.xmlrpcNote": "Served by grism itself on TCP {port}. Everything the web interface asks the device goes through it; restricting it to localhost leaves this page working and shuts out anything else on the network.",
     "set.bkHost": "Host", "set.bkPort": "Port", "set.bkUser": "User",
     "set.bkPass": "Password", "set.bkDir": "Directory", "set.bkCron": "Schedule (cron)",
     "set.apply": "Apply", "set.primary": "Primary", "set.secondary": "Secondary",
@@ -347,6 +347,19 @@ export const I18N = {
     "set.uploadBody": "The uploaded build replaces what is installed now. A device is not rebooted, and the firmware image is not changed — reflashing puts its own copy back.",
     "set.svcVersion": "Version",
     "set.snmpNote": "Community string for SNMP reads. MIB file:",
+    "snmp.exTitle": "Example OIDs",
+    "snmp.exNote": "From PACKETX-MIB, checked against a running device. Copy takes the whole command with this device's address and community filled in.",
+    "snmp.exWhat": "Reads", "snmp.exCopy": "copy command",
+    "snmp.exPorts": "How many interfaces there are",
+    "snmp.exName": "Interface names — walk this first to find a port's row",
+    "snmp.exLink": "Link state of one interface (1 = up)",
+    "snmp.exInBytes": "Bytes in, one interface",
+    "snmp.exInMbps": "Mbps in, one interface",
+    "snmp.exOutBytes": "Bytes out, one interface",
+    "snmp.exOutMbps": "Mbps out, one interface",
+    "snmp.exSessions": "Concurrent sessions (IPv4)",
+    "snmp.exSessionsV6": "Concurrent sessions (IPv6)",
+    "snmp.exIndexNote": "<index> is the row in the table, counted from 0 — not the port number. On a device whose first port is P0 they happen to line up; on one starting at P1 they do not. Walk the name column and read the index off it.",
     "set.confirmApplyTitle": "Apply these settings?",
     "set.confirmApplyBody": "The changes will be written to the device and take effect immediately.",
     "set.interfaces": "Interfaces", "set.port": "Port", "set.ifidx": "Index",
@@ -904,7 +917,7 @@ export const I18N = {
     "set.hbPacket": "封包內容 (十六進位)", "set.hbUp": "正常", "set.hbDown": "中斷", "set.hbUnknown": "無狀態",
     "set.svcExtras": "服務選項", "set.svcExtrasNote": "部分服務除了啟用開關外還有其他設定。",
     "set.localhostOnly": "僅限本機",
-    "set.xmlrpcNote": "由 grism 服務本身提供,使用 TCP {port} — 它不是獨立的服務,所以上方表格沒有它的項目。網頁介面對裝置的所有查詢都經由它;設為僅限本機後,這個頁面照常運作,但網路上的其他來源就連不進來。",
+    "set.xmlrpcNote": "由 grism 服務本身提供,使用 TCP {port}。網頁介面對裝置的所有查詢都經由它;設為僅限本機後,這個頁面照常運作,但網路上的其他來源就連不進來。",
     "set.bkHost": "主機", "set.bkPort": "埠", "set.bkUser": "使用者",
     "set.bkPass": "密碼", "set.bkDir": "目錄", "set.bkCron": "排程 (cron)",
     "set.apply": "套用", "set.primary": "主要", "set.secondary": "次要",
@@ -1086,6 +1099,19 @@ export const I18N = {
     "set.uploadBody": "上傳的版本會取代目前安裝的內容。裝置不會重新開機,韌體本身也不會變更 — 重新燒錄時會換回韌體內附的版本。",
     "set.svcVersion": "版本",
     "set.snmpNote": "SNMP 讀取用的社群字串。MIB 檔:",
+    "snmp.exTitle": "OID 範例",
+    "snmp.exNote": "取自 PACKETX-MIB,並在實機上驗證過。按複製會帶出完整指令,裝置位址與社群字串都已填好。",
+    "snmp.exWhat": "用途", "snmp.exCopy": "複製指令",
+    "snmp.exPorts": "介面數量",
+    "snmp.exName": "介面名稱 — 先 walk 這個找出某個埠是第幾列",
+    "snmp.exLink": "單一介面的連線狀態(1 = 已連線)",
+    "snmp.exInBytes": "單一介面的進入位元組數",
+    "snmp.exInMbps": "單一介面的進入 Mbps",
+    "snmp.exOutBytes": "單一介面的送出位元組數",
+    "snmp.exOutMbps": "單一介面的送出 Mbps",
+    "snmp.exSessions": "同時連線數(IPv4)",
+    "snmp.exSessionsV6": "同時連線數(IPv6)",
+    "snmp.exIndexNote": "<index> 是表格的列號,從 0 開始算 — 不是埠號。第一個埠是 P0 的機型剛好對得上,從 P1 開始的就不會。請先 walk 名稱欄位,對照出正確的列號。",
     "set.confirmApplyTitle": "套用這些設定?",
     "set.confirmApplyBody": "變更會寫入裝置並立即生效。",
     "set.interfaces": "介面", "set.port": "埠", "set.ifidx": "索引",

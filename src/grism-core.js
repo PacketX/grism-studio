@@ -2298,6 +2298,36 @@ export const COMPONENT_TARGETS = [
    anyone wants and not one the page should offer -- so it has no toggle. */
 export const ALWAYS_ON_SERVICES = new Set(["grism"]);
 
+/* A few OIDs worth having on the page, taken from PACKETX-MIB and checked
+   against a running device. The tree is
+   .1.3.6.1.4.1.49584 (packetx) > 2 model > 1 grism, and the interface
+   counters are a table: one row per port, column then row index.
+
+   The index is NOT the port number -- it starts at 0, so P1 is row 1 and a
+   device whose first port is P0 lines up only by accident. Walk the name
+   column first and read the index off that. */
+export const MIB_ROOT = ".1.3.6.1.4.1.49584";
+export const MIB_FLOW_ENTRY = MIB_ROOT + ".2.1.2.1.1";
+
+export const SNMP_EXAMPLES = [
+  { key: "snmp.exPorts", oid: MIB_ROOT + ".2.1.1.0" },
+  { key: "snmp.exName", oid: MIB_FLOW_ENTRY + ".3", walk: true },
+  { key: "snmp.exLink", oid: MIB_FLOW_ENTRY + ".4", row: true },
+  { key: "snmp.exInBytes", oid: MIB_FLOW_ENTRY + ".11", row: true },
+  { key: "snmp.exInMbps", oid: MIB_FLOW_ENTRY + ".12", row: true },
+  { key: "snmp.exOutBytes", oid: MIB_FLOW_ENTRY + ".30", row: true },
+  { key: "snmp.exOutMbps", oid: MIB_FLOW_ENTRY + ".31", row: true },
+  { key: "snmp.exSessions", oid: MIB_ROOT + ".2.1.3.2.0" },
+  { key: "snmp.exSessionsV6", oid: MIB_ROOT + ".2.1.4.2.0" },
+];
+
+/* The command that goes with an example, ready to paste. */
+export const snmpCommand = (ex, host, community) => {
+  const c = community || "public";
+  const h = host || "<device>";
+  return `${ex.walk ? "snmpwalk" : "snmpget"} -v2c -c ${c} ${h} ${ex.oid}${ex.row ? ".<index>" : ""}`;
+};
+
 /* The XML-RPC interface is grism's own, not a daemon beside it, and the port
    is fixed in the firmware rather than configurable: src/main.c and
    dpdk/init.c both set xargs->port = 9125. Everything on this page that asks
@@ -3028,11 +3058,17 @@ export function parsePortMacs(payload) {
 export function shortVersion(text) {
   const raw = String(text ?? "").trim();
   if (!raw) return "";
-  const m = /^(?:[A-Za-z0-9_.-]+ )?version:?\s*(.+)$/i.exec(raw);
-  const body = (m ? m[1] : raw).trim();
-  // "nginx/1.22.1" -> "1.22.1", but leave "OpenSSH_10.2p1, OpenSSL ..." alone
+  /* Keep what it is, drop the boilerplate: "nginx version: nginx/1.30.0"
+     reads as "nginx 1.30.0". A bare number under a column headed "version"
+     says nothing about which of the two programs behind pyhttpd it belongs
+     to. */
+  const m = /^([A-Za-z0-9_.-]+) version:?\s*(.+)$/i.exec(raw);
+  const name = m ? m[1] : "";
+  const body = (m ? m[2] : raw).trim();
+  // "nginx/1.22.1" -> "nginx 1.22.1", but leave "OpenSSH_10.2p1, OpenSSL ..." alone
   const slash = /^([A-Za-z0-9_.-]+)\/(\S+)$/.exec(body);
-  return slash ? slash[2] : body;
+  if (slash) return `${slash[1]} ${slash[2]}`;
+  return name ? `${name} ${body}` : body;
 }
 
 /* Every port's hardware address, keyed by port name./* Every port's hardware address, keyed by port name. The payload keeps the
