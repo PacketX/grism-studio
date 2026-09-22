@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.114.0";
+export const STUDIO_VERSION = "2.115.0";
 
 export const I18N = {
   en: {
@@ -199,10 +199,15 @@ export const I18N = {
     "set.fwUpload": "Upload and update",
     "set.fwUploadTitle": "Update the firmware?",
     "set.fwUploadBody": "The device installs the image and reboots. Traffic stops for several minutes — do not power it off.",
+    "set.fwUploadBodyR": "The device installs the image and restarts the services it replaced — it does not reboot. Traffic stops for a few seconds; do not power it off.",
     "set.fwOnlineTitle": "Install the downloaded update?",
     "set.fwOnlineBody": "The device installs the image and reboots. Traffic stops for several minutes — do not power it off.",
+    "set.fwOnlineBodyR": "The device installs the image and restarts the services it replaced — it does not reboot. Traffic stops for a few seconds; do not power it off.",
     "set.fwPhase.updating": "Installing — device still responding", "set.fwPhase.rebooting": "Restarting — device is offline",
     "set.fwPhase.done": "Update complete", "set.fwReload": "Reload page",
+    "set.fwPhaseR.updating": "Installing — device still responding",
+    "set.fwPhaseR.rebooting": "Restarting the services — the web interface is briefly away",
+    "set.fwPhaseR.done": "Update complete",
     "set.vport": "Virtual ports",
     "set.vportNote": "A virtual port groups physical ports under one name on a VLAN. The VLAN id is required — it is what the group is addressed by. Add and remove them together — applying the change reboots the device.",
     "set.vportNone": "This device has no virtual ports.",
@@ -240,6 +245,7 @@ export const I18N = {
     "set.spPhase.done": "Port speed changed",
     "set.fwUpdating": "Updating firmware",
     "set.fwUpdatingBody": "The device is installing the image and will restart. Do not power it off; reload this page once it is back.",
+    "set.fwUpdatingBodyR": "The device is installing the image. It does not reboot — the services the image replaced are restarted, which takes a few seconds. Do not power it off.",
     "set.auth": "Login authentication", "set.authUse": "Authenticate with",
     "set.authServer": "Server", "set.authSecret": "Shared secret",
     "set.acct": "Internal accounts", "set.acctNote": "Accounts stored on the device itself.",
@@ -931,10 +937,15 @@ export const I18N = {
     "set.fwUpload": "上傳並更新",
     "set.fwUploadTitle": "更新韌體?",
     "set.fwUploadBody": "裝置會安裝映像檔並重新開機,流量中斷數分鐘,期間請勿關閉電源。",
+    "set.fwUploadBodyR": "裝置會安裝映像檔,並重新啟動被更新到的服務 — 不會重開機。流量會中斷數秒,期間請勿關閉電源。",
     "set.fwOnlineTitle": "安裝已下載的更新?",
     "set.fwOnlineBody": "裝置會安裝映像檔並重新開機,流量中斷數分鐘,期間請勿關閉電源。",
+    "set.fwOnlineBodyR": "裝置會安裝映像檔,並重新啟動被更新到的服務 — 不會重開機。流量會中斷數秒,期間請勿關閉電源。",
     "set.fwPhase.updating": "更新中 — 裝置仍可連線", "set.fwPhase.rebooting": "重開機中 — 裝置已離線",
     "set.fwPhase.done": "更新完成", "set.fwReload": "重新載入頁面",
+    "set.fwPhaseR.updating": "更新中 — 裝置仍可連線",
+    "set.fwPhaseR.rebooting": "重啟服務中 — 網頁介面會短暫中斷",
+    "set.fwPhaseR.done": "更新完成",
     "set.vport": "虛擬埠",
     "set.vportNote": "虛擬埠把多個實體埠歸成一個名稱並掛在一個 VLAN 上。VLAN 編號是必填 — 這組埠就是靠它被定址。新增與刪除一起送出 — 套用時裝置會重新開機。",
     "set.vportNone": "這台裝置沒有虛擬埠。",
@@ -972,6 +983,7 @@ export const I18N = {
     "set.spPhase.done": "連接埠速度已切換",
     "set.fwUpdating": "韌體更新中",
     "set.fwUpdatingBody": "裝置正在安裝映像檔並即將重新啟動。請勿關閉電源,完成後重新整理此頁。",
+    "set.fwUpdatingBodyR": "裝置正在安裝映像檔。這台不會重開機 — 只會重新啟動被更新到的服務,需要幾秒鐘。請勿關閉電源。",
     "set.auth": "登入驗證", "set.authUse": "使用此伺服器驗證:",
     "set.authServer": "伺服器", "set.authSecret": "共用密鑰",
     "set.acct": "內部帳號", "set.acctNote": "儲存在裝置本機的帳號。",

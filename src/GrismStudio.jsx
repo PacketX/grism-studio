@@ -39,7 +39,7 @@ import {
   MEC_ARG_KEYS, mecProblems, dedupProblems,
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
-  parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS,
+  parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, firmwareRestartsOnly,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
@@ -2245,11 +2245,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     const DOWN_TICKS = 3;                     // × 2s, comfortably past a reload
     let downRun = 0;
     const ping = async () => {
-      let up = false;
+      let up = false, version = "";
       try {
         // no-store: a cached 200 would read as "back up" while it is still down
         const res = await fetch("/grism/task/get_version", { credentials: "include", cache: "no-store" });
         up = res.ok;
+        if (up) version = (await res.text()).trim();
       } catch { up = false; }
       if (!alive) return;
       downRun = up ? 0 : downRun + 1;
@@ -2259,6 +2260,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         if (!up) {
           return (goneFor >= DOWN_TICKS && w.phase !== "rebooting") ? { ...w, phase: "rebooting" } : w;
         }
+        /* A device that restarts its services rather than itself may never be
+           unreachable for long enough to count as gone -- so what says the
+           update landed is the version it now reports. Only useful when the
+           image is a different build; the down-then-up rule still covers a
+           reflash of the same one. */
+        if (w.wasVersion && version && version !== w.wasVersion) return { ...w, phase: "done" };
         // Reachable only means finished if it had gone away first. The device is
         // still answering for the first moments of an update, and treating that
         // as success would flash "complete" before anything had happened.
@@ -2270,14 +2277,29 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     return () => { alive = false; clearInterval(id); };
   }, [waitPhase]);
 
+  /* What an update does to this device, and how the page will know it is over.
+     The arm64 line restarts the services the image replaced and never goes
+     down, so the wording says so and the finish is the version changing rather
+     than the device disappearing. */
+  const fwWait = () => {
+    const restartOnly = firmwareRestartsOnly(fw.version);
+    return {
+      title: tr("set.fwUpdating"),
+      body: tr(restartOnly ? "set.fwUpdatingBodyR" : "set.fwUpdatingBody"),
+      phase: "updating",
+      phaseKey: restartOnly ? "set.fwPhaseR." : "set.fwPhase.",
+      wasVersion: fw.version || "",
+    };
+  };
+
   /* POST a file and then hold the page while the device restarts. */
-  const uploadAndWait = async (url, file, field, title, body) => {
+  const uploadAndWait = async (url, file, field, wait) => {
     setSubmit({ state: "sending", msg: "" });
     // Hold the page from the moment the upload starts, not after it returns. A
     // firmware image is tens of megabytes: waiting for the POST left the UI live
     // for the whole transfer, and a device that closed the connection while
     // applying landed in the catch below, so the overlay never appeared at all.
-    setWait({ title, body, phase: "updating" });
+    setWait(wait);
     try {
       const fd = new FormData(); fd.append(field, file, file.name);
       const res = await fetch(url, { method: "POST", credentials: "include", body: fd });
@@ -3997,7 +4019,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
-              : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["restoreFile","factory","fwUpload","fwOnline","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+              : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : ["restoreFile","factory","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -4014,11 +4036,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               if (k === "reboot" || k === "halt") { submitPower(k === "reboot" ? "/grism/task/reboot" : "/grism/task/halt", k); return; }
               if (k === "restoreFile") {
                 uploadAndWait("/grism/task/restore_from_file", restoreFile, "file",
-                  tr("set.bkRestoring"), tr("set.bkRestoringBody")); return;
+                  { title: tr("set.bkRestoring"), body: tr("set.bkRestoringBody"), phase: "updating" }); return;
               }
               if (k === "fwUpload") {
-                uploadAndWait("/grism/task/update", fwFile, "file",
-                  tr("set.fwUpdating"), tr("set.fwUpdatingBody")); return;
+                uploadAndWait("/grism/task/update", fwFile, "file", fwWait()); return;
               }
               /* Loading a template replaces the pipeline document, which is not
                  what this page is about -- so say so before leaving it. */
@@ -4058,7 +4079,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 // the install silently never started. The handler reads nothing
                 // from the request and does not check the method.
                 fetch("/grism/task/update_download_update", { credentials: "include" }).catch(() => {});
-                setWait({ title: tr("set.fwUpdating"), body: tr("set.fwUpdatingBody"), phase: "updating" }); return;
+                setWait(fwWait()); return;
               }
               if (k === "flow") {
                 submitConfigs([

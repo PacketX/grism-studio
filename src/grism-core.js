@@ -2268,6 +2268,18 @@ export function parseServices(cfg) {
   })).filter((s) => s.name && !HIDDEN_SERVICES.has(s.name));
 }
 
+/* Which product line a device is, from the version it reports.
+
+   The two lines update differently: on MIPS (6.5.x) an image needs the device
+   restarted, on arm64 (7.6.x) the watcher restarts the services it replaced
+   and the box never goes down. The page has to say which, and has to know when
+   the update is finished, so it needs to tell them apart -- and the version
+   line is the only thing every device reports that says. */
+export const firmwareRestartsOnly = (version) => {
+  const major = Number(String(version ?? "").trim().split(".")[0]);
+  return Number.isFinite(major) && major >= 7;
+};
+
 /* What a manual update may replace, and what the file for it looks like. The
    device decides the same thing again on its side -- this list is what the
    page offers and what it tells the reader to expect, not the authority. */

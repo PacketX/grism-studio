@@ -2766,6 +2766,20 @@ group("switch interface");
 }
 
 /* ---------- MEC and deduplication ports ----------------------------------- */
+group("how a firmware update ends, per product line");
+{
+  /* MIPS (6.5.x) restarts the device; arm64 (7.6.x) restarts only the services
+     the image replaced, so the page must describe -- and detect -- a different
+     thing. The version line is what every device reports that says which. */
+  check("6.5 reboots", C.firmwareRestartsOnly("6.5.260921") === false);
+  check("7.6 does not", C.firmwareRestartsOnly("7.6.260922") === true);
+  check("a version with the revision appended still reads",
+    C.firmwareRestartsOnly("7.6.260922-cc28e8d4") === true);
+  check("anything unreadable falls back to the older behaviour",
+    C.firmwareRestartsOnly("") === false && C.firmwareRestartsOnly(null) === false &&
+    C.firmwareRestartsOnly("unknown") === false);
+}
+
 group("service state, beside what the configuration asks for");
 {
   const status = C.parseServiceStatus({ service_status: {
