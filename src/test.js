@@ -2931,6 +2931,14 @@ group("service state, beside what the configuration asks for");
     return by["mmdb"].accept === ".mmdb" && by["sshd"].accept === ".tgz" &&
       by["mmdb"].marker === undefined;
   })());
+  /* Which database is installed, read off its name -- the mtime on the file is
+     when it was copied here, not when it was cut. */
+  check("the month comes off the database name",
+    C.countryDbDate("dbip-country-2025-10.mmdb") === "2025-10");
+  check("a day in the name is kept",
+    C.countryDbDate("dbip-country-lite-2025-10-01.mmdb") === "2025-10-01");
+  check("a name with no date is left to speak for itself",
+    C.countryDbDate("dbip-country.mmdb") === "" && C.countryDbDate() === "");
   /* The ports come from the sockets the process holds, so a service that
      listens on nothing simply has none -- not a guess from its name. */
   const withPorts = C.parseServiceStatus({ service_status: {

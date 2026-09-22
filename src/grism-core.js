@@ -2332,6 +2332,16 @@ export const COMPONENT_TARGETS = [
     file: "dbip-country-<YYYY-MM>.mmdb", accept: ".mmdb" },
 ];
 
+/* How old the installed country database is. The file's own timestamp is when
+   it was copied onto the device, which says nothing -- the month it was cut is
+   in its name (dbip-country-2025-10.mmdb), so that is what gets read. A name
+   that carries no date is shown as it stands rather than as nothing. */
+export function countryDbDate(name) {
+  const m = /(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(String(name ?? ""));
+  if (!m) return "";
+  return m[3] ? `${m[1]}-${m[2]}-${m[3]}` : `${m[1]}-${m[2]}`;
+}
+
 /* The packet application is what the box is. Switching it off leaves a device
    that boots, answers the web page and forwards nothing, which is not a state
    anyone wants and not one the page should offer -- so it has no toggle. */

@@ -39,7 +39,7 @@ import {
   MEC_ARG_KEYS, mecProblems, dedupProblems,
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
-  parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, firmwareRestartsOnly,
+  parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, countryDbDate, firmwareRestartsOnly,
   XMLRPC_PORT, SNMP_EXAMPLES, snmpCommand, parseFirmwareVersion,
   FIRMWARE_RESTART_HOLD_SECONDS, firmwareHoldLeft,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
@@ -3835,6 +3835,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   <span className="svc-ver-2">{tr("set.upCurrent")} {STUDIO_VERSION}</span>}
                 {upload.target === "sshd" && svcVersions.sshd &&
                   <span className="svc-ver-2">{tr("set.upCurrent")} {shortVersion(svcVersions.sshd)}</span>}
+                {/* the month the database was cut, off its file name */}
+                {upload.target === "mmdb" && svcVersions.mmdb &&
+                  <span className="svc-ver-2" title={svcVersions.mmdb}>{tr("set.upCurrent")}{" "}
+                    {countryDbDate(svcVersions.mmdb) || svcVersions.mmdb}</span>}
               </p>
               {upload.state === "error" && <p className="set-hint err">{tr("set.upFailed")}: {upload.msg}</p>}
               {/* The page that did the upload is the page that was replaced, so
