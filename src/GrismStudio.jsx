@@ -5640,11 +5640,11 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
                     <td className="tf-num mono">{fmtBytes(f.bytes)}</td>
                     <td className="mono dim">{f.modified}</td>
                     <td className="cap-actions">
-                      {isPartialCapture(f.name)
+                      {fileSel.held(f.name)
                         ? <span className="dim file-partial">{tr("cap.writing")}</span>
                         : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
                     </td>
-                    <td className="sel-col"><input type="checkbox" title={tr("cap.markForDelete")}
+                    <td className="sel-col"><input type="checkbox"
                       checked={fileSel.marked.includes(f.name)} disabled={fileSel.held(f.name)}
                       title={fileSel.held(f.name) ? tr("cap.noDelWriting") : tr("cap.markForDelete")}
                       onChange={() => fileSel.toggle(f.name)} /></td>
