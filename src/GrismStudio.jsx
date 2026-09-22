@@ -11,7 +11,7 @@ import {
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
-  heartbeatStatusRows, heartbeatPortMarks, heartbeatSummary, interfacesToList, listToInterfaces, logSourcePorts,
+  heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
   mkSyslogTarget, parseHeartbeat, parseLogging,
   parseHeartbeatStatus, parseServiceExtras,
@@ -4698,7 +4698,6 @@ function TrafficTab({ loggedIn, t, model = "" }) {
 
   const hbRows = React.useMemo(() => heartbeatStatusRows(hb.targets, hbStatus), [hb.targets, hbStatus]);
   const hbMarks = React.useMemo(() => heartbeatPortMarks(hbRows), [hbRows]);
-  const hbSum = heartbeatSummary(hbRows);
   const hbTip = (m) => {
     const parts = [];
     if (m.send.length) parts.push(tr("tf.hbSend").replace("{n}", m.send.join(", ")));
@@ -4749,20 +4748,6 @@ function TrafficTab({ loggedIn, t, model = "" }) {
           <span className="tf-flow-seg"><b>{tr("tf.flowV4")}</b> {tr("tf.total")} <span className="mono">{fmtNum(sessions.v4.total)}</span> · {tr("tf.concurrent")} <span className="mono">{fmtNum(sessions.v4.concurrent)}</span></span>
           <span className="tf-flow-div">|</span>
           <span className="tf-flow-seg"><b>{tr("tf.flowV6")}</b> {tr("tf.total")} <span className="mono">{fmtNum(sessions.v6.total)}</span> · {tr("tf.concurrent")} <span className="mono">{fmtNum(sessions.v6.concurrent)}</span></span>
-        </div>
-      )}
-
-      {/* one line, below the session figures: the probe is background
-          information until it stops coming back */}
-      {hbRows.length > 0 && (
-        <div className="tf-hb-line">
-          <span className={"tf-hb" + (hbSum.down ? " miss" : "")}>{tr("tf.hb")}</span>
-          <span>{(hbSum.down ? tr("tf.hbLineMiss") : tr("tf.hbLineOk"))
-            .replace("{n}", hbSum.total).replace("{d}", hbSum.down)}</span>
-          {hbSum.down > 0 && (
-            <span className="tf-hb-which mono">{hbRows.filter((r) => !r.up)
-              .map((r) => `#${r.id ?? "?"} ${r.sendPort}→${r.receivePort}`).join(" · ")}</span>
-          )}
         </div>
       )}
 

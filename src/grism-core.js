@@ -2570,11 +2570,6 @@ export function heartbeatPortMarks(rows = []) {
   return marks;
 }
 
-export const heartbeatSummary = (rows = []) => ({
-  total: rows.length,
-  down: rows.filter((r) => !r.up).length,
-});
-
 
 export function heartbeatProblems(hb, problems = []) {
   // Targets are written back positionally and the device itself ships configs with

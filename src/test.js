@@ -968,9 +968,6 @@ group("heartbeat");
   check("no targets, no marks", Object.keys(C.heartbeatPortMarks([])).length === 0);
   check("unnumbered targets fall back to their position",
     C.heartbeatPortMarks([{ up: true, sendPort: "P1", receivePort: "P1" }]).P1.send[0] === 1);
-  const sum = C.heartbeatSummary([{ up: true }, { up: false }, { up: false }]);
-  check("summary counts the missed ones", sum.total === 3 && sum.down === 2);
-  check("summary of nothing is empty", C.heartbeatSummary().total === 0);
 
   // The list is a fixed set of slots: adding reuses the first disabled slot rather
   // than growing the list, and removing just switches that slot off.

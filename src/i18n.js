@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.126.0";
+export const STUDIO_VERSION = "2.127.0";
 
 export const I18N = {
   en: {
@@ -447,8 +447,6 @@ export const I18N = {
     "tf.hb": "hb",
     "tf.hbSend": "sends heartbeat {n}", "tf.hbRecv": "receives heartbeat {n}",
     "tf.hbOkTip": "coming back", "tf.hbMissTip": "not coming back — the target is missed",
-    "tf.hbLineOk": "heartbeat: {n} target(s), all answering",
-    "tf.hbLineMiss": "heartbeat: {d} of {n} target(s) missed",
     "tf.speed": "Speed", "tf.inRate": "In", "tf.outRate": "Out",
     "tf.inPkts": "In packets", "tf.outPkts": "Out packets", "tf.inBytes": "In bytes", "tf.outBytes": "Out bytes",
     "tf.errors": "Errors", "tf.pps": "pps",
@@ -1215,8 +1213,6 @@ export const I18N = {
     "tf.hb": "hb",
     "tf.hbSend": "送出 heartbeat {n}", "tf.hbRecv": "接收 heartbeat {n}",
     "tf.hbOkTip": "有收回", "tf.hbMissTip": "沒有收回 — 目標中斷",
-    "tf.hbLineOk": "heartbeat:{n} 個目標,都有收回",
-    "tf.hbLineMiss": "heartbeat:{n} 個目標中有 {d} 個沒有收回",
     "tf.speed": "速率", "tf.inRate": "入", "tf.outRate": "出",
     "tf.inPkts": "入封包", "tf.outPkts": "出封包", "tf.inBytes": "入位元組", "tf.outBytes": "出位元組",
     "tf.errors": "錯誤", "tf.pps": "pps",
