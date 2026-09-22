@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.117.0";
+export const STUDIO_VERSION = "2.118.0";
 
 export const I18N = {
   en: {
@@ -191,6 +191,7 @@ export const I18N = {
     "set.factoryResetBody": "Every setting is being discarded and the device is restarting. It will not answer at this address again — continue at the factory address once it is back.",
     "set.bkRestoringBody": "The device is applying the configuration and restarting. Reload this page once it is back.",
     "set.chooseFile": "Choose file…", "set.noFile": "no file selected", "set.fileNameHint": "expected",
+    "set.fwBuild": "Build of the day", "set.fwRevision": "Built from commit",
     "set.fwCurrent": "Installed firmware",
     "set.fwOnline": "Online update", "set.fwOnlineNote": "Check the update server for a newer release, download it, then install.",
     "set.fwCheck": "Check for updates", "set.fwChecking": "Checking…",
@@ -943,6 +944,7 @@ export const I18N = {
     "set.factoryResetBody": "所有設定正在清除,裝置重新啟動中。它不會再回應這個位址 — 完成後請改用原廠位址連線。",
     "set.bkRestoringBody": "裝置正在套用設定並重新啟動,完成後請重新整理此頁。",
     "set.chooseFile": "選擇檔案…", "set.noFile": "尚未選擇檔案", "set.fileNameHint": "預期檔名為",
+    "set.fwBuild": "當天版次", "set.fwRevision": "建置自 commit",
     "set.fwCurrent": "目前韌體",
     "set.fwOnline": "線上更新", "set.fwOnlineNote": "向更新伺服器確認是否有新版本,下載後再安裝。",
     "set.fwCheck": "檢查更新", "set.fwChecking": "檢查中…",

@@ -40,7 +40,7 @@ import {
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
   parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, firmwareRestartsOnly,
-  XMLRPC_PORT, SNMP_EXAMPLES, snmpCommand,
+  XMLRPC_PORT, SNMP_EXAMPLES, snmpCommand, parseFirmwareVersion,
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
@@ -2012,8 +2012,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       try {
         const cfg = await getConfig();
         const r = await fetch("/grism/task/get_version", { credentials: "include" });
-        const v = r.ok ? (await r.text()).trim().split("-")[0] : "";
-        setFw((o) => ({ ...o, model: cfg?.args?.model ?? "", version: v }));
+        const fwv = parseFirmwareVersion(r.ok ? await r.text() : "");
+        setFw((o) => ({ ...o, model: cfg?.args?.model ?? "", version: fwv.version,
+          build: fwv.build, revision: fwv.revision }));
       } catch (e) { warnFetch("firmware version", e); }
     })();
   }, [loggedIn, section, fw.version, getConfig]);
@@ -3956,6 +3957,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <div className="sess-figures">
               <div><span className="sess-k">{tr("ov.model")}</span><span className="sess-v">{fw.model ? "GRISM-" + fw.model : "—"}</span></div>
               <div><span className="sess-k">{tr("ov.version")}</span><span className="sess-v mono">{fw.version || "—"}</span></div>
+              {/* Which build of that day, and the commit it came from: with
+                  several images a day the date no longer identifies one. */}
+              {fw.build && <div><span className="sess-k">{tr("set.fwBuild")}</span>
+                <span className="sess-v mono">{fw.build}</span></div>}
+              {fw.revision && <div><span className="sess-k">{tr("set.fwRevision")}</span>
+                <span className="sess-v mono" title={fw.revision}>{fw.revision.slice(0, 8)}</span></div>}
             </div>
           </section>
 

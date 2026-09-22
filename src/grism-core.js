@@ -2268,6 +2268,26 @@ export function parseServices(cfg) {
   })).filter((s) => s.name && !HIDDEN_SERVICES.has(s.name));
 }
 
+/* get_version answers "<version>-<revision>": the firmware version, then the
+   commit the image was built from.
+
+   The version itself is <line>.<YYMMDD>.<build> -- the build number exists
+   because more than one image can be cut in a day and the date alone stopped
+   telling them apart. Older images have no fourth part, so it is optional. */
+export function parseFirmwareVersion(text) {
+  const raw = String(text ?? "").trim();
+  const cut = raw.indexOf("-");
+  const version = (cut >= 0 ? raw.slice(0, cut) : raw).trim();
+  const revision = cut >= 0 ? raw.slice(cut + 1).trim() : "";
+  const parts = version.split(".");
+  return {
+    version, revision,
+    line: parts.slice(0, 2).join("."),
+    date: parts[2] ?? "",
+    build: parts[3] ?? "",
+  };
+}
+
 /* Which product line a device is, from the version it reports.
 
    The two lines update differently: on MIPS (6.5.x) an image needs the device

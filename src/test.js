@@ -2802,6 +2802,32 @@ group("SNMP examples");
     C.snmpCommand(by["snmp.exPorts"], "", "") === "snmpget -v2c -c public <device> .1.3.6.1.4.1.49584.2.1.1.0");
 }
 
+group("firmware version, with a build number");
+{
+  /* get_version answers "<version>-<revision>", and the version is
+     <line>.<YYMMDD>.<build>. The build number was added because more than one
+     image can be cut in a day; images from before it have three parts. */
+  const v = C.parseFirmwareVersion("7.6.260922.3-cc28e8d4ba467b39c1fd2b72c13cd77f97a59ff6");
+  check("the version and the commit come apart",
+    v.version === "7.6.260922.3" && v.revision.startsWith("cc28e8d4"));
+  check("and the version comes apart into its own parts",
+    v.line === "7.6" && v.date === "260922" && v.build === "3");
+  check("an image from before the build number simply has none", (() => {
+    const o = C.parseFirmwareVersion("6.5.260921-b7433a3d");
+    return o.version === "6.5.260921" && o.build === "" && o.date === "260921";
+  })());
+  check("a version with no commit after it still reads",
+    C.parseFirmwareVersion("7.6.260922.1").version === "7.6.260922.1" &&
+    C.parseFirmwareVersion("7.6.260922.1").revision === "");
+  check("nothing in, nothing claimed",
+    C.parseFirmwareVersion("").version === "" && C.parseFirmwareVersion(null).build === "");
+  /* The line is still the first two parts, so telling the product lines apart
+     is unaffected by the extra one. */
+  check("the build number does not confuse the product line",
+    C.firmwareRestartsOnly("7.6.260922.3") === true &&
+    C.firmwareRestartsOnly("6.5.260921.2") === false);
+}
+
 group("how a firmware update ends, per product line");
 {
   /* MIPS (6.5.x) restarts the device; arm64 (7.6.x) restarts only the services
