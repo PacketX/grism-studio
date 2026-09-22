@@ -347,6 +347,10 @@ export default function GrismStudio() {
   const [signedOutNotice, setSignedOutNotice] = useState("");
   const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
   const [mgmtPorts, setMgmtPorts] = useState([]);       // management interfaces, e.g. M0
+  /* What the operator called each port, keyed by name. Only the chain editor
+     uses it: there, a port is picked out of a list of a dozen identical names,
+     and "to the IDS" is the part that says which one is right. */
+  const [portDescs, setPortDescs] = useState({});
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
   const [loopPorts, setLoopPorts] = useState([]); // ports on a LOOP-type interface (out returns in on the same port)
@@ -535,6 +539,12 @@ export default function GrismStudio() {
       // V0, V1 … P0, P1 … regardless of the order the config happens to use.
       const names = ifaces.flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
       setDevicePorts(names.length ? sortPortNames([...new Set(names)]) : null);
+      const descs = {};
+      ifaces.flatMap((i) => i.ports ?? []).forEach((p) => {
+        const d = String(p.description ?? "").trim();
+        if (p.name && d) descs[p.name] = d;
+      });
+      setPortDescs(descs);
       // ports belonging to a LOOP-type interface: traffic sent out returns on the
       // same port. Tracked separately so the panel can list & animate them.
       const loops = ifaces.filter((i) => (i.type || "").toUpperCase() === "LOOP")
@@ -560,7 +570,7 @@ export default function GrismStudio() {
       // grism.port.linkdown can name a management interface as well as a data
       // port, and those live in ifcfgs rather than interfaces
       setMgmtPorts([...new Set(mgmtPortNames(cfg))]);
-    } catch { setDevicePorts(null); setHbTargets([]); setDeviceStorages([]); setLoopPorts([]); setMgmtPorts([]); } // keep defaults
+    } catch { setDevicePorts(null); setHbTargets([]); setDeviceStorages([]); setLoopPorts([]); setMgmtPorts([]); setPortDescs({}); } // keep defaults
   }, []);
 
   // set the sync baseline from the device's running config WITHOUT replacing the
@@ -638,7 +648,7 @@ export default function GrismStudio() {
     try {
       await fetch("/logout", { method: "POST", credentials: "include" });
     } catch { /* clear local session regardless of network result */ }
-    setDevicePorts(null); setMgmtPorts([]); // fall back to default port list
+    setDevicePorts(null); setMgmtPorts([]); setPortDescs({}); // fall back to default port list
     setHbTargets([]);
     setDeviceStorages([]);
     setLoopPorts([]);
@@ -1056,13 +1066,13 @@ export default function GrismStudio() {
           />
         )}
         {tab === "inputs" && (
-          <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} portOptions={devicePorts ?? DEFAULT_PORTS} t={t} touched={changes?.inputs?.touched} />
+          <InputsTab doc={doc} setDoc={setDoc} activeInput={activeInput} setActiveInput={setActiveInput} portOptions={devicePorts ?? DEFAULT_PORTS} portDescs={portDescs} t={t} touched={changes?.inputs?.touched} />
         )}
         {tab === "outputs" && (
-          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={[...(devicePorts ?? DEFAULT_PORTS), ...deviceStorages]} t={t} touched={changes?.outputs?.touched} />
+          <OutputsTab doc={doc} setDoc={setDoc} activeOutput={activeOutput} setActiveOutput={setActiveOutput} portOptions={[...(devicePorts ?? DEFAULT_PORTS), ...deviceStorages]} portDescs={portDescs} t={t} touched={changes?.outputs?.touched} />
         )}
         {tab === "actions" && (
-          <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} portOptions={devicePorts ?? DEFAULT_PORTS} t={t} touched={changes?.actions?.touched} />
+          <ActionsTab doc={doc} setDoc={setDoc} activeAction={activeAction} setActiveAction={setActiveAction} portOptions={devicePorts ?? DEFAULT_PORTS} portDescs={portDescs} t={t} touched={changes?.actions?.touched} />
         )}
         {tab === "chain" && (
           <ChainTab doc={doc} definedIds={definedIds} outputIds={outputIds}
@@ -1070,7 +1080,7 @@ export default function GrismStudio() {
             activeChain={activeChain} setActiveChain={setActiveChain}
             t={t}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null}
-            hbTargets={hbTargets} />
+            portDescs={portDescs} hbTargets={hbTargets} />
         )}
         {tab === "simulate" && (
           <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} loopPorts={loopPorts} t={t}
@@ -5282,12 +5292,15 @@ function useFileSelection(files) {
   const names = files.map((f) => f.name).join("\u0000");
   // keyed on the listing's contents: when the folder changes, drop names that
   // are no longer there so a stale selection can't be submitted
-  React.useEffect(() => { setMarked((m) => m.filter((n) => files.some((f) => !f.isDir && f.name === n))); },
+  React.useEffect(() => { setMarked((m) => m.filter((n) => !isPartialCapture(n) && files.some((f) => !f.isDir && f.name === n))); },
     [names, files]);
-  const deletable = files.filter((f) => !f.isDir);
+  /* The .tmp is the capture the device is writing right now. Deleting it out
+     from under the writer leaves a capture running with nowhere to put its
+     packets, so it is not selectable at all -- by hand or by select-all. */
+  const deletable = files.filter((f) => !f.isDir && !isPartialCapture(f.name));
   return {
     marked, setMarked,
-    toggle: (n) => setMarked((m) => (m.includes(n) ? m.filter((x) => x !== n) : [...m, n])),
+    toggle: (n) => { if (isPartialCapture(n)) return; setMarked((m) => (m.includes(n) ? m.filter((x) => x !== n) : [...m, n])); },
     allOn: deletable.length > 0 && marked.length === deletable.length,
     toggleAll: () => setMarked((m) => (m.length === deletable.length ? [] : deletable.map((f) => f.name))),
     clear: () => setMarked([]),
@@ -5430,7 +5443,8 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
                       : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
                   </td>
                   <td className="sel-col">
-                    <input type="checkbox" title={tr("cap.markForDelete")}
+                    <input type="checkbox" disabled={isPartialCapture(f.name)}
+                      title={isPartialCapture(f.name) ? tr("cap.noDelWriting") : tr("cap.markForDelete")}
                       checked={sel.marked.includes(f.name)} onChange={() => sel.toggle(f.name)} />
                   </td>
                 </tr>
@@ -5474,6 +5488,7 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
   const [auto, setAuto] = React.useState(true);     // keep the folder listing fresh
   const [ask, setAsk] = React.useState(null);       // { kind: "start" | "delete", file? }
   const [applying, setApplying] = React.useState(false);
+  const [stopping, setStopping] = React.useState(false);
   const fileSel = useFileSelection(files);
 
   // while a capture runs, count down and refresh the folder every second
@@ -5521,6 +5536,25 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
     } catch (e) { setApplying(false); setErr(String(e.message || e)); }
   };
 
+  /* Cut a capture short. The <stl> only stops the output emitting; the instant
+     configuration stays loaded until something replaces it, and an empty <run/>
+     is what forces that reload. The countdown stops with it, and the listing is
+     read again because the device renames the .tmp it was writing. */
+  const stop = async () => {
+    setErr("");
+    setStopping(true);
+    try {
+      const body = new URLSearchParams(); body.set("data", "<run/>");
+      const res = await fetch("/grism/task/submit_instant", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setRunning(0);
+      await new Promise((r) => setTimeout(r, 1500));
+      listFiles();
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setStopping(false); }
+  };
+
   return (
     <div className="sys-wrap">
       <div className="sys-head"><h2 className="sys-title">{tr("cap.title")}</h2></div>
@@ -5553,6 +5587,8 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
           <button className="sys-refresh" disabled={problems.length > 0 || running > 0 || applying}
             onClick={() => setAsk({ kind: "start" })}>
             {running > 0 ? tr("cap.running") : tr("cap.start")}</button>
+          <button className="copy-btn" disabled={running === 0 || stopping} onClick={stop}>
+            {stopping ? tr("cap.stopping") : tr("cap.stop")}</button>
         </div>
       </section>
 
@@ -5600,7 +5636,9 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
                         : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
                     </td>
                     <td className="sel-col"><input type="checkbox" title={tr("cap.markForDelete")}
-                      checked={fileSel.marked.includes(f.name)} onChange={() => fileSel.toggle(f.name)} /></td>
+                      checked={fileSel.marked.includes(f.name)} disabled={isPartialCapture(f.name)}
+                      title={isPartialCapture(f.name) ? tr("cap.noDelWriting") : tr("cap.markForDelete")}
+                      onChange={() => fileSel.toggle(f.name)} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -5640,6 +5678,10 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
             <div className="apply-lock-title">{applying ? tr("cap.applying") : tr("cap.capturing")}</div>
             <div className="apply-lock-body">{applying ? tr("cap.applyingBody") : tr("cap.capturingBody")}</div>
             {!applying && <div className="apply-countdown mono">{running}s</div>}
+            {!applying && (
+              <button className="copy-btn" disabled={stopping} onClick={stop}>
+                {stopping ? tr("cap.stopping") : tr("cap.stop")}</button>
+            )}
           </div>
         </div>
       )}
@@ -6198,17 +6240,24 @@ function FindRow({ node, onChange, onRemove, canRemove, hbTargets, portOptions, 
 /* Single-port dropdown built from the device's port list. If the current value
    isn't in the list (e.g. loaded from an older config), it's shown anyway so it
    never silently disappears. */
-function PortSelect({ value, options, onChange, invalid }) {
+function PortSelect({ value, options, onChange, invalid, descs }) {
   const opts = options.includes(value) || !value ? options : [value, ...options];
+  /* A dozen ports named P0..P11 are told apart by what the operator called
+     them, so the name the device carries goes in the option text. An option
+     element takes no markup, hence the dash rather than a second span. */
+  const label = (p) => {
+    const d = String(descs?.[p] ?? "").trim();
+    return p + (d ? " — " + d : "") + (!options.includes(p) ? " (custom)" : "");
+  };
   return (
     <select className={"m-port" + (invalid ? " invalid" : "")} value={value} onChange={(e) => onChange(e.target.value)}>
       {!value && <option value="">— select —</option>}
-      {opts.map((p) => <option key={p} value={p}>{p}{!options.includes(p) ? " (custom)" : ""}</option>)}
+      {opts.map((p) => <option key={p} value={p}>{label(p)}</option>)}
     </select>
   );
 }
 
-function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, touched }) {
+function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, portDescs = {}, t, touched }) {
   const [showPicked, setShowPicked] = React.useState(false);
   const [portMacs, setPortMacs] = React.useState(null);
   React.useEffect(() => {
@@ -6310,7 +6359,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
               <option value="traffic-gen">traffic-gen</option>
             </select></label>
           <label className="ml" title="port"><span>{tr("in.outputPort")}</span>
-            <PortSelect value={inp.port} options={portOptions} onChange={(v) => patch({ port: v })}
+            <PortSelect value={inp.port} options={portOptions} descs={portDescs} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(inp.port)} /></label>
           <button className="del" onClick={() => delInput(inp.id)}>{tr("common.delete")}</button>
         </div>
@@ -6417,7 +6466,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, t, t
   );
 }
 
-function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t, touched }) {
+function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, portDescs = {}, t, touched }) {
   const tr = t || ((k) => k);
   const [attrsOpen, setAttrsOpen] = useState(false);   // output attributes panel
   const outputs = doc.outputs ?? [];
@@ -6488,7 +6537,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, t
           <NameField kind="output" item={o} t={t} value={o[o.labelAttr ?? "name"] ?? o.name ?? ""}
             onChange={(e) => { const k = o.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
           <label className="ml"><span>{tr("out.port")}</span>
-            <PortSelect value={o.port} options={portOptions} onChange={(v) => patch({ port: v })}
+            <PortSelect value={o.port} options={portOptions} descs={portDescs} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
           <AttrToggle t={tr} open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
             label={tr("out.attrs")} active={Object.values(o.oattrs ?? {}).some((v) => v && v !== "no")} />
@@ -6616,7 +6665,7 @@ function OutputModRow({ mod, onChange, onOp, onAttr, onRemove, t }) {
 /* ============================================================
    Actions tab — <action> input-packet-process / linkpairs
    ============================================================ */
-function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t, touched }) {
+function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, portDescs = {}, t, touched }) {
   const tr = t || ((k) => k);
   const actions = doc.actions ?? [];
   const a = actions.find((x) => x.id === activeAction) || actions[0];
@@ -6672,14 +6721,14 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, t
             </select></label>
           {isLink ? (<>
             <label className="ml" title="portA"><span>{tr("act.portA")}</span>
-              <PortSelect value={a.portA} options={portOptions} onChange={(v) => patch({ portA: v })}
+              <PortSelect value={a.portA} options={portOptions} descs={portDescs} onChange={(v) => patch({ portA: v })}
                 invalid={!/^[A-Z][0-9]+$/.test(a.portA)} /></label>
             <label className="ml" title="portB"><span>{tr("act.portB")}</span>
-              <PortSelect value={a.portB} options={portOptions} onChange={(v) => patch({ portB: v })}
+              <PortSelect value={a.portB} options={portOptions} descs={portDescs} onChange={(v) => patch({ portB: v })}
                 invalid={!/^[A-Z][0-9]+$/.test(a.portB)} /></label>
           </>) : (
             <label className="ml" title="port"><span>{tr("act.inputPort")}</span>
-              <PortSelect value={a.port} options={portOptions} onChange={(v) => patch({ port: v })}
+              <PortSelect value={a.port} options={portOptions} descs={portDescs} onChange={(v) => patch({ port: v })}
                 invalid={!/^[A-Z][0-9]+$/.test(a.port)} /></label>
           )}
           <button className="del" onClick={() => delAction(a.id)}>{tr("common.delete")}</button>
@@ -6903,7 +6952,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, hbTargets, t, touched }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, t, touched }) {
   const tr = t || ((k) => k);
   // {name} placeholders, so a translation can put the value where its own
   // grammar needs it rather than where English happened to put it
@@ -6994,14 +7043,14 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
      document defines, then the two standalone values. */
   const SOLO_OUTS = [{ id: "0", subKey: "ch.outDrop" }, { id: "S", subKey: "ch.outSwitch" }];
   const outChoices = useMemo(() => [
-    ...portOptions.map((p) => ({ id: p, sub: "" })),
+    ...portOptions.map((p) => ({ id: p, sub: portDescs[p] ?? "" })),
     ...(doc.outputs ?? []).map((o) => ({
       id: "O" + o.id,
       label: o.port ? `O${o.id}(${o.port})` : "O" + o.id,
       sub: String(o.name || o.alt || "").trim(),
     })),
     ...SOLO_OUTS.map((x) => ({ id: x.id, sub: tr(x.subKey), solo: true })),
-  ], [portOptions, doc.outputs, tr]);
+  ], [portOptions, portDescs, doc.outputs, tr]);
   const toggleOutChoice = (nodeId, ports, item) => {
     const solo = SOLO_OUTS.some((x) => x.id === item);
     const toks = listTokens(ports);
@@ -7353,7 +7402,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             <CheckAccordion
               label={tr("ch.ingressPorts")}
               t={t}
-              items={portOptions.map((p) => ({ id: p, b: p, on: listHas(chain.ports, p) }))}
+              items={portOptions.map((p) => ({ id: p, b: p, sub: portDescs[p] ?? "", on: listHas(chain.ports, p) }))}
               onToggle={(p) => toggleInPort(p)}
               onAll={(on) => setAllInPorts(portOptions, on)}
               onSetOne={(p) => setOneInPort(portOptions, p)}

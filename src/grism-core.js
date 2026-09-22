@@ -3100,8 +3100,15 @@ export const storagePath = (storage, dir, name) =>
    truncated capture, so it isn't offered until the device renames it. */
 export const isPartialCapture = (name) => /\.tmp$/i.test(String(name ?? "").trim());
 
-export const captureFileHref = (storage, dir, name) =>
-  `/file_manager/preview?download=1&file=/${[storage, dir, name].map((p) => String(p ?? "").replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/")}`;
+/* The Go app's file manager served these; it is gone, and nginx answers 404
+   for anything it does not list, so the link goes to pywww now. The three parts
+   travel separately rather than as one path, because that is what the endpoint
+   checks -- a volume, an optional directory under it, and a file name. */
+const trimSlashes = (p) => String(p ?? "").replace(/^\/+|\/+$/g, "");
+export const captureFileHref = (storage, dir, name) => {
+  const q = new URLSearchParams({ name: trimSlashes(storage), dir: trimSlashes(dir), filename: trimSlashes(name) });
+  return `/grism/task/download_storage_file?${q}`;
+};
 
 /* ===================== traffic generator defaults =====================
    A newly created generator should produce sensible traffic straight away, so

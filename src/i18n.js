@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.127.0";
+export const STUDIO_VERSION = "2.129.0";
 
 export const I18N = {
   en: {
@@ -20,6 +20,7 @@ export const I18N = {
     "cap.stl": "Seconds to live", "cap.storage": "Storage", "cap.dir": "Directory", "cap.writesTo": "Writes to",
     "cap.used": "Used", "cap.free": "Free", "cap.noStorage": "no storage available",
     "cap.start": "Start capture", "cap.running": "Capturing…",
+    "cap.stop": "Stop", "cap.stopping": "Stopping…",
     "cap.applying": "Starting", "cap.applyingBody": "Waiting for the device to apply the capture configuration…",
     "cap.capturing": "Capturing", "cap.capturingBody": "Recording traffic. Files appear below as they are written.",
     "cap.files": "Captured files", "cap.noFiles": "Nothing in this folder yet.",
@@ -33,7 +34,8 @@ export const I18N = {
     "cap.confirmDesc": "Runs for the seconds to live, then removes itself",
     "cap.delDesc": "The file cannot be recovered",
     "cap.delTitle": "Delete this file?", "cap.delTitleN": "Delete these files?", "cap.selectAll": "Select all", "cap.delSelected": "Delete selected",
-    "cap.markForDelete": "Mark for deletion", "cap.delBody": "The capture file is removed from the storage volume. This cannot be undone.",
+    "cap.markForDelete": "Mark for deletion",
+    "cap.noDelWriting": "The device is still writing this file — it can be deleted once the capture ends and it is renamed.", "cap.delBody": "The capture file is removed from the storage volume. This cannot be undone.",
     "tab.trafficPorts": "Interfaces", "tab.trafficSessions": "Sessions",
     "tab.trafficServices": "Services", "tab.trafficCountries": "Countries",
     "tab.trafficL2gre": "L2GRE Correlation",
@@ -786,6 +788,7 @@ export const I18N = {
     "cap.stl": "存活秒數", "cap.storage": "儲存空間", "cap.dir": "目錄", "cap.writesTo": "寫入位置:",
     "cap.used": "已用", "cap.free": "可用", "cap.noStorage": "沒有可用的儲存空間",
     "cap.start": "開始側錄", "cap.running": "側錄中…",
+    "cap.stop": "中斷", "cap.stopping": "中斷中…",
     "cap.applying": "啟動中", "cap.applyingBody": "等待裝置套用側錄設定…",
     "cap.capturing": "側錄中", "cap.capturingBody": "正在錄製流量,產生的檔案會即時出現在下方。",
     "cap.files": "側錄檔案", "cap.noFiles": "此目錄尚無檔案。",
@@ -799,7 +802,8 @@ export const I18N = {
     "cap.confirmDesc": "執行至存活秒數結束後自動移除",
     "cap.delDesc": "檔案無法復原",
     "cap.delTitle": "刪除這個檔案?", "cap.delTitleN": "刪除這些檔案?", "cap.selectAll": "全選", "cap.delSelected": "刪除選取的檔案",
-    "cap.markForDelete": "標記為待刪除", "cap.delBody": "側錄檔會從儲存空間移除,且無法復原。",
+    "cap.markForDelete": "標記為待刪除",
+    "cap.noDelWriting": "裝置正在寫入這個檔案 — 等側錄結束、檔名改回來之後才能刪除。", "cap.delBody": "側錄檔會從儲存空間移除,且無法復原。",
     "tab.trafficPorts": "介面", "tab.trafficSessions": "連線",
     "tab.trafficServices": "服務", "tab.trafficCountries": "國家",
     "tab.trafficL2gre": "L2GRE 對應表",

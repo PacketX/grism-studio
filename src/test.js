@@ -673,7 +673,7 @@ group("packet capture");
   check("file row parsed", files[0].name.endsWith(".pcap") && files[0].bytes === 2001);
   check("modified time kept", files[0].modified === "2026-09-14 16:27:38");
   check("download link built",
-    files[0].href === "/file_manager/preview?download=1&file=/H1/snapshot/raw_20260914162733_20260914162740_761484.pcap");
+    files[0].href === "/grism/task/download_storage_file?name=H1&dir=snapshot&filename=raw_20260914162733_20260914162740_761484.pcap");
   check("newest file first", C.parseStorageFiles({ file_list: [
     [1, "a.pcap", 1, "2026-09-14 10:00:00"], [2, "b.pcap", 1, "2026-09-14 11:00:00"]] })[0].name === "b.pcap");
   check("empty listing tolerated", C.parseStorageFiles({}).length === 0);
@@ -710,7 +710,7 @@ group("packet capture");
   check("storage paths joined", C.storagePath("H1", "in", "a.pcap") === "H1/in/a.pcap");
   check("storage paths tolerate stray slashes", C.storagePath("/H1/", "/in/", "a.pcap") === "H1/in/a.pcap");
   check("slashes are not doubled in the link",
-    C.captureFileHref("/H1/", "/snapshot/", "x.pcap") === "/file_manager/preview?download=1&file=/H1/snapshot/x.pcap");
+    C.captureFileHref("/H1/", "/snapshot/", "x.pcap") === "/grism/task/download_storage_file?name=H1&dir=snapshot&filename=x.pcap");
 }
 
 /* ---------- firmware update ---------- */
