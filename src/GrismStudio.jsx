@@ -1055,7 +1055,8 @@ export default function GrismStudio() {
         )}
         {tab === "capture" && (
           <CaptureTab loggedIn={!!login.who} t={t}
-            ports={devicePorts ?? DEFAULT_PORTS} filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
+            ports={devicePorts ?? DEFAULT_PORTS} portDescs={portDescs}
+            filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
         {tab === "filters" && (
           <FiltersTab
@@ -1465,7 +1466,7 @@ function SystemStatusTab({ loggedIn, t }) {
    ============================================================ */
 /* Which interfaces an exporter covers. A dropdown rather than a row of checkboxes:
    the list can be long, and it keeps each target compact. */
-function InterfacePicker({ value, ports, onChange, tr, hideBulk = false }) {
+function InterfacePicker({ value, ports, onChange, tr, hideBulk = false, descs = {} }) {
   const [open, setOpen] = React.useState(false);
   // "all" is a distinct value from "nothing chosen" — an empty string must not
   // fall back to all, or clearing the selection would tick every box instead.
@@ -1495,6 +1496,9 @@ function InterfacePicker({ value, ports, onChange, tr, hideBulk = false }) {
               <label className="iface-opt" key={p}>
                 <input type="checkbox" checked={chosen.includes(p)} onChange={() => toggle(p)} />
                 <span className="mono">{p}</span>
+                {/* a dozen ports named P0..P11 are told apart by what the
+                    operator called them, so the name goes in the list */}
+                {descs[p] && <span className="iface-desc">{descs[p]}</span>}
               </label>
             ))}
           </div>
@@ -5481,7 +5485,7 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
    Traffic → Capture: record packets to a storage volume for a
    fixed number of seconds, then download the pcap
    ============================================================ */
-function CaptureTab({ loggedIn, t, ports, filterIds }) {
+function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
   const tr = t || ((k) => k);
   const [sel, setSel] = React.useState([]);          // ingress ports
   const [filter, setFilter] = React.useState("");
@@ -5576,7 +5580,7 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
 
       <section className="sys-card">
         <div className="set-grid">
-          <InterfacePicker value={sel.length === ports.length ? "all" : sel.join(",")} ports={ports} tr={tr}
+          <InterfacePicker value={sel.length === ports.length ? "all" : sel.join(",")} ports={ports} descs={portDescs} tr={tr}
             hideBulk onChange={(v) => setSel(interfacesToList(v, ports))} />
           <label className="ml"><span>{tr("set.lgFilter")}</span>
             <select value={filter} onChange={(e) => setFilter(e.target.value)}>

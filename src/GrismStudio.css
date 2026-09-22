@@ -178,6 +178,11 @@
 .filter-editor{display:flex; flex-direction:column; min-height:0; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); overflow:hidden;}
 .filter-meta{display:flex; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line); background:transparent; align-items:flex-end; flex-wrap:wrap;}
 .ml{display:flex; flex-direction:column; gap:4px;} .ml.grow{flex:1; min-width:140px;}
+/* One control height across a row of fields. A <select> has an intrinsic box a
+   couple of pixels taller than an <input> with the same padding, and a button
+   sizes to its text, so a row mixing the three lined up at the top and nowhere
+   else. */
+.ml > select, .ml > input:not([type=checkbox]), .ml > .iface-btn{min-height:31px;}
 .ml span{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--txt-dim);}
 .ml input,.ml select{background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:6px; padding:6px 9px; font-size:13px;}
 .m-id{width:82px; font-family:var(--mono); color:var(--accent);}
@@ -1143,19 +1148,31 @@ tr.port-off .port-desc{opacity:1;}
 .iface-pick{position:relative; flex:0 1 240px;}
 .iface-btn{display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%;
   background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:6px;
-  padding:6px 9px; font-size:12.5px; text-align:left;}
+  padding:6px 9px; font-size:13px; text-align:left;
+  /* the fields beside it are <select>s, whose intrinsic box is 31px at this
+     padding; a button sizes to its text and came out shorter, so the row of
+     controls did not line up along the bottom */
+  min-height:31px;}
 .iface-btn:hover{border-color:var(--accent);}
 .iface-btn .mono{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .iface-caret{font-size:8px; opacity:.55; flex:0 0 auto;}
 .iface-scrim{position:fixed; inset:0; z-index:40;}
-.iface-menu{position:absolute; top:calc(100% + 4px); left:0; z-index:41; width:100%; min-width:180px;
+.iface-menu{position:absolute; top:calc(100% + 4px); left:0; z-index:41; width:100%; min-width:220px;
   max-height:260px; overflow:auto; background:var(--panel); border:1px solid var(--line-2);
   border-radius:9px; box-shadow:0 16px 40px -14px rgba(0,0,0,.55);}
 .iface-menu-head{display:flex; gap:6px; padding:8px 10px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--panel);}
 .iface-menu-head button{flex:1; background:transparent; border:1px solid var(--line-2); color:var(--txt-dim);
   border-radius:6px; padding:4px 6px; font-size:11px; font-family:inherit;}
 .iface-menu-head button:hover{border-color:var(--accent); color:var(--accent);}
-.iface-opt{display:flex; align-items:center; gap:8px; padding:6px 11px; font-size:12.5px; cursor:pointer;}
+/* Three columns, so the ports read as a list rather than as ragged rows: the
+   box, the name, then what it is called. The tick box needs its width back --
+   .set-grid .ml input stretches every input in this field to 100%, and this
+   menu is inside one, which is what pushed the names halfway across it. */
+.iface-opt{display:grid; grid-template-columns:auto 3.2em 1fr; align-items:center;
+  gap:10px; padding:6px 11px; font-size:12.5px; cursor:pointer;}
+.iface-opt > input[type=checkbox]{width:auto; min-height:0; padding:0; justify-self:start;}
+.iface-desc{color:var(--txt-dim); font-size:11.5px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .iface-opt:hover{background:var(--hover);}
 .add-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;}
 .fs-ports{display:flex; flex-wrap:wrap; align-items:center; gap:8px;}
