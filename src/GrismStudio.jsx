@@ -5640,8 +5640,13 @@ function CaptureTab({ loggedIn, t, ports, filterIds }) {
                     <td className="tf-num mono">{fmtBytes(f.bytes)}</td>
                     <td className="mono dim">{f.modified}</td>
                     <td className="cap-actions">
-                      {fileSel.held(f.name)
-                        ? <span className="dim file-partial">{tr("cap.writing")}</span>
+                      {/* A .tmp is never offered for download: it is a capture
+                          cut off part way, and a truncated pcap is worse than
+                          no pcap. While one is being written it says so; once
+                          the capture is over the cell is simply empty, and the
+                          file can be deleted. */}
+                      {isPartialCapture(f.name)
+                        ? (fileSel.held(f.name) ? <span className="dim file-partial">{tr("cap.writing")}</span> : null)
                         : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
                     </td>
                     <td className="sel-col"><input type="checkbox"
