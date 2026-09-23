@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.154.0";
+export const STUDIO_VERSION = "2.155.0";
 
 export const I18N = {
   en: {
@@ -44,7 +44,11 @@ export const I18N = {
     "cap.liveEnded": "capture ended",
     "cap.colNo": "#", "cap.colTime": "Time", "cap.colSrc": "Source", "cap.colDst": "Destination",
     "cap.colProto": "Protocol", "cap.colLen": "Length", "cap.colInfo": "Info",
-    "cap.liveFilter": "Filter", "cap.liveFilterHint": "Matches source, destination, protocol or info. This page only — the device is not asked anything.",
+    "cap.liveFilter": "Filter", "cap.liveFilterHint": "Matches source, destination, protocol or info. Combine with and / or / not and brackets — tcp and not 443, (arp or stp), \"echo request\". This page only: the device is not asked anything.",
+    "cap.fltUnbalanced": "brackets do not match", "cap.fltOperand": "an operator with nothing to apply to",
+    "cap.fltBad": "filter not applied —",
+    "cap.liveKeep": "Keep", "cap.liveKeepHint": "How many of the most recent packets to hold on this page. Older ones fall off the top; the capture file on the device keeps everything.",
+    "cap.liveKeys": "↑ ↓ move, Home / End jump",
     "cap.livePause": "Pause", "cap.liveResume": "Resume", "cap.liveFollow": "follow newest",
     "cap.liveShown": "shown", "cap.liveSeen": "captured", "cap.liveBehind": "behind by",
     "cap.liveTrimmed": "the most recent {n} are kept",
@@ -844,7 +848,11 @@ export const I18N = {
     "cap.liveEnded": "側錄已結束",
     "cap.colNo": "#", "cap.colTime": "時間", "cap.colSrc": "來源", "cap.colDst": "目的",
     "cap.colProto": "協定", "cap.colLen": "長度", "cap.colInfo": "資訊",
-    "cap.liveFilter": "過濾", "cap.liveFilterHint": "比對來源、目的、協定或資訊。僅作用於此頁面 — 不會向裝置要求任何東西。",
+    "cap.liveFilter": "過濾", "cap.liveFilterHint": "比對來源、目的、協定或資訊。可用 and / or / not 與括號組合 — tcp and not 443、(arp or stp)、\"echo request\"。僅作用於此頁面:不會向裝置要求任何東西。",
+    "cap.fltUnbalanced": "括號不成對", "cap.fltOperand": "運算子後面缺少條件",
+    "cap.fltBad": "過濾條件未套用 —",
+    "cap.liveKeep": "保留", "cap.liveKeepHint": "這個頁面要保留最新的幾筆封包。較舊的會被移除;裝置上的側錄檔仍然完整。",
+    "cap.liveKeys": "↑ ↓ 移動,Home / End 跳至首末",
     "cap.livePause": "暫停", "cap.liveResume": "繼續", "cap.liveFollow": "跟隨最新",
     "cap.liveShown": "顯示", "cap.liveSeen": "已側錄", "cap.liveBehind": "落後",
     "cap.liveTrimmed": "僅保留最新 {n} 筆",

@@ -3780,6 +3780,36 @@ group("pcap live view");
   const hbFrame = hexpkt(`${ethHdr} 8137 ffff 0012 0000`);
   check("heartbeat ethertype named", C.decodePacket(hbFrame).proto === "IPX");
 
+  // the packet-list filter: substrings with not/and/or over the top
+  {
+    const row = "tcp 192.168.1.1 8.8.8.8 49152 \u2192 443 [syn] len=0".toLowerCase();
+    const arp = "arp 192.168.1.1 192.168.1.82 who has 192.168.1.82?".toLowerCase();
+    const hit = (q, hay = row) => { const r = C.parseFilterExpr(q); return r.ok && r.test(hay); };
+    check("an empty filter keeps everything", C.parseFilterExpr("  ").empty === true && C.parseFilterExpr("").test("anything"));
+    check("a bare word is a substring", hit("tcp") && !hit("udp"));
+    check("matching is case-insensitive", hit("TCP") && hit("SYN"));
+    check("and", hit("tcp and 443") && !hit("tcp and 8080"));
+    check("or", hit("udp or tcp") && !hit("udp or icmp"));
+    check("not", !hit("not tcp") && hit("not udp"));
+    check("! is not", !hit("!tcp") && hit("!udp"));
+    check("juxtaposition means and", hit("tcp 443") && !hit("tcp 8080"));
+    check("parentheses group", !hit("(udp or arp) and 443") && hit("(udp or tcp) and 443"));
+    check("not binds tighter than and", hit("tcp and not 8080") && !hit("tcp and not 443"));
+    check("and binds tighter than or", hit("udp and 9999 or 443") && !hit("udp and 443 or 9999"));
+    check("a quoted phrase keeps its spaces", hit('"[syn] len"') && !hit('"len [syn]"'));
+    check("an operator word can be quoted", hit('"and"', "x and y") && !hit('"and"', row));
+    check("works across rows", hit("arp and not tcp", arp) && !hit("arp and not tcp"));
+    // an expression that cannot be parsed must say which way it is broken
+    check("unbalanced ( reported", C.parseFilterExpr("(tcp").error === "unbalanced");
+    check("unbalanced ) reported", C.parseFilterExpr("tcp)").error === "unbalanced");
+    check("a stray ) reported", C.parseFilterExpr(")").error === "unbalanced");
+    check("a dangling operator reported", C.parseFilterExpr("tcp and").error === "operand"
+      && C.parseFilterExpr("or tcp").error === "operand" && C.parseFilterExpr("not").error === "operand");
+    // an empty phrase would match every row, which is never what was meant
+    check("an empty phrase is rejected", C.parseFilterExpr('""').error === "operand");
+    check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
+  }
+
   // the rename a finished capture goes through, observed on the HL1
   {
     const tmp = "raw_20260923105028_406556.pcap.tmp";

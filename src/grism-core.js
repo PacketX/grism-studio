@@ -3415,6 +3415,89 @@ export function decodePacket(u8, linktype = 1) {
   return res;
 }
 
+/* The filter box over the packet list. What there is to match on is the text of
+   a row, so a substring is the atom; not / and / or and parentheses go over the
+   top of that. Juxtaposition means and, so "tcp 443" reads the way anyone would
+   expect it to, and a phrase that contains an operator word is quoted.
+
+   Returns a matcher, or the reason one could not be built -- an expression that
+   does not parse has to say so, because the alternative is a list that has
+   quietly stopped showing anything and no way to tell that from "no matches".
+   The haystack is expected already lowercased; the needles are lowercased here. */
+export function parseFilterExpr(text) {
+  const src = String(text ?? "").trim();
+  if (!src) return { ok: true, empty: true, test: () => true };
+
+  const toks = [];
+  const re = /\s*(\(|\)|"([^"]*)"|'([^']*)'|[^\s()]+)/gy;
+  let m, at = 0;
+  re.lastIndex = 0;
+  while (at < src.length && (m = re.exec(src))) {
+    at = re.lastIndex;
+    if (m[2] !== undefined || m[3] !== undefined) { toks.push({ t: "s", v: m[2] ?? m[3] }); continue; }
+    const raw = m[1];
+    if (raw === "(" || raw === ")") { toks.push({ t: raw }); continue; }
+    // "!tcp" is the same as "not tcp"; the bang binds to what follows it
+    let word = raw;
+    while (word.startsWith("!") && word.length > 1) { toks.push({ t: "not" }); word = word.slice(1); }
+    const low = word.toLowerCase();
+    if (low === "and" || low === "&&") toks.push({ t: "and" });
+    else if (low === "or" || low === "||") toks.push({ t: "or" });
+    else if (low === "not" || low === "!") toks.push({ t: "not" });
+    else toks.push({ t: "s", v: word });
+  }
+
+  let i = 0;
+  const peek = () => toks[i];
+  const fail = (code) => { throw new Error(code); };
+  const parseOr = () => {
+    let left = parseAnd();
+    while (peek()?.t === "or") { i++; const right = parseAnd(), l = left; left = (s) => l(s) || right(s); }
+    return left;
+  };
+  const parseAnd = () => {
+    let left = parseNot();
+    for (;;) {
+      const p = peek();
+      if (!p || p.t === "or" || p.t === ")") break;
+      if (p.t === "and") i++;
+      const right = parseNot(), l = left;
+      left = (s) => l(s) && right(s);
+    }
+    return left;
+  };
+  const parseNot = () => {
+    if (peek()?.t === "not") { i++; const inner = parseNot(); return (s) => !inner(s); }
+    return parseAtom();
+  };
+  const parseAtom = () => {
+    const p = peek();
+    if (!p) fail("operand");
+    if (p.t === "(") {
+      i++;
+      const inner = parseOr();
+      if (peek()?.t !== ")") fail("unbalanced");
+      i++;
+      return inner;
+    }
+    if (p.t === ")") fail("unbalanced");
+    if (p.t === "and" || p.t === "or") fail("operand");
+    i++;
+    const needle = p.v.toLowerCase();
+    // an empty quoted string would match every row, which is never the intent
+    if (!needle) fail("operand");
+    return (s) => s.includes(needle);
+  };
+
+  try {
+    const test = parseOr();
+    if (i < toks.length) fail("unbalanced");
+    return { ok: true, test };
+  } catch (e) {
+    return { ok: false, error: e.message === "operand" ? "operand" : "unbalanced" };
+  }
+}
+
 /* A capture file is not simply un-.tmp'd when it closes. The firmware inserts
    the time the capture ended (fcdata_output_pcap_dir_file_close splits the name
    at its last underscore), so raw_<start>_<usec>.pcap.tmp is renamed to

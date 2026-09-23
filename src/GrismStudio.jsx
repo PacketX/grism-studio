@@ -22,7 +22,7 @@ import {
   mkAction, mkActionMod, mkChain, firstTwoPorts, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
-  createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName,
+  createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
@@ -5722,8 +5722,8 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
    The reader is deliberately one-shot. If it loses the record boundary it
    stops rather than guessing, and the way back is a fresh reader on the next
    file -- rotation guarantees that one starts with a clean pcap header. */
-const LIVE_MAX = 1000;                 // packets kept; older ones fall off the top
-const LIVE_SLICE = 1024 * 1024;        // bytes asked for per poll
+const LIVE_KEEP = [200, 500, 1000, 2000, 5000];   // packets kept; older fall off the top
+const LIVE_SLICE = 1024 * 1024;                  // bytes asked for per poll
 
 function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
   const [packets, setPackets] = React.useState([]);
@@ -5731,6 +5731,10 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
   const [paused, setPaused] = React.useState(false);
   const [follow, setFollow] = React.useState(true);
   const [q, setQ] = React.useState("");
+  const [keep, setKeep] = React.useState(() => {
+    const n = Number(readPrefs().captureLiveKeep);
+    return LIVE_KEEP.includes(n) ? n : 1000;
+  });
   const [stat, setStat] = React.useState({ read: 0, size: 0, seen: 0, err: "", ended: false, name: "" });
   const reader = React.useRef(null);
   const tail = React.useRef({ offset: 0, name: "" });
@@ -5742,6 +5746,14 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
   const namesRef = React.useRef(names);
   React.useEffect(() => { namesRef.current = names; }, [names]);
   const missing = React.useRef(0);          // consecutive unresolved 404s
+  /* Read through a ref inside the poll: making the poll depend on the setting
+     would tear the reader down and restart it mid-file every time the number
+     changed. Lowering it trims what is already held, in its own effect. */
+  const keepRef = React.useRef(keep);
+  React.useEffect(() => {
+    keepRef.current = keep;
+    setPackets((prev) => (prev.length > keep ? prev.slice(prev.length - keep) : prev));
+  }, [keep]);
 
   // a different file is a different capture: new reader, nothing carried over
   React.useEffect(() => {
@@ -5797,7 +5809,7 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
           }));
           if (rows.length) setPackets((prev) => {
             const all = prev.concat(rows);
-            return all.length > LIVE_MAX ? all.slice(all.length - LIVE_MAX) : all;
+            return all.length > keepRef.current ? all.slice(all.length - keepRef.current) : all;
           });
         }
         setStat((s) => ({ ...s, read: tail.current.offset, size, seen: seq.current,
@@ -5816,15 +5828,40 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [storage, dir, filename, paused]);
 
+  const expr = React.useMemo(() => parseFilterExpr(q), [q]);
   const shown = React.useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return packets;
-    return packets.filter((p) => `${p.d.src} ${p.d.dst} ${p.d.proto} ${p.d.info}`.toLowerCase().includes(needle));
-  }, [packets, q]);
+    if (!expr.ok || expr.empty) return packets;   // a broken filter shows everything, and says so
+    return packets.filter((p) => expr.test(`${p.d.src} ${p.d.dst} ${p.d.proto} ${p.d.info}`.toLowerCase()));
+  }, [packets, expr]);
 
   React.useEffect(() => {
     if (follow && !paused && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [shown.length, follow, paused]);
+
+  /* Walking the list with the arrow keys, over what is on screen rather than
+     what is held -- with a filter on, Down goes to the next matching packet.
+     Following the newest is turned off by the first keypress: otherwise the
+     next second's packets scroll the selection away again. */
+  const step = (to) => {
+    if (!shown.length) return;
+    const at = shown.findIndex((p) => p.no === selNo);
+    const next = to === "first" ? 0 : to === "last" ? shown.length - 1
+      : at < 0 ? (to > 0 ? 0 : shown.length - 1)
+      : Math.min(shown.length - 1, Math.max(0, at + to));
+    setFollow(false);
+    setSelNo(shown[next].no);
+  };
+  const onKeys = (e) => {
+    const k = e.key;
+    if (k !== "ArrowDown" && k !== "ArrowUp" && k !== "Home" && k !== "End") return;
+    e.preventDefault();          // the list would scroll under the selection
+    step(k === "ArrowDown" ? 1 : k === "ArrowUp" ? -1 : k === "Home" ? "first" : "last");
+  };
+  // keep the selected row in view when it was moved by the keyboard
+  React.useEffect(() => {
+    if (selNo == null || !listRef.current) return;
+    listRef.current.querySelector(".pl-row.on")?.scrollIntoView({ block: "nearest" });
+  }, [selNo]);
 
   const sel = packets.find((p) => p.no === selNo) || null;
   const behind = Math.max(0, stat.size - stat.read);
@@ -5840,22 +5877,30 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
 
       <div className="pl-bar">
         <label className="pl-q"><span>{tr("cap.liveFilter")}</span>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="tcp, 192.168.1.1, DNS…"
-            title={tr("cap.liveFilterHint")} /></label>
+          <input className={expr.ok ? "" : "bad"} value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder="tcp and not 443" title={tr("cap.liveFilterHint")} /></label>
         <button className="copy-btn" onClick={() => setPaused((v) => !v)}>
           {paused ? tr("cap.liveResume") : tr("cap.livePause")}</button>
         <label className="tf-interval"><input type="checkbox" checked={follow}
           onChange={(e) => setFollow(e.target.checked)} /> {tr("cap.liveFollow")}</label>
+        <label className="pl-keep" title={tr("cap.liveKeepHint")}><span>{tr("cap.liveKeep")}</span>
+          <select value={keep} onChange={(e) => {
+            const n = Number(e.target.value); setKeep(n); writePref("captureLiveKeep", n);
+          }}>{LIVE_KEEP.map((n) => <option key={n} value={n}>{n.toLocaleString()}</option>)}</select></label>
         <span className="pl-stats dim">
           {shown.length} {tr("cap.liveShown")}
-          {stat.seen > packets.length && <> · {tr("cap.liveTrimmed").replace("{n}", String(LIVE_MAX))}</>}
+          {stat.seen > packets.length && <> · {tr("cap.liveTrimmed").replace("{n}", keep.toLocaleString())}</>}
           {behind > 0 && <> · <span className="pl-behind">{tr("cap.liveBehind")} {fmtBytes(behind)}</span></>}
         </span>
       </div>
+      {/* A filter that does not parse shows everything rather than nothing:
+          an empty list is indistinguishable from "no packet matched". */}
+      {!expr.ok && <p className="pl-flt-bad">{tr("cap.fltBad")} {tr(expr.error === "operand" ? "cap.fltOperand" : "cap.fltUnbalanced")}</p>}
       {stat.err && <div className="sys-err">{stat.err}</div>}
 
       <div className="pl-split">
-        <div className="pl-list" ref={listRef}>
+        <div className="pl-list" ref={listRef} tabIndex={0} onKeyDown={onKeys}
+          role="listbox" aria-label={tr("cap.live")} aria-activedescendant={selNo == null ? undefined : "pl-" + selNo}>
           {packets.length === 0 ? <p className="sys-note dim">{tr("cap.liveWaiting")}</p>
             : shown.length === 0 ? <p className="sys-note dim">{tr("cap.liveNoMatch")}</p> : (
             <table className="tf-table pl-table">
@@ -5867,8 +5912,9 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
               </tr></thead>
               <tbody>
                 {shown.map((p) => (
-                  <tr key={p.no} className={"pl-row" + (p.no === selNo ? " on" : "")}
-                    onClick={() => setSelNo(p.no === selNo ? null : p.no)}>
+                  <tr key={p.no} id={"pl-" + p.no} role="option" aria-selected={p.no === selNo}
+                    className={"pl-row" + (p.no === selNo ? " on" : "")}
+                    onClick={(e) => { e.currentTarget.closest(".pl-list")?.focus(); setSelNo(p.no === selNo ? null : p.no); }}>
                     <td className="tf-num dim mono">{p.no}</td>
                     <td className="mono">{fmtPacketTime(p.tsMs)}</td>
                     <td className="mono pl-addr">{p.d.src}</td>
@@ -5888,6 +5934,7 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
             characters wide -- in a side pane it was cut off. */}
         <div className="pl-detail">
           <div className="pl-detail-head">{tr("cap.liveDetail")}
+            <span className="pl-keys dim">{tr("cap.liveKeys")}</span>
             {sel && <span className="pl-meta mono dim">
               #{sel.no} · {fmtPacketTime(sel.tsMs)} · {sel.origlen} {tr("cap.liveBytes")}
               {sel.caplen !== sel.origlen && <> · {sel.caplen} {tr("cap.liveCaptured")}</>}
