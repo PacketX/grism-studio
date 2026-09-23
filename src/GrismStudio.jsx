@@ -5875,7 +5875,7 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
                     <td className="mono pl-addr">{p.d.dst}</td>
                     <td><span className={"pl-proto " + p.d.proto.replace(/[^a-z0-9]/gi, "").toLowerCase()}>{p.d.proto}</span></td>
                     <td className="tf-num mono">{p.origlen}</td>
-                    <td className="pl-info">{p.d.info}</td>
+                    <td className="pl-info" title={p.d.info}>{p.d.info}</td>
                   </tr>
                 ))}
               </tbody>
@@ -5883,25 +5883,33 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
           )}
         </div>
 
+        {/* Below the list rather than beside it: the layers read across the
+            full width instead of down a narrow column, and a hex dump is 71
+            characters wide -- in a side pane it was cut off. */}
         <div className="pl-detail">
-          <div className="pl-detail-head">{tr("cap.liveDetail")}</div>
-          {!sel ? <p className="sys-note dim">{tr("cap.livePick")}</p> : (<>
-            <div className="pl-meta mono dim">
+          <div className="pl-detail-head">{tr("cap.liveDetail")}
+            {sel && <span className="pl-meta mono dim">
               #{sel.no} · {fmtPacketTime(sel.tsMs)} · {sel.origlen} {tr("cap.liveBytes")}
               {sel.caplen !== sel.origlen && <> · {sel.caplen} {tr("cap.liveCaptured")}</>}
-            </div>
-            {sel.d.layers.map((l, i) => (
-              <div className="pl-layer" key={i}>
-                <div className="pl-layer-name">{l.name}</div>
-                <dl className="pl-fields">
-                  {l.fields.map(([k, v], j) => (
-                    <React.Fragment key={j}><dt>{k}</dt><dd className="mono">{String(v)}</dd></React.Fragment>
-                  ))}
-                </dl>
+            </span>}
+          </div>
+          {!sel ? <p className="sys-note dim">{tr("cap.livePick")}</p> : (
+            <div className="pl-detail-body">
+              <div className="pl-layers">
+                {sel.d.layers.map((l, i) => (
+                  <div className="pl-layer" key={i}>
+                    <div className="pl-layer-name">{l.name}</div>
+                    <dl className="pl-fields">
+                      {l.fields.map(([k, v], j) => (
+                        <React.Fragment key={j}><dt>{k}</dt><dd className="mono">{String(v)}</dd></React.Fragment>
+                      ))}
+                    </dl>
+                  </div>
+                ))}
               </div>
-            ))}
-            <pre className="pl-hex mono">{hexDump(sel.data).join("\n")}</pre>
-          </>)}
+              <pre className="pl-hex mono">{hexDump(sel.data).join("\n")}</pre>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -5934,11 +5942,16 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
      it would tear the view away at exactly the moment the last packets
      arrive. PacketLive follows the rename itself. */
   const [liveFile, setLiveFile] = React.useState(null);
+  /* Decoding every packet in the browser is not something to impose: it polls
+     the file while it is being written, and someone who only wants the pcap
+     should be able to say so before starting. Remembered like the other UI
+     preferences, so the choice survives the next visit. */
+  const [liveOn, setLiveOn] = React.useState(() => readPrefs().captureLive !== false);
   React.useEffect(() => {
-    if (!loaded || liveFile) return;
+    if (!loaded || liveFile || !liveOn) return;
     const tmp = files.find((f) => !f.isDir && isPartialCapture(f.name));
     if (tmp) setLiveFile(tmp.name);
-  }, [files, loaded, liveFile]);
+  }, [files, loaded, liveFile, liveOn]);
 
   // while a capture runs, count down and refresh the folder every second
   React.useEffect(() => {
@@ -6026,6 +6039,15 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
               onChange={(e) => setStl(e.target.value)} /></label>
           <StoragePickers br={br} tr={tr} />
         </div>
+        <label className="cap-live-toggle" title={tr("cap.liveOnHint")}>
+          <input type="checkbox" checked={liveOn} onChange={(e) => {
+            const on = e.target.checked;
+            setLiveOn(on); writePref("captureLive", on);
+            if (!on) setLiveFile(null);          // close what is open now
+          }} />
+          <span>{tr("cap.liveOn")}</span>
+          <span className="cap-live-hint dim">{tr("cap.liveOnHint")}</span>
+        </label>
         <p className="set-hint">
           {tr("cap.writesTo")} <code className="mono">{storagePath(storage, dir) || storage || "—"}</code>
           {br.volume && <> {" · "}{tr("cap.used")} <span className="mono">{fmtKB(br.volume.usage)}</span>
@@ -6053,6 +6075,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
 
       {liveFile && <PacketLive storage={storage} dir={dir} filename={liveFile} names={files} tr={tr}
         onClose={() => setLiveFile(null)} />}
+      {!liveOn && running > 0 && <p className="page-note dim">{tr("cap.liveOff")}</p>}
 
       <section className="sys-card">
         <h3 className="sys-card-title">{tr("cap.files")}
@@ -6101,7 +6124,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
                       {isPartialCapture(f.name)
                         ? (fileSel.held(f.name) ? <span className="dim file-partial">{tr("cap.writing")}</span> : null)
                         : <>
-                            <button className="copy-btn" onClick={() => setLiveFile(f.name)}>{tr("cap.view")}</button>
+                            {liveOn && <button className="copy-btn" onClick={() => setLiveFile(f.name)}>{tr("cap.view")}</button>}
                             <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>
                           </>}
                     </td>

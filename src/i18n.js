@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.152.0";
+export const STUDIO_VERSION = "2.154.0";
 
 export const I18N = {
   en: {
@@ -37,6 +37,9 @@ export const I18N = {
     "cap.markForDelete": "Mark for deletion",
     "cap.noDelWriting": "The capture running now is writing this file — it can be deleted once the capture ends.", "cap.delBody": "The capture file is removed from the storage volume. This cannot be undone.",
     "cap.live": "Live packets", "cap.view": "View", "cap.liveClose": "Close",
+    "cap.liveOn": "Decode packets live",
+    "cap.liveOnHint": "Shows the packets as they are captured, decoded in this browser. The file is read a slice at a time while it is written; turn it off to leave the capture entirely alone.",
+    "cap.liveOff": "Live decoding is off. Turn it on above to watch packets as they are captured.",
     "cap.liveOf": "reading", "cap.liveWaiting": "Waiting for the first packets…",
     "cap.liveEnded": "capture ended",
     "cap.colNo": "#", "cap.colTime": "Time", "cap.colSrc": "Source", "cap.colDst": "Destination",
@@ -834,6 +837,9 @@ export const I18N = {
     "cap.markForDelete": "標記為待刪除",
     "cap.noDelWriting": "目前這次側錄正在寫入這個檔案 — 等側錄結束後才能刪除。", "cap.delBody": "側錄檔會從儲存空間移除,且無法復原。",
     "cap.live": "即時封包", "cap.view": "檢視", "cap.liveClose": "關閉",
+    "cap.liveOn": "即時解析封包",
+    "cap.liveOnHint": "在側錄的同時顯示錄到的封包,解析都在這個瀏覽器完成。側錄期間會逐段讀取檔案;關閉後完全不會去動這次側錄。",
+    "cap.liveOff": "即時解析已關閉。在上方開啟後,就能在側錄時看到封包。",
     "cap.liveOf": "讀取中", "cap.liveWaiting": "等待第一批封包…",
     "cap.liveEnded": "側錄已結束",
     "cap.colNo": "#", "cap.colTime": "時間", "cap.colSrc": "來源", "cap.colDst": "目的",
