@@ -5802,10 +5802,16 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
         if (cancelled) return;
         tail.current.offset += buf.length;
         if (buf.length) {
-          const rows = reader.current.feed(buf).map((p) => ({
-            no: ++seq.current, tsMs: p.tsMs, caplen: p.caplen, origlen: p.origlen,
-            data: p.data, d: decodePacket(p.data, reader.current.linktype),
-          }));
+          const rows = reader.current.feed(buf).map((p) => {
+            const d = decodePacket(p.data, reader.current.linktype);
+            return {
+              no: ++seq.current, tsMs: p.tsMs, caplen: p.caplen, origlen: p.origlen,
+              data: p.data, d,
+              /* built once here: rebuilding it per packet on every filter
+                 recompute was most of what filtering cost */
+              text: `${d.src} ${d.dst} ${d.proto} ${d.info}`.toLowerCase(),
+            };
+          });
           if (rows.length) setPackets((prev) => {
             const all = prev.concat(rows);
             return all.length > keepRef.current ? all.slice(all.length - keepRef.current) : all;
@@ -5830,10 +5836,7 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
   const expr = React.useMemo(() => parseFilterExpr(q), [q]);
   const shown = React.useMemo(() => {
     if (!expr.ok || expr.empty) return packets;   // a broken filter shows everything, and says so
-    return packets.filter((p) => expr.test({
-      text: `${p.d.src} ${p.d.dst} ${p.d.proto} ${p.d.info}`.toLowerCase(),
-      f: p.d.f,
-    }));
+    return packets.filter((p) => expr.test({ text: p.text, f: p.d.f }));
   }, [packets, expr]);
 
   React.useEffect(() => {

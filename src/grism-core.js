@@ -3346,6 +3346,7 @@ export function decodePacket(u8, linktype = 1) {
     layers.push({ name: "ARP", fields: [["Operation", op === 1 ? "request" : op === 2 ? "reply" : op], ["Sender MAC", macStr(u8, l3 + 8)], ["Sender IP", sip], ["Target MAC", macStr(u8, l3 + 18)], ["Target IP", tip]] });
     res.src = sip; res.dst = tip; res.proto = "ARP";
     f.ipSrc = sip; f.ipDst = tip; f.proto = "ARP";
+    f.ipSrcN = u32(l3 + 14); f.ipDstN = u32(l3 + 24);
     res.info = op === 1 ? `Who has ${tip}? Tell ${sip}` : op === 2 ? `${sip} is at ${macStr(u8, l3 + 8)}` : `op ${op}`;
     return res;
   }
@@ -3358,6 +3359,7 @@ export function decodePacket(u8, linktype = 1) {
     ipProto = u8[l3 + 9];
     res.src = ip4Str(u8, l3 + 12); res.dst = ip4Str(u8, l3 + 16);
     f.ipSrc = res.src; f.ipDst = res.dst; f.ipProto = ipProto; f.ttl = u8[l3 + 8];
+    f.ipSrcN = u32(l3 + 12); f.ipDstN = u32(l3 + 16);
     layers.push({ name: "IPv4", fields: [["Source", res.src], ["Destination", res.dst], ["Protocol", protocolName(ipProto)], ["TTL", u8[l3 + 8]], ["Total length", totlen], ...(fragfl & 0x4000 ? [["Flags", "DF"]] : []), ...(fragoff || (fragfl & 0x2000) ? [["Fragment offset", fragoff * 8]] : [])] });
     l4 = l3 + ihl;
     l4end = Math.min(u8.length, l3 + totlen);
@@ -3449,6 +3451,13 @@ export const PACKET_FIELDS = {
   "icmp.type": (f) => f.icmpType,
   "proto": (f) => f.proto, "frame.len": (f) => f.len, "len": (f) => f.len,
 };
+/* The same addresses as numbers (set at decode time), so a CIDR term is one
+   mask-and-compare per packet instead of re-parsing the dotted string. IPv6
+   has no numeric form here and simply never matches a v4 prefix. */
+const PACKET_FIELDS_N = {
+  "ip.src": (f) => f.ipSrcN, "ip.dst": (f) => f.ipDstN,
+  "ip.addr": (f) => [f.ipSrcN, f.ipDstN],
+};
 
 /* An IPv4 address as a number, for prefix comparisons. IPv6 is compared as
    text: "ip.addr == 2001:db8::1" is exact, and a v6 prefix is a substring
@@ -3467,7 +3476,11 @@ function cidrTest(value) {
   const base = ip4num(m[1]), bits = Number(m[2]);
   if (base === null || bits > 32) return null;
   const mask = bits === 0 ? 0 : (-1 << (32 - bits)) >>> 0;
-  return (v) => { const n = ip4num(v); return n !== null && ((n & mask) >>> 0) === ((base & mask) >>> 0); };
+  const want = (base & mask) >>> 0;
+  return (v) => {
+    const n = typeof v === "number" ? v : ip4num(v);
+    return n !== null && ((n & mask) >>> 0) === want;
+  };
 }
 
 /* One "field op value" test. Strings compare case-insensitively and exactly;
@@ -3477,7 +3490,9 @@ function cidrTest(value) {
 function fieldTerm(name, op, value) {
   const read = PACKET_FIELDS[name];
   if (!read) return null;
-  const cidr = (op === "==" || op === "!=") ? cidrTest(value) : null;
+  let cidr = (op === "==" || op === "!=") ? cidrTest(value) : null;
+  // prefer the numeric form of the address when the decode provides one
+  const readN = cidr ? PACKET_FIELDS_N[name] : null;
   const num = Number(value);
   const numeric = value !== "" && Number.isFinite(num);
   const low = String(value).toLowerCase();
@@ -3501,7 +3516,7 @@ function fieldTerm(name, op, value) {
     return false;
   };
   return (ctx) => {
-    const v = read(ctx.f || {});
+    const v = (readN ? readN(ctx.f || {}) : undefined) ?? read(ctx.f || {});
     const vals = Array.isArray(v) ? v.filter((x) => x !== undefined && x !== null) : [v];
     if (!vals.length) return false;
     // "neither end is that" rather than "some end is not that"
