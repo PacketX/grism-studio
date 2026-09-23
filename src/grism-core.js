@@ -2920,6 +2920,28 @@ export function parseDownloadProgress(text) {
 
 /* update_check answers with a version string when an update is available, and
    with something else (empty, "no", an error page) when there isn't. */
+/* Where the device looks for releases. It is a Synology FileStation, reached
+   by host and port out of <args>; both are editable because the box in the lab
+   is not the box at a customer site. */
+export const DEFAULT_UPDATE_SERVER = { server: "update.packetx.biz", port: "1069" };
+
+export const parseUpdateServer = (cfg) => ({
+  server: String(cfg?.args?.updateServer ?? "").trim() || DEFAULT_UPDATE_SERVER.server,
+  port: String(cfg?.args?.updateServerPort ?? "").trim() || DEFAULT_UPDATE_SERVER.port,
+});
+
+/* Why this address cannot be saved, or "" when it can. A host name or an IP:
+   the device resolves whatever it is given, so the only thing worth refusing
+   is something that cannot be either. */
+export function updateServerProblem({ server, port } = {}) {
+  const host = String(server ?? "").trim();
+  if (!host) return "address required";
+  if (/\s/.test(host) || !/^[A-Za-z0-9._-]+$/.test(host)) return "not a valid host or IP";
+  const p = String(port ?? "").trim();
+  if (!/^\d+$/.test(p) || +p < 1 || +p > 65535) return "port must be 1-65535";
+  return "";
+}
+
 export function parseUpdateCheck(text, ok = true) {
   const v = String(text ?? "").trim();
   if (/^\d+(\.\d+)+$/.test(v)) return { version: v };

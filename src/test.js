@@ -726,6 +726,27 @@ group("firmware update");
   check("ratio never exceeds one", C.parseDownloadProgress("200,100").ratio === 1);
   check("junk input is tolerated", C.parseDownloadProgress("").total === 0);
 
+  /* Where releases come from is a setting now: two fields in <args>, with a
+     fallback for a device whose config has never carried them. */
+  check("the server comes out of the config",
+    JSON.stringify(C.parseUpdateServer({ args: { updateServer: "192.168.1.5", updateServerPort: 1069 } })) ===
+    '{"server":"192.168.1.5","port":"1069"}');
+  check("a config without one falls back to the default",
+    C.parseUpdateServer({}).server === "update.packetx.biz" &&
+    C.parseUpdateServer({ args: { updateServer: "  " } }).port === "1069");
+  check("a host or an IP is accepted",
+    C.updateServerProblem({ server: "update.packetx.biz", port: "1069" }) === "" &&
+    C.updateServerProblem({ server: "192.168.1.5", port: "1069" }) === "");
+  check("an address that is neither is refused",
+    C.updateServerProblem({ server: "", port: "1069" }) !== "" &&
+    C.updateServerProblem({ server: "a b", port: "1069" }) !== "" &&
+    C.updateServerProblem({ server: "http://x/", port: "1069" }) !== "");
+  check("the port has to be a port",
+    C.updateServerProblem({ server: "x.y", port: "" }) !== "" &&
+    C.updateServerProblem({ server: "x.y", port: "0" }) !== "" &&
+    C.updateServerProblem({ server: "x.y", port: "70000" }) !== "" &&
+    C.updateServerProblem({ server: "x.y", port: "80" }) === "");
+
   check("a version string is an available update",
     C.parseUpdateCheck("6.5.260715").version === "6.5.260715");
   check("surrounding whitespace tolerated", C.parseUpdateCheck("  6.5.1  ").version === "6.5.1");

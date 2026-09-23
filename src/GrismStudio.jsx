@@ -32,6 +32,7 @@ import {
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
   savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
   bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus, bypassValue,
+  parseUpdateServer, updateServerProblem,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
   speedSwitch, groupSpeeds, PORT_SPEEDS, formatPortSpeed,
@@ -1876,6 +1877,23 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     }
     return cfgReq.current;
   }, []);
+
+  /* Where releases are fetched from. Staged like the other settings: it is two
+     fields in <args>, and changing it is a configSet like any other. */
+  const [upd, setUpd] = React.useState(null);
+  const [updBase, setUpdBase] = React.useState(null);
+  const loadUpdateServer = React.useCallback(async () => {
+    try {
+      const where = parseUpdateServer(await getConfig());
+      setUpd(where); setUpdBase(where);
+    } catch (e) { warnFetch("update server", e); }
+  }, [getConfig]);
+  React.useEffect(() => {
+    if (loggedIn && section === "firmware" && !upd) loadUpdateServer();
+  }, [loggedIn, section, upd, loadUpdateServer]);
+  const updChanged = !!upd && !!updBase &&
+    (upd.server !== updBase.server || upd.port !== updBase.port);
+  const updProblem = upd ? updateServerProblem(upd) : "";
 
   /* Hardware addresses for the interface table. Read once per visit: they are
      burned into the port, not a live counter. */
@@ -4020,6 +4038,30 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
           <section className="sys-card">
             <h3 className="sys-card-title">{tr("set.fwOnline")}</h3>
             <p className="set-hint">{tr("set.fwOnlineNote")}</p>
+            {upd && (
+              <>
+                <div className="set-grid">
+                  <label className="ml"><span>{tr("set.fwServer")}</span>
+                    <input value={upd.server} spellCheck="false"
+                      onChange={(e) => setUpd((o) => ({ ...o, server: e.target.value }))} /></label>
+                  <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.fwServerPort")}</span>
+                    <input value={upd.port} inputMode="numeric"
+                      onChange={(e) => setUpd((o) => ({ ...o, port: e.target.value }))} /></label>
+                </div>
+                {updProblem && updChanged && <p className="set-hint err">{updProblem}</p>}
+                {updChanged && !updProblem && (
+                  <div className="set-actions">
+                    <button className="copy-btn" onClick={() => setUpd(updBase)}>{tr("set.revert")}</button>
+                    <button className="sys-refresh" disabled={submit.state === "sending"}
+                      onClick={() => submitConfigs([buildArgsConfigSet({
+                        updateServer: upd.server.trim(), updateServerPort: upd.port.trim(),
+                      })]).then(() => { setUpdBase({ server: upd.server.trim(), port: upd.port.trim() });
+                        setUpd({ server: upd.server.trim(), port: upd.port.trim() }); })}>
+                      {submit.state === "sending" ? tr("set.submitting") : tr("set.apply")}</button>
+                  </div>
+                )}
+              </>
+            )}
             {fwChecking
               ? <p className="sys-note dim">{tr("set.fwCheckingNote")}</p>
               : fw.available
