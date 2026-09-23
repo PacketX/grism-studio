@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.145.0";
+export const STUDIO_VERSION = "2.146.0";
 
 export const I18N = {
   en: {
@@ -200,6 +200,7 @@ export const I18N = {
     "set.jumpPorts": "Interfaces",
     "set.swMap": "Switch mapping",
     "set.swMapNote": "A VPort is one VLAN on a trunk from the switch in front of this device, so its link state is really the switch port's — which the device asks the switch for. Pair each VPort with the port it comes from.",
+    "set.swKind.p4": "P4 switch", "set.swKind.sdn": "SDN switch", "set.swKind.cpss": "CPSS switch",
     "set.swIp": "Address", "set.swUser": "User", "set.swPass": "Password", "set.swPassKeep": "unchanged",
     "set.swInterval": "Poll (s)", "set.swAgentPort": "Port", "set.swAdsn": "ADSN agent",
     "set.swPort": "Switch port", "set.swPortNo": "Switch port no.", "set.swVport": "VPort",
@@ -983,6 +984,7 @@ export const I18N = {
     "set.jumpPorts": "介面設定",
     "set.swMap": "交換器對應",
     "set.swMapNote": "VPort 是前端交換器 trunk 上的一個 VLAN,所以它的連線狀態其實是交換器那個埠的狀態 —— 由本機向交換器查詢。請把每個 VPort 與它來自的埠配對。",
+    "set.swKind.p4": "P4 交換器", "set.swKind.sdn": "SDN 交換器", "set.swKind.cpss": "CPSS 交換器",
     "set.swIp": "位址", "set.swUser": "帳號", "set.swPass": "密碼", "set.swPassKeep": "不變更",
     "set.swInterval": "查詢間隔 (秒)", "set.swAgentPort": "通訊埠", "set.swAdsn": "ADSN agent",
     "set.swPort": "交換器埠", "set.swPortNo": "交換器埠編號", "set.swVport": "VPort",

@@ -33,7 +33,7 @@ import {
   savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
   bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus, bypassValue,
   parseUpdateServer, updateServerProblem,
-  parseAServers, parseAdsnAgents, buildAServersConfigSet, buildAdsnAgentsConfigSet,
+  parseAServers, parseAdsnAgents, buildAServersConfigSet, buildAdsnAgentsConfigSet, aServerKind,
   switchServerProblems, hasAdsnAgent,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
@@ -3036,7 +3036,18 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                     {swA.map((srv, i) => (
                       <div className="sw-srv" key={srv.name}>
                         <div className="sw-head">
-                          <span className="sw-name mono">{srv.name}</span>
+                          {/* what it is, not which slot it sits in -- though the
+                              slot stays visible, since that is the name the
+                              device and its log use */}
+                          <span className="sw-name">{tr("set.swKind." + aServerKind(srv))}</span>
+                          <span className="sw-slot mono">{srv.name}</span>
+                          {srv.hasAph && (
+                            <select className="sw-kind-pick" value={srv.aph ? "p4" : "sdn"}
+                              onChange={(e) => patchServer(setSwA, i, { aph: e.target.value === "p4" })}>
+                              <option value="sdn">{tr("set.swKind.sdn")}</option>
+                              <option value="p4">{tr("set.swKind.p4")}</option>
+                            </select>
+                          )}
                           <label className="set-check"><input type="checkbox" checked={srv.enable}
                             onChange={(e) => patchServer(setSwA, i, { enable: e.target.checked })} />
                             {tr("set.enabled")}</label>
@@ -3073,8 +3084,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                     {hasAdsnAgent(devModel) && swAdsn.map((srv, i) => (
                       <div className="sw-srv" key={srv.name}>
                         <div className="sw-head">
-                          <span className="sw-name mono">{srv.name}</span>
-                          <span className="sw-kind">{tr("set.swAdsn")}</span>
+                          <span className="sw-name">{tr("set.swKind.cpss")}</span>
+                          <span className="sw-slot mono">{srv.name}</span>
                           <label className="set-check"><input type="checkbox" checked={srv.enable}
                             onChange={(e) => patchServer(setSwAdsn, i, { enable: e.target.checked })} />
                             {tr("set.enabled")}</label>

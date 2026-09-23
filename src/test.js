@@ -1172,6 +1172,27 @@ group("switch mapping");
   check("only the Q16 and Q8 have an agent",
     C.hasAdsnAgent("Q16") && C.hasAdsnAgent("Q8") && !C.hasAdsnAgent("H2") && !C.hasAdsnAgent("HL1"));
 
+  /* aph is which API the device calls, and that is what kind of switch is on
+     the other end: /grism/task/ports/status is the P4 box, /interface/features
+     is the SDN controller. */
+  check("the flag names the switch",
+    C.aServerKind({ aph: true }) === "p4" && C.aServerKind({ aph: false }) === "sdn" &&
+    C.aServerKind({}) === "sdn" && C.aServerKind(null) === "sdn");
+  check("a config that carries the flag can be offered the choice",
+    C.parseAServers({ grism_A_servers: [{ name: "ga1", aph: true }] })[0].hasAph === true);
+  check("a config that never had it is not",
+    C.parseAServers({ grism_A_servers: [{ name: "ga1" }] })[0].hasAph === false &&
+    C.parseAServers({ grism_A_servers: [{ name: "ga1" }] })[0].aph === false);
+  {
+    const base = C.parseAServers({ grism_A_servers: [
+      { name: "ga1", enable: true, ip: "1.2.3.4", user: "u", aph: true, interval: 5, mapping: [] },
+      { name: "ga2", enable: false, ip: "", user: "", interval: 5, mapping: [] }] });
+    const xml = C.buildAServersConfigSet([{ ...base[0], aph: false }, base[1]], base, {});
+    check("changing the kind is a change worth sending", xml.includes("<aph>False</aph>"));
+    check("a firmware that does not know the flag is not sent one",
+      !C.buildAServersConfigSet([{ ...base[1], ip: "9.9.9.9" }], base, {}).includes("aph"));
+  }
+
   /* The device takes mapping rows one at a time, as add or delete against what
      it already holds -- so a changed row is both. */
   const diff = C.mappingDiff(a[0].mapping, [{ switchPort: "P1", vport: "V1" }, { switchPort: "P9", vport: "V2" }],

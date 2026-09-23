@@ -4503,10 +4503,24 @@ const mapRows = (rows, a, b) => (rows ?? [])
                  [b]: String(m?.[b === "vport" ? "vport" : "port"] ?? "").trim() }))
   .filter((m) => m[a] || m[b]);
 
+/* Which API the device calls on an A server, which is also what kind of switch
+   it is: with aph it logs in at /grism/auth/direct_login and reads
+   /grism/task/ports/status -- the P4 box's own API -- and without it goes to
+   /interface/features, which is the SDN controller's. The flag only exists on
+   the arm64 firmware; a config that has never carried it is talking to an SDN
+   controller and has no choice to offer. */
+export const A_SERVER_KINDS = { true: "p4", false: "sdn" };
+export const aServerKind = (srv) => (srv?.aph ? "p4" : "sdn");
+
 export function parseAServers(cfg) {
   return (cfg?.grism_A_servers ?? []).map((s) => ({
     name: String(s?.name ?? "").trim(),
     enable: s?.enable === true,
+    aph: s?.aph === true,
+    /* whether this firmware knows the flag at all -- MIPS builds have no APH
+       path, and offering the choice there would promise something the device
+       cannot do */
+    hasAph: !!s && Object.prototype.hasOwnProperty.call(s, "aph"),
     ip: String(s?.ip ?? "").trim(),
     user: String(s?.user ?? "").trim(),
     interval: String(s?.interval ?? ""),
@@ -4551,11 +4565,12 @@ export function buildAServersConfigSet(now, base, passwords = {}) {
     const was = (base ?? []).find((b) => b.name === s.name) ?? { mapping: [] };
     const diff = mappingDiff(was.mapping, s.mapping, ["switchPort", "vport"]);
     const pass = passwords[s.name];
-    const changed = !sameScalars(was, s, ["enable", "ip", "user", "interval"]) ||
+    const changed = !sameScalars(was, s, ["enable", "ip", "user", "interval", "aph"]) ||
       diff.add.length || diff.remove.length || pass;
     if (!changed) continue;
     let body = `<enable>${s.enable ? "True" : "False"}</enable>` +
       `<ip>${esc(s.ip)}</ip><user>${esc(s.user)}</user>`;
+    if (s.hasAph) body += `<aph>${s.aph ? "True" : "False"}</aph>`;
     if (pass) body += `<passhash>${esc(pass)}</passhash>`;
     body += `<interval>${esc(String(s.interval))}</interval>`;
     for (const m of diff.add) {
