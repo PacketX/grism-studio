@@ -3039,13 +3039,15 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                           {/* what it is, not which slot it sits in -- though the
                               slot stays visible, since that is the name the
                               device and its log use */}
-                          <span className="sw-name">{tr("set.swKind." + aServerKind(srv))}</span>
+                          <span className="sw-name">{tr("set.swKind.sdn")}</span>
                           <span className="sw-slot mono">{srv.name}</span>
+                          {/* both are SDN switches; what this picks is the
+                              protocol the device speaks to one */}
                           {srv.hasAph && (
-                            <select className="sw-kind-pick" value={srv.aph ? "aph" : "a"}
+                            <select className="sw-kind-pick" value={aServerKind(srv)}
                               onChange={(e) => patchServer(setSwA, i, { aph: e.target.value === "aph" })}>
-                              <option value="a">{tr("set.swKind.a")}</option>
-                              <option value="aph">{tr("set.swKind.aph")}</option>
+                              <option value="a">{tr("set.swProto.a")}</option>
+                              <option value="aph">{tr("set.swProto.aph")}</option>
                             </select>
                           )}
                           <label className="set-check"><input type="checkbox" checked={srv.enable}

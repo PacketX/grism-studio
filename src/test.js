@@ -1271,8 +1271,9 @@ check("no Chinese entry is left in English", (() => {
   const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
     "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass",
     "MGMT", "MGMT (USB)", "MGMT (M0)", "MEC (S1AP/NGAP · GTP)",
-    // the switch server names, written the same way on both sides
-    "ADSN agent", "VPort",
+    // the switch server names and the two protocol names, written the same
+    // way on both sides
+    "ADSN agent", "VPort", "GRISM-APH", "GRISM-A",
     // 3GPP column names, written the same way in both languages
     "MME/AMF UE ID", "RAN UE ID", "PLMN ID", "CELL ID", "SPID",
     "UL GTP TEID", "UL GTP IPv4", "DL GTP TEID", "DL GTP IPv4", "UE IPv4"]);
