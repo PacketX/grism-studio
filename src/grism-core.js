@@ -3138,6 +3138,274 @@ export const captureFileHref = (storage, dir, name) => {
   return `/grism/task/download_storage_file?${q}`;
 };
 
+/* ===================== live capture: pcap parsing =====================
+   The capture page tails the .tmp file the device is writing and decodes the
+   packets in the browser. The firmware writes classic pcap with pre-swapped
+   header constants, so a MIPS (big-endian) build produces a little-endian
+   file and an arm64 build a big-endian one -- the reader takes its byte order
+   from the magic instead of assuming either. */
+
+/* Incremental pcap reader. feed() takes the next slice of the file (in order)
+   and returns the complete records in it; a record cut off mid-way stays
+   buffered until the rest arrives, which is the normal state of a tail. After
+   an error the reader stays stopped -- the tail resyncs by starting a fresh
+   reader on the next file, whose rotation guarantees a clean header. */
+export function createPcapReader() {
+  let buf = new Uint8Array(0);
+  const r = { le: true, nanos: false, linktype: 1, headerSeen: false, error: null };
+  r.feed = (chunk) => {
+    const out = [];
+    if (r.error || !chunk) return out;
+    const c = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+    if (c.length) {
+      const n = new Uint8Array(buf.length + c.length);
+      n.set(buf, 0); n.set(c, buf.length);
+      buf = n;
+    }
+    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let off = 0;
+    if (!r.headerSeen) {
+      if (buf.length < 24) return out;
+      const m = view.getUint32(0, true);
+      if (m === 0xa1b2c3d4 || m === 0xa1b23c4d) r.le = true;
+      else if (m === 0xd4c3b2a1 || m === 0x4d3cb2a1) r.le = false;
+      else { r.error = "not a pcap file"; return out; }
+      r.nanos = m === 0xa1b23c4d || m === 0x4d3cb2a1;
+      r.linktype = view.getUint32(20, r.le);
+      r.headerSeen = true;
+      off = 24;
+    }
+    while (buf.length - off >= 16) {
+      const caplen = view.getUint32(off + 8, r.le);
+      const origlen = view.getUint32(off + 12, r.le);
+      /* the firmware's snaplen is 65535; anything larger means we are not
+         looking at a record boundary, and walking on would never recover */
+      if (caplen > 0x40000 || origlen > 0x40000) { r.error = "corrupt record"; break; }
+      if (buf.length - off - 16 < caplen) break;
+      const sec = view.getUint32(off, r.le);
+      const frac = view.getUint32(off + 4, r.le);
+      out.push({
+        tsMs: sec * 1000 + frac / (r.nanos ? 1e6 : 1e3),
+        caplen, origlen,
+        data: buf.slice(off + 16, off + 16 + caplen),
+      });
+      off += 16 + caplen;
+    }
+    if (off) buf = buf.slice(off);
+    return out;
+  };
+  return r;
+}
+
+const hx8 = (b) => b.toString(16).padStart(2, "0");
+export const macStr = (u8, o) => Array.from(u8.slice(o, o + 6), hx8).join(":");
+export const ip4Str = (u8, o) => `${u8[o]}.${u8[o + 1]}.${u8[o + 2]}.${u8[o + 3]}`;
+export function ip6Str(u8, o) {
+  const g = [];
+  for (let i = 0; i < 8; i++) g.push((u8[o + i * 2] << 8) | u8[o + i * 2 + 1]);
+  // standard "::" compression: the longest run of zero groups, min length 2
+  let best = -1, bestLen = 0, run = -1;
+  for (let i = 0; i < 8; i++) {
+    if (g[i] === 0) { if (run < 0) run = i; const len = i - run + 1; if (len > bestLen) { best = run; bestLen = len; } }
+    else run = -1;
+  }
+  if (bestLen < 2) return g.map((x) => x.toString(16)).join(":");
+  return g.slice(0, best).map((x) => x.toString(16)).join(":") + "::" +
+         g.slice(best + bestLen).map((x) => x.toString(16)).join(":");
+}
+
+const TCP_FLAG_NAMES = [[0x20, "URG"], [0x10, "ACK"], [0x08, "PSH"], [0x04, "RST"], [0x02, "SYN"], [0x01, "FIN"]];
+const tcpFlagStr = (f) => TCP_FLAG_NAMES.filter(([m]) => f & m).map(([, n]) => n).join(", ");
+
+const DNS_TYPES = { 1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT", 28: "AAAA", 33: "SRV", 65: "HTTPS", 255: "ANY" };
+const ICMP_TYPES = { 0: "Echo reply", 3: "Destination unreachable", 5: "Redirect", 8: "Echo request", 11: "Time exceeded" };
+const ICMP6_TYPES = { 1: "Destination unreachable", 128: "Echo request", 129: "Echo reply", 133: "Router solicitation", 134: "Router advertisement", 135: "Neighbor solicitation", 136: "Neighbor advertisement", 137: "Redirect" };
+
+/* A DNS name, following compression pointers. Pointer offsets are relative to
+   the start of the DNS message (base), not the packet. The jump budget is the
+   guard: a crafted pointer loop must cost a few iterations, not the page. */
+function dnsName(u8, off, end, base) {
+  const parts = [];
+  let jumps = 0, next = -1, o = off;
+  while (o < end) {
+    const len = u8[o];
+    if (len === 0) { if (next < 0) next = o + 1; break; }
+    if ((len & 0xc0) === 0xc0) {
+      if (o + 1 >= end) break;
+      if (next < 0) next = o + 2;
+      if (++jumps > 20) break;
+      o = base + (((len & 0x3f) << 8) | u8[o + 1]);
+      continue;
+    }
+    if (o + 1 + len > end) break;
+    parts.push(String.fromCharCode(...u8.subarray(o + 1, o + 1 + len)));
+    o += 1 + len;
+  }
+  return { name: parts.join("."), next: next < 0 ? end : next };
+}
+
+function decodeDns(u8, o, end, layers) {
+  if (end - o < 12) return null;
+  const u16 = (i) => (u8[i] << 8) | u8[i + 1];
+  const flags = u16(o + 2);
+  const qr = flags >> 15, rcode = flags & 0xf;
+  const qd = u16(o + 4), an = u16(o + 6);
+  const fields = [
+    ["Transaction ID", "0x" + u16(o).toString(16).padStart(4, "0")],
+    ["Type", qr ? "response" : "query"],
+    ["Questions", qd], ["Answers", an],
+  ];
+  if (qr && rcode) fields.push(["Reply code", rcode]);
+  let p = o + 12;
+  const qs = [];
+  for (let i = 0; i < Math.min(qd, 10) && p < end; i++) {
+    const { name, next } = dnsName(u8, p, end, o);
+    if (next + 4 > end) break;
+    const t = DNS_TYPES[u16(next)] || String(u16(next));
+    qs.push(`${t} ${name}`);
+    fields.push(["Query", `${name} (${t})`]);
+    p = next + 4;
+  }
+  const answers = [];
+  for (let i = 0; i < Math.min(an, 10) && p < end; i++) {
+    const { name, next } = dnsName(u8, p, end, o);
+    if (next + 10 > end) break;
+    const t = u16(next), rdlen = u16(next + 8), rd = next + 10;
+    if (rd + rdlen > end) break;
+    let val = "";
+    if (t === 1 && rdlen === 4) val = ip4Str(u8, rd);
+    else if (t === 28 && rdlen === 16) val = ip6Str(u8, rd);
+    else if (t === 2 || t === 5 || t === 12) val = dnsName(u8, rd, end, o).name;
+    answers.push(val || name);
+    fields.push(["Answer", `${name} ${DNS_TYPES[t] || t}${val ? " " + val : ""}`]);
+    p = rd + rdlen;
+  }
+  layers.push({ name: "DNS", fields });
+  return qr ? `response ${answers.filter(Boolean).join(", ") || qs.join(", ")}`
+            : `query ${qs.join(", ")}`;
+}
+
+/* One captured packet, decoded layer by layer for the live view. Every read is
+   bounds-checked against what was captured: a snaplen-truncated packet decodes
+   as far as its bytes go and stops, it does not throw. */
+export function decodePacket(u8, linktype = 1) {
+  const layers = [];
+  const res = { src: "", dst: "", proto: "", info: "", layers };
+  const u16 = (i) => i + 1 < u8.length ? (u8[i] << 8) | u8[i + 1] : 0;
+  const u32 = (i) => ((u16(i) << 16) >>> 0) + u16(i + 2);
+  if (linktype !== 1 || u8.length < 14) {
+    res.proto = "DATA";
+    res.info = `${u8.length} bytes` + (linktype !== 1 ? ` (link type ${linktype})` : "");
+    return res;
+  }
+  res.src = macStr(u8, 6); res.dst = macStr(u8, 0);
+  let o = 12, etype = u16(12);
+  const vlans = [];
+  while ((etype === 0x8100 || etype === 0x88a8) && o + 6 <= u8.length) {
+    vlans.push(u16(o + 2) & 0x0fff);
+    o += 4; etype = u16(o);
+  }
+  layers.push({ name: "Ethernet", fields: [["Destination", macStr(u8, 0)], ["Source", macStr(u8, 6)], ["Type", "0x" + etype.toString(16).padStart(4, "0")]] });
+  vlans.forEach((v) => layers.push({ name: "802.1Q VLAN", fields: [["VLAN ID", v]] }));
+  const l3 = o + 2;
+
+  if (etype === 0x0806 && l3 + 28 <= u8.length) {           // ARP
+    const op = u16(l3 + 6);
+    const sip = ip4Str(u8, l3 + 14), tip = ip4Str(u8, l3 + 24);
+    layers.push({ name: "ARP", fields: [["Operation", op === 1 ? "request" : op === 2 ? "reply" : op], ["Sender MAC", macStr(u8, l3 + 8)], ["Sender IP", sip], ["Target MAC", macStr(u8, l3 + 18)], ["Target IP", tip]] });
+    res.src = sip; res.dst = tip; res.proto = "ARP";
+    res.info = op === 1 ? `Who has ${tip}? Tell ${sip}` : op === 2 ? `${sip} is at ${macStr(u8, l3 + 8)}` : `op ${op}`;
+    return res;
+  }
+
+  let l4 = -1, ipProto = -1, l4end = u8.length;
+  if (etype === 0x0800 && l3 + 20 <= u8.length) {            // IPv4
+    const ihl = (u8[l3] & 0xf) * 4;
+    const totlen = u16(l3 + 2), fragfl = u16(l3 + 6);
+    const fragoff = fragfl & 0x1fff;
+    ipProto = u8[l3 + 9];
+    res.src = ip4Str(u8, l3 + 12); res.dst = ip4Str(u8, l3 + 16);
+    layers.push({ name: "IPv4", fields: [["Source", res.src], ["Destination", res.dst], ["Protocol", protocolName(ipProto)], ["TTL", u8[l3 + 8]], ["Total length", totlen], ...(fragfl & 0x4000 ? [["Flags", "DF"]] : []), ...(fragoff || (fragfl & 0x2000) ? [["Fragment offset", fragoff * 8]] : [])] });
+    l4 = l3 + ihl;
+    l4end = Math.min(u8.length, l3 + totlen);
+    if (fragoff > 0) {                                        // not the first fragment: no L4 header in it
+      res.proto = protocolName(ipProto).split(" ")[0];
+      res.info = `Fragment (offset ${fragoff * 8})`;
+      return res;
+    }
+  } else if (etype === 0x86dd && l3 + 40 <= u8.length) {      // IPv6
+    res.src = ip6Str(u8, l3 + 8); res.dst = ip6Str(u8, l3 + 24);
+    let next = u8[l3 + 6];
+    layers.push({ name: "IPv6", fields: [["Source", res.src], ["Destination", res.dst], ["Next header", protocolName(next)], ["Hop limit", u8[l3 + 7]], ["Payload length", u16(l3 + 4)]] });
+    let p = l3 + 40;
+    for (let i = 0; i < 8 && (next === 0 || next === 43 || next === 44 || next === 60); i++) {
+      if (p + 8 > u8.length) break;
+      const hlen = next === 44 ? 8 : (u8[p + 1] + 1) * 8;
+      next = u8[p]; p += hlen;
+    }
+    ipProto = next; l4 = p;
+    l4end = Math.min(u8.length, l3 + 40 + u16(l3 + 4));
+  } else {
+    /* GRISM's own heartbeat frames use the IPX ethertype, so a capture on one
+       of these devices is full of them -- name what will actually be seen. */
+    const ETHERTYPES = { 0x8137: "IPX", 0x8035: "RARP", 0x8847: "MPLS", 0x88cc: "LLDP", 0x8809: "LACP" };
+    res.proto = ETHERTYPES[etype] || "0x" + etype.toString(16).padStart(4, "0");
+    res.info = `${u8.length - l3} bytes`;
+    return res;
+  }
+
+  if (ipProto === 6 && l4 + 20 <= u8.length) {                // TCP
+    const sport = u16(l4), dport = u16(l4 + 2);
+    const doff = (u8[l4 + 12] >> 4) * 4, flags = u8[l4 + 13];
+    const paylen = Math.max(0, l4end - l4 - doff);
+    layers.push({ name: "TCP", fields: [["Source port", portLabel(sport)], ["Destination port", portLabel(dport)], ["Sequence", u32(l4 + 4)], ["Acknowledgment", u32(l4 + 8)], ["Flags", tcpFlagStr(flags) || "none"], ["Window", u16(l4 + 14)], ["Payload", paylen]] });
+    res.proto = "TCP";
+    res.info = `${sport} → ${dport} [${tcpFlagStr(flags) || "none"}] Len=${paylen}`;
+    if ((sport === 53 || dport === 53) && paylen > 14) {
+      const dns = decodeDns(u8, l4 + doff + 2, l4end, layers);  // DNS over TCP: 2-byte length first
+      if (dns) { res.proto = "DNS"; res.info = dns; }
+    }
+    if (paylen > 0) layers.push({ name: "Payload", fields: [["Length", paylen]] });
+  } else if (ipProto === 17 && l4 + 8 <= u8.length) {         // UDP
+    const sport = u16(l4), dport = u16(l4 + 2), ulen = u16(l4 + 4);
+    layers.push({ name: "UDP", fields: [["Source port", portLabel(sport)], ["Destination port", portLabel(dport)], ["Length", Math.max(0, ulen - 8)]] });
+    res.proto = "UDP";
+    res.info = `${sport} → ${dport} Len=${Math.max(0, ulen - 8)}`;
+    if (sport === 53 || dport === 53 || sport === 5353 || dport === 5353) {
+      const dns = decodeDns(u8, l4 + 8, l4end, layers);
+      if (dns) { res.proto = sport === 5353 || dport === 5353 ? "MDNS" : "DNS"; res.info = dns; }
+    }
+  } else if (ipProto === 1 && l4 + 4 <= u8.length) {          // ICMP
+    const t = u8[l4], code = u8[l4 + 1];
+    const name = ICMP_TYPES[t] || `type ${t}`;
+    layers.push({ name: "ICMP", fields: [["Type", `${t} (${name})`], ["Code", code], ...(t === 0 || t === 8 ? [["Identifier", u16(l4 + 4)], ["Sequence", u16(l4 + 6)]] : [])] });
+    res.proto = "ICMP"; res.info = name + (t === 0 || t === 8 ? ` id=${u16(l4 + 4)} seq=${u16(l4 + 6)}` : "");
+  } else if (ipProto === 58 && l4 + 4 <= u8.length) {         // ICMPv6
+    const t = u8[l4];
+    const name = ICMP6_TYPES[t] || `type ${t}`;
+    layers.push({ name: "ICMPv6", fields: [["Type", `${t} (${name})`], ["Code", u8[l4 + 1]]] });
+    res.proto = "ICMPv6"; res.info = name;
+  } else {
+    res.proto = protocolName(ipProto).split(" ")[0];
+    res.info = `${Math.max(0, l4end - l4)} bytes`;
+  }
+  return res;
+}
+
+/* Classic hex+ascii dump for the packet detail pane. */
+export function hexDump(u8, max = 4096) {
+  const lines = [];
+  const n = Math.min(u8.length, max);
+  for (let o = 0; o < n; o += 16) {
+    const row = u8.subarray(o, Math.min(o + 16, n));
+    const hex = Array.from(row, hx8).join(" ");
+    const ascii = Array.from(row, (b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : ".")).join("");
+    lines.push(o.toString(16).padStart(4, "0") + "  " + hex.padEnd(47) + "  " + ascii);
+  }
+  if (u8.length > max) lines.push(`… ${u8.length - max} more bytes`);
+  return lines;
+}
+
 /* ===================== traffic generator defaults =====================
    A newly created generator should produce sensible traffic straight away, so
    the fields that must be filled in get a working starting value. The MAC

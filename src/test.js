@@ -3625,6 +3625,155 @@ group("hook order");
   check("no component calls a hook after an early return", offenders.length === 0, offenders.join(" "));
 }
 
+/* ---------- live capture: pcap parsing ---------- */
+group("pcap live view");
+{
+  const hexpkt = (s) => new Uint8Array(s.replace(/\s+/g, "").match(/../g).map((x) => parseInt(x, 16)));
+  // a pcap file built byte by byte, in either byte order -- the same two the
+  // firmware produces (master/MIPS writes LE files, dpdk/arm64 writes BE)
+  const pcapBytes = (le, packets, { nanos = false } = {}) => {
+    const total = 24 + packets.reduce((s, p) => s + 16 + p.data.length, 0);
+    const b = new Uint8Array(total);
+    const dv = new DataView(b.buffer);
+    dv.setUint32(0, nanos ? 0xa1b23c4d : 0xa1b2c3d4, le);
+    dv.setUint16(4, 2, le); dv.setUint16(6, 4, le);
+    dv.setUint32(16, 65535, le); dv.setUint32(20, 1, le);
+    let o = 24;
+    for (const p of packets) {
+      dv.setUint32(o, p.sec ?? 1758600000, le);
+      dv.setUint32(o + 4, p.frac ?? 123456, le);
+      dv.setUint32(o + 8, p.data.length, le);
+      dv.setUint32(o + 12, p.orig ?? p.data.length, le);
+      b.set(p.data, o + 16);
+      o += 16 + p.data.length;
+    }
+    return b;
+  };
+
+  const ethHdr = "aabbccddeeff 112233445566";
+  const tcpSyn = hexpkt(`${ethHdr} 0800
+    4500 0028 0001 4000 4006 0000 c0a80101 c0a80102
+    c000 01bb 00000064 00000000 50 02 1c84 0000 0000`);
+  const dnsQuery = hexpkt(`${ethHdr} 0800
+    4500 0039 0002 0000 4011 0000 c0a80105 08080808
+    d000 0035 0025 0000
+    1234 0100 0001 0000 0000 0000 07 6578616d706c65 03 636f6d 00 0001 0001`);
+  const arpReq = hexpkt(`${ethHdr} 0806
+    0001 0800 0604 0001 112233445566 c0a80105 000000000000 c0a80101`);
+
+  // LE file (what a master/MIPS device writes)
+  const rd = C.createPcapReader();
+  const pk = rd.feed(pcapBytes(true, [{ data: tcpSyn }, { data: dnsQuery }, { data: arpReq }]));
+  check("LE file detected", rd.headerSeen && rd.le === true && !rd.error);
+  check("three records parsed", pk.length === 3);
+  check("timestamp in ms", pk.length === 3 && Math.abs(pk[0].tsMs - 1758600000123.456) < 0.01);
+
+  // BE file (what a dpdk/arm64 device writes)
+  const rdBe = C.createPcapReader();
+  const pkBe = rdBe.feed(pcapBytes(false, [{ data: tcpSyn }]));
+  check("BE file detected", rdBe.le === false && pkBe.length === 1 && pkBe[0].caplen === tcpSyn.length);
+
+  // a tail delivers arbitrary slices: byte-by-byte must yield the same packets
+  {
+    const r2 = C.createPcapReader();
+    const file = pcapBytes(true, [{ data: tcpSyn }, { data: arpReq }]);
+    let got = [];
+    for (let i = 0; i < file.length; i += 7) got = got.concat(r2.feed(file.subarray(i, Math.min(i + 7, file.length))));
+    check("7-byte slices reassemble", got.length === 2 && got[1].data.length === arpReq.length);
+  }
+  // a record cut mid-way stays buffered until the rest of it arrives
+  {
+    const r3 = C.createPcapReader();
+    const file = pcapBytes(true, [{ data: tcpSyn }, { data: arpReq }]);
+    const a = r3.feed(file.subarray(0, file.length - 3));
+    const b = r3.feed(file.subarray(file.length - 3));
+    check("partial tail held back", a.length === 1 && b.length === 1);
+  }
+  // an insane length is corruption, not something to walk past
+  {
+    const r4 = C.createPcapReader();
+    const file = pcapBytes(true, [{ data: tcpSyn }]);
+    new DataView(file.buffer).setUint32(24 + 8, 0x7fffffff, true);
+    check("corrupt caplen stops the reader", r4.feed(file).length === 0 && r4.error === "corrupt record");
+  }
+  // nanosecond magic scales the fraction differently
+  {
+    const r5 = C.createPcapReader();
+    const p5 = r5.feed(pcapBytes(true, [{ data: tcpSyn, frac: 500000000 }], { nanos: true }));
+    check("nanosecond magic", r5.nanos && p5.length === 1 && Math.abs(p5[0].tsMs % 1000 - 500) < 0.01);
+  }
+
+  // ---- decoding ----
+  const dTcp = C.decodePacket(tcpSyn);
+  check("TCP decode: addresses", dTcp.src === "192.168.1.1" && dTcp.dst === "192.168.1.2");
+  check("TCP decode: SYN in info", dTcp.proto === "TCP" && dTcp.info.includes("SYN") && dTcp.info.includes("49152 → 443"));
+  check("TCP decode: layers", dTcp.layers.map((l) => l.name).join(",") === "Ethernet,IPv4,TCP");
+
+  const dDns = C.decodePacket(dnsQuery);
+  check("DNS query decode", dDns.proto === "DNS" && dDns.info.includes("example.com") && dDns.info.startsWith("query A"));
+
+  // DNS response with a compression pointer back into the question
+  const dnsResp = hexpkt(`${ethHdr} 0800
+    4500 0049 0003 0000 4011 0000 08080808 c0a80105
+    0035 d000 0035 0000
+    1234 8180 0001 0001 0000 0000 07 6578616d706c65 03 636f6d 00 0001 0001
+    c00c 0001 0001 0000003c 0004 5db8d822`);
+  const dResp = C.decodePacket(dnsResp);
+  check("DNS response: pointer decompressed", dResp.info.includes("93.184.216.34"));
+  check("DNS response: answer names the query", (dResp.layers.find((l) => l.name === "DNS")?.fields ?? []).some(([k, v]) => k === "Answer" && String(v).includes("example.com")));
+
+  // a pointer that points at itself must cost a bounded number of jumps
+  const dnsLoop = hexpkt(`${ethHdr} 0800
+    4500 0027 0004 0000 4011 0000 08080808 c0a80105
+    0035 d000 0013 0000
+    1234 8180 0001 0000 0000 0000 c00c`);
+  const t0 = Date.now();
+  C.decodePacket(dnsLoop);
+  check("DNS pointer loop bounded", Date.now() - t0 < 200);
+
+  const dArp = C.decodePacket(arpReq);
+  check("ARP decode", dArp.proto === "ARP" && dArp.info === "Who has 192.168.1.1? Tell 192.168.1.5");
+
+  const icmpEcho = hexpkt(`${ethHdr} 0800
+    4500 001c 0005 0000 4001 0000 c0a80105 c0a80101
+    08 00 0000 0001 0002`);
+  const dIcmp = C.decodePacket(icmpEcho);
+  check("ICMP decode", dIcmp.proto === "ICMP" && dIcmp.info === "Echo request id=1 seq=2");
+
+  const v6Tcp = hexpkt(`${ethHdr} 86dd
+    60000000 0014 06 40
+    20010db8000000000000000000000001
+    20010db8000000000000000000000002
+    c000 01bb 00000064 00000000 50 10 1c84 0000 0000`);
+  const dV6 = C.decodePacket(v6Tcp);
+  check("IPv6 decode: :: compression", dV6.src === "2001:db8::1" && dV6.dst === "2001:db8::2");
+  check("IPv6 decode: TCP inside", dV6.proto === "TCP" && dV6.info.includes("ACK"));
+
+  const vlanUdp = hexpkt(`${ethHdr} 8100 0064 0800
+    4500 001c 0006 0000 4011 0000 c0a80105 c0a80101
+    d000 0050 0008 0000`);
+  const dVlan = C.decodePacket(vlanUdp);
+  check("VLAN decode", dVlan.layers.some((l) => l.name === "802.1Q VLAN" && l.fields[0][1] === 100) && dVlan.proto === "UDP");
+
+  // truncated capture: decode stops at the bytes it has, no throw
+  // 20 bytes is Ethernet plus six bytes of IP header: the source IP field is
+  // not in the capture yet, so the addresses stay at the MAC layer
+  const dTrunc = C.decodePacket(tcpSyn.subarray(0, 20));
+  check("truncated packet decodes partially", dTrunc.layers.length >= 1 && dTrunc.src === "11:22:33:44:55:66");
+  // 38 bytes reaches through the IP header: addresses resolve, no L4 yet
+  const dTrunc2 = C.decodePacket(tcpSyn.subarray(0, 38));
+  check("truncation after IP header keeps addresses", dTrunc2.src === "192.168.1.1" && dTrunc2.layers.some((l) => l.name === "IPv4"));
+  check("tiny packet is DATA", C.decodePacket(new Uint8Array(4)).proto === "DATA");
+
+  // GRISM heartbeats ride the IPX ethertype; a real HL1 capture is full of them
+  const hbFrame = hexpkt(`${ethHdr} 8137 ffff 0012 0000`);
+  check("heartbeat ethertype named", C.decodePacket(hbFrame).proto === "IPX");
+
+  const dump = C.hexDump(hexpkt("41424344 45464748 494a"));
+  check("hexDump line format", dump.length === 1 && dump[0].includes("41 42 43 44") && dump[0].endsWith("ABCDEFGHIJ"));
+  check("hexDump caps output", C.hexDump(new Uint8Array(5000), 4096).at(-1).includes("more bytes"));
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {
