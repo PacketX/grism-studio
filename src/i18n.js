@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.155.0";
+export const STUDIO_VERSION = "2.157.0";
 
 export const I18N = {
   en: {
@@ -45,7 +45,9 @@ export const I18N = {
     "cap.colNo": "#", "cap.colTime": "Time", "cap.colSrc": "Source", "cap.colDst": "Destination",
     "cap.colProto": "Protocol", "cap.colLen": "Length", "cap.colInfo": "Info",
     "cap.liveFilter": "Filter", "cap.liveFilterHint": "Matches source, destination, protocol or info. Combine with and / or / not and brackets — tcp and not 443, (arp or stp), \"echo request\". This page only: the device is not asked anything.",
+    "cap.liveFilterWhat": "Two kinds of term, combined with and / or / not and brackets. A field comparison: ip.addr == 10.0.0.0/8, tcp.port >= 1024, proto == dns, tcp.flags contains syn (fields: eth/ip .src .dst .addr, tcp/udp .port .srcport .dstport, vlan, ip.proto, ip.ttl, icmp.type, proto, len). Anything else is a plain substring matched against the columns above — 443 matches an address containing 443 too, so prefer the field form when you mean the port. Quote a phrase that contains an operator word.",
     "cap.fltUnbalanced": "brackets do not match", "cap.fltOperand": "an operator with nothing to apply to",
+    "cap.fltField": "not a filterable field name",
     "cap.fltBad": "filter not applied —",
     "cap.liveKeep": "Keep", "cap.liveKeepHint": "How many of the most recent packets to hold on this page. Older ones fall off the top; the capture file on the device keeps everything.",
     "cap.liveKeys": "↑ ↓ move, Home / End jump",
@@ -849,7 +851,9 @@ export const I18N = {
     "cap.colNo": "#", "cap.colTime": "時間", "cap.colSrc": "來源", "cap.colDst": "目的",
     "cap.colProto": "協定", "cap.colLen": "長度", "cap.colInfo": "資訊",
     "cap.liveFilter": "過濾", "cap.liveFilterHint": "比對來源、目的、協定或資訊。可用 and / or / not 與括號組合 — tcp and not 443、(arp or stp)、\"echo request\"。僅作用於此頁面:不會向裝置要求任何東西。",
+    "cap.liveFilterWhat": "兩種條件,可用 and / or / not 與括號組合。欄位比較:ip.addr == 10.0.0.0/8、tcp.port >= 1024、proto == dns、tcp.flags contains syn(欄位有 eth/ip .src .dst .addr、tcp/udp .port .srcport .dstport、vlan、ip.proto、ip.ttl、icmp.type、proto、len)。其他字詞則以字串包含比對上方各欄 — 輸入 443 也會比中含 443 的位址,指定 port 時請用欄位寫法。片語含運算子字詞時請加引號。",
     "cap.fltUnbalanced": "括號不成對", "cap.fltOperand": "運算子後面缺少條件",
+    "cap.fltField": "不是可過濾的欄位名稱",
     "cap.fltBad": "過濾條件未套用 —",
     "cap.liveKeep": "保留", "cap.liveKeepHint": "這個頁面要保留最新的幾筆封包。較舊的會被移除;裝置上的側錄檔仍然完整。",
     "cap.liveKeys": "↑ ↓ 移動,Home / End 跳至首末",

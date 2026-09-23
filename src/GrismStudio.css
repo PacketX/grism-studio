@@ -1937,3 +1937,4 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 /* the list is focusable so the arrow keys reach it; say so when it has focus */
 .pl-list:focus{outline:none; border-color:var(--accent);}
 .pl-list:focus .pl-row.on{background:rgba(74,158,255,.2);}
+.pl-flt-help{margin:-4px 0 10px; font-size:11.5px; line-height:1.5; max-width:118ch;}

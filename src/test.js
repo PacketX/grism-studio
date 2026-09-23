@@ -3810,6 +3810,32 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  // field-aware filter terms: the syntax anyone coming from Wireshark tries
+  {
+    const dTcp2 = C.decodePacket(tcpSyn);          // 192.168.1.1 -> .2, 49152 -> 443, SYN, ttl 64
+    const ctx = { text: `${dTcp2.src} ${dTcp2.dst} ${dTcp2.proto} ${dTcp2.info}`.toLowerCase(), f: dTcp2.f };
+    const hit = (q, c = ctx) => { const r = C.parseFilterExpr(q); return r.ok && r.test(c); };
+    check("f bag carries the ports", dTcp2.f.tcpSrc === 49152 && dTcp2.f.tcpDst === 443 && dTcp2.f.proto === "TCP");
+    check("tcp.port matches either end", hit("tcp.port == 443") && hit("tcp.port == 49152") && !hit("tcp.port == 80"));
+    check("srcport is one end only", hit("tcp.srcport == 49152") && !hit("tcp.srcport == 443"));
+    check("numeric comparisons", hit("tcp.dstport < 1024") && hit("tcp.srcport >= 1024") && !hit("tcp.dstport > 1024"));
+    check("bare = reads as ==", hit("tcp.port = 443"));
+    check("CIDR prefix", hit("ip.addr == 192.168.1.0/24") && !hit("ip.addr == 10.0.0.0/8") && hit("ip.src == 192.168.0.0/16"));
+    check("!= means neither end", !hit("ip.addr != 192.168.1.1") && !hit("tcp.port != 443") && hit("tcp.port != 80"));
+    check("ip.addr != excludes a host on either side", !hit("ip.addr != 192.168.1.2"));
+    check("proto compares as text, case-insensitively", hit("proto == tcp") && hit("proto == TCP") && !hit("proto == udp"));
+    check("flags via contains", hit("tcp.flags contains syn") && !hit("tcp.flags contains ack"));
+    check("ttl and length", hit("ip.ttl == 64") && hit("len > 50") && !hit("len > 100"));
+    check("fields mix with substrings and operators", hit("tcp.port == 443 and not 10.0.0.") && hit("(tcp.port == 80 or tcp.port == 443) and proto == tcp"));
+    check("a field term on a packet without that layer misses", !hit("udp.port == 53") && !hit("vlan == 100"));
+    const dV = C.decodePacket(vlanUdp);
+    check("vlan id filters", (() => { const c = { text: "x", f: dV.f }; return hit("vlan == 100", c) && !hit("vlan == 200", c) && hit("udp.dstport == 80", c); })());
+    check("an unknown field is an error, not a silent miss", C.parseFilterExpr("bogus.field == 1").error === "field");
+    check("a dangling comparison is an operand error", C.parseFilterExpr("tcp.port ==").error === "operand");
+    check("a dotted substring still works", hit("192.168.1.1"));
+    check("text-only callers still work", C.parseFilterExpr("tcp").test("some tcp row"));
+  }
+
   // the rename a finished capture goes through, observed on the HL1
   {
     const tmp = "raw_20260923105028_406556.pcap.tmp";

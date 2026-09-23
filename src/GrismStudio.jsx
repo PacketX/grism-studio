@@ -5725,12 +5725,11 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
 const LIVE_KEEP = [200, 500, 1000, 2000, 5000];   // packets kept; older fall off the top
 const LIVE_SLICE = 1024 * 1024;                  // bytes asked for per poll
 
-function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
+function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose }) {
   const [packets, setPackets] = React.useState([]);
   const [selNo, setSelNo] = React.useState(null);
   const [paused, setPaused] = React.useState(false);
   const [follow, setFollow] = React.useState(true);
-  const [q, setQ] = React.useState("");
   const [keep, setKeep] = React.useState(() => {
     const n = Number(readPrefs().captureLiveKeep);
     return LIVE_KEEP.includes(n) ? n : 1000;
@@ -5831,7 +5830,10 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
   const expr = React.useMemo(() => parseFilterExpr(q), [q]);
   const shown = React.useMemo(() => {
     if (!expr.ok || expr.empty) return packets;   // a broken filter shows everything, and says so
-    return packets.filter((p) => expr.test(`${p.d.src} ${p.d.dst} ${p.d.proto} ${p.d.info}`.toLowerCase()));
+    return packets.filter((p) => expr.test({
+      text: `${p.d.src} ${p.d.dst} ${p.d.proto} ${p.d.info}`.toLowerCase(),
+      f: p.d.f,
+    }));
   }, [packets, expr]);
 
   React.useEffect(() => {
@@ -5877,8 +5879,8 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
 
       <div className="pl-bar">
         <label className="pl-q"><span>{tr("cap.liveFilter")}</span>
-          <input className={expr.ok ? "" : "bad"} value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="tcp and not 443" title={tr("cap.liveFilterHint")} /></label>
+          <input className={expr.ok ? "" : "bad"} value={q} onChange={(e) => onQ(e.target.value)}
+            placeholder="tcp.port == 443 and not arp" title={tr("cap.liveFilterHint")} /></label>
         <button className="copy-btn" onClick={() => setPaused((v) => !v)}>
           {paused ? tr("cap.liveResume") : tr("cap.livePause")}</button>
         <label className="tf-interval"><input type="checkbox" checked={follow}
@@ -5895,7 +5897,12 @@ function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
       </div>
       {/* A filter that does not parse shows everything rather than nothing:
           an empty list is indistinguishable from "no packet matched". */}
-      {!expr.ok && <p className="pl-flt-bad">{tr("cap.fltBad")} {tr(expr.error === "operand" ? "cap.fltOperand" : "cap.fltUnbalanced")}</p>}
+      {!expr.ok && <p className="pl-flt-bad">{tr("cap.fltBad")} {tr(
+        expr.error === "operand" ? "cap.fltOperand" : expr.error === "field" ? "cap.fltField" : "cap.fltUnbalanced")}</p>}
+      {/* Said out loud rather than left in a tooltip: "filter" on a packet
+          list reads as Wireshark's display filter, and someone typing
+          tcp.port == 443 here would get an empty list and no idea why. */}
+      <p className="pl-flt-help dim">{tr("cap.liveFilterWhat")}</p>
       {stat.err && <div className="sys-err">{stat.err}</div>}
 
       <div className="pl-split">
@@ -5994,6 +6001,9 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
      should be able to say so before starting. Remembered like the other UI
      preferences, so the choice survives the next visit. */
   const [liveOn, setLiveOn] = React.useState(() => readPrefs().captureLive !== false);
+  /* Held here, not in PacketLive: starting a capture takes the card away until
+     the next .tmp appears, and a filter someone typed should not go with it. */
+  const [liveQ, setLiveQ] = React.useState("");
   React.useEffect(() => {
     if (!loaded || liveFile || !liveOn) return;
     const tmp = files.find((f) => !f.isDir && isPartialCapture(f.name));
@@ -6121,7 +6131,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
       </section>
 
       {liveFile && <PacketLive storage={storage} dir={dir} filename={liveFile} names={files} tr={tr}
-        onClose={() => setLiveFile(null)} />}
+        q={liveQ} onQ={setLiveQ} onClose={() => setLiveFile(null)} />}
       {!liveOn && running > 0 && <p className="page-note dim">{tr("cap.liveOff")}</p>}
 
       <section className="sys-card">

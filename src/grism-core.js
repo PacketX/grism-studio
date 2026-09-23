@@ -3290,18 +3290,25 @@ function decodeDns(u8, o, end, layers) {
    as far as its bytes go and stops, it does not throw. */
 export function decodePacket(u8, linktype = 1) {
   const layers = [];
-  const res = { src: "", dst: "", proto: "", info: "", layers };
+  /* f holds the same packet as values rather than as text, so the filter can
+     compare on them -- ip.addr == 10.0.0.0/8, tcp.port >= 1024 -- instead of
+     hunting substrings in the row. */
+  const f = { len: u8.length, vlan: [] };
+  const res = { src: "", dst: "", proto: "", info: "", layers, f };
   const u16 = (i) => i + 1 < u8.length ? (u8[i] << 8) | u8[i + 1] : 0;
   const u32 = (i) => ((u16(i) << 16) >>> 0) + u16(i + 2);
   if (linktype !== 1 || u8.length < 14) {
     res.proto = "DATA";
     res.info = `${u8.length} bytes` + (linktype !== 1 ? ` (link type ${linktype})` : "");
+    f.proto = res.proto;
     return res;
   }
   res.src = macStr(u8, 6); res.dst = macStr(u8, 0);
+  f.ethSrc = res.src; f.ethDst = res.dst;
   let o = 12, etype = u16(12);
   const vlans = [];
   while ((etype === 0x8100 || etype === 0x88a8) && o + 6 <= u8.length) {
+    f.vlan.push(u16(o + 2) & 0x0fff);
     vlans.push(u16(o + 2) & 0x0fff);
     o += 4; etype = u16(o);
   }
@@ -3316,18 +3323,19 @@ export function decodePacket(u8, linktype = 1) {
   const l3 = o + 2;
 
   if (is8023) {
-    if (l3 + 3 > u8.length) { res.proto = "LLC"; res.info = `${Math.max(0, u8.length - l3)} bytes`; return res; }
+    if (l3 + 3 > u8.length) { res.proto = "LLC"; f.proto = "LLC"; res.info = `${Math.max(0, u8.length - l3)} bytes`; return res; }
     const dsap = u8[l3], ssap = u8[l3 + 1];
     layers.push({ name: "LLC", fields: [["DSAP", "0x" + hx8(dsap)], ["SSAP", "0x" + hx8(ssap)], ["Control", "0x" + hx8(u8[l3 + 2])]] });
     if (dsap === 0xaa && ssap === 0xaa && l3 + 8 <= u8.length) {
       const oui = Array.from(u8.subarray(l3 + 3, l3 + 6), hx8).join(":");
       const pid = "0x" + u16(l3 + 6).toString(16).padStart(4, "0");
       layers.push({ name: "SNAP", fields: [["OUI", oui], ["PID", pid]] });
-      res.proto = "SNAP"; res.info = `OUI ${oui}, PID ${pid}`;
+      res.proto = "SNAP"; res.info = `OUI ${oui}, PID ${pid}`; f.proto = res.proto;
     } else {
       const LSAP = { 0x06: "IP", 0x42: "STP", 0xe0: "IPX", 0xf0: "NetBIOS", 0xfe: "OSI" };
       res.proto = LSAP[dsap] || "LLC";
       res.info = dsap === 0x42 ? "Spanning Tree BPDU" : `DSAP 0x${hx8(dsap)}, SSAP 0x${hx8(ssap)}`;
+      f.proto = res.proto;
     }
     return res;
   }
@@ -3337,6 +3345,7 @@ export function decodePacket(u8, linktype = 1) {
     const sip = ip4Str(u8, l3 + 14), tip = ip4Str(u8, l3 + 24);
     layers.push({ name: "ARP", fields: [["Operation", op === 1 ? "request" : op === 2 ? "reply" : op], ["Sender MAC", macStr(u8, l3 + 8)], ["Sender IP", sip], ["Target MAC", macStr(u8, l3 + 18)], ["Target IP", tip]] });
     res.src = sip; res.dst = tip; res.proto = "ARP";
+    f.ipSrc = sip; f.ipDst = tip; f.proto = "ARP";
     res.info = op === 1 ? `Who has ${tip}? Tell ${sip}` : op === 2 ? `${sip} is at ${macStr(u8, l3 + 8)}` : `op ${op}`;
     return res;
   }
@@ -3348,16 +3357,18 @@ export function decodePacket(u8, linktype = 1) {
     const fragoff = fragfl & 0x1fff;
     ipProto = u8[l3 + 9];
     res.src = ip4Str(u8, l3 + 12); res.dst = ip4Str(u8, l3 + 16);
+    f.ipSrc = res.src; f.ipDst = res.dst; f.ipProto = ipProto; f.ttl = u8[l3 + 8];
     layers.push({ name: "IPv4", fields: [["Source", res.src], ["Destination", res.dst], ["Protocol", protocolName(ipProto)], ["TTL", u8[l3 + 8]], ["Total length", totlen], ...(fragfl & 0x4000 ? [["Flags", "DF"]] : []), ...(fragoff || (fragfl & 0x2000) ? [["Fragment offset", fragoff * 8]] : [])] });
     l4 = l3 + ihl;
     l4end = Math.min(u8.length, l3 + totlen);
     if (fragoff > 0) {                                        // not the first fragment: no L4 header in it
-      res.proto = protocolName(ipProto).split(" ")[0];
+      res.proto = protocolName(ipProto).split(" ")[0]; f.proto = res.proto;
       res.info = `Fragment (offset ${fragoff * 8})`;
       return res;
     }
   } else if (etype === 0x86dd && l3 + 40 <= u8.length) {      // IPv6
     res.src = ip6Str(u8, l3 + 8); res.dst = ip6Str(u8, l3 + 24);
+    f.ipSrc = res.src; f.ipDst = res.dst; f.ttl = u8[l3 + 7];
     let next = u8[l3 + 6];
     layers.push({ name: "IPv6", fields: [["Source", res.src], ["Destination", res.dst], ["Next header", protocolName(next)], ["Hop limit", u8[l3 + 7]], ["Payload length", u16(l3 + 4)]] });
     let p = l3 + 40;
@@ -3366,13 +3377,14 @@ export function decodePacket(u8, linktype = 1) {
       const hlen = next === 44 ? 8 : (u8[p + 1] + 1) * 8;
       next = u8[p]; p += hlen;
     }
-    ipProto = next; l4 = p;
+    ipProto = next; l4 = p; f.ipProto = ipProto;
     l4end = Math.min(u8.length, l3 + 40 + u16(l3 + 4));
   } else {
     /* GRISM's own heartbeat frames use the IPX ethertype, so a capture on one
        of these devices is full of them -- name what will actually be seen. */
     const ETHERTYPES = { 0x8137: "IPX", 0x8035: "RARP", 0x8847: "MPLS", 0x88cc: "LLDP", 0x8809: "LACP" };
     res.proto = ETHERTYPES[etype] || "0x" + etype.toString(16).padStart(4, "0");
+    f.proto = res.proto;
     res.info = `${u8.length - l3} bytes`;
     return res;
   }
@@ -3382,43 +3394,127 @@ export function decodePacket(u8, linktype = 1) {
     const doff = (u8[l4 + 12] >> 4) * 4, flags = u8[l4 + 13];
     const paylen = Math.max(0, l4end - l4 - doff);
     layers.push({ name: "TCP", fields: [["Source port", portLabel(sport)], ["Destination port", portLabel(dport)], ["Sequence", u32(l4 + 4)], ["Acknowledgment", u32(l4 + 8)], ["Flags", tcpFlagStr(flags) || "none"], ["Window", u16(l4 + 14)], ["Payload", paylen]] });
-    res.proto = "TCP";
+    res.proto = "TCP"; f.proto = "TCP";
+    f.tcpSrc = sport; f.tcpDst = dport; f.tcpFlags = tcpFlagStr(flags);
     res.info = `${sport} → ${dport} [${tcpFlagStr(flags) || "none"}] Len=${paylen}`;
     if ((sport === 53 || dport === 53) && paylen > 14) {
       const dns = decodeDns(u8, l4 + doff + 2, l4end, layers);  // DNS over TCP: 2-byte length first
-      if (dns) { res.proto = "DNS"; res.info = dns; }
+      if (dns) { res.proto = "DNS"; f.proto = "DNS"; res.info = dns; }
     }
     if (paylen > 0) layers.push({ name: "Payload", fields: [["Length", paylen]] });
   } else if (ipProto === 17 && l4 + 8 <= u8.length) {         // UDP
     const sport = u16(l4), dport = u16(l4 + 2), ulen = u16(l4 + 4);
     layers.push({ name: "UDP", fields: [["Source port", portLabel(sport)], ["Destination port", portLabel(dport)], ["Length", Math.max(0, ulen - 8)]] });
-    res.proto = "UDP";
+    res.proto = "UDP"; f.proto = "UDP";
+    f.udpSrc = sport; f.udpDst = dport;
     res.info = `${sport} → ${dport} Len=${Math.max(0, ulen - 8)}`;
     if (sport === 53 || dport === 53 || sport === 5353 || dport === 5353) {
       const dns = decodeDns(u8, l4 + 8, l4end, layers);
-      if (dns) { res.proto = sport === 5353 || dport === 5353 ? "MDNS" : "DNS"; res.info = dns; }
+      if (dns) { res.proto = sport === 5353 || dport === 5353 ? "MDNS" : "DNS"; f.proto = res.proto; res.info = dns; }
     }
   } else if (ipProto === 1 && l4 + 4 <= u8.length) {          // ICMP
     const t = u8[l4], code = u8[l4 + 1];
     const name = ICMP_TYPES[t] || `type ${t}`;
     layers.push({ name: "ICMP", fields: [["Type", `${t} (${name})`], ["Code", code], ...(t === 0 || t === 8 ? [["Identifier", u16(l4 + 4)], ["Sequence", u16(l4 + 6)]] : [])] });
-    res.proto = "ICMP"; res.info = name + (t === 0 || t === 8 ? ` id=${u16(l4 + 4)} seq=${u16(l4 + 6)}` : "");
+    res.proto = "ICMP"; f.proto = "ICMP"; f.icmpType = t;
+    res.info = name + (t === 0 || t === 8 ? ` id=${u16(l4 + 4)} seq=${u16(l4 + 6)}` : "");
   } else if (ipProto === 58 && l4 + 4 <= u8.length) {         // ICMPv6
     const t = u8[l4];
     const name = ICMP6_TYPES[t] || `type ${t}`;
     layers.push({ name: "ICMPv6", fields: [["Type", `${t} (${name})`], ["Code", u8[l4 + 1]]] });
-    res.proto = "ICMPv6"; res.info = name;
+    res.proto = "ICMPv6"; f.proto = "ICMPv6"; f.icmpType = t; res.info = name;
   } else {
-    res.proto = protocolName(ipProto).split(" ")[0];
+    res.proto = protocolName(ipProto).split(" ")[0]; f.proto = res.proto;
     res.info = `${Math.max(0, l4end - l4)} bytes`;
   }
   return res;
 }
 
-/* The filter box over the packet list. What there is to match on is the text of
-   a row, so a substring is the atom; not / and / or and parentheses go over the
-   top of that. Juxtaposition means and, so "tcp 443" reads the way anyone would
-   expect it to, and a phrase that contains an operator word is quoted.
+/* The fields a filter term can name, and how to read one off a decoded packet.
+   The names are the ones anyone who has used Wireshark will try first; a field
+   that can hold two values at once (either end of a conversation) answers with
+   both, and a comparison against it holds when either side matches. */
+export const PACKET_FIELDS = {
+  "eth.src": (f) => f.ethSrc, "eth.dst": (f) => f.ethDst,
+  "eth.addr": (f) => [f.ethSrc, f.ethDst],
+  "ip.src": (f) => f.ipSrc, "ip.dst": (f) => f.ipDst,
+  "ip.addr": (f) => [f.ipSrc, f.ipDst],
+  "ip.proto": (f) => f.ipProto, "ip.ttl": (f) => f.ttl,
+  "vlan": (f) => f.vlan, "vlan.id": (f) => f.vlan,
+  "tcp.srcport": (f) => f.tcpSrc, "tcp.dstport": (f) => f.tcpDst,
+  "tcp.port": (f) => [f.tcpSrc, f.tcpDst], "tcp.flags": (f) => f.tcpFlags,
+  "udp.srcport": (f) => f.udpSrc, "udp.dstport": (f) => f.udpDst,
+  "udp.port": (f) => [f.udpSrc, f.udpDst],
+  "port": (f) => [f.tcpSrc, f.tcpDst, f.udpSrc, f.udpDst],
+  "icmp.type": (f) => f.icmpType,
+  "proto": (f) => f.proto, "frame.len": (f) => f.len, "len": (f) => f.len,
+};
+
+/* An IPv4 address as a number, for prefix comparisons. IPv6 is compared as
+   text: "ip.addr == 2001:db8::1" is exact, and a v6 prefix is a substring
+   term away, which is not worth 128-bit arithmetic here. */
+function ip4num(v) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(v ?? "").trim());
+  if (!m) return null;
+  let n = 0;
+  for (let i = 1; i <= 4; i++) { const b = Number(m[i]); if (b > 255) return null; n = n * 256 + b; }
+  return n;
+}
+/* "10.0.0.0/8" as a test, so a filter can name a network and not just a host. */
+function cidrTest(value) {
+  const m = /^(.+)\/(\d{1,2})$/.exec(String(value ?? "").trim());
+  if (!m) return null;
+  const base = ip4num(m[1]), bits = Number(m[2]);
+  if (base === null || bits > 32) return null;
+  const mask = bits === 0 ? 0 : (-1 << (32 - bits)) >>> 0;
+  return (v) => { const n = ip4num(v); return n !== null && ((n & mask) >>> 0) === ((base & mask) >>> 0); };
+}
+
+/* One "field op value" test. Strings compare case-insensitively and exactly;
+   "contains" is the substring form. A field with two values matches when
+   either does -- and != is read as "neither", which is what someone filtering
+   "ip.addr != 10.0.0.1" means, whatever a stricter reading would say. */
+function fieldTerm(name, op, value) {
+  const read = PACKET_FIELDS[name];
+  if (!read) return null;
+  const cidr = (op === "==" || op === "!=") ? cidrTest(value) : null;
+  const num = Number(value);
+  const numeric = value !== "" && Number.isFinite(num);
+  const low = String(value).toLowerCase();
+  const one = (v) => {
+    if (v === undefined || v === null || v === "") return false;
+    if (cidr) return cidr(v);
+    if (op === "contains") return String(v).toLowerCase().includes(low);
+    if (numeric && typeof v === "number") {
+      switch (op) {
+        case "==": return v === num; case "!=": return v !== num;
+        case ">": return v > num; case ">=": return v >= num;
+        case "<": return v < num; case "<=": return v <= num;
+      }
+    }
+    const sv = String(v).toLowerCase();
+    switch (op) {
+      case "==": return sv === low; case "!=": return sv !== low;
+      case ">": return sv > low; case ">=": return sv >= low;
+      case "<": return sv < low; case "<=": return sv <= low;
+    }
+    return false;
+  };
+  return (ctx) => {
+    const v = read(ctx.f || {});
+    const vals = Array.isArray(v) ? v.filter((x) => x !== undefined && x !== null) : [v];
+    if (!vals.length) return false;
+    // "neither end is that" rather than "some end is not that"
+    return op === "!=" ? vals.every(one) : vals.some(one);
+  };
+}
+
+/* The filter box over the packet list. Two kinds of term: a named field with a
+   comparison -- ip.addr == 10.0.0.0/8, tcp.port >= 1024, proto == dns -- and a
+   bare substring matched against the row as it is displayed. not / and / or and
+   parentheses go over the top of both. Juxtaposition means and, so "tcp 443"
+   reads the way anyone would expect it to, and a phrase that contains an
+   operator word is quoted.
 
    Returns a matcher, or the reason one could not be built -- an expression that
    does not parse has to say so, because the alternative is a list that has
@@ -3426,10 +3522,10 @@ export function decodePacket(u8, linktype = 1) {
    The haystack is expected already lowercased; the needles are lowercased here. */
 export function parseFilterExpr(text) {
   const src = String(text ?? "").trim();
-  if (!src) return { ok: true, empty: true, test: () => true };
+  if (!src) return { ok: true, empty: true, test: () => true, fields: [] };
 
   const toks = [];
-  const re = /\s*(\(|\)|"([^"]*)"|'([^']*)'|[^\s()]+)/gy;
+  const re = /\s*(\(|\)|"([^"]*)"|'([^']*)'|[<>!=]=|[<>=]|[^\s()<>=]+)/gy;
   let m, at = 0;
   re.lastIndex = 0;
   while (at < src.length && (m = re.exec(src))) {
@@ -3437,6 +3533,7 @@ export function parseFilterExpr(text) {
     if (m[2] !== undefined || m[3] !== undefined) { toks.push({ t: "s", v: m[2] ?? m[3] }); continue; }
     const raw = m[1];
     if (raw === "(" || raw === ")") { toks.push({ t: raw }); continue; }
+    if (/^([<>!=]=|[<>=])$/.test(raw)) { toks.push({ t: "op", v: raw === "=" ? "==" : raw }); continue; }
     // "!tcp" is the same as "not tcp"; the bang binds to what follows it
     let word = raw;
     while (word.startsWith("!") && word.length > 1) { toks.push({ t: "not" }); word = word.slice(1); }
@@ -3444,6 +3541,7 @@ export function parseFilterExpr(text) {
     if (low === "and" || low === "&&") toks.push({ t: "and" });
     else if (low === "or" || low === "||") toks.push({ t: "or" });
     else if (low === "not" || low === "!") toks.push({ t: "not" });
+    else if (low === "contains") toks.push({ t: "op", v: "contains" });
     else toks.push({ t: "s", v: word });
   }
 
@@ -3481,20 +3579,39 @@ export function parseFilterExpr(text) {
       return inner;
     }
     if (p.t === ")") fail("unbalanced");
-    if (p.t === "and" || p.t === "or") fail("operand");
+    if (p.t === "and" || p.t === "or" || p.t === "op") fail("operand");
     i++;
+    /* A known field name followed by a comparison is a field term. A name we
+       do not know is left as a substring, so a filter never breaks because it
+       happens to contain a dot. */
+    const next = peek();
+    if (next?.t === "op") {
+      const name = p.v.toLowerCase();
+      if (!PACKET_FIELDS[name]) fail("field");
+      i++;
+      const val = peek();
+      if (!val || val.t !== "s") fail("operand");
+      i++;
+      const term = fieldTerm(name, next.v, val.v);
+      if (!term) fail("field");
+      return term;
+    }
     const needle = p.v.toLowerCase();
     // an empty quoted string would match every row, which is never the intent
     if (!needle) fail("operand");
-    return (s) => s.includes(needle);
+    return (ctx) => ctx.text.includes(needle);
   };
 
   try {
-    const test = parseOr();
+    const built = parseOr();
     if (i < toks.length) fail("unbalanced");
+    /* Called with a packet, or with just its text -- the text form keeps the
+       plain substring case (and its tests) readable. */
+    const test = (ctx) => built(typeof ctx === "string" ? { text: ctx, f: {} } : ctx);
     return { ok: true, test };
   } catch (e) {
-    return { ok: false, error: e.message === "operand" ? "operand" : "unbalanced" };
+    const k = e.message;
+    return { ok: false, error: k === "operand" || k === "field" ? k : "unbalanced" };
   }
 }
 
