@@ -34,7 +34,7 @@ import {
   bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus, bypassValue,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
-  hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
+  speedSwitch, groupSpeeds, PORT_SPEEDS, formatPortSpeed,
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   MEC_ARG_KEYS, mecProblems, dedupProblems,
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
@@ -1779,17 +1779,17 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
      next boot and the device reboots itself right after accepting it. That is
      why this is a switch of its own rather than one of the staged port fields:
      those wait for Apply, this one takes the machine down. */
-  const hasSpeed = React.useMemo(() => hasSpeedSwitch(devModel), [devModel]);
-  const speeds = React.useMemo(() => t12sSpeeds(rawCfg), [rawCfg]);
+  const speedHw = React.useMemo(() => speedSwitch(devModel), [devModel]);
+  const speeds = React.useMemo(() => groupSpeeds(rawCfg, speedHw), [rawCfg, speedHw]);
   const [spDraft, setSpDraft] = React.useState({});
   // Re-seed when the device's own speeds arrive or change, so the page that comes
   // back after the reboot shows what the device now reports, not the old draft.
   const spKey = JSON.stringify(speeds);
   React.useEffect(() => { setSpDraft(JSON.parse(spKey)); }, [spKey]);
   const spChanged = React.useMemo(
-    () => T12S_SPEED_GROUPS.filter((g) => speeds[g.qlm] && spDraft[g.qlm] &&
-      spDraft[g.qlm] !== speeds[g.qlm]),
-    [speeds, spDraft]);
+    () => (speedHw?.groups ?? []).filter((g) => speeds[g.name] && spDraft[g.name] &&
+      spDraft[g.name] !== speeds[g.name]),
+    [speeds, spDraft, speedHw]);
 
   /* All the changed groups go in one request: each one costs a reboot, and
      sending them one at a time would cost three. The endpoint leaves any group
@@ -1798,10 +1798,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     if (!spChanged.length) return;
     setSubmit({ state: "sending", msg: "" });
     const body = new URLSearchParams();
-    for (const g of spChanged) body.set(g.qlm, spDraft[g.qlm]);
+    for (const g of spChanged) body.set(g.name, spDraft[g.name]);
     let ok = false;
     try {
-      const res = await fetch("/grism/task/set_t12s_speed", { method: "POST", credentials: "include",
+      const res = await fetch(speedHw.url, { method: "POST", credentials: "include",
         headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
       ok = res.ok;
       if (!ok) setSubmit({ state: "error", msg: (await res.text()).trim() || ("HTTP " + res.status) });
@@ -2838,25 +2838,25 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                       Staged like the ports table above rather than applied per click:
                       one reboot covers all three groups, so let the user pick
                       everything first and pay for it once. */}
-                  {hasSpeed && T12S_SPEED_GROUPS.some((g) => speeds[g.qlm]) && (
+                  {speedHw && speedHw.groups.some((g) => speeds[g.name]) && (
                     <section className="sys-card set-speed">
                       <h3 className="sys-card-title">{tr("set.speedTitle")}</h3>
                       <p className="set-hint">{tr("set.speedNote")}</p>
-                      {T12S_SPEED_GROUPS.filter((g) => speeds[g.qlm]).map((g) => {
-                        const picked = spDraft[g.qlm] ?? speeds[g.qlm];
-                        const moved = picked !== speeds[g.qlm];
+                      {speedHw.groups.filter((g) => speeds[g.name]).map((g) => {
+                        const picked = spDraft[g.name] ?? speeds[g.name];
+                        const moved = picked !== speeds[g.name];
                         return (
-                          <div className={"sp-row" + (moved ? " changed" : "")} key={g.qlm}>
+                          <div className={"sp-row" + (moved ? " changed" : "")} key={g.name}>
                             <span className="sp-ports mono">{g.ports.join(" · ")}</span>
                             {/* spell out what it is still running as until Apply */}
                             <span className="sp-was">{moved
-                              ? `${formatPortSpeed(speeds[g.qlm])} → ${formatPortSpeed(picked)}` : ""}</span>
+                              ? `${formatPortSpeed(speeds[g.name])} → ${formatPortSpeed(picked)}` : ""}</span>
                             <span className="sp-seg">
-                              {T12S_SPEEDS.map((sp) => (
+                              {PORT_SPEEDS.map((sp) => (
                                 <button key={sp}
                                   className={"sp-opt" + (picked === sp ? " on" : "")}
                                   disabled={submit.state === "sending"}
-                                  onClick={() => setSpDraft((d) => ({ ...d, [g.qlm]: sp }))}>
+                                  onClick={() => setSpDraft((d) => ({ ...d, [g.name]: sp }))}>
                                   {formatPortSpeed(sp)}
                                 </button>
                               ))}

@@ -1697,13 +1697,31 @@ for (const lang of Object.keys(I18N)) {
 /* ---------- T12S port speed ---------- */
 group("port speed");
 {
-  check("only a T12S offers the switch",
+  check("the models with a switch, and only those",
     C.hasSpeedSwitch("T12S") && C.hasSpeedSwitch("GRISM-T12S") &&
-    !C.hasSpeedSwitch("G8S") && !C.hasSpeedSwitch("HL1") && !C.hasSpeedSwitch(""));
+    C.hasSpeedSwitch("T20") && C.hasSpeedSwitch("F2T12") && C.hasSpeedSwitch("T12") &&
+    !C.hasSpeedSwitch("F4T4") && !C.hasSpeedSwitch("G8S") && !C.hasSpeedSwitch("HL1") &&
+    !C.hasSpeedSwitch(""));
 
-  check("the groups match the QLM wiring",
-    C.T12S_SPEED_GROUPS.map((g) => `${g.qlm}:${g.ports.join(",")}`).join(" ") ===
-    "qlm5_6:P0,P1,P2,P3 qlm3:P4,P5,P6,P7 qlm2:P8,P9,P10,P11");
+  const groupsOf = (m) => C.speedSwitch(m).groups.map((g) => `${g.name}:${g.ports.join(",")}`).join(" ");
+  check("the T12S groups match the QLM wiring",
+    groupsOf("T12S") === "qlm5_6:P0,P1,P2,P3 qlm3:P4,P5,P6,P7 qlm2:P8,P9,P10,P11");
+  /* The IM8724 builds: four PIM halves on a T20, the second PIM only on the
+     other two, and the ports each half carries differ between them. */
+  check("T20 switches four halves",
+    groupsOf("T20") === "pim0_sfp_left:P0,P1,P2,P3 pim0_sfp_right:P4,P5,P6,P7 " +
+    "pim1_sfp_left:P8,P9,P10,P11 pim1_sfp_right:P12,P13,P14,P15");
+  check("F2T12 switches two, starting at P2",
+    groupsOf("F2T12") === "pim1_sfp_left:P2,P3,P4,P5 pim1_sfp_right:P6,P7,P8,P9");
+  check("T12 switches two, starting at P0",
+    groupsOf("T12") === "pim1_sfp_left:P0,P1,P2,P3 pim1_sfp_right:P4,P5,P6,P7");
+  // "F2T12" and "T12S" both contain "T12"
+  check("the longer model name wins",
+    C.speedSwitch("F2T12").model === "F2T12" && C.speedSwitch("T12S").model === "T12S" &&
+    C.speedSwitch("T12").model === "T12");
+  check("the IM builds share one endpoint, the T12S has its own",
+    ["T20", "F2T12", "T12"].every((m) => C.speedSwitch(m).url === "/grism/task/set_im_speed") &&
+    C.speedSwitch("T12S").url === "/grism/task/set_t12s_speed");
 
   // the device reports speeds as numbers, not strings
   const cfg = { interfaces: [
@@ -1712,7 +1730,7 @@ group("port speed");
     { name: "qlm5_6", type: "SGMII", ports: [{ name: "P0", speed: 1000 }] },
     { name: null, type: "LOOP", ports: [{ name: "P12", speed: 10000 }] },
   ] };
-  const sp = C.t12sSpeeds(cfg);
+  const sp = C.groupSpeeds(cfg, C.speedSwitch("T12S"));
   check("each group reads its current speed",
     sp.qlm2 === "10000" && sp.qlm3 === "1000" && sp.qlm5_6 === "1000");
   check("interfaces outside the groups are ignored", Object.keys(sp).length === 3);
@@ -1720,10 +1738,23 @@ group("port speed");
   // A G8S reports no interface names at all; a group we cannot read must stay
   // out of the list rather than show up as a guess.
   check("an unreadable config yields no groups",
-    Object.keys(C.t12sSpeeds(null)).length === 0 &&
-    Object.keys(C.t12sSpeeds({ interfaces: [{ name: null, ports: [{ speed: 1000 }] }] })).length === 0);
+    Object.keys(C.groupSpeeds(null, C.speedSwitch("T12S"))).length === 0 &&
+    Object.keys(C.groupSpeeds({ interfaces: [{ name: null, ports: [{ speed: 1000 }] }] }, C.speedSwitch("T12S"))).length === 0);
   check("an unexpected speed is not offered as current",
-    Object.keys(C.t12sSpeeds({ interfaces: [{ name: "qlm2", ports: [{ speed: 2500 }] }] })).length === 0);
+    Object.keys(C.groupSpeeds({ interfaces: [{ name: "qlm2", ports: [{ speed: 2500 }] }] }, C.speedSwitch("T12S"))).length === 0);
+
+  /* .160 reports its two halves as XFI/10000 under the group names, the same
+     shape the T12S uses. */
+  const imCfg = { interfaces: [
+    { name: "pim1_sfp_right", type: "XFI", ports: [{ name: "P6", speed: 10000 }, { name: "P7", speed: 10000 }] },
+    { name: "pim1_sfp_left", type: "XFI", ports: [{ name: "P2", speed: 10000 }] },
+    { name: null, type: "XLAUI", ports: [{ name: "P0", speed: 40000 }] },
+  ] };
+  const imSp = C.groupSpeeds(imCfg, C.speedSwitch("F2T12"));
+  check("an F2T12 reads both halves",
+    imSp.pim1_sfp_left === "10000" && imSp.pim1_sfp_right === "10000" &&
+    Object.keys(imSp).length === 2);
+  check("an F4T4 has nothing to read", C.speedSwitch("F4T4") === null);
 
   check("speeds are labelled in the units the front panel uses",
     C.formatPortSpeed("1000") === "1G" && C.formatPortSpeed("10000") === "10G" &&
@@ -2327,6 +2358,40 @@ group("front panel");
   check("both chassis fit in two centimetres", L.height <= 75 && G.height <= 75);
   /* The labels sit above the top row and below the bottom one, so the canvas
      has to leave room for them or they are cut off by its own edge. */
+  /* The IM8724, in its four builds: two PIM slots, then the XOR module's four
+     cages on the right, and the management jack on the strip in the middle
+     where the USB socket is. */
+  for (const [m, names] of [
+    ["T20", "P0 P1 P2 P3 P4 P5 P6 P7 P8 P9 P10 P11 P12 P13 P14 P15 P16 P17 P18 P19"],
+    ["F2T12", "P0 P1 P2 P3 P4 P5 P6 P7 P8 P9 P10 P11 P12 P13"],
+    ["T12", "P0 P1 P2 P3 P4 P5 P6 P7 P8 P9 P10 P11"],
+    ["F4T4", "P0 P1 P2 P3 P4 P5 P6 P7"],
+  ]) {
+    const P = C.panelLayout(m);
+    const at = (n) => P.cages.find((c) => c.name === n);
+    check(`${m} draws every port once`,
+      P.cages.map((c) => c.name).sort((a, b) => +a.slice(1) - +b.slice(1)).join(" ") === names);
+    check(`${m} numbers top row even, bottom row odd`,
+      P.cages.filter((c) => c.y === Math.min(...P.cages.map((x) => x.y)))
+        .every((c) => +c.name.slice(1) % 2 === 0));
+    check(`${m} puts the management jack between the slots and the XOR cages`,
+      P.mgmt.x > at("P0").x && P.mgmt.x < at(names.split(" ").at(-1)).x);
+    check(`${m} fits in two centimetres`, P.height <= 75);
+  }
+  /* The 40G builds put two wide cages where the others have eight */
+  check("F2T12 and F4T4 draw their 40G cages wider than an SFP+",
+    C.panelLayout("F4T4").cages.find((c) => c.name === "P0").w >
+    C.panelLayout("T20").cages.find((c) => c.name === "P0").w);
+  check("a T12S is not drawn as a T12",
+    C.panelModel("T12S") === "T12S" && C.panelModel("T12") === "T12" &&
+    C.panelModel("F2T12") === "F2T12");
+  // the speed groups are the halves of a 2x4 block, so they have to be its ports
+  for (const m of ["T20", "F2T12", "T12"]) {
+    const drawn = new Set(C.panelLayout(m).cages.map((c) => c.name));
+    check(`${m} switches speed on ports it draws`,
+      C.speedSwitch(m).groups.every((g) => g.ports.every((p) => drawn.has(p))));
+  }
+
   /* The G8 (SCB3240): the same eight jacks, but in one row in two blocks of
      four, numbered left to right, with one bypass pair on the right-hand two. */
   const G8 = C.panelLayout("G8");

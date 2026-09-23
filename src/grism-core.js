@@ -3828,27 +3828,62 @@ export const parseBypassStatus = (text, hw) => {
    environment and only takes effect at boot, so every change reboots.
    ============================================================ */
 
-export const T12S_SPEED_GROUPS = [
-  { qlm: "qlm5_6", ports: ["P0", "P1", "P2", "P3"] },
-  { qlm: "qlm3",   ports: ["P4", "P5", "P6", "P7"] },
-  { qlm: "qlm2",   ports: ["P8", "P9", "P10", "P11"] },
-];
-export const T12S_SPEEDS = ["1000", "10000"];
+export const PORT_SPEEDS = ["1000", "10000"];
 
-/* Whether this device has the switch at all. Only a T12S does; the endpoint is
-   named after it. */
-export const hasSpeedSwitch = (model) => String(model ?? "").toUpperCase().includes("T12S");
+/* Which models can switch port speed, in groups of four cages that change
+   together, and what the request calls each group. A T12S switches QLMs; the
+   IM8724 builds switch the SFP cages of a PIM half, and which halves are
+   populated is what the model name says -- an F4T4 is an IM8724 with none, so
+   it is absent here.
+
+   The group names are also the interface names in the device config, which is
+   how the current speed is read back. */
+export const SPEED_SWITCHES = {
+  T12S: { url: "/grism/task/set_t12s_speed", groups: [
+    { name: "qlm5_6", ports: ["P0", "P1", "P2", "P3"] },
+    { name: "qlm3",   ports: ["P4", "P5", "P6", "P7"] },
+    { name: "qlm2",   ports: ["P8", "P9", "P10", "P11"] },
+  ] },
+  T20: { url: "/grism/task/set_im_speed", groups: [
+    { name: "pim0_sfp_left",  ports: ["P0", "P1", "P2", "P3"] },
+    { name: "pim0_sfp_right", ports: ["P4", "P5", "P6", "P7"] },
+    { name: "pim1_sfp_left",  ports: ["P8", "P9", "P10", "P11"] },
+    { name: "pim1_sfp_right", ports: ["P12", "P13", "P14", "P15"] },
+  ] },
+  F2T12: { url: "/grism/task/set_im_speed", groups: [
+    { name: "pim1_sfp_left",  ports: ["P2", "P3", "P4", "P5"] },
+    { name: "pim1_sfp_right", ports: ["P6", "P7", "P8", "P9"] },
+  ] },
+  T12: { url: "/grism/task/set_im_speed", groups: [
+    { name: "pim1_sfp_left",  ports: ["P0", "P1", "P2", "P3"] },
+    { name: "pim1_sfp_right", ports: ["P4", "P5", "P6", "P7"] },
+  ] },
+};
+
+/* The switch this model has, or null. Longest name first: "F2T12" and "T12S"
+   both contain "T12", and either read as a T12 would be offered two groups on
+   ports that belong to something else. */
+export function speedSwitch(model) {
+  const m = String(model ?? "").toUpperCase();
+  const names = Object.keys(SPEED_SWITCHES).sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    if (m.includes(name)) return { model: name, ...SPEED_SWITCHES[name] };
+  }
+  return null;
+}
+
+export const hasSpeedSwitch = (model) => !!speedSwitch(model);
 
 /* What each group is set to now, read from the interfaces in the device config
    rather than from link state -- a port with nothing plugged in still belongs
-   to a group running at 10G. Returns { qlm: "1000" | "10000" }. */
-export function t12sSpeeds(cfg) {
+   to a group running at 10G. Returns { <group>: "1000" | "10000" }. */
+export function groupSpeeds(cfg, spec) {
   const out = {};
   for (const iface of cfg?.interfaces ?? []) {
-    const group = T12S_SPEED_GROUPS.find((g) => g.qlm === iface?.name);
+    const group = (spec?.groups ?? []).find((g) => g.name === iface?.name);
     if (!group) continue;
     const speed = (iface.ports ?? []).map((p) => String(p?.speed ?? "")).find(Boolean);
-    if (T12S_SPEEDS.includes(speed)) out[group.qlm] = speed;
+    if (PORT_SPEEDS.includes(speed)) out[group.name] = speed;
   }
   return out;
 }
@@ -4521,6 +4556,12 @@ export function panelModel(model) {
   if (m.includes("F3T1G4")) return "F3T1G4";
   // after G8S, or a G8S matches here and is drawn with four jacks too few
   if (m.includes("G8")) return "G8";
+  /* The IM8724 builds. F2T12 before T12 for the same reason; T12S is already
+     matched above, so a T12S never reaches here. */
+  if (m.includes("T20")) return "T20";
+  if (m.includes("F2T12")) return "F2T12";
+  if (m.includes("F4T4")) return "F4T4";
+  if (m.includes("T12")) return "T12";
   return null;
 }
 
@@ -4572,6 +4613,66 @@ export function g8PanelLayout() {
     /* one relay pair, P6 and P7; the lamp is placed under them */
     lamps: [{ id: "BYPASS", x: X0 + BLOCK_GAP + 6 * (JACK_W + GAP_X) + 8, y: TOP_Y + JACK_H + 5, pair: 1 }],
     cages,
+  };
+}
+
+/* The IM8724 chassis, in its four builds. One box: two PIM slots side by side,
+   then the SD/USB/reset strip, then the XOR module's four cages on the right.
+   What fills the PIM slots is what the model name says -- a 2x4 block of SFP+
+   cages, a pair of 40G cages, or nothing at all.
+
+   Numbering runs left to right and top to bottom, as printed: the top row of a
+   block is even, the bottom row odd. The management jack is drawn on the strip
+   in the middle, where the USB socket is on the box.
+
+   Each 2x4 block is also two speed groups -- its left half and its right half,
+   four ports each -- which is what SPEED_SWITCHES splits. */
+const IM_BUILDS = {
+  T20:   { pim0: { kind: "sfp8", from: 0 },  pim1: { kind: "sfp8", from: 8 },  xor: 16 },
+  F2T12: { pim0: { kind: "qsfp2", from: 0 }, pim1: { kind: "sfp8", from: 2 },  xor: 10 },
+  T12:   { pim0: { kind: "empty" },          pim1: { kind: "sfp8", from: 0 },  xor: 8 },
+  F4T4:  { pim0: { kind: "qsfp2", from: 0 }, pim1: { kind: "qsfp2", from: 2 }, xor: 4 },
+};
+
+export function imPanelLayout(model) {
+  const build = IM_BUILDS[model] ?? IM_BUILDS.T20;
+  const W = 34, H = 17, GAP_X = 3, GAP_Y = 7, TOP_Y = 15, SLOT_W = 4 * (W + GAP_X);
+  const MID_Y = TOP_Y + (H + GAP_Y) / 2;          // a single row sits between the two
+  const X0 = 30, SLOT_GAP = 22;
+  const cages = [];
+  const block = (x0, spec) => {
+    if (spec.kind === "sfp8") {
+      for (let i = 0; i < 4; i++) {
+        const x = x0 + i * (W + GAP_X);
+        cages.push({ name: "P" + (spec.from + i * 2), x, y: TOP_Y, w: W, h: H, kind: "sfp" });
+        cages.push({ name: "P" + (spec.from + i * 2 + 1), x, y: TOP_Y + H + GAP_Y, w: W, h: H, kind: "sfp" });
+      }
+    } else if (spec.kind === "qsfp2") {
+      /* 40G cages: one row, and wider -- they take four lanes and look it */
+      const QW = 52;
+      for (let i = 0; i < 2; i++) {
+        cages.push({ name: "P" + (spec.from + i), x: x0 + 6 + i * (QW + 8), y: MID_Y, w: QW, h: H, kind: "sfp" });
+      }
+    }
+  };
+  block(X0, build.pim0);
+  block(X0 + SLOT_W + SLOT_GAP, build.pim1);
+  /* the strip with the SD slot, the USB socket and reset; the management jack
+     is drawn here, standing in for the USB */
+  const stripX = X0 + 2 * (SLOT_W + SLOT_GAP);
+  const mgmt = { x: stripX + 16, y: MID_Y, w: 28, h: H };
+  // the XOR module: two columns of two, numbered down each column as printed
+  const xorX = stripX + 78;
+  for (let i = 0; i < 2; i++) {
+    const x = xorX + i * (W + GAP_X);
+    cages.push({ name: "P" + (build.xor + i * 2), x, y: TOP_Y, w: W, h: H, kind: "sfp" });
+    cages.push({ name: "P" + (build.xor + i * 2 + 1), x, y: TOP_Y + H + GAP_Y, w: W, h: H, kind: "sfp" });
+  }
+  return {
+    model, kind: "sfp", lamps: [],
+    width: xorX + 2 * (W + GAP_X) + 16,
+    height: TOP_Y * 2 + H * 2 + GAP_Y + 2,
+    mgmt, cages,
   };
 }
 
@@ -4742,6 +4843,7 @@ export const panelLayout = (model) => {
   if (m === "T4G12") return t4g12PanelLayout();
   if (m === "F3T1G4") return f3t1g4PanelLayout();
   if (m === "G8") return g8PanelLayout();
+  if (["T20", "F2T12", "T12", "F4T4"].includes(m)) return imPanelLayout(m);
   return t12sPanelLayout();
 };
 
