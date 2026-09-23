@@ -1857,3 +1857,57 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .sw-slot{font-size:11px; color:var(--txt-faint); border:1px solid var(--line-2); border-radius:99px; padding:1px 8px;}
 .sw-kind-pick{background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:6px;
   padding:3px 8px; font-size:12px;}
+
+/* ===== live packet view (capture page) ===== */
+.pl-file{font-size:11.5px; margin-left:10px; font-weight:400;}
+.pl-ended{margin-left:10px; font-size:11px; color:var(--txt-faint);
+  border:1px solid var(--line-2); border-radius:99px; padding:1px 9px;}
+.sys-card-title .pl-file + .copy-btn, .sys-card-title .pl-ended + .copy-btn{margin-left:10px;}
+.pl-bar{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 10px;}
+.pl-q{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--txt-dim);}
+.pl-q input{background:var(--bg); border:1px solid var(--line-2); color:var(--txt); border-radius:6px;
+  padding:4px 9px; font-size:12px; width:230px;}
+.pl-stats{font-size:11.5px; margin-left:auto;}
+.pl-behind{color:var(--warn);}
+
+/* the list scrolls, the detail pane beside it does not move with it */
+.pl-split{display:grid; grid-template-columns:minmax(0,1.85fr) minmax(280px,1fr); gap:12px; align-items:start;}
+.pl-list{max-height:430px; overflow:auto; border:1px solid var(--line); border-radius:12px; background:var(--panel-2);}
+.pl-table{min-width:760px; font-size:12px;}
+.pl-table td{padding:5px 10px;}
+.pl-table th{padding:8px 10px;}
+.pl-row{cursor:pointer;}
+.pl-row.on{background:rgba(74,158,255,.12);}
+.pl-row.on td{color:var(--txt);}
+.pl-addr{max-width:180px; overflow:hidden; text-overflow:ellipsis;}
+/* the one column that may be long: let it use whatever is left, and wrap */
+.pl-table td.pl-info{white-space:normal; word-break:break-word; min-width:190px; color:var(--txt-dim);}
+.pl-proto{font-size:10.5px; font-weight:700; letter-spacing:.04em; border-radius:99px; padding:1px 8px;
+  border:1px solid var(--line-2); color:var(--txt-dim); background:var(--bg);}
+.pl-proto.tcp{color:#4a9eff; border-color:rgba(74,158,255,.4);}
+.pl-proto.udp{color:#33c48d; border-color:rgba(51,196,141,.4);}
+.pl-proto.dns, .pl-proto.mdns{color:#c98bff; border-color:rgba(201,139,255,.4);}
+.pl-proto.arp{color:#e0a33a; border-color:rgba(224,163,58,.4);}
+.pl-proto.icmp, .pl-proto.icmpv6{color:#ff8a65; border-color:rgba(255,138,101,.4);}
+
+.pl-detail{border:1px solid var(--line); border-radius:12px; background:var(--panel-2);
+  padding:12px 14px; max-height:430px; overflow:auto;}
+.pl-detail-head{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt-faint);
+  font-weight:600; margin-bottom:8px;}
+.pl-meta{font-size:11.5px; margin-bottom:10px;}
+.pl-layer + .pl-layer{margin-top:9px;}
+.pl-layer-name{font-size:11.5px; font-weight:700; color:var(--accent-2); margin-bottom:3px;}
+.pl-fields{display:grid; grid-template-columns:auto minmax(0,1fr); gap:1px 10px; margin:0; font-size:11.5px;}
+.pl-fields dt{color:var(--txt-faint); white-space:nowrap;}
+.pl-fields dd{margin:0; color:var(--txt); overflow-wrap:anywhere;}
+.pl-hex{margin:12px 0 0; padding:9px 10px; background:var(--bg); border:1px solid var(--line-2);
+  border-radius:8px; font-size:11px; line-height:1.5; overflow-x:auto; color:var(--txt-dim); white-space:pre;}
+
+/* the capture is running and the page is no longer covered over, so say so */
+.cap-countdown{display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--txt-dim);}
+.cap-countdown b{color:var(--txt);}
+.cap-dot{width:8px; height:8px; border-radius:50%; background:var(--danger, #e05252);
+  animation:capblink 1.2s ease-in-out infinite;}
+@keyframes capblink{0%,100%{opacity:1;} 50%{opacity:.25;}}
+
+@media (max-width:1000px){ .pl-split{grid-template-columns:minmax(0,1fr);} }

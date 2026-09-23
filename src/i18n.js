@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.150.0";
+export const STUDIO_VERSION = "2.152.0";
 
 export const I18N = {
   en: {
@@ -36,6 +36,18 @@ export const I18N = {
     "cap.delTitle": "Delete this file?", "cap.delTitleN": "Delete these files?", "cap.selectAll": "Select all", "cap.delSelected": "Delete selected",
     "cap.markForDelete": "Mark for deletion",
     "cap.noDelWriting": "The capture running now is writing this file — it can be deleted once the capture ends.", "cap.delBody": "The capture file is removed from the storage volume. This cannot be undone.",
+    "cap.live": "Live packets", "cap.view": "View", "cap.liveClose": "Close",
+    "cap.liveOf": "reading", "cap.liveWaiting": "Waiting for the first packets…",
+    "cap.liveEnded": "capture ended",
+    "cap.colNo": "#", "cap.colTime": "Time", "cap.colSrc": "Source", "cap.colDst": "Destination",
+    "cap.colProto": "Protocol", "cap.colLen": "Length", "cap.colInfo": "Info",
+    "cap.liveFilter": "Filter", "cap.liveFilterHint": "Matches source, destination, protocol or info. This page only — the device is not asked anything.",
+    "cap.livePause": "Pause", "cap.liveResume": "Resume", "cap.liveFollow": "follow newest",
+    "cap.liveShown": "shown", "cap.liveSeen": "captured", "cap.liveBehind": "behind by",
+    "cap.liveTrimmed": "the most recent {n} are kept",
+    "cap.liveNoMatch": "No packet matches the filter.",
+    "cap.liveDetail": "Packet detail", "cap.livePick": "Select a packet to see its layers and bytes.",
+    "cap.liveBytes": "bytes on the wire", "cap.liveCaptured": "bytes captured",
     "tab.trafficPorts": "Interfaces", "tab.trafficSessions": "Sessions",
     "tab.trafficServices": "Services", "tab.trafficCountries": "Countries",
     "tab.trafficL2gre": "L2GRE Correlation",
@@ -821,6 +833,18 @@ export const I18N = {
     "cap.delTitle": "刪除這個檔案?", "cap.delTitleN": "刪除這些檔案?", "cap.selectAll": "全選", "cap.delSelected": "刪除選取的檔案",
     "cap.markForDelete": "標記為待刪除",
     "cap.noDelWriting": "目前這次側錄正在寫入這個檔案 — 等側錄結束後才能刪除。", "cap.delBody": "側錄檔會從儲存空間移除,且無法復原。",
+    "cap.live": "即時封包", "cap.view": "檢視", "cap.liveClose": "關閉",
+    "cap.liveOf": "讀取中", "cap.liveWaiting": "等待第一批封包…",
+    "cap.liveEnded": "側錄已結束",
+    "cap.colNo": "#", "cap.colTime": "時間", "cap.colSrc": "來源", "cap.colDst": "目的",
+    "cap.colProto": "協定", "cap.colLen": "長度", "cap.colInfo": "資訊",
+    "cap.liveFilter": "過濾", "cap.liveFilterHint": "比對來源、目的、協定或資訊。僅作用於此頁面 — 不會向裝置要求任何東西。",
+    "cap.livePause": "暫停", "cap.liveResume": "繼續", "cap.liveFollow": "跟隨最新",
+    "cap.liveShown": "顯示", "cap.liveSeen": "已側錄", "cap.liveBehind": "落後",
+    "cap.liveTrimmed": "僅保留最新 {n} 筆",
+    "cap.liveNoMatch": "沒有符合過濾條件的封包。",
+    "cap.liveDetail": "封包內容", "cap.livePick": "選擇一個封包以檢視分層與位元組內容。",
+    "cap.liveBytes": "線上長度", "cap.liveCaptured": "側錄長度",
     "tab.trafficPorts": "介面", "tab.trafficSessions": "連線",
     "tab.trafficServices": "服務", "tab.trafficCountries": "國家",
     "tab.trafficL2gre": "L2GRE 對應表",

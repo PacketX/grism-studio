@@ -3305,9 +3305,32 @@ export function decodePacket(u8, linktype = 1) {
     vlans.push(u16(o + 2) & 0x0fff);
     o += 4; etype = u16(o);
   }
-  layers.push({ name: "Ethernet", fields: [["Destination", macStr(u8, 0)], ["Source", macStr(u8, 6)], ["Type", "0x" + etype.toString(16).padStart(4, "0")]] });
+  /* At or below 1500 the field is a length, not a type: the frame is IEEE
+     802.3 and an LLC header follows. Calling it a type produced protocols like
+     "0x0026" for the STP and SNAP frames any switch port carries. */
+  const is8023 = etype <= 1500;
+  layers.push({ name: is8023 ? "IEEE 802.3" : "Ethernet",
+    fields: [["Destination", macStr(u8, 0)], ["Source", macStr(u8, 6)],
+             is8023 ? ["Length", etype] : ["Type", "0x" + etype.toString(16).padStart(4, "0")]] });
   vlans.forEach((v) => layers.push({ name: "802.1Q VLAN", fields: [["VLAN ID", v]] }));
   const l3 = o + 2;
+
+  if (is8023) {
+    if (l3 + 3 > u8.length) { res.proto = "LLC"; res.info = `${Math.max(0, u8.length - l3)} bytes`; return res; }
+    const dsap = u8[l3], ssap = u8[l3 + 1];
+    layers.push({ name: "LLC", fields: [["DSAP", "0x" + hx8(dsap)], ["SSAP", "0x" + hx8(ssap)], ["Control", "0x" + hx8(u8[l3 + 2])]] });
+    if (dsap === 0xaa && ssap === 0xaa && l3 + 8 <= u8.length) {
+      const oui = Array.from(u8.subarray(l3 + 3, l3 + 6), hx8).join(":");
+      const pid = "0x" + u16(l3 + 6).toString(16).padStart(4, "0");
+      layers.push({ name: "SNAP", fields: [["OUI", oui], ["PID", pid]] });
+      res.proto = "SNAP"; res.info = `OUI ${oui}, PID ${pid}`;
+    } else {
+      const LSAP = { 0x06: "IP", 0x42: "STP", 0xe0: "IPX", 0xf0: "NetBIOS", 0xfe: "OSI" };
+      res.proto = LSAP[dsap] || "LLC";
+      res.info = dsap === 0x42 ? "Spanning Tree BPDU" : `DSAP 0x${hx8(dsap)}, SSAP 0x${hx8(ssap)}`;
+    }
+    return res;
+  }
 
   if (etype === 0x0806 && l3 + 28 <= u8.length) {           // ARP
     const op = u16(l3 + 6);
@@ -3390,6 +3413,42 @@ export function decodePacket(u8, linktype = 1) {
     res.info = `${Math.max(0, l4end - l4)} bytes`;
   }
   return res;
+}
+
+/* A capture file is not simply un-.tmp'd when it closes. The firmware inserts
+   the time the capture ended (fcdata_output_pcap_dir_file_close splits the name
+   at its last underscore), so raw_<start>_<usec>.pcap.tmp is renamed to
+   raw_<start>_<end>_<usec>.pcap -- and a live view that rebuilt the name by
+   dropping ".tmp" asked for a file that was never there.
+
+   So resolve it against the listing instead of rebuilding it. All that is
+   relied on is that the finished file keeps the head and the tail of the name
+   it was written under, which leaves the date format free to change.
+
+   An empty capture is unlinked rather than renamed, so no match is a real
+   answer: the file is gone, not missing. */
+export function finishedCaptureName(tmpName, names = []) {
+  const t = String(tmpName ?? "");
+  if (!isPartialCapture(t)) return "";
+  const stem = t.replace(/\.tmp$/i, "");
+  const cut = stem.lastIndexOf("_");
+  if (cut < 0) return names.includes(stem) ? stem : "";
+  const head = stem.slice(0, cut), tail = stem.slice(cut);
+  return (names ?? [])
+    .filter((n) => n !== t && n.startsWith(head) && n.endsWith(tail))
+    // the untouched name is the same shape, so prefer the longer match: that is
+    // the one carrying the end timestamp
+    .sort((a, b) => b.length - a.length)[0] || "";
+}
+
+/* Wall-clock time of a capture, to the microsecond, as every packet analyser
+   prints it. Local time, because that is what the device's own log lines and
+   the file name are in. */
+export function fmtPacketTime(tsMs) {
+  const d = new Date(tsMs);
+  const p2 = (n) => String(n).padStart(2, "0");
+  const us = String(Math.min(999999, Math.round((tsMs % 1000) * 1000))).padStart(6, "0");
+  return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${us}`;
 }
 
 /* Classic hex+ascii dump for the packet detail pane. */

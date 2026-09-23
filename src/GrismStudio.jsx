@@ -22,6 +22,7 @@ import {
   mkAction, mkActionMod, mkChain, firstTwoPorts, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
+  createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName,
   branchConditions, outDestinations, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
@@ -5711,6 +5712,202 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
    Traffic → Capture: record packets to a storage volume for a
    fixed number of seconds, then download the pcap
    ============================================================ */
+/* Reads a capture file as it grows and shows the packets in it.
+
+   Nothing here asks the device for anything new: the listing already says
+   which file is being written, and download_storage_file hands back the slice
+   after the last one read. The decoding is all in the browser, so the filter
+   box costs the device nothing either.
+
+   The reader is deliberately one-shot. If it loses the record boundary it
+   stops rather than guessing, and the way back is a fresh reader on the next
+   file -- rotation guarantees that one starts with a clean pcap header. */
+const LIVE_MAX = 1000;                 // packets kept; older ones fall off the top
+const LIVE_SLICE = 1024 * 1024;        // bytes asked for per poll
+
+function PacketLive({ storage, dir, filename, names = [], tr, onClose }) {
+  const [packets, setPackets] = React.useState([]);
+  const [selNo, setSelNo] = React.useState(null);
+  const [paused, setPaused] = React.useState(false);
+  const [follow, setFollow] = React.useState(true);
+  const [q, setQ] = React.useState("");
+  const [stat, setStat] = React.useState({ read: 0, size: 0, seen: 0, err: "", ended: false, name: "" });
+  const reader = React.useRef(null);
+  const tail = React.useRef({ offset: 0, name: "" });
+  const seq = React.useRef(0);
+  const listRef = React.useRef(null);
+  /* Held in a ref, not read from the prop: the listing refreshes every second
+     while a capture runs, and depending on it would tear down the poll -- and
+     the reader with it -- once a second. */
+  const namesRef = React.useRef(names);
+  React.useEffect(() => { namesRef.current = names; }, [names]);
+  const missing = React.useRef(0);          // consecutive unresolved 404s
+
+  // a different file is a different capture: new reader, nothing carried over
+  React.useEffect(() => {
+    reader.current = createPcapReader();
+    tail.current = { offset: 0, name: filename || "" };
+    seq.current = 0;
+    missing.current = 0;
+    setPackets([]); setSelNo(null);
+    setStat({ read: 0, size: 0, seen: 0, err: "", ended: false, name: filename || "" });
+  }, [storage, dir, filename]);
+
+  React.useEffect(() => {
+    if (!filename || paused) return;
+    let cancelled = false, timer = null;
+    const slice = async (name) => {
+      const res = await fetch(`${captureFileHref(storage, dir, name)}&offset=${tail.current.offset}&limit=${LIVE_SLICE}`,
+        { credentials: "include" });
+      return res;
+    };
+    const run = async () => {
+      let again = true;
+      try {
+        let res = await slice(tail.current.name);
+        /* The capture ended and the device renamed the file out from under us.
+           Its last bytes are still unread, so follow the rename rather than
+           dropping the end of the capture the user was watching. */
+        if (res.status === 404 && isPartialCapture(tail.current.name)) {
+          const done = finishedCaptureName(tail.current.name, namesRef.current.map((f) => f.name ?? f));
+          if (!done) {
+            /* Not in the listing -- but the listing refreshes on its own clock
+               and the rename lands first, so absence from it is not yet proof.
+               Only after several polls is the file really gone, which is what
+               happens to a capture that matched no traffic: it is unlinked
+               rather than renamed. */
+            if (!cancelled && ++missing.current >= 5) { setStat((s) => ({ ...s, ended: true })); return; }
+            if (!cancelled) timer = setTimeout(run, 1000);
+            return;
+          }
+          missing.current = 0;
+          tail.current.name = done;
+          res = await slice(done);
+          if (res.ok && !cancelled) setStat((s) => ({ ...s, ended: true, name: done }));
+        }
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const size = Number(res.headers.get("X-File-Size") || 0);
+        const buf = new Uint8Array(await res.arrayBuffer());
+        if (cancelled) return;
+        tail.current.offset += buf.length;
+        if (buf.length) {
+          const rows = reader.current.feed(buf).map((p) => ({
+            no: ++seq.current, tsMs: p.tsMs, caplen: p.caplen, origlen: p.origlen,
+            data: p.data, d: decodePacket(p.data, reader.current.linktype),
+          }));
+          if (rows.length) setPackets((prev) => {
+            const all = prev.concat(rows);
+            return all.length > LIVE_MAX ? all.slice(all.length - LIVE_MAX) : all;
+          });
+        }
+        setStat((s) => ({ ...s, read: tail.current.offset, size, seen: seq.current,
+          err: reader.current.error || "" }));
+        // a file that is not being written any more has nothing left to give
+        if (reader.current.error || (!isPartialCapture(tail.current.name) && size > 0 && tail.current.offset >= size)) again = false;
+      } catch (e) {
+        if (!cancelled) setStat((s) => ({ ...s, err: String(e.message || e) }));
+      }
+      /* Scheduled after the request finishes rather than on an interval: a poll
+         on a MIPS device can take longer than the gap, and overlapping requests
+         would read the same bytes twice and desync the reader. */
+      if (!cancelled && again) timer = setTimeout(run, 1000);
+    };
+    run();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [storage, dir, filename, paused]);
+
+  const shown = React.useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return packets;
+    return packets.filter((p) => `${p.d.src} ${p.d.dst} ${p.d.proto} ${p.d.info}`.toLowerCase().includes(needle));
+  }, [packets, q]);
+
+  React.useEffect(() => {
+    if (follow && !paused && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [shown.length, follow, paused]);
+
+  const sel = packets.find((p) => p.no === selNo) || null;
+  const behind = Math.max(0, stat.size - stat.read);
+
+  return (
+    <section className="sys-card">
+      <h3 className="sys-card-title">{tr("cap.live")}
+        <span className="sys-card-metric">{stat.seen}</span>
+        <span className="pl-file mono dim">{tr("cap.liveOf")} {stat.name || filename}</span>
+        {stat.ended && <span className="pl-ended">{tr("cap.liveEnded")}</span>}
+        <button className="copy-btn" onClick={onClose}>{tr("cap.liveClose")}</button>
+      </h3>
+
+      <div className="pl-bar">
+        <label className="pl-q"><span>{tr("cap.liveFilter")}</span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="tcp, 192.168.1.1, DNS…"
+            title={tr("cap.liveFilterHint")} /></label>
+        <button className="copy-btn" onClick={() => setPaused((v) => !v)}>
+          {paused ? tr("cap.liveResume") : tr("cap.livePause")}</button>
+        <label className="tf-interval"><input type="checkbox" checked={follow}
+          onChange={(e) => setFollow(e.target.checked)} /> {tr("cap.liveFollow")}</label>
+        <span className="pl-stats dim">
+          {shown.length} {tr("cap.liveShown")}
+          {stat.seen > packets.length && <> · {tr("cap.liveTrimmed").replace("{n}", String(LIVE_MAX))}</>}
+          {behind > 0 && <> · <span className="pl-behind">{tr("cap.liveBehind")} {fmtBytes(behind)}</span></>}
+        </span>
+      </div>
+      {stat.err && <div className="sys-err">{stat.err}</div>}
+
+      <div className="pl-split">
+        <div className="pl-list" ref={listRef}>
+          {packets.length === 0 ? <p className="sys-note dim">{tr("cap.liveWaiting")}</p>
+            : shown.length === 0 ? <p className="sys-note dim">{tr("cap.liveNoMatch")}</p> : (
+            <table className="tf-table pl-table">
+              <thead><tr>
+                <th className="tf-num">{tr("cap.colNo")}</th><th>{tr("cap.colTime")}</th>
+                <th>{tr("cap.colSrc")}</th><th>{tr("cap.colDst")}</th>
+                <th>{tr("cap.colProto")}</th><th className="tf-num">{tr("cap.colLen")}</th>
+                <th>{tr("cap.colInfo")}</th>
+              </tr></thead>
+              <tbody>
+                {shown.map((p) => (
+                  <tr key={p.no} className={"pl-row" + (p.no === selNo ? " on" : "")}
+                    onClick={() => setSelNo(p.no === selNo ? null : p.no)}>
+                    <td className="tf-num dim mono">{p.no}</td>
+                    <td className="mono">{fmtPacketTime(p.tsMs)}</td>
+                    <td className="mono pl-addr">{p.d.src}</td>
+                    <td className="mono pl-addr">{p.d.dst}</td>
+                    <td><span className={"pl-proto " + p.d.proto.replace(/[^a-z0-9]/gi, "").toLowerCase()}>{p.d.proto}</span></td>
+                    <td className="tf-num mono">{p.origlen}</td>
+                    <td className="pl-info">{p.d.info}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="pl-detail">
+          <div className="pl-detail-head">{tr("cap.liveDetail")}</div>
+          {!sel ? <p className="sys-note dim">{tr("cap.livePick")}</p> : (<>
+            <div className="pl-meta mono dim">
+              #{sel.no} · {fmtPacketTime(sel.tsMs)} · {sel.origlen} {tr("cap.liveBytes")}
+              {sel.caplen !== sel.origlen && <> · {sel.caplen} {tr("cap.liveCaptured")}</>}
+            </div>
+            {sel.d.layers.map((l, i) => (
+              <div className="pl-layer" key={i}>
+                <div className="pl-layer-name">{l.name}</div>
+                <dl className="pl-fields">
+                  {l.fields.map(([k, v], j) => (
+                    <React.Fragment key={j}><dt>{k}</dt><dd className="mono">{String(v)}</dd></React.Fragment>
+                  ))}
+                </dl>
+              </div>
+            ))}
+            <pre className="pl-hex mono">{hexDump(sel.data).join("\n")}</pre>
+          </>)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
   const tr = t || ((k) => k);
   const [sel, setSel] = React.useState([]);          // ingress ports
@@ -5732,6 +5929,16 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
      again, which is the only other way this state goes away. */
   const [loaded, setLoaded] = React.useState(false);
   const fileSel = useFileSelection(files, loaded);
+  /* The file the live view is reading. Latched rather than derived from the
+     listing: the device renames the .tmp when the capture ends, and deriving
+     it would tear the view away at exactly the moment the last packets
+     arrive. PacketLive follows the rename itself. */
+  const [liveFile, setLiveFile] = React.useState(null);
+  React.useEffect(() => {
+    if (!loaded || liveFile) return;
+    const tmp = files.find((f) => !f.isDir && isPartialCapture(f.name));
+    if (tmp) setLiveFile(tmp.name);
+  }, [files, loaded, liveFile]);
 
   // while a capture runs, count down and refresh the folder every second
   React.useEffect(() => {
@@ -5753,6 +5960,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
 
   const start = async () => {
     setErr("");
+    setLiveFile(null);              // the next .tmp is what the live view follows
     try {
       const body = new URLSearchParams(); body.set("data", buildInstantCapture(opts));
       const res = await fetch("/grism/task/submit_instant", { method: "POST", credentials: "include",
@@ -5837,8 +6045,14 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
               and there has to be a way to clear it without starting another. */}
           <button className="copy-btn" onClick={stop}>
             {stopping ? tr("cap.stopping") : tr("cap.stop")}</button>
+          {running > 0 && <span className="cap-countdown">
+            <span className="cap-dot" aria-hidden="true" />{tr("cap.capturing")} <b className="mono">{running}s</b>
+          </span>}
         </div>
       </section>
+
+      {liveFile && <PacketLive storage={storage} dir={dir} filename={liveFile} names={files} tr={tr}
+        onClose={() => setLiveFile(null)} />}
 
       <section className="sys-card">
         <h3 className="sys-card-title">{tr("cap.files")}
@@ -5886,7 +6100,10 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
                           file can be deleted. */}
                       {isPartialCapture(f.name)
                         ? (fileSel.held(f.name) ? <span className="dim file-partial">{tr("cap.writing")}</span> : null)
-                        : <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>}
+                        : <>
+                            <button className="copy-btn" onClick={() => setLiveFile(f.name)}>{tr("cap.view")}</button>
+                            <a className="copy-btn" href={f.href} download>{tr("cap.download")}</a>
+                          </>}
                     </td>
                     <td className="sel-col"><input type="checkbox"
                       checked={fileSel.marked.includes(f.name)} disabled={fileSel.held(f.name)}
@@ -5924,17 +6141,17 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
         </div>
       )}
 
-      {(applying || running > 0) && (
+      {/* Only while the device is applying the configuration, when there is
+          genuinely nothing to see yet. Once packets are being written this
+          used to cover the page they are written to -- which is the one thing
+          someone watching a capture wants to look at. The countdown moves to
+          the settings card, and Start is disabled while it runs. */}
+      {applying && (
         <div className="apply-lock" role="alertdialog" aria-busy="true">
           <div className="apply-lock-box">
             <div className="apply-bar"><div /></div>
-            <div className="apply-lock-title">{applying ? tr("cap.applying") : tr("cap.capturing")}</div>
-            <div className="apply-lock-body">{applying ? tr("cap.applyingBody") : tr("cap.capturingBody")}</div>
-            {!applying && <div className="apply-countdown mono">{running}s</div>}
-            {!applying && (
-              <button className="copy-btn" onClick={stop}>
-                {stopping ? tr("cap.stopping") : tr("cap.stop")}</button>
-            )}
+            <div className="apply-lock-title">{tr("cap.applying")}</div>
+            <div className="apply-lock-body">{tr("cap.applyingBody")}</div>
           </div>
         </div>
       )}

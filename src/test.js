@@ -3765,9 +3765,43 @@ group("pcap live view");
   check("truncation after IP header keeps addresses", dTrunc2.src === "192.168.1.1" && dTrunc2.layers.some((l) => l.name === "IPv4"));
   check("tiny packet is DATA", C.decodePacket(new Uint8Array(4)).proto === "DATA");
 
+  // 802.3 frames off a real switch port on .188: the length field is <= 1500,
+  // so what follows is LLC, not a payload of some ethertype "0x0026"
+  const stp = hexpkt("0180c2000000 d4c19e91c3ec 0026 424203 00000000008000d4c19e91c3e00000");
+  const dStp = C.decodePacket(stp);
+  check("802.3 length recognised", dStp.layers[0].name === "IEEE 802.3" && dStp.layers[0].fields[2][0] === "Length");
+  check("LLC DSAP 0x42 is STP", dStp.proto === "STP" && dStp.info === "Spanning Tree BPDU");
+  const snap = hexpkt("0012cf000001 14448fc0542f 0010 aaaa03 0012cf 0002 00000030000000010000");
+  const dSnap = C.decodePacket(snap);
+  check("LLC SNAP decoded", dSnap.proto === "SNAP" && dSnap.info === "OUI 00:12:cf, PID 0x0002");
+  check("SNAP layers", dSnap.layers.map((l) => l.name).join(",") === "IEEE 802.3,LLC,SNAP");
+
   // GRISM heartbeats ride the IPX ethertype; a real HL1 capture is full of them
   const hbFrame = hexpkt(`${ethHdr} 8137 ffff 0012 0000`);
   check("heartbeat ethertype named", C.decodePacket(hbFrame).proto === "IPX");
+
+  // the rename a finished capture goes through, observed on the HL1
+  {
+    const tmp = "raw_20260923105028_406556.pcap.tmp";
+    const done = "raw_20260923105028_20260923105037_406556.pcap";
+    check("finished name resolved from the listing", C.finishedCaptureName(tmp, [tmp, done, "other.pcap"]) === done);
+    // an empty capture is unlinked, not renamed: no match is the right answer
+    check("no match when the file is gone", C.finishedCaptureName(tmp, ["unrelated.pcap"]) === "");
+    // a capture in the same second is told apart by its microseconds
+    check("a sibling capture is not mistaken for it",
+      C.finishedCaptureName(tmp, ["raw_20260923105028_20260923105037_999999.pcap"]) === "");
+    // a plain .tmp strip, should the firmware ever do only that
+    check("plain rename also resolves", C.finishedCaptureName(tmp, ["raw_20260923105028_406556.pcap"]) === "raw_20260923105028_406556.pcap");
+    check("only a .tmp has a finished name", C.finishedCaptureName("done.pcap", ["done.pcap"]) === "");
+  }
+
+  // the microsecond fraction is what distinguishes packets a millisecond apart
+  check("fmtPacketTime keeps microseconds", /^\d\d:\d\d:\d\d\.123456$/.test(C.fmtPacketTime(1758600000123.456)));
+  check("fmtPacketTime pads", /\.000001$/.test(C.fmtPacketTime(1758600000000.001)));
+  // a fraction that rounds up to 1000000 would print a seventh digit. (Only
+  // reachable at small timestamps: at epoch-millisecond magnitude a double
+  // still resolves microseconds, so a real capture never gets here.)
+  check("fmtPacketTime never overflows the fraction", /\.999999$/.test(C.fmtPacketTime(999.9999)));
 
   const dump = C.hexDump(hexpkt("41424344 45464748 494a"));
   check("hexDump line format", dump.length === 1 && dump[0].includes("41 42 43 44") && dump[0].endsWith("ABCDEFGHIJ"));
