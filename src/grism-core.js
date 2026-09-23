@@ -4503,14 +4503,14 @@ const mapRows = (rows, a, b) => (rows ?? [])
                  [b]: String(m?.[b === "vport" ? "vport" : "port"] ?? "").trim() }))
   .filter((m) => m[a] || m[b]);
 
-/* Which API the device calls on an A server, which is also what kind of switch
-   it is: with aph it logs in at /grism/auth/direct_login and reads
-   /grism/task/ports/status -- the P4 box's own API -- and without it goes to
-   /interface/features, which is the SDN controller's. The flag only exists on
-   the arm64 firmware; a config that has never carried it is talking to an SDN
-   controller and has no choice to offer. */
-export const A_SERVER_KINDS = { true: "p4", false: "sdn" };
-export const aServerKind = (srv) => (srv?.aph ? "p4" : "sdn");
+/* Which API the device calls on an A server. Both ends are SDN switches; what
+   differs is the protocol they speak: with aph the device logs in at
+   /grism/auth/direct_login and reads /grism/task/ports/status (GRISM-APH),
+   without it /direct_login then /interface/features (GRISM-A). The flag only
+   exists on the arm64 firmware -- a config that has never carried it speaks
+   GRISM-A and has no choice to offer. */
+export const A_SERVER_KINDS = { true: "aph", false: "a" };
+export const aServerKind = (srv) => (srv?.aph ? "aph" : "a");
 
 export function parseAServers(cfg) {
   return (cfg?.grism_A_servers ?? []).map((s) => ({

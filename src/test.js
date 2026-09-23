@@ -1175,9 +1175,9 @@ group("switch mapping");
   /* aph is which API the device calls, and that is what kind of switch is on
      the other end: /grism/task/ports/status is the P4 box, /interface/features
      is the SDN controller. */
-  check("the flag names the switch",
-    C.aServerKind({ aph: true }) === "p4" && C.aServerKind({ aph: false }) === "sdn" &&
-    C.aServerKind({}) === "sdn" && C.aServerKind(null) === "sdn");
+  check("the flag names the protocol",
+    C.aServerKind({ aph: true }) === "aph" && C.aServerKind({ aph: false }) === "a" &&
+    C.aServerKind({}) === "a" && C.aServerKind(null) === "a");
   check("a config that carries the flag can be offered the choice",
     C.parseAServers({ grism_A_servers: [{ name: "ga1", aph: true }] })[0].hasAph === true);
   check("a config that never had it is not",

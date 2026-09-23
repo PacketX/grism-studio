@@ -3042,10 +3042,10 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                           <span className="sw-name">{tr("set.swKind." + aServerKind(srv))}</span>
                           <span className="sw-slot mono">{srv.name}</span>
                           {srv.hasAph && (
-                            <select className="sw-kind-pick" value={srv.aph ? "p4" : "sdn"}
-                              onChange={(e) => patchServer(setSwA, i, { aph: e.target.value === "p4" })}>
-                              <option value="sdn">{tr("set.swKind.sdn")}</option>
-                              <option value="p4">{tr("set.swKind.p4")}</option>
+                            <select className="sw-kind-pick" value={srv.aph ? "aph" : "a"}
+                              onChange={(e) => patchServer(setSwA, i, { aph: e.target.value === "aph" })}>
+                              <option value="a">{tr("set.swKind.a")}</option>
+                              <option value="aph">{tr("set.swKind.aph")}</option>
                             </select>
                           )}
                           <label className="set-check"><input type="checkbox" checked={srv.enable}
