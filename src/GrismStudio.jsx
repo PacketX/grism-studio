@@ -2852,24 +2852,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
       {section === "ports" && (
         <div className="set-ports">
-          {/* This section is four cards tall on some models -- ports, speed,
-              virtual ports, the switch behind them -- and the one being looked
-              for is usually not the one on screen. */}
-          <nav className="sec-jump">
-            {[["sec-ports", tr("set.jumpPorts"), true],
-              ["sec-speed", tr("set.speedTitle"), !!(speedHw && speedHw.groups.some((g) => speeds[g.name]))],
-              ["sec-vport", tr("set.vport"), true],
-              ["sec-swmap", tr("set.swMap"), swA.length > 0 || (hasAdsnAgent(devModel) && swAdsn.length > 0)],
-            ].filter(([, , shown]) => shown).map(([id, label]) => (
-              <button key={id} className="copy-btn" onClick={() => {
-                document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }}>{label}</button>
-            ))}
-          </nav>
           <p className="page-note">{tr("set.portsNote")}</p>
           {!ports ? <p className="sys-note dim">{tr("set.loading")}</p> : (
             <>
-              <div className="tf-table-wrap" id="sec-ports">
+              <section className="sys-card" id="sec-ports">
+              <h3 className="sys-card-title">{tr("set.jumpPorts")}</h3>
+              <div className="tf-table-wrap">
                 <table className="tf-table">
                   <thead><tr>
                     <th className="tf-num">{tr("set.ifidx")}</th><th>{tr("set.port")}</th>
@@ -2932,6 +2920,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   onClick={() => setConfirm({ kind: "ports" })}>
                   {submit.state === "sending" ? tr("set.submitting") : tr("set.applyPorts")}</button>
               </div>
+              </section>
 
                   {/* Only a T12S can retune its QLMs, and only in fours. A group whose
                       speed the config does not report is left out rather than shown as
