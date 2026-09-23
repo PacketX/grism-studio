@@ -4519,6 +4519,8 @@ export function panelModel(model) {
   if (m.includes("Q16")) return "Q16";
   if (m.includes("T4G12")) return "T4G12";
   if (m.includes("F3T1G4")) return "F3T1G4";
+  // after G8S, or a G8S matches here and is drawn with four jacks too few
+  if (m.includes("G8")) return "G8";
   return null;
 }
 
@@ -4542,6 +4544,33 @@ export function g8sPanelLayout() {
       { id: "BYP-1", x: 76, y: TOP_Y + 9, pair: 1 },
       { id: "BYP-2", x: 76, y: TOP_Y + JACK_H + GAP_Y + 9, pair: 2 },
     ],
+    cages,
+  };
+}
+
+/* The G8 (SCB3240): eight copper jacks in one row, in two blocks of four, with
+   the management jack on the right -- drawn from the product photo, where the
+   numbers run left to right rather than stacking in pairs as they do on a G8S.
+   The bypass relay covers the two right-hand ports, so the lamp sits beside
+   them rather than in the LED column, where nothing would say which pair it
+   belongs to. */
+export function g8PanelLayout() {
+  const JACK_W = 40, JACK_H = 17, GAP_X = 4, BLOCK_GAP = 18, TOP_Y = 17, X0 = 104;
+  const cages = [];
+  let x = X0;
+  ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7"].forEach((name, i) => {
+    if (i === 4) x += BLOCK_GAP;
+    cages.push({ name, x, y: TOP_Y, w: JACK_W, h: JACK_H, kind: "rj45" });
+    x += JACK_W + GAP_X;
+  });
+  const mgmtX = x + BLOCK_GAP;
+  return {
+    model: "G8", kind: "rj45",
+    width: mgmtX + 28 + 14,
+    height: TOP_Y * 2 + JACK_H + 2,
+    mgmt: { x: mgmtX, y: TOP_Y, w: 28, h: JACK_H },
+    /* one relay pair, P6 and P7; the lamp is placed under them */
+    lamps: [{ id: "BYPASS", x: X0 + BLOCK_GAP + 6 * (JACK_W + GAP_X) + 8, y: TOP_Y + JACK_H + 5, pair: 1 }],
     cages,
   };
 }
@@ -4712,6 +4741,7 @@ export const panelLayout = (model) => {
   if (m === "Q16") return q16PanelLayout();
   if (m === "T4G12") return t4g12PanelLayout();
   if (m === "F3T1G4") return f3t1g4PanelLayout();
+  if (m === "G8") return g8PanelLayout();
   return t12sPanelLayout();
 };
 

@@ -2327,11 +2327,30 @@ group("front panel");
   check("both chassis fit in two centimetres", L.height <= 75 && G.height <= 75);
   /* The labels sit above the top row and below the bottom one, so the canvas
      has to leave room for them or they are cut off by its own edge. */
-  for (const [name, P] of [["T12S", L], ["G8S", G]]) {
+  /* The G8 (SCB3240): the same eight jacks, but in one row in two blocks of
+     four, numbered left to right, with one bypass pair on the right-hand two. */
+  const G8 = C.panelLayout("G8");
+  const g8x = (n) => G8.cages.find((c) => c.name === n).x;
+  check("G8 draws eight jacks, P0 to P7", G8.cages.length === 8 &&
+    Array.from({ length: 8 }, (_, i) => "P" + i).every((n) => G8.cages.some((c) => c.name === n)));
+  check("G8 is one row, numbered left to right",
+    new Set(G8.cages.map((c) => c.y)).size === 1 &&
+    Array.from({ length: 7 }, (_, i) => i).every((i) => g8x("P" + i) < g8x("P" + (i + 1))));
+  check("G8 leaves a gap between the two blocks of four",
+    g8x("P4") - g8x("P3") > g8x("P2") - g8x("P1"));
+  check("G8 management sits right of the ports", G8.mgmt.x > g8x("P7"));
+  check("G8 jacks are copper", G8.kind === "rj45" && G8.cages.every((c) => c.kind === "rj45"));
+  check("G8 carries one bypass lamp, for its one pair",
+    (G8.lamps ?? []).length === 1 && G8.lamps[0].pair === 1);
+  // "G8S" contains "G8": the G8S has to keep its own, taller drawing
+  check("a G8S is not drawn as a G8", C.panelModel("G8S") === "G8S" &&
+    C.panelModel("GRISM-G8S") === "G8S" && C.panelModel("G8") === "G8");
+  for (const [name, P] of [["T12S", L], ["G8S", G], ["G8", G8]]) {
     const top = Math.min(...P.cages.map((c) => c.y));
     const bottom = Math.max(...P.cages.map((c) => c.y + c.h));
     check(`${name} leaves room for the labels above and below`,
       top >= 12 && P.height - bottom >= 12);
+    check(`${name} fits in two centimetres`, P.height <= 75);
   }
   /* One set of lamp colours for both themes. They only read that way against
      something dark, so the sockets are dark in either theme -- if a later
