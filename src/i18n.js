@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.142.0";
+export const STUDIO_VERSION = "2.143.0";
 
 export const I18N = {
   en: {
@@ -197,6 +197,20 @@ export const I18N = {
     "set.fwCurrent": "Installed firmware",
     "set.fwOnline": "Online update", "set.fwOnlineNote": "Check the update server for a newer release, download it, then install.",
     "set.fwCheck": "Check for updates", "set.fwChecking": "Checking…",
+    "set.swMap": "Switch mapping",
+    "set.swMapNote": "A VPort is one VLAN on a trunk from the switch in front of this device, so its link state is really the switch port's — which the device asks the switch for. Pair each VPort with the port it comes from.",
+    "set.swIp": "Address", "set.swUser": "User", "set.swPass": "Password", "set.swPassKeep": "unchanged",
+    "set.swInterval": "Poll (s)", "set.swAgentPort": "Port", "set.swAdsn": "ADSN agent",
+    "set.swPort": "Switch port", "set.swPortNo": "Switch port no.", "set.swVport": "VPort",
+    "set.swAddRow": "+ Add pair", "set.swNoRows": "No pairs — the switch cannot say what these VPorts are doing.",
+    "set.swErr.noIp": "an address is required while this server is enabled",
+    "set.swErr.badIp": "not a valid host or IP",
+    "set.swErr.badInterval": "the poll interval must be a whole number of seconds",
+    "set.swErr.badPort": "port must be 1-65535",
+    "set.swErr.incomplete": "both sides of the pair are required",
+    "set.swErr.duplicate": "this VPort is already paired",
+    "set.swErr.unknownVport": "this device has no such VPort",
+    "set.swErr.badSwitchPort": "the switch port has to be a number",
     "set.fwCheckingNote": "Asking the update server for the latest release…", "set.fwFound": "Update available:", "set.fwDownloadFailed": "Download failed", "set.fwUpToDate": "No newer release was offered.", "set.fwCheckFailed": "Could not check for updates", "set.fwServer": "Update server", "set.fwServerPort": "Port",
     "set.fwDownload": "Download", "set.fwInstall": "Install downloaded update",
     "set.fwManual": "Manual update", "set.fwManualNote": "Upload a firmware archive supplied to you. An image named for the machine it was built for -- grism-bin-T12S.tgz -- is taken as it is; the model inside it is what decides whether it fits.",
@@ -965,6 +979,20 @@ export const I18N = {
     "set.fwCurrent": "目前韌體",
     "set.fwOnline": "線上更新", "set.fwOnlineNote": "向更新伺服器確認是否有新版本,下載後再安裝。",
     "set.fwCheck": "檢查更新", "set.fwChecking": "檢查中…",
+    "set.swMap": "交換器對應",
+    "set.swMapNote": "VPort 是前端交換器 trunk 上的一個 VLAN,所以它的連線狀態其實是交換器那個埠的狀態 —— 由本機向交換器查詢。請把每個 VPort 與它來自的埠配對。",
+    "set.swIp": "位址", "set.swUser": "帳號", "set.swPass": "密碼", "set.swPassKeep": "不變更",
+    "set.swInterval": "查詢間隔 (秒)", "set.swAgentPort": "通訊埠", "set.swAdsn": "ADSN agent",
+    "set.swPort": "交換器埠", "set.swPortNo": "交換器埠編號", "set.swVport": "VPort",
+    "set.swAddRow": "+ 新增一組", "set.swNoRows": "沒有任何對應 — 交換器無法回報這些 VPort 的狀態。",
+    "set.swErr.noIp": "啟用時必須填位址",
+    "set.swErr.badIp": "不是合法的主機名稱或 IP",
+    "set.swErr.badInterval": "查詢間隔必須是整數秒",
+    "set.swErr.badPort": "通訊埠必須介於 1-65535",
+    "set.swErr.incomplete": "兩邊都要填",
+    "set.swErr.duplicate": "這個 VPort 已經配對過了",
+    "set.swErr.unknownVport": "本機沒有這個 VPort",
+    "set.swErr.badSwitchPort": "交換器埠編號必須是數字",
     "set.fwCheckingNote": "正在向更新伺服器查詢最新版本…", "set.fwFound": "有可用更新:", "set.fwDownloadFailed": "下載失敗", "set.fwUpToDate": "目前沒有更新版本。", "set.fwCheckFailed": "無法檢查更新", "set.fwServer": "更新伺服器", "set.fwServerPort": "通訊埠",
     "set.fwDownload": "下載", "set.fwInstall": "安裝已下載的更新",
     "set.fwManual": "手動更新", "set.fwManualNote": "上傳取得的韌體封存檔。檔名帶型號(例如 grism-bin-T12S.tgz)也可以直接上傳;能不能用是由檔案裡的型號決定。",

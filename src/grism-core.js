@@ -4468,6 +4468,165 @@ export const suggestName = (kind, item) => {
 };
 
 /* ============================================================
+   The switch in front of the VPorts
+
+   A VPort is the device's side of a VLAN trunk from a switch: the switch tags
+   each of its ports with a VLAN, the device reads the tag to decide which VPort
+   a packet arrived on, and tags what it sends back the same way. So a VPort's
+   link state is really the switch port's, and the device has to ask the switch
+   over the network -- which is what these server entries are for, and why each
+   carries a table pairing one side with the other.
+
+   Two kinds, because there are two kinds of switch:
+
+     grism_A_servers     every model. A P4 or SDN switch, reached with a user
+                         and a password, mapping switch port name -> VPort.
+                         Two slots, ga1 and ga2, fixed by the firmware.
+     adsn_agent_servers  Q16 and Q8 only, alongside their own cpss switch. The
+                         ADSN agent, reached on a port with no credentials,
+                         mapping VPort -> switch port number.
+
+   Mapping rows are sent as add/delete against what the device already holds,
+   not as a whole list -- that is what <mapping type="…"> means -- so the rows
+   nobody touched are left alone.
+   ============================================================ */
+
+export const A_SERVER_SLOTS = ["ga1", "ga2"];
+export const ADSN_AGENT_SLOTS = ["agent1"];
+
+/* Only the boards that carry a Marvell switch of their own run an ADSN agent
+   beside it. Matched the way the other model tables are. */
+export const hasAdsnAgent = (model) => /\bQ(16|8)\b|Q16|Q8/.test(String(model ?? "").toUpperCase());
+
+const mapRows = (rows, a, b) => (rows ?? [])
+  .map((m) => ({ [a]: String(m?.[a === "switchPort" ? "virtual_port" : "name"] ?? "").trim(),
+                 [b]: String(m?.[b === "vport" ? "vport" : "port"] ?? "").trim() }))
+  .filter((m) => m[a] || m[b]);
+
+export function parseAServers(cfg) {
+  return (cfg?.grism_A_servers ?? []).map((s) => ({
+    name: String(s?.name ?? "").trim(),
+    enable: s?.enable === true,
+    ip: String(s?.ip ?? "").trim(),
+    user: String(s?.user ?? "").trim(),
+    interval: String(s?.interval ?? ""),
+    mapping: mapRows(s?.mapping, "switchPort", "vport"),
+  })).filter((s) => s.name);
+}
+
+export function parseAdsnAgents(cfg) {
+  return (cfg?.adsn_agent_servers ?? []).map((s) => ({
+    name: String(s?.name ?? "").trim(),
+    enable: s?.enable === true,
+    ip: String(s?.ip ?? "").trim(),
+    port: String(s?.port ?? "").trim(),
+    interval: String(s?.interval ?? ""),
+    mapping: mapRows(s?.mapping, "vport", "port"),
+  })).filter((s) => s.name);
+}
+
+/* Which rows have to be added and which removed to get from one mapping table
+   to another. A row is its pair: changing either side is a delete and an add,
+   because that is all the device understands. */
+export function mappingDiff(base, now, keys) {
+  const key = (m) => keys.map((k) => String(m?.[k] ?? "").trim()).join("\u0000");
+  const had = new Map((base ?? []).map((m) => [key(m), m]));
+  const has = new Map((now ?? []).map((m) => [key(m), m]));
+  return {
+    add: [...has].filter(([k]) => !had.has(k)).map(([, m]) => m),
+    remove: [...had].filter(([k]) => !has.has(k)).map(([, m]) => m),
+  };
+}
+
+const sameScalars = (a, b, keys) => keys.every((k) => String(a?.[k] ?? "") === String(b?.[k] ?? ""));
+
+/* One <find> per server that changed. The scalars go in whole -- the device
+   takes the last value for each, so sending the ones that did not change costs
+   nothing -- and the mapping rows go in as the add/delete the firmware parses.
+   passhash is only sent when a new password was typed: the config holds a hash
+   and there is nothing to send back otherwise. */
+export function buildAServersConfigSet(now, base, passwords = {}) {
+  const parts = [];
+  for (const s of now ?? []) {
+    const was = (base ?? []).find((b) => b.name === s.name) ?? { mapping: [] };
+    const diff = mappingDiff(was.mapping, s.mapping, ["switchPort", "vport"]);
+    const pass = passwords[s.name];
+    const changed = !sameScalars(was, s, ["enable", "ip", "user", "interval"]) ||
+      diff.add.length || diff.remove.length || pass;
+    if (!changed) continue;
+    let body = `<enable>${s.enable ? "True" : "False"}</enable>` +
+      `<ip>${esc(s.ip)}</ip><user>${esc(s.user)}</user>`;
+    if (pass) body += `<passhash>${esc(pass)}</passhash>`;
+    body += `<interval>${esc(String(s.interval))}</interval>`;
+    for (const m of diff.add) {
+      body += `<mapping type="add"><virtual_port>${esc(m.switchPort)}</virtual_port>` +
+        `<vport>${esc(m.vport)}</vport></mapping>`;
+    }
+    for (const m of diff.remove) {
+      body += `<mapping type="delete"><virtual_port>${esc(m.switchPort)}</virtual_port>` +
+        `<vport>${esc(m.vport)}</vport></mapping>`;
+    }
+    parts.push(`  <grism_A_servers><find name="${esc(s.name)}">${body}</find></grism_A_servers>`);
+  }
+  return parts.length ? `<configSet reboot="no">\n${parts.join("\n")}\n</configSet>` : "";
+}
+
+export function buildAdsnAgentsConfigSet(now, base) {
+  const parts = [];
+  for (const s of now ?? []) {
+    const was = (base ?? []).find((b) => b.name === s.name) ?? { mapping: [] };
+    const diff = mappingDiff(was.mapping, s.mapping, ["vport", "port"]);
+    if (sameScalars(was, s, ["enable", "ip", "port", "interval"]) &&
+        !diff.add.length && !diff.remove.length) continue;
+    let body = `<enable>${s.enable ? "True" : "False"}</enable>` +
+      `<ip>${esc(s.ip)}</ip><port>${esc(String(s.port))}</port>` +
+      `<interval>${esc(String(s.interval))}</interval>`;
+    for (const m of diff.add) {
+      body += `<mapping type="add"><name>${esc(m.vport)}</name><port>${esc(String(m.port))}</port></mapping>`;
+    }
+    for (const m of diff.remove) {
+      body += `<mapping type="delete"><name>${esc(m.vport)}</name><port>${esc(String(m.port))}</port></mapping>`;
+    }
+    parts.push(`  <adsn_agent_servers><find name="${esc(s.name)}">${body}</find></adsn_agent_servers>`);
+  }
+  return parts.length ? `<configSet reboot="no">\n${parts.join("\n")}\n</configSet>` : "";
+}
+
+/* What cannot be submitted, and why. Only an enabled server is checked hard:
+   a slot left switched off is allowed to be half-filled, which is how both
+   slots ship. */
+export function switchServerProblems(servers, { vports = [], kind = "a" } = {}) {
+  const out = [];
+  const known = new Set(vports);
+  for (const s of servers ?? []) {
+    const where = s.name;
+    if (s.enable && !s.ip) out.push({ scope: where, kind: "noIp" });
+    if (s.ip && !/^[A-Za-z0-9._-]+$/.test(s.ip)) out.push({ scope: where, kind: "badIp" });
+    const iv = String(s.interval ?? "").trim();
+    if (iv !== "" && (!/^\d+$/.test(iv) || +iv < 1)) out.push({ scope: where, kind: "badInterval" });
+    if (kind === "adsn") {
+      const p = String(s.port ?? "").trim();
+      if (s.enable && (!/^\d+$/.test(p) || +p < 1 || +p > 65535)) out.push({ scope: where, kind: "badPort" });
+    }
+    const seen = new Set();
+    (s.mapping ?? []).forEach((m, row) => {
+      const vport = String(m.vport ?? "").trim();
+      const other = String(kind === "adsn" ? m.port : m.switchPort ?? "").trim();
+      if (!vport || !other) out.push({ scope: where, row, kind: "incomplete" });
+      if (vport && seen.has(vport)) out.push({ scope: where, row, kind: "duplicate", vport });
+      if (vport) seen.add(vport);
+      /* A VPort the device does not have is a row that can never match -- but
+         it is not a reason to refuse the whole card: every device ships with
+         sample rows (V1000_SAMPLE) that are exactly this, and a VPort may yet
+         be added. Said on the row, not in the way. */
+      if (vport && known.size && !known.has(vport)) out.push({ scope: where, row, kind: "unknownVport", vport, warn: true });
+      if (kind === "adsn" && other && !/^\d+$/.test(other)) out.push({ scope: where, row, kind: "badSwitchPort" });
+    });
+  }
+  return out;
+}
+
+/* ============================================================
    Virtual ports
 
    A VPORT groups physical ports under one name, optionally on a VLAN. They are

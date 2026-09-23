@@ -33,6 +33,8 @@ import {
   savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
   bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus, bypassValue,
   parseUpdateServer, updateServerProblem,
+  parseAServers, parseAdsnAgents, buildAServersConfigSet, buildAdsnAgentsConfigSet,
+  switchServerProblems, hasAdsnAgent,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
   speedSwitch, groupSpeeds, PORT_SPEEDS, formatPortSpeed,
@@ -1467,6 +1469,34 @@ function SystemStatusTab({ loggedIn, t }) {
    ============================================================ */
 /* Which interfaces an exporter covers. A dropdown rather than a row of checkboxes:
    the list can be long, and it keeps each target compact. */
+/* One mapping table: a row per pair, the same shape whichever way round the
+   two sides are named. Rows are added and removed here and only turn into
+   add/delete when the card is applied. */
+function SwitchMapping({ rows, tr, left, right, leftKey, rightKey, placeholders, problems, onPatch, onAdd, onDrop }) {
+  return (
+    <div className="sw-map">
+      <div className="sw-map-head">
+        <span>{left}</span><span>{right}</span><span />
+      </div>
+      {(rows ?? []).length === 0 && <p className="sys-note dim">{tr("set.swNoRows")}</p>}
+      {(rows ?? []).map((m, row) => {
+        const mine = (problems ?? []).filter((x) => x.row === row);
+        return (
+          <div className={"sw-map-row" + (mine.length ? " bad" : "")} key={row}>
+            <input value={m[leftKey] ?? ""} placeholder={placeholders[0]} spellCheck="false"
+              onChange={(e) => onPatch(row, { [leftKey]: e.target.value.trim() })} />
+            <input value={m[rightKey] ?? ""} placeholder={placeholders[1]} spellCheck="false"
+              onChange={(e) => onPatch(row, { [rightKey]: e.target.value.trim() })} />
+            <button className="icon-btn" aria-label={tr("common.delete")} onClick={() => onDrop(row)}>✕</button>
+            {mine.length > 0 && <p className="set-hint err">{tr("set.swErr." + mine[0].kind)}</p>}
+          </div>
+        );
+      })}
+      <button className="copy-btn sw-add" onClick={onAdd}>{tr("set.swAddRow")}</button>
+    </div>
+  );
+}
+
 function InterfacePicker({ value, ports, onChange, tr, hideBulk = false, descs = {} }) {
   const [open, setOpen] = React.useState(false);
   // "all" is a distinct value from "nothing chosen" — an empty string must not
@@ -2427,6 +2457,46 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     devicePorts: dataPortNames(rawCfg, { includeLoop: true }),
   }), [vpAdds, vpDeletes, vports, rawCfg]);
 
+  /* The switch that feeds those VPorts, and the table pairing its ports with
+     them. Staged like everything else here; the mapping rows go to the device
+     as add/delete against what it already has, which buildAServersConfigSet
+     works out. */
+  const aBase = React.useMemo(() => parseAServers(rawCfg), [rawCfg]);
+  const adsnBase = React.useMemo(() => parseAdsnAgents(rawCfg), [rawCfg]);
+  const swKey = React.useMemo(() => JSON.stringify([aBase, adsnBase]), [aBase, adsnBase]);
+  const [swA, setSwA] = React.useState([]);
+  const [swAdsn, setSwAdsn] = React.useState([]);
+  const [swPass, setSwPass] = React.useState({});     // slot -> the password typed, if any
+  React.useEffect(() => {
+    const [a, d] = JSON.parse(swKey);
+    setSwA(a); setSwAdsn(d); setSwPass({});
+  }, [swKey]);
+  const swDirty = JSON.stringify([swA, swAdsn]) !== swKey ||
+    Object.values(swPass).some((v) => v);
+  const vportNames = React.useMemo(() => vports.map((v) => v.name), [vports]);
+  const swProblems = React.useMemo(() => [
+    ...switchServerProblems(swA, { vports: vportNames }),
+    ...(hasAdsnAgent(devModel) ? switchServerProblems(swAdsn, { vports: vportNames, kind: "adsn" }) : []),
+  ], [swA, swAdsn, vportNames, devModel]);
+  const patchServer = (setter, i, patch) =>
+    setter((rows) => rows.map((r, j) => j === i ? { ...r, ...patch } : r));
+  const patchMapping = (setter, i, row, patch) => setter((rows) => rows.map((r, j) => j === i
+    ? { ...r, mapping: r.mapping.map((m, k) => k === row ? { ...m, ...patch } : m) } : r));
+  const addMapping = (setter, i, blank) => setter((rows) => rows.map((r, j) => j === i
+    ? { ...r, mapping: [...r.mapping, blank] } : r));
+  const dropMapping = (setter, i, row) => setter((rows) => rows.map((r, j) => j === i
+    ? { ...r, mapping: r.mapping.filter((_, k) => k !== row) } : r));
+  const applySwitchServers = async () => {
+    const hashed = {};
+    for (const [slot, plain] of Object.entries(swPass)) {
+      if (plain) hashed[slot] = await sha256Hex(plain);
+    }
+    const xmls = [buildAServersConfigSet(swA, aBase, hashed),
+      hasAdsnAgent(devModel) ? buildAdsnAgentsConfigSet(swAdsn, adsnBase) : ""].filter(Boolean);
+    if (xmls.length) await submitConfigs(xmls);
+    setSwPass({});
+  };
+
   /* Write a configSet, then restart, holding the screen until the device is
      back. Two steps rather than configSet reboot="yes": with the reboot inside
      the write, a write that failed and a device that went down look the same
@@ -2952,6 +3022,94 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                         {submit.state === "sending" ? tr("set.submitting") : tr("set.vportApply")}</button>
                     </div>
                   </section>
+
+                  {/* The switch those VPorts hang off. Its ports are what the
+                      link lights really report, so the device has to be told
+                      which of its VPorts is which port over there. */}
+                  {(swA.length > 0 || (hasAdsnAgent(devModel) && swAdsn.length > 0)) && (
+                  <section className="sys-card">
+                    <h3 className="sys-card-title">{tr("set.swMap")}</h3>
+                    <p className="set-hint">{tr("set.swMapNote")}</p>
+                    {swA.map((srv, i) => (
+                      <div className="sw-srv" key={srv.name}>
+                        <div className="sw-head">
+                          <span className="sw-name mono">{srv.name}</span>
+                          <label className="set-check"><input type="checkbox" checked={srv.enable}
+                            onChange={(e) => patchServer(setSwA, i, { enable: e.target.checked })} />
+                            {tr("set.enabled")}</label>
+                        </div>
+                        <div className="set-grid">
+                          <label className="ml"><span>{tr("set.swIp")}</span>
+                            <input value={srv.ip} spellCheck="false"
+                              onChange={(e) => patchServer(setSwA, i, { ip: e.target.value.trim() })} /></label>
+                          <label className="ml"><span>{tr("set.swUser")}</span>
+                            <input value={srv.user} spellCheck="false"
+                              onChange={(e) => patchServer(setSwA, i, { user: e.target.value.trim() })} /></label>
+                          {/* the config holds a hash, so the field starts empty
+                              and only a new password is ever sent */}
+                          <label className="ml"><span>{tr("set.swPass")}</span>
+                            <input type="password" value={swPass[srv.name] ?? ""} autoComplete="new-password"
+                              placeholder={tr("set.swPassKeep")}
+                              onChange={(e) => setSwPass((o) => ({ ...o, [srv.name]: e.target.value }))} /></label>
+                          <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.swInterval")}</span>
+                            <input value={srv.interval} inputMode="numeric"
+                              onChange={(e) => patchServer(setSwA, i, { interval: e.target.value.trim() })} /></label>
+                        </div>
+                        <SwitchMapping rows={srv.mapping} tr={tr} left={tr("set.swPort")} right={tr("set.swVport")}
+                          leftKey="switchPort" rightKey="vport" placeholders={["P1", "V1"]}
+                          problems={swProblems.filter((x) => x.scope === srv.name && x.row !== undefined)}
+                          onPatch={(row, patch) => patchMapping(setSwA, i, row, patch)}
+                          onAdd={() => addMapping(setSwA, i, { switchPort: "", vport: "" })}
+                          onDrop={(row) => dropMapping(setSwA, i, row)} />
+                      </div>
+                    ))}
+                    {/* The agent belongs to the boards that carry a switch of
+                        their own; the shipped config has the block whatever the
+                        model, and editing it elsewhere would be editing
+                        something nothing reads. */}
+                    {hasAdsnAgent(devModel) && swAdsn.map((srv, i) => (
+                      <div className="sw-srv" key={srv.name}>
+                        <div className="sw-head">
+                          <span className="sw-name mono">{srv.name}</span>
+                          <span className="sw-kind">{tr("set.swAdsn")}</span>
+                          <label className="set-check"><input type="checkbox" checked={srv.enable}
+                            onChange={(e) => patchServer(setSwAdsn, i, { enable: e.target.checked })} />
+                            {tr("set.enabled")}</label>
+                        </div>
+                        <div className="set-grid">
+                          <label className="ml"><span>{tr("set.swIp")}</span>
+                            <input value={srv.ip} spellCheck="false"
+                              onChange={(e) => patchServer(setSwAdsn, i, { ip: e.target.value.trim() })} /></label>
+                          <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.swAgentPort")}</span>
+                            <input value={srv.port} inputMode="numeric"
+                              onChange={(e) => patchServer(setSwAdsn, i, { port: e.target.value.trim() })} /></label>
+                          <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.swInterval")}</span>
+                            <input value={srv.interval} inputMode="numeric"
+                              onChange={(e) => patchServer(setSwAdsn, i, { interval: e.target.value.trim() })} /></label>
+                        </div>
+                        <SwitchMapping rows={srv.mapping} tr={tr} left={tr("set.swVport")} right={tr("set.swPortNo")}
+                          leftKey="vport" rightKey="port" placeholders={["V0", "0"]}
+                          problems={swProblems.filter((x) => x.scope === srv.name && x.row !== undefined)}
+                          onPatch={(row, patch) => patchMapping(setSwAdsn, i, row, patch)}
+                          onAdd={() => addMapping(setSwAdsn, i, { vport: "", port: "" })}
+                          onDrop={(row) => dropMapping(setSwAdsn, i, row)} />
+                      </div>
+                    ))}
+                    {swProblems.filter((x) => x.row === undefined).map((x, i) => (
+                      <p className="set-hint err" key={i}>{x.scope} — {tr("set.swErr." + x.kind)}</p>
+                    ))}
+                    <div className="set-actions">
+                      <button className="copy-btn" disabled={!swDirty}
+                        onClick={() => { const [a, d] = JSON.parse(swKey); setSwA(a); setSwAdsn(d); setSwPass({}); }}>
+                        {tr("set.revert")}</button>
+                      <button className="sys-refresh"
+                        disabled={submit.state === "sending" || !swDirty ||
+                          swProblems.some((x) => !x.warn)}
+                        onClick={applySwitchServers}>
+                        {submit.state === "sending" ? tr("set.submitting") : tr("set.apply")}</button>
+                    </div>
+                  </section>
+                  )}
             </>
           )}
         </div>

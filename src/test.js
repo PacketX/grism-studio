@@ -1145,6 +1145,98 @@ group("undo snapshot");
   check("changed docs snapshot differently", C.docSnapshot(tmplDoc) !== C.docSnapshot(added));
 }
 
+/* ---------- switch mapping ---------- */
+group("switch mapping");
+{
+  const cfg = {
+    grism_A_servers: [
+      { name: "ga1", enable: false, ip: "192.168.1.140", user: "GRISM-T", interval: 5,
+        mapping: [{ virtual_port: "P1", vport: "V1" }, { virtual_port: "P2", vport: "V2" }] },
+      { name: "ga2", enable: false, ip: "192.168.1.145", user: "GRISM-T", interval: 5, mapping: [] },
+    ],
+    adsn_agent_servers: [
+      { name: "agent1", enable: true, ip: "127.0.0.1", port: "12345", interval: 3,
+        mapping: [{ name: "V0", port: 0 }, { name: "V1", port: 1 }] },
+    ],
+  };
+  const a = C.parseAServers(cfg), d = C.parseAdsnAgents(cfg);
+  check("both slots are read", a.map((s) => s.name).join() === "ga1,ga2");
+  check("an A server keeps its credentials and poll interval",
+    a[0].ip === "192.168.1.140" && a[0].user === "GRISM-T" && a[0].interval === "5" && a[0].enable === false);
+  check("its mapping pairs switch port with VPort",
+    a[0].mapping.map((m) => m.switchPort + "->" + m.vport).join() === "P1->V1,P2->V2");
+  check("an ADSN agent pairs VPort with a port number",
+    d[0].mapping.map((m) => m.vport + "->" + m.port).join() === "V0->0,V1->1" && d[0].port === "12345");
+  check("a config with neither yields nothing",
+    C.parseAServers({}).length === 0 && C.parseAdsnAgents(null).length === 0);
+  check("only the Q16 and Q8 have an agent",
+    C.hasAdsnAgent("Q16") && C.hasAdsnAgent("Q8") && !C.hasAdsnAgent("H2") && !C.hasAdsnAgent("HL1"));
+
+  /* The device takes mapping rows one at a time, as add or delete against what
+     it already holds -- so a changed row is both. */
+  const diff = C.mappingDiff(a[0].mapping, [{ switchPort: "P1", vport: "V1" }, { switchPort: "P9", vport: "V2" }],
+    ["switchPort", "vport"]);
+  check("an untouched row is neither added nor removed",
+    diff.add.length === 1 && diff.remove.length === 1 &&
+    diff.add[0].switchPort === "P9" && diff.remove[0].switchPort === "P2");
+
+  const unchanged = C.buildAServersConfigSet(a, a, {});
+  check("nothing to say produces no configSet", unchanged === "");
+  const moved = [{ ...a[0], enable: true, mapping: [{ switchPort: "P1", vport: "V1" }] }, a[1]];
+  const xml = C.buildAServersConfigSet(moved, a, {});
+  check("only the server that changed is named",
+    xml.includes('<find name="ga1">') && !xml.includes('name="ga2"'));
+  check("the row that went is a delete",
+    xml.includes('<mapping type="delete"><virtual_port>P2</virtual_port><vport>V2</vport></mapping>') &&
+    !xml.includes('type="add"'));
+  check("the switch is written as the firmware spells booleans", xml.includes("<enable>True</enable>"));
+  /* The config holds a hash, so the field starts empty and an untouched
+     password must not be sent -- least of all as an empty one. */
+  check("no password, no passhash", !xml.includes("passhash"));
+  check("a new password is sent as its hash",
+    C.buildAServersConfigSet(moved, a, { ga1: "abc123" }).includes("<passhash>abc123</passhash>"));
+
+  const adsnXml = C.buildAdsnAgentsConfigSet(
+    [{ ...d[0], mapping: [...d[0].mapping, { vport: "V2", port: "2" }] }], d);
+  check("an added agent row names the VPort and the port number",
+    adsnXml.includes('<mapping type="add"><name>V2</name><port>2</port></mapping>'));
+  check("the agent's own port is not confused with a mapping row",
+    adsnXml.includes("<port>12345</port>"));
+
+  const probs = (servers, opts) => C.switchServerProblems(servers, opts).map((x) => x.kind);
+  check("an enabled server needs an address",
+    probs([{ name: "ga1", enable: true, ip: "", mapping: [] }]).includes("noIp"));
+  check("a disabled server may be half-filled",
+    probs([{ name: "ga1", enable: false, ip: "", mapping: [] }]).length === 0);
+  check("a half-filled pair is refused",
+    probs([{ name: "ga1", ip: "1.2.3.4", mapping: [{ switchPort: "P1", vport: "" }] }]).includes("incomplete"));
+  check("one VPort cannot come from two ports",
+    probs([{ name: "ga1", ip: "1.2.3.4", mapping: [{ switchPort: "P1", vport: "V1" }, { switchPort: "P2", vport: "V1" }] }])
+      .includes("duplicate"));
+  /* The shipped config carries sample rows for VPorts no device has; pointing
+     at one is a pair that can never match anything. */
+  check("a VPort this device does not have is flagged",
+    probs([{ name: "ga1", ip: "1.2.3.4", mapping: [{ switchPort: "P1", vport: "V1000_SAMPLE" }] }],
+      { vports: ["V1"] }).includes("unknownVport"));
+  /* ...but only as a warning: every device ships with a sample row pointing at
+     a VPort it does not have, and refusing the card over it would mean nothing
+     on this page could ever be applied. */
+  check("an unknown VPort does not block the rest",
+    C.switchServerProblems([{ name: "ga1", ip: "1.2.3.4", mapping: [{ switchPort: "P1", vport: "V1000_SAMPLE" }] }],
+      { vports: ["V1"] }).every((x) => x.warn === true));
+  check("a real mistake is not a warning",
+    C.switchServerProblems([{ name: "ga1", ip: "1.2.3.4", mapping: [{ switchPort: "", vport: "V1" }] }],
+      { vports: ["V1"] }).some((x) => !x.warn));
+  check("with no VPort list nothing is flagged as unknown",
+    !probs([{ name: "ga1", ip: "1.2.3.4", mapping: [{ switchPort: "P1", vport: "V9" }] }]).includes("unknownVport"));
+  check("an agent port has to be a port",
+    probs([{ name: "agent1", enable: true, ip: "1.2.3.4", port: "no", mapping: [] }], { kind: "adsn" })
+      .includes("badPort"));
+  check("an agent's switch port has to be a number",
+    probs([{ name: "agent1", ip: "1.2.3.4", port: "1", mapping: [{ vport: "V0", port: "eth0" }] }], { kind: "adsn" })
+      .includes("badSwitchPort"));
+}
+
 /* ---------- i18n ---------- */
 group("i18n");
 check("english lookup", makeT("en")("tab.filters") === "Filters");
@@ -1158,6 +1250,8 @@ check("no Chinese entry is left in English", (() => {
   const shared = new Set(["IPv4", "IPv6", "NetFlow", "syslog", "SNMP", "JA3", "JA4", "PID",
     "RSS", "MTU", "pps", "MIB", "GRISM Studio", "Heartbeat", "IPv4 flow", "IPv6 flow", "down", "bypass",
     "MGMT", "MGMT (USB)", "MGMT (M0)", "MEC (S1AP/NGAP · GTP)",
+    // the switch server names, written the same way on both sides
+    "ADSN agent", "VPort",
     // 3GPP column names, written the same way in both languages
     "MME/AMF UE ID", "RAN UE ID", "PLMN ID", "CELL ID", "SPID",
     "UL GTP TEID", "UL GTP IPv4", "DL GTP TEID", "DL GTP IPv4", "UE IPv4"]);
