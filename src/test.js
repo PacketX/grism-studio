@@ -1547,6 +1547,29 @@ group("LAN bypass");
   check("an unreadable relay is unknown, not normal",
     C.parseBypassStatus("") === null && C.parseBypassStatus("oops") === null &&
     C.parseBypassStatus(null) === null);
+
+  /* G8 (SCB3240): one pair on the two right-hand ports, endpoints with no
+     model in their name, and an i2c register that speaks 7 and 9. */
+  const g8 = C.bypassSupport("G8");
+  check("recognises a G8", g8?.model === "G8" && C.bypassSupport("GRISM-G8")?.model === "G8");
+  check("G8 has one pair, P6/P7",
+    g8.pairs.map((p) => p.ports.join("/")).join() === "P6/P7");
+  // "G8S" contains "G8": the longer name has to win or a G8S gets one pair on
+  // ports it does not have
+  check("a G8S is not read as a G8", C.bypassSupport("G8S").model === "G8S" &&
+    C.bypassSupport("GRISM-G8S").model === "G8S");
+  check("G8 uses the unprefixed endpoints",
+    C.bypassStatusUrl(g8.key, 1) === "/grism/task/get_hwbypass_status" &&
+    C.bypassModeUrl(g8.key, 1) === "/grism/task/set_hwbypass_mode");
+  check("G8 sends 7 for bypass and 9 for normal",
+    C.bypassValue(g8, true) === "7" && C.bypassValue(g8, false) === "9");
+  check("everything else still sends 1 and 0",
+    C.bypassValue(C.bypassSupport("T12S"), true) === "1" &&
+    C.bypassValue(C.bypassSupport("G8S"), false) === "0" &&
+    C.bypassValue(undefined, true) === "1");
+  check("G8 reads 7 and 9 back",
+    C.parseBypassStatus("7", g8) === true && C.parseBypassStatus("9", g8) === false &&
+    C.parseBypassStatus("1", g8) === null && C.parseBypassStatus("", g8) === null);
 }
 
 for (const lang of Object.keys(I18N)) {

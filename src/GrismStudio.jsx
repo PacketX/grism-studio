@@ -31,7 +31,7 @@ import {
   parseXsd, validateAgainstXsd, xsdProblemLine,
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
   savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
-  bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus,
+  bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus, bypassValue,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
   hasSpeedSwitch, t12sSpeeds, T12S_SPEED_GROUPS, T12S_SPEEDS, formatPortSpeed,
@@ -1767,7 +1767,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       try {
         const res = await fetch(bypassStatusUrl(hw.key, pair.n), { credentials: "include" });
         if (!res.ok) continue;                 // a unit built without the bypass board
-        const state = parseBypassStatus(await res.text());
+        const state = parseBypassStatus(await res.text(), hw);
         if (state !== null) next[pair.n] = state;
       } catch { /* leave it out, same as a refusal */ }
     }
@@ -1819,7 +1819,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   const setBypassMode = async (hw, pair, on) => {
     setBypassBusy(pair.n); setBypassErr("");
     try {
-      const body = new URLSearchParams(); body.set("data", on ? "1" : "0");
+      const body = new URLSearchParams(); body.set("data", bypassValue(hw, on));
       const res = await fetch(bypassModeUrl(hw.key, pair.n), {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
@@ -4629,7 +4629,7 @@ function TrafficTab({ loggedIn, t, model = "" }) {
         let known = true;
         for (const pair of hw.pairs) {
           const res = await fetch(bypassStatusUrl(hw.key, pair.n), { credentials: "include" });
-          const state = res.ok ? parseBypassStatus(await res.text()) : null;
+          const state = res.ok ? parseBypassStatus(await res.text(), hw) : null;
           if (state === null) { known = false; continue; }
           if (state === true) { pair.ports.forEach((n) => out.add(n)); pairs.add(pair.n); }
         }

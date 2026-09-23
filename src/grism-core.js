@@ -3782,27 +3782,42 @@ export const formatSavedTime = (epochSeconds, lang = "en") => {
 export const BYPASS_MODELS = {
   G8S:  { key: "g8s",  pairs: [{ n: 1, ports: ["P0", "P1"] }, { n: 2, ports: ["P4", "P5"] }] },
   T12S: { key: "t12s", pairs: [{ n: 1, ports: ["P8", "P9"] }, { n: 2, ports: ["P10", "P11"] }] },
+  /* G8 (SCB3240) has one pair, on the two right-hand ports, and it is not the
+     newer sysfs hardware: the mode is an i2c register written through the
+     endpoint pair that carries no model in its name, and its values are 7 for
+     bypassed and 9 for normal rather than 1 and 0. */
+  G8:   { key: "", on: "7", off: "9", pairs: [{ n: 1, ports: ["P6", "P7"] }] },
 };
 
 /* The bypass hardware this model has, or null. Matched as a substring because
-   the model reads "G8S" in the config and "GRISM-G8S" on screen. */
+   the model reads "G8S" in the config and "GRISM-G8S" on screen -- longest
+   name first, or a G8S would match the G8 entry and be given one pair on the
+   wrong ports. */
 export function bypassSupport(model) {
   const m = String(model ?? "").toUpperCase();
-  for (const [name, spec] of Object.entries(BYPASS_MODELS)) {
-    if (m.includes(name)) return { model: name, ...spec };
+  const names = Object.keys(BYPASS_MODELS).sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    if (m.includes(name)) return { model: name, ...BYPASS_MODELS[name] };
   }
   return null;
 }
 
-export const bypassStatusUrl = (key, n) => `/grism/task/get_${key}_hwbypass${n}_status`;
-export const bypassModeUrl = (key, n) => `/grism/task/set_${key}_hwbypass${n}_mode`;
+export const bypassStatusUrl = (key, n) =>
+  key ? `/grism/task/get_${key}_hwbypass${n}_status` : "/grism/task/get_hwbypass_status";
+export const bypassModeUrl = (key, n) =>
+  key ? `/grism/task/set_${key}_hwbypass${n}_mode` : "/grism/task/set_hwbypass_mode";
 
-/* The device answers "1" for bypassed and "0" for normal. Anything else is a
-   device that could not tell us, which is not the same as "normal" -- a relay
-   whose state is unknown must not be drawn as though it were closed. */
-export const parseBypassStatus = (text) => {
+/* What to send for each state, and what comes back. Most boards speak 1 and 0;
+   G8's i2c register speaks 7 and 9. Anything else is a device that could not
+   tell us, which is not the same as "normal" -- a relay whose state is unknown
+   must not be drawn as though it were closed. */
+export const bypassValue = (hw, bypassed) => (bypassed ? (hw?.on ?? "1") : (hw?.off ?? "0"));
+
+export const parseBypassStatus = (text, hw) => {
   const t = String(text ?? "").trim();
-  return t === "1" ? true : t === "0" ? false : null;
+  if (t === (hw?.on ?? "1")) return true;
+  if (t === (hw?.off ?? "0")) return false;
+  return null;
 };
 
 
