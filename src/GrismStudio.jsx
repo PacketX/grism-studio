@@ -2852,10 +2852,24 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
       {section === "ports" && (
         <div className="set-ports">
+          {/* This section is four cards tall on some models -- ports, speed,
+              virtual ports, the switch behind them -- and the one being looked
+              for is usually not the one on screen. */}
+          <nav className="sec-jump">
+            {[["sec-ports", tr("set.jumpPorts"), true],
+              ["sec-speed", tr("set.speedTitle"), !!(speedHw && speedHw.groups.some((g) => speeds[g.name]))],
+              ["sec-vport", tr("set.vport"), true],
+              ["sec-swmap", tr("set.swMap"), swA.length > 0 || (hasAdsnAgent(devModel) && swAdsn.length > 0)],
+            ].filter(([, , shown]) => shown).map(([id, label]) => (
+              <button key={id} className="copy-btn" onClick={() => {
+                document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}>{label}</button>
+            ))}
+          </nav>
           <p className="page-note">{tr("set.portsNote")}</p>
           {!ports ? <p className="sys-note dim">{tr("set.loading")}</p> : (
             <>
-              <div className="tf-table-wrap">
+              <div className="tf-table-wrap" id="sec-ports">
                 <table className="tf-table">
                   <thead><tr>
                     <th className="tf-num">{tr("set.ifidx")}</th><th>{tr("set.port")}</th>
@@ -2927,7 +2941,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                       one reboot covers all three groups, so let the user pick
                       everything first and pay for it once. */}
                   {speedHw && speedHw.groups.some((g) => speeds[g.name]) && (
-                    <section className="sys-card set-speed">
+                    <section className="sys-card set-speed" id="sec-speed">
                       <h3 className="sys-card-title">{tr("set.speedTitle")}</h3>
                       <p className="set-hint">{tr("set.speedNote")}</p>
                       {speedHw.groups.filter((g) => speeds[g.name]).map((g) => {
@@ -2968,7 +2982,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   {/* Virtual ports. Added and removed together, because the
                       device reboots to apply the change and doing it one row at
                       a time would cost a reboot each. */}
-                  <section className="sys-card set-vport">
+                  <section className="sys-card set-vport" id="sec-vport">
                     <h3 className="sys-card-title">{tr("set.vport")}</h3>
                     <p className="set-hint">{tr("set.vportNote")}</p>
                     {vports.length === 0 && vpAdds.length === 0 && (
@@ -3027,7 +3041,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                       link lights really report, so the device has to be told
                       which of its VPorts is which port over there. */}
                   {(swA.length > 0 || (hasAdsnAgent(devModel) && swAdsn.length > 0)) && (
-                  <section className="sys-card">
+                  <section className="sys-card" id="sec-swmap">
                     <h3 className="sys-card-title">{tr("set.swMap")}</h3>
                     <p className="set-hint">{tr("set.swMapNote")}</p>
                     {swA.map((srv, i) => (

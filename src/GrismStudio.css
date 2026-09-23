@@ -1849,3 +1849,7 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .sw-map-row.bad input{border-color:var(--warn);}
 .sw-map-row .set-hint{grid-column:1 / -1; margin:0 0 2px;}
 .sw-add{margin-top:4px;}
+
+/* jump bar for a section that runs to several cards */
+.sec-jump{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 10px;}
+.sec-jump .copy-btn{padding:3px 10px; font-size:11.5px;}
