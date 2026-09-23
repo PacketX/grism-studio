@@ -4024,7 +4024,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               ? <p className="sys-note dim">{tr("set.fwCheckingNote")}</p>
               : fw.available
                 ? <p className="sys-note">{tr("set.fwFound")} <b className="mono">{fw.available}</b></p>
-                : fw.checked && <p className="sys-note dim">{tr("set.fwUpToDate")}</p>}
+                /* why it could not be asked, rather than "no newer release" --
+                   which is what an unreachable server used to read as */
+                : fw.error
+                  ? <p className="set-hint err">{tr("set.fwCheckFailed")}: {fw.error}</p>
+                  : fw.checked && <p className="sys-note dim">{tr("set.fwUpToDate")}</p>}
             {dl && (
               <div className="fw-progress">
                 <div className="apply-bar"><div style={{ width: (dl.ratio * 100).toFixed(1) + "%", animation: "none" }} /></div>
@@ -4041,9 +4045,14 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                   setFwChecking(true);
                   try {
                     const res = await fetch("/grism/task/update_check", { credentials: "include" });
-                    const v = res.ok ? parseUpdateCheck(await res.text()) : "";
-                    setFw((o) => ({ ...o, available: v, checked: true }));
-                  } catch (e) { warnFetch("update check", e); setFw((o) => ({ ...o, checked: true })); }
+                    const r = parseUpdateCheck(await res.text(), res.ok);
+                    setFw((o) => ({ ...o, available: r.version ?? "", error: r.error ?? "", checked: true }));
+                  } catch (e) {
+                    warnFetch("update check", e);
+                    /* the device itself did not answer -- say that, rather than
+                       leaving the last result standing */
+                    setFw((o) => ({ ...o, available: "", error: String(e.message || e), checked: true }));
+                  }
                   finally { setFwChecking(false); }
                 }}>{fwChecking ? tr("set.fwChecking") : tr("set.fwCheck")}</button>
               {fw.available && !dl?.complete && (

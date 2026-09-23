@@ -2920,9 +2920,15 @@ export function parseDownloadProgress(text) {
 
 /* update_check answers with a version string when an update is available, and
    with something else (empty, "no", an error page) when there isn't. */
-export function parseUpdateCheck(text) {
+export function parseUpdateCheck(text, ok = true) {
   const v = String(text ?? "").trim();
-  return /^\d+(\.\d+)+$/.test(v) ? v : "";
+  if (/^\d+(\.\d+)+$/.test(v)) return { version: v };
+  /* "already the latest version" is the only other thing a successful check
+     says. Everything else is a reason it could not be made -- and those two
+     used to be one case on the page, so a device that could not reach the
+     release server at all reported itself as up to date. */
+  if (ok) return { upToDate: true };
+  return { error: v };
 }
 
 /* Where the device answers after a factory reset. Every other setting is

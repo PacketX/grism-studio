@@ -726,10 +726,25 @@ group("firmware update");
   check("ratio never exceeds one", C.parseDownloadProgress("200,100").ratio === 1);
   check("junk input is tolerated", C.parseDownloadProgress("").total === 0);
 
-  check("a version string is an available update", C.parseUpdateCheck("6.5.260715") === "6.5.260715");
-  check("blank means no update", C.parseUpdateCheck("") === "");
-  check("non-version replies mean no update", C.parseUpdateCheck("no update available") === "");
-  check("surrounding whitespace tolerated", C.parseUpdateCheck("  6.5.1  ") === "6.5.1");
+  check("a version string is an available update",
+    C.parseUpdateCheck("6.5.260715").version === "6.5.260715");
+  check("surrounding whitespace tolerated", C.parseUpdateCheck("  6.5.1  ").version === "6.5.1");
+  check("a four-part version is an update too",
+    C.parseUpdateCheck("6.5.260923.2").version === "6.5.260923.2");
+  /* A check that was made and found nothing, and one that could not be made,
+     are different answers: reading the second as the first is how a device
+     that could not reach the release server reported itself as up to date. */
+  check("the server was asked and had nothing newer",
+    C.parseUpdateCheck("already the latest version").upToDate === true &&
+    C.parseUpdateCheck("already the latest version").error === undefined);
+  check("a failed check carries its reason",
+    C.parseUpdateCheck("cannot reach the update server: timed out", false).error ===
+      "cannot reach the update server: timed out" &&
+    C.parseUpdateCheck("cannot reach the update server: timed out", false).upToDate === undefined);
+  check("a release with no image for this model is a failure, not silence",
+    C.parseUpdateCheck("release 6.5.260923 has no image for G8S", false).error ===
+      "release 6.5.260923 has no image for G8S");
+  check("an empty failure still reports something", typeof C.parseUpdateCheck("", false).error === "string");
 }
 
 /* ---------- flow service catalogue ---------- */

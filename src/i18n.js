@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.140.0";
+export const STUDIO_VERSION = "2.141.0";
 
 export const I18N = {
   en: {
@@ -197,7 +197,7 @@ export const I18N = {
     "set.fwCurrent": "Installed firmware",
     "set.fwOnline": "Online update", "set.fwOnlineNote": "Check the update server for a newer release, download it, then install.",
     "set.fwCheck": "Check for updates", "set.fwChecking": "Checking…",
-    "set.fwCheckingNote": "Asking the update server for the latest release…", "set.fwFound": "Update available:", "set.fwDownloadFailed": "Download failed", "set.fwUpToDate": "No newer release was offered.",
+    "set.fwCheckingNote": "Asking the update server for the latest release…", "set.fwFound": "Update available:", "set.fwDownloadFailed": "Download failed", "set.fwUpToDate": "No newer release was offered.", "set.fwCheckFailed": "Could not check for updates",
     "set.fwDownload": "Download", "set.fwInstall": "Install downloaded update",
     "set.fwManual": "Manual update", "set.fwManualNote": "Upload a firmware archive supplied to you. An image named for the machine it was built for -- grism-bin-T12S.tgz -- is taken as it is; the model inside it is what decides whether it fits.",
     "set.fwUpload": "Upload and update",
@@ -965,7 +965,7 @@ export const I18N = {
     "set.fwCurrent": "目前韌體",
     "set.fwOnline": "線上更新", "set.fwOnlineNote": "向更新伺服器確認是否有新版本,下載後再安裝。",
     "set.fwCheck": "檢查更新", "set.fwChecking": "檢查中…",
-    "set.fwCheckingNote": "正在向更新伺服器查詢最新版本…", "set.fwFound": "有可用更新:", "set.fwDownloadFailed": "下載失敗", "set.fwUpToDate": "目前沒有更新版本。",
+    "set.fwCheckingNote": "正在向更新伺服器查詢最新版本…", "set.fwFound": "有可用更新:", "set.fwDownloadFailed": "下載失敗", "set.fwUpToDate": "目前沒有更新版本。", "set.fwCheckFailed": "無法檢查更新",
     "set.fwDownload": "下載", "set.fwInstall": "安裝已下載的更新",
     "set.fwManual": "手動更新", "set.fwManualNote": "上傳取得的韌體封存檔。檔名帶型號(例如 grism-bin-T12S.tgz)也可以直接上傳;能不能用是由檔案裡的型號決定。",
     "set.fwUpload": "上傳並更新",
