@@ -525,7 +525,10 @@
 .ov-collapse:hover{text-decoration:underline;}
 .ov-jump:hover{border-color:var(--accent); color:var(--accent);}
 .ov-chains{display:flex; flex-direction:column; gap:16px;}
-.ov-chain{overflow-x:auto; padding:8px 4px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.01);}
+.ov-chain{position:relative; overflow-x:auto; padding:8px 4px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.01);}
+/* the same hover the Chains canvas offers, on the overview's read-only picture */
+.ovf-node{cursor:help;}
+.ovf-node:hover .ovf-test, .ovf-node:hover .ovf-out{filter:brightness(1.18);}
 .ov-flow{display:block; flex:0 0 auto;}
 .ovf-in{fill:var(--node-in-fill); stroke:var(--node-in-stroke); stroke-width:1.4;}
 .ovf-in-lbl{fill:var(--node-in-txt); font-family:var(--mono); font-size:12px; font-weight:600; text-anchor:middle;}
@@ -1820,6 +1823,7 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .ch-tip-cond{font-family:var(--mono);}
 .ch-tip-cond.miss{color:var(--danger, #c0392b);}
 .ch-tip-op{font-weight:700; color:var(--txt-dim); font-size:11px;}
+.ch-tip.fixed{position:fixed;}
 
 /* a service whose state disagrees with what the configuration asks for */
 .svc-mismatch{display:inline-block; margin-left:7px; font-weight:700; color:var(--warn); cursor:help;}

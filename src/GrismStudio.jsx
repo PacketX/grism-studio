@@ -1236,7 +1236,8 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
         <section className="ov-section">
           <h3 className="ov-h3">{tr("ov.chains")} <span className="ov-count">{info.chains.length}</span></h3>
           <div className="ov-chains">
-            {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} outputInfo={info.outputInfo} t={tr} />)}
+            {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} outputInfo={info.outputInfo}
+              filters={doc.filters} outputs={doc.outputs} hbTargets={hbTargets} t={tr} />)}
           </div>
           <button className="ov-jump" onClick={() => onGoto("chain")}>{tr("ov.editChains")}</button>
         </section>
@@ -5941,7 +5942,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
   );
 }
 
-const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outputInfo = {}, t }) {
+const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outputInfo = {}, filters = [], outputs = [], hbTargets, t }) {
   const tr = t || ((k) => ({ "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match", "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "all", "flow.any": "any" }[k] || k));
   const flow = chain.flow || { root: null, terminal: null };
   const root = flow.root;
@@ -5991,6 +5992,21 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
 
   const rootMidY = root ? rowY(nodeById[root.id].row) : 44;
 
+  /* Same hover as the Chains canvas: a node can only fit "F1,!F3" or "O2", and
+     what the reader wants is the conditions behind them. */
+  const [tip, setTip] = React.useState(null);      // { x, y, rows, outs, op }
+  const showTip = (ev, { fids, op, dest }) => {
+    const rows = fids ? branchConditions(fids, filters, tr, hbTargets) : [];
+    const outs = dest ? outDestinations(dest, outputs, tr) : [];
+    if (!rows.length && !outs.length) return;      // a plain port has nothing more to say
+    /* Viewport coordinates and a fixed tip: .ov-chain scrolls horizontally,
+       and a box that scrolls on one axis clips on both -- an absolute tip over
+       the top row would be cut off by the card's own edge. */
+    const box = ev.currentTarget.getBoundingClientRect();
+    setTip({ x: box.left + box.width / 2, y: box.top,
+             rows, outs, op: op === "and" ? tr("crit.and") : tr("crit.or") });
+  };
+
   // an arrow from (x1,y1) to (x2,y2) with a label of the given kind at the target.
   const arrow = (x1, y1, x2, y2, kind, key, labelText) => {
     const mx = (x1 + x2) / 2;
@@ -6031,7 +6047,7 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
   };
 
   return (
-    <div className="ov-chain">
+    <div className="ov-chain" onMouseLeave={() => setTip(null)}>
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="ov-flow"
           role="img" aria-label={`${tr("ov.chains")} ${chain.ingress}`}>
         {/* ingress */}
@@ -6058,7 +6074,9 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
           const subText = destSub[d];
           const h = subText ? 42 : 30;
           return (
-            <g key={"d" + d}>
+            <g key={"d" + d} className="ovf-node"
+              onMouseEnter={(ev) => showTip(ev, { dest: d })}
+              onMouseLeave={() => setTip(null)}>
               <rect x={outX} y={destY[d] - h / 2} width={outWEff} height={h} rx="7"
                 className={d === "drop" ? "ovf-out drop" : "ovf-out"} />
               <text x={outX + outWEff / 2} y={destY[d] + (subText ? -2 : 5)}
@@ -6077,9 +6095,13 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
             <g key={nx.node.id}>
               {drawSide(nx, "match", "match")}
               {drawSide(nx, "notmatch", "notmatch")}
+              <g className="ovf-node"
+                onMouseEnter={(ev) => showTip(ev, { fids: nx.node.test, op: nx.node.op })}
+                onMouseLeave={() => setTip(null)}>
               <rect x={x} y={y - 18} width={testW} height="36" rx="7" className="ovf-test" />
               <text x={x + testW / 2} y={shortName ? y - 2 : y + 4} className="ovf-test-id">{nx.node.test}{nx.node.op === "and" ? ` (${tr("flow.all")})` : toks(nx.node.test) > 1 ? ` (${tr("flow.any")})` : ""}</text>
               {shortName && <text x={x + testW / 2} y={y + 12} className="ovf-test-name">{shortName}</text>}
+              </g>
             </g>
           );
         })}
@@ -6089,6 +6111,26 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
           <marker id="ovfArN" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" className="ovf-ar notmatch" /></marker>
         </defs>
       </svg>
+      {tip && (
+        <div className="ch-tip fixed" style={{ left: tip.x, top: tip.y }} role="tooltip">
+          {tip.outs.map((o) => (
+            <div className="ch-tip-row" key={o.id}>
+              <span className="ch-tip-id out">{o.id}{o.port ? ` → ${o.port}` : ""}</span>
+              {o.name && <span className="ch-tip-name">{o.name}</span>}
+              <span className="ch-tip-cond">{o.actions.join(" · ")}</span>
+            </div>
+          ))}
+          {tip.rows.map((r, i) => (
+            <div className="ch-tip-row" key={r.id + i}>
+              <span className={"ch-tip-id" + (r.neg ? " neg" : "") + (r.missing ? " miss" : "")}>
+                {(r.neg ? "!" : "") + r.id}</span>
+              {r.name && <span className="ch-tip-name">{r.name}</span>}
+              <span className={"ch-tip-cond" + (r.missing ? " miss" : "")}>{r.cond}</span>
+              {i < tip.rows.length - 1 && <span className="ch-tip-op">{tip.op}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
