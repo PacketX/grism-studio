@@ -1942,3 +1942,8 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .sim-switch-row, .sim-node.branch, .sim-node.out{cursor:help;}
 /* flipped under its node when there is no room above */
 .ch-tip.below{transform:translate(-50%, 0); margin-top:10px;}
+/* a capture that may not record what arrived: worth saying, not worth blocking */
+.cap-warn{margin:10px 0 0; padding:10px 13px; border-radius:9px; font-size:12.5px; line-height:1.6;
+  border:1px solid rgba(224,163,58,.45); background:rgba(224,163,58,.07); color:var(--txt);}
+.cap-warn b{display:block; margin-bottom:4px; color:var(--warn);}
+.cap-warn p{margin:4px 0 0;}

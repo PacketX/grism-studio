@@ -21,7 +21,7 @@ import {
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
   mkAction, mkActionMod, mkChain, firstTwoPorts, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
-  buildInstantCapture, captureProblems, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
+  buildInstantCapture, captureProblems, captureRewriteRisk, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
@@ -1066,7 +1066,7 @@ export default function GrismStudio() {
           <MecTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "capture" && (
-          <CaptureTab loggedIn={!!login.who} t={t}
+          <CaptureTab loggedIn={!!login.who} t={t} doc={doc}
             ports={devicePorts ?? DEFAULT_PORTS} portDescs={portDescs}
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
@@ -6045,7 +6045,7 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
   );
 }
 
-function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
+function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc }) {
   const tr = t || ((k) => k);
   const [sel, setSel] = React.useState([]);          // ingress ports
   const [filter, setFilter] = React.useState("");
@@ -6102,6 +6102,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
 
   const opts = { ports: sel, filter, stl: Number(stl) || 0, storage, dir };
   const problems = captureProblems(opts);
+  const rewrites = captureRewriteRisk(doc, sel);
 
   const start = async () => {
     setErr("");
@@ -6187,6 +6188,17 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
         </p>
         {problems.length > 0 && (
           <ul className="problem-list">{problems.map((p, i) => <li key={i}>{p.msg}</li>)}</ul>
+        )}
+        {/* Not a problem to fix before starting: a capture that may show
+            rewritten packets is still worth taking once that is known. */}
+        {rewrites.length > 0 && (
+          <div className="cap-warn">
+            <b>{tr("cap.rwTitle")}</b>
+            <p>{tr("cap.rwBody").replace("{list}", rewrites.map((r) =>
+              `${r.id}${r.port ? " → " + r.port : ""}${r.name ? " · " + r.name : ""} (${tr("cap.rwVia")} ${r.via.join(", ")})`).join("、"))}</p>
+            <p>{tr("cap.rwHint")}</p>
+            <p className="dim">{tr("cap.rwStillOk")}</p>
+          </div>
         )}
         {err && <div className="sys-err">{err}</div>}
         <div className="set-actions">

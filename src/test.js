@@ -3821,6 +3821,42 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  /* A capture is another output on the same packet, so an output that rewrites
+     it can reach the file first. .157 routes P4 to O2, which rewrites the TCP
+     SYN MSS -- capturing on P4 is worth a word of warning. */
+  {
+    const out = (id, port, mods) => ({ id, port, mods });
+    const chain = (ports, outTok) => ({ ports, tree: { t: "out", ports: outTok } });
+    const doc = {
+      outputs: [
+        out(2, "P2", [{ k: "modify_tcp_syn_mss", val: "1200" }]),
+        out(5, "P5", [{ k: "dir", val: "/data/x" }]),          // mirror only: copies, does not rewrite
+        out(9, "P9", []),                                       // a plain port by another name
+      ],
+      chains: [chain("P4", "O2"), chain("P6", "O5"), chain("P7", "O9"), chain("P8", "P1")],
+    };
+    check("an output that rewrites is reported", C.captureRewriteRisk(doc, ["P4"]).length === 1
+      && C.captureRewriteRisk(doc, ["P4"])[0].id === "O2");
+    check("it says which port reaches it and where it goes", (() => {
+      const r = C.captureRewriteRisk(doc, ["P4"])[0];
+      return r.port === "P2" && r.via.join() === "P4";
+    })());
+    check("a mirror output does not rewrite", C.captureRewriteRisk(doc, ["P6"]).length === 0);
+    check("an output with no modifiers is not a risk", C.captureRewriteRisk(doc, ["P7"]).length === 0);
+    check("a plain port destination is not a risk", C.captureRewriteRisk(doc, ["P8"]).length === 0);
+    check("ports with nothing on them are quiet", C.captureRewriteRisk(doc, ["P3"]).length === 0
+      && C.captureRewriteRisk(doc, []).length === 0 && C.captureRewriteRisk(null, ["P4"]).length === 0);
+    // several ingress ports reaching the same output are reported once
+    const shared = { outputs: doc.outputs, chains: [chain("P4,P6", "O2"), chain("P7", "O2")] };
+    const r2 = C.captureRewriteRisk(shared, ["P4", "P6", "P7"]);
+    check("one entry per output, listing every ingress", r2.length === 1 && r2[0].via.join() === "P4,P6,P7");
+    // deep in a branch tree, not just a bare terminal
+    const deep = { outputs: doc.outputs, chains: [{ ports: "P4", tree: { t: "branch", fids: "F1",
+      match: { t: "out", ports: "P1" }, notmatch: { t: "branch", fids: "F2",
+        match: { t: "out", ports: "O2" }, notmatch: { t: "out", ports: "P2" } } } }] };
+    check("an output further down a branch is found", C.captureRewriteRisk(deep, ["P4"]).length === 1);
+  }
+
   // A mapping card is filled in in sequence, so the row it adds continues it
   {
     check("a trailing number steps on", C.nextMappingValue("P1") === "P2"

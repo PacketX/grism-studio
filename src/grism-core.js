@@ -3106,6 +3106,47 @@ export function buildInstantCapture({ ports, filter, stl, storage, dir }) {
   `</run>`;
 }
 
+/* Which of a chain's outputs change the packet. Everything but the mirror
+   group writes on it -- a rewrite, an encapsulation, a generated reply -- while
+   dir/dip/sport/dport only copy it somewhere. */
+const rewritesPacket = (o) => (o?.mods ?? []).some((m) => m && m.k && (OUT_MOD_INDEX[m.k]?.grp ?? "rewrite") !== "mirror");
+
+/* A capture is another output on the same packet as everything else the chains
+   do with it, so an output that rewrites the packet can reach it first and the
+   file then holds the rewritten bytes rather than what arrived. This finds the
+   custom outputs the chosen ingress ports already feed, so the page can say so.
+   Only a warning: whether the rewrite lands before the capture is the device's
+   business, and a capture that might show rewritten packets is still worth
+   taking when that is understood. */
+export function captureRewriteRisk(doc, ports) {
+  const chosen = new Set((Array.isArray(ports) ? ports : String(ports ?? "").split(","))
+    .map((p) => String(p).trim()).filter(Boolean));
+  if (!chosen.size) return [];
+  const byId = new Map((doc?.outputs ?? []).map((o) => ["O" + o.id, o]));
+  const found = new Map();                       // O-id -> { id, port, name, via:Set }
+  for (const c of doc?.chains ?? []) {
+    const ins = String(c.ports || "").split(",").map((p) => p.trim()).filter(Boolean);
+    const via = ins.filter((p) => chosen.has(p));
+    if (!via.length) continue;
+    (function walk(n) {
+      if (!n) return;
+      if (n.t === "out" && n.ports) {
+        String(n.ports).split(",").map((x) => x.trim()).filter(Boolean).forEach((tok) => {
+          const o = byId.get(tok);
+          if (!o || !rewritesPacket(o)) return;
+          const hit = found.get(tok) ?? { id: tok, port: o.port || "", name: o.name || o.alt || "", via: new Set() };
+          via.forEach((p) => hit.via.add(p));
+          found.set(tok, hit);
+        });
+      }
+      ["match", "notmatch"].forEach((k) => walk(n[k]));
+      (n.children ?? []).forEach(walk);
+    })(c.tree);
+  }
+  return [...found.values()].map((h) => ({ ...h, via: [...h.via] }))
+    .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+}
+
 export function captureProblems(opts, problems = []) {
   const ports = Array.isArray(opts.ports) ? opts.ports : [];
   if (ports.length === 0) problems.push({ scope: "capture", msg: "choose at least one interface to capture from" });
