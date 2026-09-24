@@ -10035,13 +10035,9 @@ function XmlDiff({ base, current, tr, inline = false }) {
     if (!blocks.length) return;
     if (at.kind !== kind) { at.kind = kind; at.current = -1; }   // each count keeps its own place
     at.current = (at.current + 1 + blocks.length) % blocks.length;
-    const el = blocks[at.current];
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
-    rows.forEach((m) => m.classList.remove("here"));
-    // mark the whole run, so what it stopped at is obvious
-    for (let e = el; e && (e.classList.contains("plus") || e.classList.contains("minus")); e = e.nextElementSibling) {
-      e.classList.add("here");
-    }
+    // scrolling to it is the whole feedback: the lines are already coloured,
+    // and marking one again only added a box around text that reads fine
+    blocks[at.current].scrollIntoView({ block: "center", behavior: "smooth" });
   };
   if (inline) {
     return (
