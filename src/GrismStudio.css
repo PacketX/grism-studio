@@ -2015,3 +2015,8 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
   color:var(--txt-faint); font-weight:600;}
 .ex-fold:hover, .ex-fold.on{color:var(--txt);}
 .ex-fold-caret{font-size:10px;}
+/* the saved list, opened in the side panel instead of over the page */
+.saved-inline{margin-top:8px;}
+.saved-inline .xf-body{padding:0; max-height:none;}
+.saved-inline .xf-note{margin-top:0; font-size:11.5px;}
+.saved-inline .xf-list li{flex-wrap:wrap;}

@@ -8317,7 +8317,7 @@ async function waitForDeviceApply(onProgress) {
    inline section: the list, its rename fields and its confirmations are a task
    of their own, and unfolding them in the middle of the XML pushed everything
    else around. The caller owns "open". */
-function SavedConfigs({ runXml, onLoadXml, lang, open, onClose, t }) {
+function SavedConfigs({ runXml, onLoadXml, lang, open, onClose, t, inline = false }) {
   const tr = t || ((k) => k);
   const [files, setFiles] = useState(null);
   const [listErr, setListErr] = useState(false);
@@ -8410,14 +8410,25 @@ function SavedConfigs({ runXml, onLoadXml, lang, open, onClose, t }) {
   };
 
   if (!open) return null;
+  /* Opened in place rather than over the page: it belongs to the panel beside
+     the configuration it saves, and a dialog for it meant covering that
+     configuration to look at the list of copies of it. */
+  const Shell = inline
+    ? ({ children }) => <div className="saved-inline">{children}</div>
+    : ({ children }) => (
+      <div className="modal-scrim saved-scrim" onClick={onClose}>
+        <section className="saved-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="saved-head">
+            <span className="saved-title">{tr("sv.title")}
+              {files && files.length > 0 && <span className="xf-count">{files.length}</span>}</span>
+            <button className="tmpl-close" onClick={onClose} aria-label={tr("xf.cancel")}>✕</button>
+          </div>
+          {children}
+        </section>
+      </div>
+    );
   return (
-    <div className="modal-scrim saved-scrim" onClick={onClose}>
-      <section className="saved-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="saved-head">
-          <span className="saved-title">{tr("sv.title")}
-            {files && files.length > 0 && <span className="xf-count">{files.length}</span>}</span>
-          <button className="tmpl-close" onClick={onClose} aria-label={tr("xf.cancel")}>✕</button>
-        </div>
+    <Shell>
       {true && (
         <div className="xf-body">
           <p className="xf-note">{tr("sv.note")}</p>
@@ -8498,8 +8509,7 @@ function SavedConfigs({ runXml, onLoadXml, lang, open, onClose, t }) {
           )}
         </div>
       )}
-      </section>
-    </div>
+    </Shell>
   );
 }
 
@@ -10363,8 +10373,6 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
             <button className="copy-btn" disabled={!editing && problems.length > 0}
               onClick={() => { if (editing) { navigator.clipboard?.writeText(edit); setCopied(true); setTimeout(() => setCopied(false), 1400); } else copy(); }}>
               {copied ? tr("ex.copied") : (!editing && problems.length) ? tr("ex.fixToCopy") : tr("ex.copy")}</button>
-            {loggedIn && <SavedConfigs runXml={runXml} onLoadXml={onApplyXml} lang={lang}
-              open={showSaved} onClose={() => setShowSaved(false)} t={t} />}
             {editing
               ? <button className="submit-btn" disabled={!!editErr} onClick={applyEdit}>{tr("ex.applyChanges")}</button>
               : loggedIn && (
@@ -10417,6 +10425,8 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
               <span className="ex-fold-caret" aria-hidden="true">{showSaved ? "▾" : "▸"}</span>
               {tr("sv.title")}
             </button>
+            <SavedConfigs runXml={runXml} onLoadXml={onApplyXml} lang={lang} inline
+              open={showSaved} onClose={() => setShowSaved(false)} t={t} />
           </section>
           {histErr && <p className="submit-note warn">{histErr}</p>}
           <VersionHistory files={history} onLoad={loadVersion} onDelete={deleteVersion} busy={histBusy} lang={lang} tr={tr} />
