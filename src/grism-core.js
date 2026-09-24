@@ -989,8 +989,8 @@ export const TEMPLATES = [
     make: () => parseRun(PCAP_REPLAY_XML).doc },
   { id: "ingress-strip", title: "Strip VLAN at ingress", tag: "Action",
     title_zh: "入口移除 VLAN", tag_zh: "動作",
-    blurb: "An action strips the VLAN tag from every packet arriving on P0, before anything else looks at them; the chain then forwards them to P1.",
-    blurb_zh: "一個 action 在其他處理之前,先移除 P0 進來所有封包的 VLAN tag,鏈結再把它們轉發到 P1。",
+    blurb: "An action strips the VLAN tag from every packet arriving on P0, and the chain forwards them to P1. The filters still see the tag: the firmware matches them first and runs the action afterwards.",
+    blurb_zh: "一個 action 移除 P0 進來所有封包的 VLAN tag,鏈結再把它們轉發到 P1。篩選器仍然看得到這個 tag — 韌體是先比對篩選器,之後才執行 action。",
     make: () => ({
       actions: [{ id: 1, name: "strip vlan", type: "input-packet-process", port: "P0",
         mods: [{ id: nid(), k: "stripping", val: "vlan" }], portA: "P1", portB: "P2" }],
@@ -3172,32 +3172,78 @@ function portsInUse(doc) {
   return used;
 }
 
+/* VLAN ids the configuration already uses, so a detour tag collides with
+   nothing: what outputs add, and what filters match on. */
+function vlansInUse(doc) {
+  const used = new Set();
+  const n = (v) => { const x = parseInt(v, 10); if (Number.isFinite(x)) used.add(x); };
+  for (const o of doc?.outputs ?? []) (o.mods ?? []).forEach((m) => { if (m?.k === "Q" || m?.k === "QinQ") n(m.val); });
+  for (const a of doc?.actions ?? []) (a.mods ?? []).forEach((m) => { if (m?.k === "Q" || m?.k === "QinQ") n(m.val); });
+  for (const f of doc?.filters ?? []) (function walk(node) {
+    if (!node) return;
+    if (node.t === "find" && /vlan/i.test(node.field ?? "")) n(node.val);
+    (node.children ?? []).forEach(walk);
+  })(f.root);
+  return used;
+}
+
 /* Rewrite the configuration so the outputs that would change the packet sit
    behind a LOOP port: the chain the capture is on sends to the LOOP port, and
-   a new chain from that LOOP port sends to the output. The packet is captured
-   on its first pass and rewritten on its second.
+   a chain coming back from it sends to the output. The packet is captured on
+   its first pass and rewritten on its second.
 
-   Each output needs a LOOP port of its own -- pointing two of them at one LOOP
-   would send every packet to both. Only the chains the capture is actually on
-   are changed; anything else still reaches the output directly, which is what
-   it did before.
+   One LOOP port carries all of them, which matters because a device has few
+   and they are usually spoken for. What tells the passes apart is a VLAN tag:
+   the detour adds a distinct one per output on the way out, the chains back in
+   match on it, and a single ingress action strips it again.
 
-   Returns { ok, pairs, doc } or { ok: false, need, free } when there are not
-   enough free LOOP ports to do it. */
+   That ordering is the firmware's: fcdata_find matches the filters, then
+   work_action runs the ingress actions, then the packet is emitted (dpdk/main.c
+   and src/main.c). So the filters still see the tag the action removes, and
+   the output emits the packet exactly as it would have.
+
+   Only the chains the capture is actually on are changed; anything else still
+   reaches the output directly, which is what it did before.
+
+   Returns { ok, loop, pairs, doc } or { ok: false, need, free } when there is
+   no free LOOP port to route through. */
 export function buildLoopFix(doc, ports, loopPorts) {
   const risky = captureRewriteRisk(doc, ports);
   const used = portsInUse(doc);
   const free = (loopPorts ?? []).map((p) => String(p).trim()).filter((p) => p && !used.has(p));
   if (!risky.length) return { ok: false, need: 0, free: free.length, pairs: [] };
-  if (free.length < risky.length) return { ok: false, need: risky.length, free: free.length, pairs: [] };
+  if (!free.length) return { ok: false, need: 1, free: 0, pairs: [] };
 
-  const pairs = risky.map((r, i) => ({ output: r.id, port: r.port, name: r.name, via: r.via, loop: free[i] }));
-  const byOutput = new Map(pairs.map((p) => [p.output, p.loop]));
-  const chosen = new Set((Array.isArray(ports) ? ports : String(ports ?? "").split(","))
-    .map((p) => String(p).trim()).filter(Boolean));
+  const loop = free[0];
+  const takenVlan = vlansInUse(doc);
+  const nextVlan = (() => { let v = 3001; return () => { while (takenVlan.has(v)) v += 1; takenVlan.add(v); return v++; }; })();
+  let nextOutId = Math.max(0, ...(doc?.outputs ?? []).map((o) => Number(o.id) || 0)) + 1;
+  let nextFilterId = Math.max(0, ...(doc?.filters ?? []).map((f) => Number(f.id) || 0)) + 1;
 
   const next = JSON.parse(JSON.stringify(doc ?? {}));
-  for (const c of next.chains ?? []) {
+  next.outputs = next.outputs ?? []; next.filters = next.filters ?? [];
+  next.chains = next.chains ?? []; next.actions = next.actions ?? [];
+
+  const pairs = risky.map((r) => {
+    const vlan = nextVlan();
+    const detour = {
+      id: nextOutId++, name: `to ${loop} for ${r.id}`, port: loop,
+      mods: [{ id: nid(), k: "Q", op: "add", val: String(vlan), attrs: {} }], oattrs: {},
+    };
+    const filter = {
+      id: nextFilterId++, name: `${loop} vlan ${vlan}`, sessionBase: "no", matchedlog: "no",
+      blockifempty: "no", fattrs: {},
+      root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "vlan.id", rel: "==", val: String(vlan) }] },
+    };
+    next.outputs.push(detour);
+    next.filters.push(filter);
+    return { output: r.id, port: r.port, name: r.name, via: r.via, loop, vlan, detour: "O" + detour.id, filter: "F" + filter.id };
+  });
+
+  const byOutput = new Map(pairs.map((p) => [p.output, p.detour]));
+  const chosen = new Set((Array.isArray(ports) ? ports : String(ports ?? "").split(","))
+    .map((p) => String(p).trim()).filter(Boolean));
+  for (const c of next.chains) {
     const ins = String(c.ports || "").split(",").map((p) => p.trim()).filter(Boolean);
     if (!ins.some((p) => chosen.has(p))) continue;
     (function walk(n) {
@@ -3210,9 +3256,24 @@ export function buildLoopFix(doc, ports, loopPorts) {
       (n.children ?? []).forEach(walk);
     })(c.tree);
   }
-  // the second pass: in from the LOOP port, out to the output that rewrites
-  next.chains = [...(next.chains ?? []), ...pairs.map((p) => mkChain(p.loop, p.output))];
-  return { ok: true, pairs, doc: next };
+
+  /* One action for the port, not one per tag: the strip runs after the filters
+     have matched, so every packet coming back can lose its tag the same way. */
+  next.actions.push({
+    id: Math.max(0, ...next.actions.map((a) => Number(a.id) || 0)) + 1,
+    name: `strip ${loop} detour vlan`, type: "input-packet-process", port: loop,
+    mods: [{ id: nid(), k: "stripping", val: "vlan", attrs: {} }], portA: "", portB: "",
+  });
+
+  // one chain back per output, told apart by the tag it was sent with
+  pairs.forEach((p) => {
+    next.chains.push({
+      cid: nid(), ports: loop,
+      tree: { id: nid(), t: "branch", fids: p.filter, fidOp: "or",
+              match: mkOut(p.output), notmatch: mkUnset() },
+    });
+  });
+  return { ok: true, loop, pairs, doc: next };
 }
 
 export function captureProblems(opts, problems = []) {

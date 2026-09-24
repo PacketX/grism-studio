@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.171.0";
+export const STUDIO_VERSION = "2.172.0";
 
 export const I18N = {
   en: {
@@ -42,12 +42,12 @@ export const I18N = {
     "cap.rwHint": "To be sure of capturing what arrived, send that chain to a LOOP port instead, and add a chain from that LOOP port to the output that rewrites — the rewrite then happens on the second pass, after this capture has seen the packet.",
     "cap.rwStillOk": "Starting the capture anyway is fine; this is only a warning.",
     "cap.rwFix": "Rewrite the configuration for me",
-    "cap.rwFixNone": "There is no free LOOP port to route through — {need} needed, {free} free. A LOOP port already used as a chain ingress or as somewhere a chain sends to cannot carry this.",
+    "cap.rwFixNone": "There is no free LOOP port to route through. A LOOP port already named anywhere in the configuration — as a chain ingress, as somewhere a chain sends to, or as the port an output sits on — already has traffic of its own.",
     "cap.rwFixTitle": "Route these outputs behind a LOOP port?",
-    "cap.rwFixBody": "The chains this capture is on will send to a LOOP port instead, and a new chain from that LOOP port will send to the output — so the packet is captured on its first pass and rewritten on its second.",
+    "cap.rwFixBody": "The chains this capture is on will send to {loop} instead, each tagged with a VLAN of its own, and chains coming back from {loop} will match on that tag and send to the output it was meant for. One action on {loop} strips the tag again. The packet is captured on its first pass and rewritten on its second.",
     "cap.rwFixList": "What changes",
     "cap.rwFixVia": "now goes through",
-    "cap.rwFixKeep": "Chains this capture is not on still reach those outputs directly.",
+    "cap.rwFixKeep": "One LOOP port carries all of them. Chains this capture is not on still reach those outputs directly.",
     "cap.rwFixAfter": "The edited configuration opens in the Export tab. Nothing is sent to the device until you submit it there.",
     "cap.rwFixGo": "Rewrite and open in Export",
     "cap.rwFixFailed": "The configuration could not be rewritten",
@@ -638,6 +638,10 @@ export const I18N = {
     "ex.histNote": "Before each submit, what the device was running is kept here. The last {n} are held; older ones are removed. These are separate from your saved configurations.",
     "ex.histEmpty": "Nothing yet — the first snapshot is taken the next time you submit.",
     "ex.histLoad": "Load", "ex.histLoading": "Loading…",
+    "ex.histDel": "Delete", "ex.histDelTitle": "Delete this version?",
+    "ex.histDelBody": "It is removed from the device. The version it holds cannot be recovered.",
+    "ex.histDelFailed": "Could not delete that version",
+    "ex.viewXml": "XML", "ex.viewDiff": "Changes",
     "ex.histLatest": "most recent",
     "ex.histLoadFailed": "Could not load that version",
     "ex.histSaveFailed": "The current version could not be saved first; the submit went ahead anyway.",
@@ -885,12 +889,12 @@ export const I18N = {
     "cap.rwHint": "若要確保錄到的是進來時的封包,可以把該鏈結改成先送到 LOOP 介面,再另外設定一條「從該 LOOP 介面進來 → 送到原本會改寫的輸出」,改寫就會發生在第二趟,也就是這次側錄看過封包之後。",
     "cap.rwStillOk": "要直接開始側錄也沒問題,這只是提醒。",
     "cap.rwFix": "幫我改寫設定",
-    "cap.rwFixNone": "沒有可用的 LOOP 介面可以繞道 — 需要 {need} 個,目前可用 {free} 個。已被當作鏈結入口、或已經有鏈結送往的 LOOP 介面不能拿來做這件事。",
+    "cap.rwFixNone": "沒有可用的 LOOP 介面可以繞道。只要這個 LOOP 介面已經出現在設定中的任何地方 — 當作鏈結入口、已有鏈結送往、或是某個輸出所在的埠 — 它就已經有自己的流量了。",
     "cap.rwFixTitle": "把這些輸出改走 LOOP 介面?",
-    "cap.rwFixBody": "這次側錄所在的鏈結會改成送往 LOOP 介面,再由一條新的鏈結從該 LOOP 介面送往原本的輸出 — 封包在第一趟被側錄到,第二趟才被改寫。",
+    "cap.rwFixBody": "這次側錄所在的鏈結會改成送往 {loop},每個輸出各打上一個專屬的 VLAN tag;再由從 {loop} 進來的鏈結依這個 tag 判斷原本要送往哪個輸出。{loop} 上會有一個 action 把 tag 再拿掉。封包在第一趟被側錄到,第二趟才被改寫。",
     "cap.rwFixList": "會變更的內容",
     "cap.rwFixVia": "改為經過",
-    "cap.rwFixKeep": "不在這次側錄範圍內的鏈結,仍然直接送往那些輸出。",
+    "cap.rwFixKeep": "所有輸出共用同一個 LOOP 介面。不在這次側錄範圍內的鏈結,仍然直接送往那些輸出。",
     "cap.rwFixAfter": "改好的設定會在「匯出」頁開啟。在你於該頁提交之前,不會送任何東西到裝置。",
     "cap.rwFixGo": "改寫並開啟匯出頁",
     "cap.rwFixFailed": "無法改寫設定",
@@ -1479,6 +1483,10 @@ export const I18N = {
     "ex.histNote": "每次提交前,會把裝置當下執行的設定保留在這裡。最多保留 {n} 份,較舊的會自動移除。這些與你自己儲存的設定分開存放。",
     "ex.histEmpty": "尚無紀錄 — 下次提交時會存下第一份。",
     "ex.histLoad": "載入", "ex.histLoading": "載入中…",
+    "ex.histDel": "刪除", "ex.histDelTitle": "刪除這個版本?",
+    "ex.histDelBody": "它會從裝置上移除,其中保存的版本將無法復原。",
+    "ex.histDelFailed": "無法刪除該版本",
+    "ex.viewXml": "XML", "ex.viewDiff": "變更內容",
     "ex.histLatest": "最近一次",
     "ex.histLoadFailed": "無法載入該版本",
     "ex.histSaveFailed": "提交前未能存下目前版本,但提交仍已送出。",

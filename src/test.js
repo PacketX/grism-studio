@@ -3839,18 +3839,31 @@ group("pcap live view");
     check("a plan is made", fix.ok && fix.pairs.length === 1 && fix.pairs[0].output === "O2");
     check("a free LOOP port is chosen", fix.pairs[0].loop === "L0");
     const out = C.serializeRun(fix.doc);
-    check("the capture's chain now sends to the LOOP port", /<in>P4<\/in>[\s\S]*?<out>L0<\/out>/.test(out));
-    check("a second chain carries it on to the output", /<in>L0<\/in>[\s\S]*?<out>O2<\/out>/.test(out));
+    const p0 = fix.pairs[0];
+    check("the capture's chain now sends to the detour output",
+      new RegExp(`<in>P4</in>[\\s\\S]*?<out>${p0.detour}</out>`).test(out));
+    check("the detour output goes to the LOOP port with a tag of its own",
+      new RegExp(`<output id="${p0.detour.slice(1)}"[\\s\\S]*?<port>L0</port>[\\s\\S]*?<Q type="add">${p0.vlan}</Q>`).test(out));
+    check("a chain back matches that tag and reaches the output",
+      new RegExp(`<in>L0</in>[\\s\\S]*?<fid>${p0.filter}</fid>[\\s\\S]*?<out>O2</out>`).test(out));
+    check("the tag is stripped by one action on the LOOP port",
+      /<action type="input-packet-process"[\s\S]*?<port>L0<\/port>[\s\S]*?<stripping>vlan<\/stripping>/.test(out)
+      && (out.match(/input-packet-process/g) || []).length === 1);
     check("chains the capture is not on are untouched", /<in>P6<\/in>[\s\S]*?<out>O2<\/out>/.test(out));
-    check("the plan says which ingress reaches it", fix.pairs[0].via.join() === "P4");
-    // one LOOP port each: pointing two outputs at one would send every packet to both
-    const two = C.buildLoopFix(doc, ["P4", "P5"], loops);
-    check("each output gets its own LOOP port", two.ok && two.pairs.length === 2
-      && two.pairs[0].loop !== two.pairs[1].loop);
-    check("not enough LOOP ports is reported, not guessed",
-      C.buildLoopFix(doc, ["P4", "P5"], ["L0"]).ok === false
-      && C.buildLoopFix(doc, ["P4", "P5"], ["L0"]).need === 2
-      && C.buildLoopFix(doc, ["P4", "P5"], ["L0"]).free === 1);
+    check("the plan says which ingress reaches it", p0.via.join() === "P4");
+    /* One LOOP port carries every output -- a device has few of them -- and
+       the tags are what tell the passes apart. */
+    const two = C.buildLoopFix(doc, ["P4", "P5"], ["L0"]);
+    check("one LOOP port is enough for several outputs", two.ok && two.pairs.length === 2
+      && two.pairs.every((p) => p.loop === "L0"));
+    check("each output gets a tag of its own", two.pairs[0].vlan !== two.pairs[1].vlan);
+    check("one strip action serves them all",
+      (C.serializeRun(two.doc).match(/input-packet-process/g) || []).length === 1);
+    check("a tag already in the configuration is not reused", (() => {
+      const withVlan = C.parseRun(xml.replace('<Q op="add">100</Q>', '<Q op="add">3001</Q>')).doc;
+      const r = C.buildLoopFix(withVlan, ["P4"], ["L0"]);
+      return r.ok && r.pairs.every((p) => p.vlan !== 3001);
+    })());
     // a LOOP port already in use either way cannot carry a detour
     check("a LOOP port used as an ingress is not free", C.buildLoopFix(doc, ["P4"], ["P5"]).ok === false);
     check("a LOOP port already sent to is not free", C.buildLoopFix(doc, ["P4"], ["P2"]).ok === false);

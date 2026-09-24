@@ -6120,7 +6120,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
   const offerFix = () => {
     setFixErr("");
     const plan = buildLoopFix(doc, sel, loopPorts);
-    if (!plan.ok) { setFixErr(tr("cap.rwFixNone").replace("{need}", String(plan.need)).replace("{free}", String(plan.free))); return; }
+    if (!plan.ok) { setFixErr(tr("cap.rwFixNone")); return; }
     setFixAsk(plan);
   };
   const applyFix = (plan) => {
@@ -6238,7 +6238,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
           <div className="modal-scrim confirm-load-scrim" onClick={() => setFixAsk(null)}>
             <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
               <div className="modal-title">{tr("cap.rwFixTitle")}</div>
-              <p className="modal-body">{tr("cap.rwFixBody")}</p>
+              <p className="modal-body">{tr("cap.rwFixBody").replaceAll("{loop}", fixAsk.loop)}</p>
               <div className="fix-plan">
                 <div className="fix-plan-head">{tr("cap.rwFixList")}</div>
                 {fixAsk.pairs.map((p) => (
@@ -6246,6 +6246,8 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
                     <code>{p.via.join(", ")}</code> → <code>{p.output}</code>
                     <span className="dim"> {tr("cap.rwFixVia")} </span>
                     <code className="fix-loop">{p.loop}</code>
+                    <span className="dim"> · VLAN </span>
+                    <code className="fix-loop">{p.vlan}</code>
                     {p.port && <span className="dim"> → {p.port}</span>}
                   </div>
                 ))}
@@ -9983,14 +9985,35 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
 
    Untouched stretches are collapsed -- a run.xml is hundreds of lines and an
    edit is usually a handful -- with the whole file one button away. */
-function XmlDiff({ base, current, tr }) {
-  const [open, setOpen] = React.useState(false);
+function XmlDiff({ base, current, tr, inline = false }) {
+  const [open, setOpen] = React.useState(inline);
   const [whole, setWhole] = React.useState(false);
   const rows = React.useMemo(() => (base == null ? [] : diffLines(base, current)), [base, current]);
   const stat = React.useMemo(() => diffStat(rows), [rows]);
   const shown = React.useMemo(() => (whole ? rows : collapseDiff(rows, 3)), [rows, whole]);
   const changed = stat.added + stat.removed;
 
+  if (inline) {
+    return (
+      <div className="ex-diff inline">
+        <div className="ex-diff-bar">
+          <span className="ex-diff-n add">+{stat.added}</span>
+          <span className="ex-diff-n del">−{stat.removed}</span>
+          <span className="set-hint">{tr("ex.diffVsLoaded")}</span>
+          <label className="tf-interval ex-diff-whole"><input type="checkbox" checked={whole}
+            onChange={(e) => setWhole(e.target.checked)} /> {tr("ex.diffWhole")}</label>
+        </div>
+        {changed === 0 ? <p className="sys-note dim">{tr("ex.diffNone")}</p> : (
+          <pre className="ex-diff-body inline mono">{shown.map((r, i) => (
+            r.kind === "gap"
+              ? <span className="dl gap" key={i}>{`    ⋯ ${tr("ex.diffGap").replace("{n}", String(r.count))}\n`}</span>
+              : <span className={"dl " + r.kind} key={i}>
+                  {`${r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "} ${r.text}\n`}</span>
+          ))}</pre>
+        )}
+      </div>
+    );
+  }
   return (
     <section className="ex-diff">
       <h4 className="ex-diff-title">{tr("ex.diffTitle")}
@@ -10028,8 +10051,9 @@ function XmlDiff({ base, current, tr }) {
 
    Reloading one only replaces the document being edited -- getting it back
    onto the device is a submit like any other, which is itself snapshotted. */
-function VersionHistory({ files, onLoad, busy, lang, tr }) {
+function VersionHistory({ files, onLoad, onDelete, busy, lang, tr }) {
   const [ask, setAsk] = React.useState(null);
+  const [askDel, setAskDel] = React.useState(null);
   const rows = autoSaves(files ?? []);
   return (
     <section className="ex-hist">
@@ -10047,9 +10071,24 @@ function VersionHistory({ files, onLoad, busy, lang, tr }) {
               <span className="ex-hist-size dim mono">{f.size ? fmtBytes(f.size) : ""}</span>
               <button className="copy-btn" disabled={!!busy} onClick={() => setAsk(f)}>
                 {busy === f.name ? tr("ex.histLoading") : tr("ex.histLoad")}</button>
+              <button className="icon-btn" disabled={!!busy} aria-label={tr("ex.histDel")}
+                title={tr("ex.histDel")} onClick={() => setAskDel(f)}>✕</button>
             </li>
           ))}
         </ul>
+      )}
+      {askDel && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setAskDel(null)}>
+          <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{tr("ex.histDelTitle")}</div>
+            <p className="modal-body">{tr("ex.histDelBody")}<br />
+              <code className="cap-del-name">{formatSavedTime(Math.floor((askDel.saved ?? 0) / 1000), lang)}</code></p>
+            <button className="opt drop" onClick={() => { const f = askDel; setAskDel(null); onDelete(f); }}>
+              <span className="opt-name">{tr("common.delete")}</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setAskDel(null)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
       )}
       {ask && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setAsk(null)}>
@@ -10078,6 +10117,14 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
   const [applyErr, setApplyErr] = useState("");
   const [showSaved, setShowSaved] = useState(false);
   const [applyWarn, setApplyWarn] = useState([]);
+  const [view, setView] = useState("xml");              // the card shows the XML, or what changed
+  const diffCount = React.useMemo(() => {
+    if (baseline == null) return 0;
+    const d = diffStat(diffLines(baseline, runXml));
+    return d.added + d.removed;
+  }, [baseline, runXml]);
+  // nothing to look at once it matches again
+  React.useEffect(() => { if (diffCount === 0) setView("xml"); }, [diffCount]);
   const [history, setHistory] = useState([]);          // pre-submit snapshots
   const [histBusy, setHistBusy] = useState("");
   const [histErr, setHistErr] = useState("");
@@ -10130,6 +10177,13 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
       await loadHistory();
       return "";
     } catch { return tr("ex.histSaveFailed"); }
+  };
+
+  const deleteVersion = async (f) => {
+    setHistBusy(f.name); setHistErr("");
+    try { await savePost("del_xml", { name: f.name }); await loadHistory(); }
+    catch { setHistErr(tr("ex.histDelFailed")); }
+    finally { setHistBusy(""); }
   };
 
   const loadVersion = async (f) => {
@@ -10260,6 +10314,17 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
       <div className="export-main">
         <div className="xb-head">
           <span className="xb-title">{tr("ex.completeRun")}{editing && <span className="xb-editing"> · {tr("ex.editing")}</span>}</span>
+          {/* The diff belongs where the XML is read, not in a panel beside it:
+              the last look before submitting is at this card. */}
+          {!editing && baseline != null && (
+            <span className="xb-view" role="group">
+              <button className={"xb-view-b" + (view === "xml" ? " on" : "")}
+                onClick={() => setView("xml")}>{tr("ex.viewXml")}</button>
+              <button className={"xb-view-b" + (view === "diff" ? " on" : "")}
+                onClick={() => setView("diff")}>{tr("ex.viewDiff")}
+                {diffCount > 0 && <span className="xb-view-n">{diffCount}</span>}</button>
+            </span>
+          )}
           <div className="xb-actions">
             {/* same button order in both states, and the same order the device
                 settings page uses: edit/cancel · format · copy · primary action */}
@@ -10285,7 +10350,9 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
           ? (
             <XmlEditor value={edit} onChange={setEdit} className="xml-editor-flex" />
           )
-          : <XmlView xml={runXml} />}
+          : view === "diff" && baseline != null
+            ? <XmlDiff base={baseline} current={runXml} tr={tr} inline />
+            : <XmlView xml={runXml} />}
       </div>
       <aside className="export-side">
         {!editing && <div className={"pane-validity " + (problems.length ? "bad" : warnings.length ? "warn" : "ok")}>
@@ -10314,10 +10381,9 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
           {warnings.map((p, i) => <li key={i} onClick={() => onGoto(p.scope)}><code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}</li>)}
         </ul>}
         {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">{tr("ex.allValidate")}</p>}
-        {!editing && <XmlDiff base={baseline} current={runXml} tr={tr} />}
         {loggedIn && !editing && <>
           {histErr && <p className="submit-note warn">{histErr}</p>}
-          <VersionHistory files={history} onLoad={loadVersion} busy={histBusy} lang={lang} tr={tr} />
+          <VersionHistory files={history} onLoad={loadVersion} onDelete={deleteVersion} busy={histBusy} lang={lang} tr={tr} />
         </>}
       </aside>
       {loggedIn && <OtherConfigFiles t={t} />}

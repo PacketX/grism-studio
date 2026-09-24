@@ -1983,3 +1983,12 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .fix-plan-row{font-size:12px; line-height:1.9;}
 .fix-plan-row code{background:var(--panel-2); border-radius:4px; padding:1px 6px;}
 .fix-plan-row .fix-loop{color:var(--accent-2);}
+/* XML / changes switch in the configuration card */
+.xb-view{display:inline-flex; margin-left:12px; border:1px solid var(--line-2); border-radius:7px; overflow:hidden;}
+.xb-view-b{background:transparent; border:0; color:var(--txt-dim); font-size:11.5px; padding:3px 10px; cursor:pointer;}
+.xb-view-b.on{background:var(--panel-2); color:var(--txt);}
+.xb-view-n{margin-left:6px; font-family:var(--mono); color:var(--accent-2);}
+.ex-diff.inline{margin:0; border:0; padding:0; display:flex; flex-direction:column; min-height:0; flex:1 1 auto;}
+.ex-diff-bar{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:6px 2px 8px;}
+.ex-diff-bar .set-hint{margin:0;}
+.ex-diff-body.inline{max-height:none; flex:1 1 auto; margin:0;}
