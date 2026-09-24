@@ -21,7 +21,7 @@ import {
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
   mkAction, mkActionMod, mkChain, firstTwoPorts, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
-  buildInstantCapture, captureProblems, captureRewriteRisk, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
+  buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
@@ -280,6 +280,24 @@ export default function GrismStudio() {
   // Always reveal the sub-tabs, otherwise the user lands on a page with no visible
   // indication of where they are — the bar stays collapsed from an earlier click.
   const goTab = useCallback((k) => { setTab(k); setNavOpen(true); }, []);
+  /* Replace the whole document with parsed XML. The Export tab loads a saved
+     version this way; the capture page hands over a rewritten one. Throws on
+     malformed XML, which each caller reports in its own words. */
+  const applyXmlToDoc = useCallback((xmlText) => {
+    const { doc: parsed, warnings } = parseRun(xmlText);
+    const nd = normalizeDoc(parsed);
+    docRef.current = nd; setDocRaw(nd);
+    resetHistory();
+    setDocSource("new");
+    setLoad({ state: "idle", msg: "" });
+    setActiveFilter(parsed.filters[0]?.id ?? 1);
+    setActiveInput(parsed.inputs[0]?.id ?? 1);
+    setActiveOutput(parsed.outputs[0]?.id ?? 1);
+    setActiveAction(parsed.actions[0]?.id ?? 1);
+    setActiveChain(parsed.chains[0]?.cid ?? null);
+    return warnings;
+  }, [resetHistory]);
+
   const gotoScope = useCallback((scope) => {
     if (scope === "chain" || scope.startsWith("chain:")) {
       if (scope.startsWith("chain:")) setActiveChain(scope.slice(6));
@@ -1068,8 +1086,9 @@ export default function GrismStudio() {
           <MecTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "capture" && (
-          <CaptureTab loggedIn={!!login.who} t={t} doc={doc}
+          <CaptureTab loggedIn={!!login.who} t={t} doc={doc} loopPorts={loopPorts}
             ports={devicePorts ?? DEFAULT_PORTS} portDescs={portDescs}
+            onApplyXml={applyXmlToDoc} onGoExport={() => goTab("export")}
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
         {tab === "filters" && (
@@ -1105,20 +1124,7 @@ export default function GrismStudio() {
         {tab === "export" && (
           <ExportTab runXml={runXml} baseline={baseline} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
             onApplied={() => { setBaseline(runXml); setBaselineDoc(doc); }}
-            onApplyXml={(xmlText) => {
-              const { doc: parsed, warnings } = parseRun(xmlText); // throws on malformed → caught in ExportTab
-              const nd = normalizeDoc(parsed);
-              docRef.current = nd; setDocRaw(nd);
-              resetHistory();
-              setDocSource("new");
-              setLoad({ state: "idle", msg: "" });
-              setActiveFilter(parsed.filters[0]?.id ?? 1);
-              setActiveInput(parsed.inputs[0]?.id ?? 1);
-              setActiveOutput(parsed.outputs[0]?.id ?? 1);
-              setActiveAction(parsed.actions[0]?.id ?? 1);
-              setActiveChain(parsed.chains[0]?.cid ?? null);
-              return warnings;
-            }}
+            onApplyXml={applyXmlToDoc}
             onGoto={gotoScope} />
         )}
         </TabErrorBoundary>
@@ -6047,7 +6053,7 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
   );
 }
 
-function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc }) {
+function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPorts = [], onApplyXml, onGoExport }) {
   const tr = t || ((k) => k);
   const [sel, setSel] = React.useState([]);          // ingress ports
   const [filter, setFilter] = React.useState("");
@@ -6068,6 +6074,12 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc }) {
      again, which is the only other way this state goes away. */
   const [loaded, setLoaded] = React.useState(false);
   const fileSel = useFileSelection(files, loaded);
+  /* Offering the detour rather than only describing it. The edit is handed to
+     the Export tab rather than submitted: this rearranges the packet path of a
+     device that is carrying traffic, and that is the user's call to make after
+     reading it. */
+  const [fixAsk, setFixAsk] = React.useState(null);
+  const [fixErr, setFixErr] = React.useState("");
   /* The file the live view is reading. Latched rather than derived from the
      listing: the device renames the .tmp when the capture ends, and deriving
      it would tear the view away at exactly the moment the last packets
@@ -6105,6 +6117,19 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc }) {
   const opts = { ports: sel, filter, stl: Number(stl) || 0, storage, dir };
   const problems = captureProblems(opts);
   const rewrites = captureRewriteRisk(doc, sel);
+  const offerFix = () => {
+    setFixErr("");
+    const plan = buildLoopFix(doc, sel, loopPorts);
+    if (!plan.ok) { setFixErr(tr("cap.rwFixNone").replace("{need}", String(plan.need)).replace("{free}", String(plan.free))); return; }
+    setFixAsk(plan);
+  };
+  const applyFix = (plan) => {
+    setFixAsk(null);
+    try {
+      onApplyXml(serializeRun(plan.doc));     // throws if it will not parse back
+      onGoExport?.();
+    } catch (e) { setFixErr(tr("cap.rwFixFailed") + ": " + (e.message || e)); }
+  };
 
   const start = async () => {
     setErr("");
@@ -6201,6 +6226,36 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc }) {
             <p>{tr("cap.rwUnstable")}</p>
             <p>{tr("cap.rwHint")}</p>
             <p className="dim">{tr("cap.rwStillOk")}</p>
+            {loggedIn && onApplyXml && (
+              <div className="cap-warn-act">
+                <button className="copy-btn" onClick={offerFix}>{tr("cap.rwFix")}</button>
+              </div>
+            )}
+            {fixErr && <p className="set-hint err">{fixErr}</p>}
+          </div>
+        )}
+        {fixAsk && (
+          <div className="modal-scrim confirm-load-scrim" onClick={() => setFixAsk(null)}>
+            <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-title">{tr("cap.rwFixTitle")}</div>
+              <p className="modal-body">{tr("cap.rwFixBody")}</p>
+              <div className="fix-plan">
+                <div className="fix-plan-head">{tr("cap.rwFixList")}</div>
+                {fixAsk.pairs.map((p) => (
+                  <div className="fix-plan-row mono" key={p.output}>
+                    <code>{p.via.join(", ")}</code> → <code>{p.output}</code>
+                    <span className="dim"> {tr("cap.rwFixVia")} </span>
+                    <code className="fix-loop">{p.loop}</code>
+                    {p.port && <span className="dim"> → {p.port}</span>}
+                  </div>
+                ))}
+              </div>
+              <p className="modal-body dim">{tr("cap.rwFixKeep")}<br />{tr("cap.rwFixAfter")}</p>
+              <button className="opt" onClick={() => applyFix(fixAsk)}>
+                <span className="opt-name">{tr("cap.rwFixGo")}</span>
+              </button>
+              <button className="opt-cancel" onClick={() => setFixAsk(null)}>{tr("common.cancel")}</button>
+            </div>
           </div>
         )}
         {err && <div className="sys-err">{err}</div>}

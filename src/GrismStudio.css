@@ -1975,3 +1975,11 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .ex-diff-body .dl.del{background:rgba(224,82,82,.13); color:#ffb3b3;}
 .ex-diff-body .dl.same{color:var(--txt-dim);}
 .ex-diff-body .dl.gap{color:var(--txt-faint); font-style:italic;}
+.cap-warn-act{margin-top:9px;}
+.modal-wide{max-width:640px;}
+.fix-plan{margin:10px 0 0; padding:9px 11px; border-radius:8px; background:var(--bg); border:1px solid var(--line-2);}
+.fix-plan-head{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt-faint);
+  font-weight:600; margin-bottom:6px;}
+.fix-plan-row{font-size:12px; line-height:1.9;}
+.fix-plan-row code{background:var(--panel-2); border-radius:4px; padding:1px 6px;}
+.fix-plan-row .fix-loop{color:var(--accent-2);}

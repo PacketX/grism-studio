@@ -3147,6 +3147,74 @@ export function captureRewriteRisk(doc, ports) {
     .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 }
 
+/* Every port the configuration already names -- a chain's ingress, somewhere a
+   chain sends to, and the port an output, input or action sits on. A LOOP port
+   that appears in none of them is free to carry a detour; one that appears in
+   any of them already has traffic of its own. */
+function portsInUse(doc) {
+  const used = new Set();
+  const add = (v) => String(v ?? "").split(",").map((x) => x.trim()).filter(Boolean).forEach((p) => used.add(p));
+  for (const c of doc?.chains ?? []) {
+    add(c.ports);
+    (function walk(n) {
+      if (!n) return;
+      if (n.t === "out") add(n.ports);
+      ["match", "notmatch"].forEach((k) => walk(n[k]));
+      (n.children ?? []).forEach(walk);
+    })(c.tree);
+  }
+  /* An output names a port of its own, which is where its traffic actually
+     leaves -- "O2" in a chain says nothing about it. Detouring through that
+     port would put the detour in the middle of somebody else's egress. */
+  for (const o of doc?.outputs ?? []) add(o.port);
+  for (const i of doc?.inputs ?? []) add(i.port);
+  for (const a of doc?.actions ?? []) { add(a.port); add(a.portA); add(a.portB); }
+  return used;
+}
+
+/* Rewrite the configuration so the outputs that would change the packet sit
+   behind a LOOP port: the chain the capture is on sends to the LOOP port, and
+   a new chain from that LOOP port sends to the output. The packet is captured
+   on its first pass and rewritten on its second.
+
+   Each output needs a LOOP port of its own -- pointing two of them at one LOOP
+   would send every packet to both. Only the chains the capture is actually on
+   are changed; anything else still reaches the output directly, which is what
+   it did before.
+
+   Returns { ok, pairs, doc } or { ok: false, need, free } when there are not
+   enough free LOOP ports to do it. */
+export function buildLoopFix(doc, ports, loopPorts) {
+  const risky = captureRewriteRisk(doc, ports);
+  const used = portsInUse(doc);
+  const free = (loopPorts ?? []).map((p) => String(p).trim()).filter((p) => p && !used.has(p));
+  if (!risky.length) return { ok: false, need: 0, free: free.length, pairs: [] };
+  if (free.length < risky.length) return { ok: false, need: risky.length, free: free.length, pairs: [] };
+
+  const pairs = risky.map((r, i) => ({ output: r.id, port: r.port, name: r.name, via: r.via, loop: free[i] }));
+  const byOutput = new Map(pairs.map((p) => [p.output, p.loop]));
+  const chosen = new Set((Array.isArray(ports) ? ports : String(ports ?? "").split(","))
+    .map((p) => String(p).trim()).filter(Boolean));
+
+  const next = JSON.parse(JSON.stringify(doc ?? {}));
+  for (const c of next.chains ?? []) {
+    const ins = String(c.ports || "").split(",").map((p) => p.trim()).filter(Boolean);
+    if (!ins.some((p) => chosen.has(p))) continue;
+    (function walk(n) {
+      if (!n) return;
+      if (n.t === "out" && n.ports) {
+        n.ports = String(n.ports).split(",").map((x) => x.trim()).filter(Boolean)
+          .map((tok) => byOutput.get(tok) ?? tok).join(",");
+      }
+      ["match", "notmatch"].forEach((k) => walk(n[k]));
+      (n.children ?? []).forEach(walk);
+    })(c.tree);
+  }
+  // the second pass: in from the LOOP port, out to the output that rewrites
+  next.chains = [...(next.chains ?? []), ...pairs.map((p) => mkChain(p.loop, p.output))];
+  return { ok: true, pairs, doc: next };
+}
+
 export function captureProblems(opts, problems = []) {
   const ports = Array.isArray(opts.ports) ? opts.ports : [];
   if (ports.length === 0) problems.push({ scope: "capture", msg: "choose at least one interface to capture from" });

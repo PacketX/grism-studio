@@ -3821,6 +3821,50 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  /* Offering the LOOP detour, not just describing it: the chains the capture is
+     on send to a LOOP port, and a new chain from there reaches the output. */
+  {
+    const xml = `<run>
+      <output id="2"><port>P2</port><modify_tcp_syn_mss>1200</modify_tcp_syn_mss></output>
+      <output id="3"><port>P3</port><Q op="add">100</Q></output>
+      <output id="4"><port>P4</port><dir>/data/x</dir></output>
+      <chain><in>P4</in><out>O2</out></chain>
+      <chain><in>P5</in><out>O3</out></chain>
+      <chain><in>P6</in><out>O2</out></chain>
+      <chain><in>P7</in><out>O4</out></chain>
+    </run>`;
+    const doc = C.parseRun(xml).doc;
+    const loops = ["L0", "L1", "L2"];
+    const fix = C.buildLoopFix(doc, ["P4"], loops);
+    check("a plan is made", fix.ok && fix.pairs.length === 1 && fix.pairs[0].output === "O2");
+    check("a free LOOP port is chosen", fix.pairs[0].loop === "L0");
+    const out = C.serializeRun(fix.doc);
+    check("the capture's chain now sends to the LOOP port", /<in>P4<\/in>[\s\S]*?<out>L0<\/out>/.test(out));
+    check("a second chain carries it on to the output", /<in>L0<\/in>[\s\S]*?<out>O2<\/out>/.test(out));
+    check("chains the capture is not on are untouched", /<in>P6<\/in>[\s\S]*?<out>O2<\/out>/.test(out));
+    check("the plan says which ingress reaches it", fix.pairs[0].via.join() === "P4");
+    // one LOOP port each: pointing two outputs at one would send every packet to both
+    const two = C.buildLoopFix(doc, ["P4", "P5"], loops);
+    check("each output gets its own LOOP port", two.ok && two.pairs.length === 2
+      && two.pairs[0].loop !== two.pairs[1].loop);
+    check("not enough LOOP ports is reported, not guessed",
+      C.buildLoopFix(doc, ["P4", "P5"], ["L0"]).ok === false
+      && C.buildLoopFix(doc, ["P4", "P5"], ["L0"]).need === 2
+      && C.buildLoopFix(doc, ["P4", "P5"], ["L0"]).free === 1);
+    // a LOOP port already in use either way cannot carry a detour
+    check("a LOOP port used as an ingress is not free", C.buildLoopFix(doc, ["P4"], ["P5"]).ok === false);
+    check("a LOOP port already sent to is not free", C.buildLoopFix(doc, ["P4"], ["P2"]).ok === false);
+    check("a mirror-only output needs no detour", C.buildLoopFix(doc, ["P7"], loops).ok === false
+      && C.buildLoopFix(doc, ["P7"], loops).need === 0);
+    // the rewritten document has to parse back, since that is how it is loaded
+    check("the result round-trips", (() => {
+      const back = C.parseRun(C.serializeRun(fix.doc)).doc;
+      return back.chains.length === doc.chains.length + 1;
+    })());
+    check("the original document is not modified", C.serializeRun(doc).includes("<in>P4</in>")
+      && /<in>P4<\/in>[\s\S]*?<out>O2<\/out>/.test(C.serializeRun(doc)));
+  }
+
   /* The Export tab shows what this document changed, line by line. */
   {
     const a = "a\nb\nc\nd\ne";

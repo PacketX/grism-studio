@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.170.0";
+export const STUDIO_VERSION = "2.171.0";
 
 export const I18N = {
   en: {
@@ -41,6 +41,16 @@ export const I18N = {
     "cap.rwUnstable": "It can also leave the device itself misbehaving, so this is not something to run on a system carrying traffic that matters without expecting that.",
     "cap.rwHint": "To be sure of capturing what arrived, send that chain to a LOOP port instead, and add a chain from that LOOP port to the output that rewrites — the rewrite then happens on the second pass, after this capture has seen the packet.",
     "cap.rwStillOk": "Starting the capture anyway is fine; this is only a warning.",
+    "cap.rwFix": "Rewrite the configuration for me",
+    "cap.rwFixNone": "There is no free LOOP port to route through — {need} needed, {free} free. A LOOP port already used as a chain ingress or as somewhere a chain sends to cannot carry this.",
+    "cap.rwFixTitle": "Route these outputs behind a LOOP port?",
+    "cap.rwFixBody": "The chains this capture is on will send to a LOOP port instead, and a new chain from that LOOP port will send to the output — so the packet is captured on its first pass and rewritten on its second.",
+    "cap.rwFixList": "What changes",
+    "cap.rwFixVia": "now goes through",
+    "cap.rwFixKeep": "Chains this capture is not on still reach those outputs directly.",
+    "cap.rwFixAfter": "The edited configuration opens in the Export tab. Nothing is sent to the device until you submit it there.",
+    "cap.rwFixGo": "Rewrite and open in Export",
+    "cap.rwFixFailed": "The configuration could not be rewritten",
     "cap.rwVia": "from",
     "cap.live": "Live packets", "cap.view": "View", "cap.liveClose": "Close",
     "cap.liveOn": "Decode packets live",
@@ -874,6 +884,16 @@ export const I18N = {
     "cap.rwUnstable": "此外,在這種情況下側錄也可能造成裝置運作異常,若這台正在承載重要流量,請將這點一併考慮進去。",
     "cap.rwHint": "若要確保錄到的是進來時的封包,可以把該鏈結改成先送到 LOOP 介面,再另外設定一條「從該 LOOP 介面進來 → 送到原本會改寫的輸出」,改寫就會發生在第二趟,也就是這次側錄看過封包之後。",
     "cap.rwStillOk": "要直接開始側錄也沒問題,這只是提醒。",
+    "cap.rwFix": "幫我改寫設定",
+    "cap.rwFixNone": "沒有可用的 LOOP 介面可以繞道 — 需要 {need} 個,目前可用 {free} 個。已被當作鏈結入口、或已經有鏈結送往的 LOOP 介面不能拿來做這件事。",
+    "cap.rwFixTitle": "把這些輸出改走 LOOP 介面?",
+    "cap.rwFixBody": "這次側錄所在的鏈結會改成送往 LOOP 介面,再由一條新的鏈結從該 LOOP 介面送往原本的輸出 — 封包在第一趟被側錄到,第二趟才被改寫。",
+    "cap.rwFixList": "會變更的內容",
+    "cap.rwFixVia": "改為經過",
+    "cap.rwFixKeep": "不在這次側錄範圍內的鏈結,仍然直接送往那些輸出。",
+    "cap.rwFixAfter": "改好的設定會在「匯出」頁開啟。在你於該頁提交之前,不會送任何東西到裝置。",
+    "cap.rwFixGo": "改寫並開啟匯出頁",
+    "cap.rwFixFailed": "無法改寫設定",
     "cap.rwVia": "來自",
     "cap.live": "即時封包", "cap.view": "檢視", "cap.liveClose": "關閉",
     "cap.liveOn": "即時解析封包",
