@@ -6315,7 +6315,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
 }
 
 const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outputInfo = {}, filters = [], outputs = [], hbTargets, deviceFilters, t }) {
-  const tr = t || ((k) => ({ "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match", "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "all", "flow.any": "any" }[k] || k));
+  const tr = t || ((k) => ({ "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match", "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "matches all", "flow.any": "matches any" }[k] || k));
   const flow = chain.flow || { root: null, terminal: null };
   const root = flow.root;
   const terminal = flow.terminal;

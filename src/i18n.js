@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.165.0";
+export const STUDIO_VERSION = "2.166.0";
 
 export const I18N = {
   en: {
@@ -560,7 +560,7 @@ export const I18N = {
     "ov.website": "Website",
     // chain flow labels
     "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match",
-    "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "all", "flow.any": "any",
+    "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "matches all", "flow.any": "matches any",
     // criterion connectors
     "crit.hbMissing": "no such target in the configuration — the filter watches the first one instead",
     "crit.hbOff": "target disabled",
@@ -1369,7 +1369,7 @@ export const I18N = {
     "ov.website": "網站",
     // chain flow labels
     "flow.in": "流量進入", "flow.match": "符合", "flow.nomatch": "不符合",
-    "flow.forward": "轉發", "flow.loadBalance": "負載平衡", "flow.duplicate": "複製", "flow.all": "全部", "flow.any": "任一",
+    "flow.forward": "轉發", "flow.loadBalance": "負載平衡", "flow.duplicate": "複製", "flow.all": "全部符合", "flow.any": "任一符合",
     // criterion connectors
     "crit.hbMissing": "設定中沒有這個目標 — 篩選器會改看第一個目標",
     "crit.hbOff": "目標未啟用",

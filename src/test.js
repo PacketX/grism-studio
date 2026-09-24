@@ -3895,10 +3895,17 @@ group("pcap live view");
   // not. The device writes <fid type="and"> on single-filter branches as well,
   // which the overview rendered as "F5 (all)".
   {
-    const label = (test, op) => (C.toks(test) > 1 ? (op === "and" ? "all" : "any") : "");
+    const label = (test, op) => (C.toks(test) > 1 ? (op === "and" ? "flow.all" : "flow.any") : "");
     check("one filter carries no combining label", label("F5", "and") === "" && label("F5", "or") === "");
-    check("several filters say which way", label("F1,F2", "and") === "all" && label("F1,F2", "or") === "any");
+    check("several filters say which way", label("F1,F2", "and") === "flow.all" && label("F1,F2", "or") === "flow.any");
     check("a negated single filter is still one", label("!F3", "and") === "");
+    /* A branch and the criterion group inside it describe the same idea, so
+       they say it with the same words. */
+    for (const lang of Object.keys(I18N)) {
+      const L = I18N[lang];
+      check(`branch and group wording agree (${lang})`,
+        L["crit.matchAll"].includes(L["flow.all"]) && L["crit.matchAny"].includes(L["flow.any"]));
+    }
   }
 
   // field-aware filter terms: the syntax anyone coming from Wireshark tries
