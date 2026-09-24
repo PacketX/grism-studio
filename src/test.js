@@ -3821,6 +3821,16 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  // How several filters combine is worth saying; how one filter combines is
+  // not. The device writes <fid type="and"> on single-filter branches as well,
+  // which the overview rendered as "F5 (all)".
+  {
+    const label = (test, op) => (C.toks(test) > 1 ? (op === "and" ? "all" : "any") : "");
+    check("one filter carries no combining label", label("F5", "and") === "" && label("F5", "or") === "");
+    check("several filters say which way", label("F1,F2", "and") === "all" && label("F1,F2", "or") === "any");
+    check("a negated single filter is still one", label("!F3", "and") === "");
+  }
+
   // field-aware filter terms: the syntax anyone coming from Wireshark tries
   {
     const dTcp2 = C.decodePacket(tcpSyn);          // 192.168.1.1 -> .2, 49152 -> 443, SYN, ttl 64

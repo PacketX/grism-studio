@@ -6399,7 +6399,12 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
                 onMouseEnter={(ev) => showTip(ev, { fids: nx.node.test, op: nx.node.op })}
                 onMouseLeave={() => setTip(null)}>
               <rect x={x} y={y - 18} width={testW} height="36" rx="7" className="ovf-test" />
-              <text x={x + testW / 2} y={shortName ? y - 2 : y + 4} className="ovf-test-id">{nx.node.test}{nx.node.op === "and" ? ` (${tr("flow.all")})` : toks(nx.node.test) > 1 ? ` (${tr("flow.any")})` : ""}</text>
+              {/* How the filters combine is only worth saying when there is
+                  more than one of them. The device writes <fid type="and"> on
+                  single-filter branches too (.157 has three), and "F5 (all)"
+                  reads as though something were being combined. */}
+              <text x={x + testW / 2} y={shortName ? y - 2 : y + 4} className="ovf-test-id">{nx.node.test}{
+                toks(nx.node.test) > 1 ? ` (${tr(nx.node.op === "and" ? "flow.all" : "flow.any")})` : ""}</text>
               {shortName && <text x={x + testW / 2} y={y + 12} className="ovf-test-name">{shortName}</text>}
               </g>
             </g>
