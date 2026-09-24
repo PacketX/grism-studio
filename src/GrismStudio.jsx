@@ -286,11 +286,14 @@ export default function GrismStudio() {
   /* Replace the whole document with parsed XML. The Export tab loads a saved
      version this way; the capture page hands over a rewritten one. Throws on
      malformed XML, which each caller reports in its own words. */
-  const applyXmlToDoc = useCallback((xmlText) => {
+  const applyXmlToDoc = useCallback((xmlText, { keepHistory = false } = {}) => {
     const { doc: parsed, warnings } = parseRun(xmlText);
     const nd = normalizeDoc(parsed);
-    docRef.current = nd; setDocRaw(nd);
-    resetHistory();
+    /* Loading a document starts a new history -- the load itself must not be
+       undoable back into the previous one. Editing the XML of the document
+       already open is an edit like any other, and steps back like one. */
+    if (keepHistory) setDoc(nd);
+    else { docRef.current = nd; setDocRaw(nd); resetHistory(); }
     setDocSource("new");
     setLoad({ state: "idle", msg: "" });
     setActiveFilter(parsed.filters[0]?.id ?? 1);
@@ -299,7 +302,7 @@ export default function GrismStudio() {
     setActiveAction(parsed.actions[0]?.id ?? 1);
     setActiveChain(parsed.chains[0]?.cid ?? null);
     return warnings;
-  }, [resetHistory]);
+  }, [resetHistory, setDoc]);
 
   const gotoScope = useCallback((scope) => {
     if (scope === "chain" || scope.startsWith("chain:")) {
@@ -9998,10 +10001,10 @@ function XmlDiff({ base, current, tr, inline = false }) {
   const changed = stat.added + stat.removed;
 
   const bodyRef = React.useRef(null);
-  const at = React.useRef(-1);
+  const at = React.useRef({ current: -1, kind: "" }).current;
   /* The card shows the whole file, so a change can be a long way down. The
      counts step through them, one press at a time, wrapping at the end. */
-  const jump = (dir) => {
+  const jump = (kind) => {
     const rows = [...(bodyRef.current?.children ?? [])];
     /* A replaced line is a removal and an addition side by side, and an edited
        block is a run of them: stepping line by line stops several times in the
@@ -10012,10 +10015,16 @@ function XmlDiff({ base, current, tr, inline = false }) {
       if (!changed) return;
       const prev = rows[i - 1];
       if (prev && (prev.classList.contains("plus") || prev.classList.contains("minus"))) return;
-      blocks.push(el);
+      // a run counts for whichever kinds it actually contains
+      const kinds = new Set();
+      for (let e = el; e && (e.classList.contains("plus") || e.classList.contains("minus")); e = e.nextElementSibling) {
+        kinds.add(e.classList.contains("plus") ? "plus" : "minus");
+      }
+      if (kinds.has(kind)) blocks.push(el);
     });
     if (!blocks.length) return;
-    at.current = (at.current + dir + blocks.length) % blocks.length;
+    if (at.kind !== kind) { at.kind = kind; at.current = -1; }   // each count keeps its own place
+    at.current = (at.current + 1 + blocks.length) % blocks.length;
     const el = blocks[at.current];
     el.scrollIntoView({ block: "center", behavior: "smooth" });
     rows.forEach((m) => m.classList.remove("here"));
@@ -10028,8 +10037,8 @@ function XmlDiff({ base, current, tr, inline = false }) {
     return (
       <div className="ex-diff inline">
         <div className="ex-diff-bar">
-          <button className="ex-diff-n plus jump" onClick={() => jump(1)} title={tr("ex.diffJump")}>+{stat.added}</button>
-          <button className="ex-diff-n minus jump" onClick={() => jump(1)} title={tr("ex.diffJump")}>−{stat.removed}</button>
+          <button className="ex-diff-n plus jump" onClick={() => jump("plus")} title={tr("ex.diffJump")}>+{stat.added}</button>
+          <button className="ex-diff-n minus jump" onClick={() => jump("minus")} title={tr("ex.diffJump")}>−{stat.removed}</button>
           <span className="set-hint">{tr("ex.diffVsLoaded")} · {tr("ex.diffJump")}</span>
         </div>
         {changed === 0 ? <p className="sys-note dim">{tr("ex.diffNone")}</p> : (
@@ -10255,7 +10264,8 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
     () => (deferredEdit && deferredEdit.trim() && !editErr ? grismXmlProblems(deferredEdit) : []), [deferredEdit, editErr]);
   const applyEdit = () => {
     try {
-      const warnings = onApplyXml(edit);
+      // an edit to the document already open, so it goes on the undo stack
+      const warnings = onApplyXml(edit, { keepHistory: true });
       setEdit(null); setApplyErr("");
       setApplyWarn(warnings || []);
     } catch (e) {
@@ -10347,8 +10357,6 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
           <div className="xb-actions">
             {/* same button order in both states, and the same order the device
                 settings page uses: edit/cancel · format · copy · primary action */}
-            {loggedIn && <button className={"copy-btn" + (showSaved ? " on" : "")}
-              onClick={() => setShowSaved((v) => !v)}>{tr("sv.title")}</button>}
             <button className="copy-btn" onClick={editing ? cancelEdit : startEdit}>
               {editing ? tr("ex.cancel") : tr("ex.edit")}</button>
             <button className="copy-btn" disabled={!editing} onClick={formatEdit}>{tr("ex.format")}</button>
@@ -10401,6 +10409,15 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
         </ul>}
         {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">{tr("ex.allValidate")}</p>}
         {loggedIn && !editing && <>
+          {/* Folded away by default: it is a place to go when something is
+              wanted from it, not something to read on the way past. */}
+          <section className="ex-hist ex-saved">
+            <button className={"ex-fold" + (showSaved ? " on" : "")} aria-expanded={showSaved}
+              onClick={() => setShowSaved((v) => !v)}>
+              <span className="ex-fold-caret" aria-hidden="true">{showSaved ? "▾" : "▸"}</span>
+              {tr("sv.title")}
+            </button>
+          </section>
           {histErr && <p className="submit-note warn">{histErr}</p>}
           <VersionHistory files={history} onLoad={loadVersion} onDelete={deleteVersion} busy={histBusy} lang={lang} tr={tr} />
         </>}

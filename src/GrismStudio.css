@@ -2008,3 +2008,10 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .ex-diff-n.jump:hover{text-decoration:underline;}
 .ex-diff-body .dl.here{outline:1px solid var(--accent); outline-offset:-1px;}
 .xb-undo{display:inline-flex; gap:4px; margin-left:8px;}
+/* the saved-configurations opener, folded away in the side panel */
+.ex-saved{padding-top:12px;}
+.ex-fold{display:flex; align-items:center; gap:7px; width:100%; background:transparent; border:0;
+  padding:0; cursor:pointer; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--txt-faint); font-weight:600;}
+.ex-fold:hover, .ex-fold.on{color:var(--txt);}
+.ex-fold-caret{font-size:10px;}
