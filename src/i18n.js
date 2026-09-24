@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.164.0";
+export const STUDIO_VERSION = "2.165.0";
 
 export const I18N = {
   en: {
@@ -972,13 +972,13 @@ export const I18N = {
     "set.confirmHaltBody": "所有流量會中斷,且需要實體開機才能恢復。",
     "set.rebooting": "重新開機中", "set.rebootingBody": "裝置正在重開,完成後請重新整理此頁。",
     "set.halting": "關機中", "set.haltingBody": "裝置正在關閉電源。",
-    "set.logging": "記錄輸出", "set.lgEnable": "啟用",
-    "set.lgNetflowNote": "接收 NetFlow 記錄的收集器。",
-    "set.lgSyslogTitle": "系統事件與封包命中記錄",
-    "set.lgSyslogNote": "以 syslog 送出系統事件與封包命中記錄,每個目標可各自決定攜帶哪些欄位。",
-    "set.lgDns": "DNS log", "set.lgDnsNote": "記錄流量中的 DNS 查詢與回應。",
-    "set.lgHttp": "HTTP 記錄", "set.lgHttpNote": "記錄流量中的 HTTP 請求後設資料。",
-    "set.lgTls": "TLS log", "set.lgTlsNote": "記錄 TLS 交握後設資料,可加上 JA3/JA4 指紋。",
+    "set.logging": "紀錄輸出", "set.lgEnable": "啟用",
+    "set.lgNetflowNote": "接收 NetFlow 紀錄的收集器。",
+    "set.lgSyslogTitle": "系統事件與封包命中紀錄",
+    "set.lgSyslogNote": "以 syslog 送出系統事件與封包命中紀錄,每個目標可各自決定攜帶哪些欄位。",
+    "set.lgDns": "DNS 紀錄", "set.lgDnsNote": "記錄流量中的 DNS 查詢與回應。",
+    "set.lgHttp": "HTTP 紀錄", "set.lgHttpNote": "記錄流量中的 HTTP 請求後設資料。",
+    "set.lgTls": "TLS 紀錄", "set.lgTlsNote": "記錄 TLS 交握後設資料,可加上 JA3/JA4 指紋。",
     "set.lgPort": "送出埠", "set.lgCollector": "收集器 IP", "set.lgInterfaces": "介面",
     "set.lgFilter": "篩選器", "set.lgVersion": "版本",
     "set.lgActive": "活躍逾時 (秒)", "set.lgInactive": "閒置逾時 (秒)", "set.lgFinRst": "FIN/RST 逾時 (秒)",
@@ -1125,7 +1125,7 @@ export const I18N = {
     "set.fsNone": "尚未定義服務。", "set.fsUnnamed": "(未命名)",
     "set.flow": "連線追蹤", "set.flowV4": "追蹤 IPv4 連線", "set.flowV6": "追蹤 IPv6 連線",
     "set.flowV4Size": "IPv4 連線表大小", "set.flowV6Size": "IPv6 連線表大小",
-    "set.flowNote": "裝置會把封包歸納成連線,讓篩選與記錄輸出能以連線為單位運作而非逐封包。表格大小決定同時能追蹤多少條連線。",
+    "set.flowNote": "裝置會把封包歸納成連線,讓篩選與紀錄輸出能以連線為單位運作而非逐封包。表格大小決定同時能追蹤多少條連線。",
     "set.flowTimeouts": "連線逾時",
     "set.flowTimeoutsNote": "判定連線結束的條件:持續活躍達此秒數、閒置達此秒數,或偵測到 TCP FIN/RST。",
     "set.dedup": "去重複", "set.dedupOn": "丟棄重複封包",
