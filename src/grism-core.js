@@ -3202,9 +3202,13 @@ function vlansInUse(doc) {
 
    One LOOP port carries all of them -- a device has few and they are usually
    spoken for -- and one chain brings them all back. What tells them apart is a
-   VLAN tag, carried by the chain itself: <out vlantype="tagging" vlanid="N">
-   on the way out, <in vlantype="stripping"> on the way back. No extra outputs
-   and no action, so the only things added are the filters that read the tag.
+   VLAN tag: an output per destination adds one on the way to the LOOP port,
+   and the chain coming back strips it with <in vlantype="stripping">, so no
+   action is needed for that.
+
+   The tag is on an output rather than on the <out> element because one <out>
+   carries one tag: <out>O9,O10</out> could not tell two rewriting outputs
+   apart, and <out>O9,P5</out> would have tagged the copy going to P5 as well.
 
    The ordering is the firmware's: fcdata_find matches the filters, then
    work_action and work_in_handle apply the ingress actions and the chain's own
@@ -3227,9 +3231,10 @@ export function buildLoopFix(doc, ports, loopPorts) {
   const takenVlan = vlansInUse(doc);
   const nextVlan = (() => { let v = 3001; return () => { while (takenVlan.has(v)) v += 1; takenVlan.add(v); return v++; }; })();
   let nextFilterId = Math.max(0, ...(doc?.filters ?? []).map((f) => Number(f.id) || 0)) + 1;
+  let nextOutId = Math.max(0, ...(doc?.outputs ?? []).map((o) => Number(o.id) || 0)) + 1;
 
   const next = JSON.parse(JSON.stringify(doc ?? {}));
-  next.filters = next.filters ?? []; next.chains = next.chains ?? [];
+  next.filters = next.filters ?? []; next.chains = next.chains ?? []; next.outputs = next.outputs ?? [];
 
   const pairs = risky.map((r) => {
     const vlan = nextVlan();
@@ -3238,8 +3243,19 @@ export function buildLoopFix(doc, ports, loopPorts) {
       blockifempty: "no", fattrs: {},
       root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "vlan.id", rel: "==", val: String(vlan) }] },
     };
+    /* The tag goes on an output of its own rather than on the <out> element.
+       One <out> carries one tag, so a node that sends to two rewriting outputs
+       -- <out>O9,O10</out> -- could not tell them apart, and a node that also
+       sends to a plain port would have tagged that copy too. An output per
+       destination has neither problem. */
+    const detour = {
+      id: nextOutId++, name: `${loop} vlan ${vlan} for ${r.id}`, port: loop,
+      mods: [{ id: nid(), k: "Q", op: "add", val: String(vlan), attrs: {} }], oattrs: {},
+    };
     next.filters.push(filter);
-    return { output: r.id, port: r.port, name: r.name, via: r.via, loop, vlan, filter: "F" + filter.id };
+    next.outputs.push(detour);
+    return { output: r.id, port: r.port, name: r.name, via: r.via, loop, vlan,
+             filter: "F" + filter.id, detour: "O" + detour.id };
   });
 
   const byOutput = new Map(pairs.map((p) => [p.output, p]));
@@ -3251,15 +3267,9 @@ export function buildLoopFix(doc, ports, loopPorts) {
     (function walk(n) {
       if (!n) return;
       if (n.t === "out" && n.ports) {
-        const toks = String(n.ports).split(",").map((x) => x.trim()).filter(Boolean);
-        const hit = toks.map((t) => byOutput.get(t)).find(Boolean);
-        if (hit) {
-          /* An <out> carries one tag, so a node that also sends somewhere else
-             keeps those destinations untouched and only the rewriting output
-             moves to the LOOP port. */
-          n.ports = toks.map((t) => (byOutput.has(t) ? hit.loop : t)).join(",");
-          n.vlantype = "tagging"; n.vlanid = String(hit.vlan);
-        }
+        // each destination swaps for its own detour; anything else is left alone
+        n.ports = String(n.ports).split(",").map((x) => x.trim()).filter(Boolean)
+          .map((tok) => byOutput.get(tok)?.detour ?? tok).join(",");
       }
       ["match", "notmatch"].forEach((k) => walk(n[k]));
       (n.children ?? []).forEach(walk);

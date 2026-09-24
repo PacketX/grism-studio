@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.173.0";
+export const STUDIO_VERSION = "2.174.0";
 
 export const I18N = {
   en: {
@@ -641,7 +641,7 @@ export const I18N = {
     "ex.histDel": "Delete", "ex.histDelTitle": "Delete this version?",
     "ex.histDelBody": "It is removed from the device. The version it holds cannot be recovered.",
     "ex.histDelFailed": "Could not delete that version",
-    "ex.viewXml": "XML", "ex.viewDiff": "Changes",
+    "ex.viewXml": "XML", "ex.viewDiff": "Changes", "ex.diffJump": "click to step through the changes",
     "ex.histLatest": "most recent",
     "ex.histLoadFailed": "Could not load that version",
     "ex.histSaveFailed": "The current version could not be saved first; the submit went ahead anyway.",
@@ -1486,7 +1486,7 @@ export const I18N = {
     "ex.histDel": "刪除", "ex.histDelTitle": "刪除這個版本?",
     "ex.histDelBody": "它會從裝置上移除,其中保存的版本將無法復原。",
     "ex.histDelFailed": "無法刪除該版本",
-    "ex.viewXml": "XML", "ex.viewDiff": "變更內容",
+    "ex.viewXml": "XML", "ex.viewDiff": "變更內容", "ex.diffJump": "點一下可逐一跳到變更處",
     "ex.histLatest": "最近一次",
     "ex.histLoadFailed": "無法載入該版本",
     "ex.histSaveFailed": "提交前未能存下目前版本,但提交仍已送出。",

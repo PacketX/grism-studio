@@ -3840,16 +3840,35 @@ group("pcap live view");
     check("a free LOOP port is chosen", fix.pairs[0].loop === "L0");
     const out = C.serializeRun(fix.doc);
     const p0 = fix.pairs[0];
-    check("the capture's chain sends to the LOOP port, tagged",
-      new RegExp(`<in>P4</in>[\\s\\S]*?<out vlantype="tagging" vlanid="${p0.vlan}">L0</out>`).test(out));
+    check("the capture's chain sends to the detour output",
+      new RegExp(`<in>P4</in>[\\s\\S]*?<out>${p0.detour}</out>`).test(out));
+    check("the detour adds the tag on the way to the LOOP port",
+      new RegExp(`<output id="${p0.detour.slice(1)}"[\\s\\S]*?<port>L0</port>[\\s\\S]*?<Q type="add">${p0.vlan}</Q>`).test(out));
     check("the chain back strips the tag on the way in",
       /<in vlantype="stripping">L0<\/in>/.test(out));
     check("it matches that tag and reaches the output",
       new RegExp(`<in vlantype="stripping">L0</in>[\\s\\S]*?<fid>${p0.filter}</fid>[\\s\\S]*?<out>O2</out>`).test(out));
-    /* The chain carries the tagging itself, so nothing else has to be added:
-       no detour output to send through and no action to strip with. */
-    check("no extra output is created", (fix.doc.outputs ?? []).length === (doc.outputs ?? []).length);
+    // the chain strips, so nothing needs an action
     check("no action is created", (fix.doc.actions ?? []).length === (doc.actions ?? []).length);
+    /* One <out> carries one tag, so the tag cannot live on the <out> element:
+       these two shapes are why it is on an output of its own. */
+    {
+      const multi = C.parseRun(`<run>
+        <output id="9"><port>P2</port><modify_tcp_syn_mss>1200</modify_tcp_syn_mss></output>
+        <output id="10"><port>P3</port><Q op="add">100</Q></output>
+        <chain><in>P4</in><out>O9,O10</out></chain>
+        <chain><in>P5</in><out>O9,P7</out></chain>
+      </run>`).doc;
+      const r = C.buildLoopFix(multi, ["P4", "P5"], ["L0"]);
+      const x = C.serializeRun(r.doc);
+      const d9 = r.pairs.find((p) => p.output === "O9").detour;
+      const d10 = r.pairs.find((p) => p.output === "O10").detour;
+      check("two rewriting outputs get a detour each", d9 !== d10
+        && new RegExp(`<out>${d9},${d10}</out>`).test(x));
+      check("a plain port beside one keeps its own copy untagged",
+        new RegExp(`<out>${d9},P7</out>`).test(x));
+      check("still one chain back", r.doc.chains.length === multi.chains.length + 1);
+    }
     check("chains the capture is not on are untouched", /<in>P6<\/in>[\s\S]*?<out>O2<\/out>/.test(out));
     check("the plan says which ingress reaches it", p0.via.join() === "P4");
     /* One LOOP port carries every output -- a device has few of them -- and

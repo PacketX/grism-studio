@@ -1964,24 +1964,24 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .ex-diff-title{margin:0 0 4px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
   color:var(--txt-faint); font-weight:600; display:flex; align-items:center; gap:8px;}
 .ex-diff-n{font-family:var(--mono); font-size:11.5px;}
-.ex-diff-n.add{color:#33c48d;}
-.ex-diff-n.del{color:var(--danger, #e05252);}
+.ex-diff-n.plus{color:#33c48d;}
+.ex-diff-n.minus{color:var(--danger, #e05252);}
 .ex-diff-toggle{margin-left:auto;}
 .ex-diff-whole{margin:6px 0 0; font-size:11.5px;}
 .ex-diff-body{margin:8px 0 0; padding:8px 10px; max-height:340px; overflow:auto; white-space:pre;
   background:var(--bg); border:1px solid var(--line-2); border-radius:8px; font-size:11px; line-height:1.55;}
 .ex-diff-body .dl{display:block;}
-.ex-diff-body .dl.add{background:rgba(51,196,141,.13); color:#8ff0c6;}
-.ex-diff-body .dl.del{background:rgba(224,82,82,.13); color:#ffb3b3;}
+.ex-diff-body .dl.plus{background:rgba(51,196,141,.13); color:#8ff0c6;}
+.ex-diff-body .dl.minus{background:rgba(224,82,82,.13); color:#ffb3b3;}
 /* Those two were picked against the dark panel; on the light one they were a
    pale wash of near-white text. Same idea, inverted: a light tint with text
    dark enough to read on it. */
-.gs-root.light .ex-diff-body .dl.add{background:rgba(26,127,86,.14); color:#0a5c3e;}
-.gs-root.light .ex-diff-body .dl.del{background:rgba(190,40,40,.13); color:#8c1d1d;}
+.gs-root.light .ex-diff-body .dl.plus{background:rgba(26,127,86,.14); color:#0a5c3e;}
+.gs-root.light .ex-diff-body .dl.minus{background:rgba(190,40,40,.13); color:#8c1d1d;}
 .gs-root.light .ex-diff-body .dl.same{color:#3d444d;}
 .gs-root.light .ex-diff-body .dl.gap{color:#6b7683;}
-.gs-root.light .ex-diff-n.add{color:#0a5c3e;}
-.gs-root.light .ex-diff-n.del{color:#8c1d1d;}
+.gs-root.light .ex-diff-n.plus{color:#0a5c3e;}
+.gs-root.light .ex-diff-n.minus{color:#8c1d1d;}
 .ex-diff-body .dl.same{color:var(--txt-dim);}
 .ex-diff-body .dl.gap{color:var(--txt-faint); font-style:italic;}
 .cap-warn-act{margin-top:9px;}
@@ -2003,3 +2003,8 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .ex-diff-body.inline{max-height:none; flex:1 1 auto; margin:0;}
 .xb-diffn{display:inline-flex; align-items:center; gap:7px; margin-left:12px;
   font-size:11.5px; color:var(--txt-faint);}
+/* the counts step through the changes, so they are buttons */
+.ex-diff-n.jump{background:transparent; border:0; padding:0 2px; cursor:pointer; font-family:var(--mono); font-size:11.5px;}
+.ex-diff-n.jump:hover{text-decoration:underline;}
+.ex-diff-body .dl.here{outline:1px solid var(--accent); outline-offset:-1px;}
+.xb-undo{display:inline-flex; gap:4px; margin-left:8px;}

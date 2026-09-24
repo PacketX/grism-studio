@@ -1123,6 +1123,7 @@ export default function GrismStudio() {
         )}
         {tab === "export" && (
           <ExportTab runXml={runXml} baseline={baseline} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
+            onUndo={doUndo} onRedo={doRedo} canUndo={canUndo} canRedo={canRedo}
             onApplied={() => { setBaseline(runXml); setBaselineDoc(doc); }}
             onApplyXml={applyXmlToDoc}
             onGoto={gotoScope} />
@@ -9994,19 +9995,32 @@ function XmlDiff({ base, current, tr, inline = false }) {
   const shown = React.useMemo(() => (whole ? rows : collapseDiff(rows, 3)), [rows, whole]);
   const changed = stat.added + stat.removed;
 
+  const bodyRef = React.useRef(null);
+  const at = React.useRef(-1);
+  /* The card shows the whole file, so a change can be a long way down. The
+     counts step through them, one press at a time, wrapping at the end. */
+  const jump = (dir) => {
+    const marks = bodyRef.current?.querySelectorAll(".dl.plus, .dl.minus");
+    if (!marks?.length) return;
+    at.current = (at.current + dir + marks.length) % marks.length;
+    const el = marks[at.current];
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    marks.forEach((m) => m.classList.remove("here"));
+    el.classList.add("here");
+  };
   if (inline) {
     return (
       <div className="ex-diff inline">
         <div className="ex-diff-bar">
-          <span className="ex-diff-n add">+{stat.added}</span>
-          <span className="ex-diff-n del">−{stat.removed}</span>
-          <span className="set-hint">{tr("ex.diffVsLoaded")}</span>
+          <button className="ex-diff-n plus jump" onClick={() => jump(1)} title={tr("ex.diffJump")}>+{stat.added}</button>
+          <button className="ex-diff-n minus jump" onClick={() => jump(1)} title={tr("ex.diffJump")}>−{stat.removed}</button>
+          <span className="set-hint">{tr("ex.diffVsLoaded")} · {tr("ex.diffJump")}</span>
         </div>
         {changed === 0 ? <p className="sys-note dim">{tr("ex.diffNone")}</p> : (
-          <pre className="ex-diff-body inline mono">{shown.map((r, i) => (
+          <pre className="ex-diff-body inline mono" ref={bodyRef}>{shown.map((r, i) => (
             r.kind === "gap"
               ? <span className="dl gap" key={i}>{`    ⋯ ${tr("ex.diffGap").replace("{n}", String(r.count))}\n`}</span>
-              : <span className={"dl " + r.kind} key={i}>
+              : <span className={"dl " + (r.kind === "add" ? "plus" : r.kind === "del" ? "minus" : r.kind)} key={i}>
                   {`${r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "} ${r.text}\n`}</span>
           ))}</pre>
         )}
@@ -10017,8 +10031,8 @@ function XmlDiff({ base, current, tr, inline = false }) {
     <section className="ex-diff">
       <h4 className="ex-diff-title">{tr("ex.diffTitle")}
         {base != null && changed > 0 && <>
-          <span className="ex-diff-n add">+{stat.added}</span>
-          <span className="ex-diff-n del">−{stat.removed}</span>
+          <span className="ex-diff-n plus">+{stat.added}</span>
+          <span className="ex-diff-n minus">−{stat.removed}</span>
         </>}
         {base != null && changed > 0 && (
           <button className="copy-btn ex-diff-toggle" onClick={() => setOpen((v) => !v)}>
@@ -10035,7 +10049,7 @@ function XmlDiff({ base, current, tr, inline = false }) {
             <pre className="ex-diff-body mono">{shown.map((r, i) => (
               r.kind === "gap"
                 ? <span className="dl gap" key={i}>{`    ⋯ ${tr("ex.diffGap").replace("{n}", String(r.count))}\n`}</span>
-                : <span className={"dl " + r.kind} key={i}>
+                : <span className={"dl " + (r.kind === "add" ? "plus" : r.kind === "del" ? "minus" : r.kind)} key={i}>
                     {`${r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "} ${r.text}\n`}</span>
             ))}</pre>
           </>)}
@@ -10106,7 +10120,8 @@ function VersionHistory({ files, onLoad, onDelete, busy, lang, tr }) {
   );
 }
 
-function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t }) {
+function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t,
+  onUndo, onRedo, canUndo, canRedo }) {
   const tr = t || ((k) => k);
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
@@ -10312,18 +10327,21 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
           <span className="xb-title">{tr("ex.completeRun")}{editing && <span className="xb-editing"> · {tr("ex.editing")}</span>}</span>
           {/* Edited, and the card shows the whole file as a diff -- the last
               look before submitting is at this card, and there is nothing to
-              choose between: unedited it is the XML, as it always was. */}
-          {!editing && diffCount > 0 && (
-            <span className="xb-diffn">{tr("ex.viewDiff")}
-              <span className="ex-diff-n add">+{diffStat(diffLines(baseline, runXml)).added}</span>
-              <span className="ex-diff-n del">−{diffStat(diffLines(baseline, runXml)).removed}</span>
-            </span>
-          )}
+              choose between: unedited it is the XML, as it always was. The
+              counts live on the diff's own bar, not here as well. */}
           <div className="xb-actions">
             {/* same button order in both states, and the same order the device
                 settings page uses: edit/cancel · format · copy · primary action */}
             {loggedIn && <button className={"copy-btn" + (showSaved ? " on" : "")}
               onClick={() => setShowSaved((v) => !v)}>{tr("sv.title")}</button>}
+            {!editing && onUndo && (
+              <span className="xb-undo">
+                <button className="undo-btn" onClick={onUndo} disabled={!canUndo}
+                  title={tr("undo.undo")} aria-label={tr("undo.undo")}>↶</button>
+                <button className="undo-btn" onClick={onRedo} disabled={!canRedo}
+                  title={tr("undo.redo")} aria-label={tr("undo.redo")}>↷</button>
+              </span>
+            )}
             <button className="copy-btn" onClick={editing ? cancelEdit : startEdit}>
               {editing ? tr("ex.cancel") : tr("ex.edit")}</button>
             <button className="copy-btn" disabled={!editing} onClick={formatEdit}>{tr("ex.format")}</button>
