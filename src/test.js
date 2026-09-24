@@ -3826,7 +3826,7 @@ group("pcap live view");
   {
     const xml = `<run>
       <output id="2"><port>P2</port><modify_tcp_syn_mss>1200</modify_tcp_syn_mss></output>
-      <output id="3"><port>P3</port><Q op="add">100</Q></output>
+      <output id="3"><port>P3</port><modify_srcmac>00:11:22:33:44:55</modify_srcmac></output>
       <output id="4"><port>P4</port><dir>/data/x</dir></output>
       <chain><in>P4</in><out>O2</out></chain>
       <chain><in>P5</in><out>O3</out></chain>
@@ -3855,7 +3855,7 @@ group("pcap live view");
     {
       const multi = C.parseRun(`<run>
         <output id="9"><port>P2</port><modify_tcp_syn_mss>1200</modify_tcp_syn_mss></output>
-        <output id="10"><port>P3</port><Q op="add">100</Q></output>
+        <output id="10"><port>P3</port><modify_srcmac>00:11:22:33:44:55</modify_srcmac></output>
         <chain><in>P4</in><out>O9,O10</out></chain>
         <chain><in>P5</in><out>O9,P7</out></chain>
       </run>`).doc;
@@ -3883,7 +3883,8 @@ group("pcap live view");
     check("that chain tests every tag", two.pairs.every((p) =>
       new RegExp(`<fid>${p.filter}</fid>`).test(C.serializeRun(two.doc))));
     check("a tag already in the configuration is not reused", (() => {
-      const withVlan = C.parseRun(xml.replace('<Q op="add">100</Q>', '<Q op="add">3001</Q>')).doc;
+      const withVlan = C.parseRun(xml.replace("<modify_srcmac>00:11:22:33:44:55</modify_srcmac>",
+        '<modify_srcmac>00:11:22:33:44:55</modify_srcmac><Q op="add">3001</Q>')).doc;
       const r = C.buildLoopFix(withVlan, ["P4"], ["L0"]);
       return r.ok && r.pairs.every((p) => p.vlan !== 3001);
     })());
@@ -3990,6 +3991,22 @@ group("pcap live view");
       return r.port === "P2" && r.via.join() === "P4";
     })());
     check("a mirror output does not rewrite", C.captureRewriteRisk(doc, ["P6"]).length === 0);
+    /* A VLAN tag changes the packet, but it is what the detour this page
+       offers adds -- and the page must not then warn about its own work. */
+    {
+      const tagOnly = C.parseRun(`<run>
+        <output id="20"><port>P2</port><Q op="add">100</Q></output>
+        <output id="21"><port>P2</port><Q op="add">100</Q><modify_srcmac>00:11:22:33:44:55</modify_srcmac></output>
+        <chain><in>P4</in><out>O20</out></chain>
+        <chain><in>P5</in><out>O21</out></chain>
+      </run>`).doc;
+      check("an output that only tags is not a risk", C.captureRewriteRisk(tagOnly, ["P4"]).length === 0);
+      check("tagging plus a rewrite still is", C.captureRewriteRisk(tagOnly, ["P5"]).length === 1);
+      // the detour's own outputs must not make the warning come back
+      const fixed = C.buildLoopFix(tagOnly, ["P5"], ["L0"]);
+      check("the detour does not re-trigger the warning",
+        C.captureRewriteRisk(fixed.doc, ["P5"]).length === 0);
+    }
     check("an output with no modifiers is not a risk", C.captureRewriteRisk(doc, ["P7"]).length === 0);
     check("a plain port destination is not a risk", C.captureRewriteRisk(doc, ["P8"]).length === 0);
     check("ports with nothing on them are quiet", C.captureRewriteRisk(doc, ["P3"]).length === 0

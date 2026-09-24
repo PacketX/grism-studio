@@ -3109,7 +3109,14 @@ export function buildInstantCapture({ ports, filter, stl, storage, dir }) {
 /* Which of a chain's outputs change the packet. Everything but the mirror
    group writes on it -- a rewrite, an encapsulation, a generated reply -- while
    dir/dip/sport/dport only copy it somewhere. */
-const rewritesPacket = (o) => (o?.mods ?? []).some((m) => m && m.k && (OUT_MOD_INDEX[m.k]?.grp ?? "rewrite") !== "mirror");
+/* VLAN tagging is left out on purpose. It changes the packet, but it is what
+   the detour this page offers adds -- warning about an output we just created
+   would be the page objecting to its own advice -- and a tag is not what makes
+   a capture misleading about the traffic. An output that tags and does
+   something else still counts. */
+const OUT_MODS_NOT_A_RISK = new Set(["Q", "QinQ"]);
+const rewritesPacket = (o) => (o?.mods ?? []).some((m) => m && m.k && !OUT_MODS_NOT_A_RISK.has(m.k)
+  && (OUT_MOD_INDEX[m.k]?.grp ?? "rewrite") !== "mirror");
 
 /* A capture is another output on the same packet as everything else the chains
    do with it, so an output that rewrites the packet can reach it first and the

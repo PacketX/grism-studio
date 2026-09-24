@@ -257,7 +257,10 @@ export default function GrismStudio() {
     syncHistLens();
   }, []);
   // undo/redo buttons show on any pipeline editor tab.
-  const PIPELINE_EDIT_TABS = ["filters", "inputs", "outputs", "actions", "chain"];
+  /* The Export tab edits nothing itself, but it is where the document is read
+     before it is submitted -- and stepping back from there meant leaving it
+     first. Same pair, same place as everywhere else. */
+  const PIPELINE_EDIT_TABS = ["filters", "inputs", "outputs", "actions", "chain", "export"];
   const histKey = PIPELINE_EDIT_TABS.includes(tab) ? "doc" : null;
   // clear undo/redo history — after loading a template or running config, so the
   // load itself can't be undone back into the previous document.
@@ -1123,7 +1126,6 @@ export default function GrismStudio() {
         )}
         {tab === "export" && (
           <ExportTab runXml={runXml} baseline={baseline} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
-            onUndo={doUndo} onRedo={doRedo} canUndo={canUndo} canRedo={canRedo}
             onApplied={() => { setBaseline(runXml); setBaselineDoc(doc); }}
             onApplyXml={applyXmlToDoc}
             onGoto={gotoScope} />
@@ -10000,13 +10002,27 @@ function XmlDiff({ base, current, tr, inline = false }) {
   /* The card shows the whole file, so a change can be a long way down. The
      counts step through them, one press at a time, wrapping at the end. */
   const jump = (dir) => {
-    const marks = bodyRef.current?.querySelectorAll(".dl.plus, .dl.minus");
-    if (!marks?.length) return;
-    at.current = (at.current + dir + marks.length) % marks.length;
-    const el = marks[at.current];
+    const rows = [...(bodyRef.current?.children ?? [])];
+    /* A replaced line is a removal and an addition side by side, and an edited
+       block is a run of them: stepping line by line stops several times in the
+       same place. Jump between runs instead. */
+    const blocks = [];
+    rows.forEach((el, i) => {
+      const changed = el.classList.contains("plus") || el.classList.contains("minus");
+      if (!changed) return;
+      const prev = rows[i - 1];
+      if (prev && (prev.classList.contains("plus") || prev.classList.contains("minus"))) return;
+      blocks.push(el);
+    });
+    if (!blocks.length) return;
+    at.current = (at.current + dir + blocks.length) % blocks.length;
+    const el = blocks[at.current];
     el.scrollIntoView({ block: "center", behavior: "smooth" });
-    marks.forEach((m) => m.classList.remove("here"));
-    el.classList.add("here");
+    rows.forEach((m) => m.classList.remove("here"));
+    // mark the whole run, so what it stopped at is obvious
+    for (let e = el; e && (e.classList.contains("plus") || e.classList.contains("minus")); e = e.nextElementSibling) {
+      e.classList.add("here");
+    }
   };
   if (inline) {
     return (
@@ -10120,8 +10136,7 @@ function VersionHistory({ files, onLoad, onDelete, busy, lang, tr }) {
   );
 }
 
-function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t,
-  onUndo, onRedo, canUndo, canRedo }) {
+function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t }) {
   const tr = t || ((k) => k);
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
@@ -10334,14 +10349,6 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
                 settings page uses: edit/cancel · format · copy · primary action */}
             {loggedIn && <button className={"copy-btn" + (showSaved ? " on" : "")}
               onClick={() => setShowSaved((v) => !v)}>{tr("sv.title")}</button>}
-            {!editing && onUndo && (
-              <span className="xb-undo">
-                <button className="undo-btn" onClick={onUndo} disabled={!canUndo}
-                  title={tr("undo.undo")} aria-label={tr("undo.undo")}>↶</button>
-                <button className="undo-btn" onClick={onRedo} disabled={!canRedo}
-                  title={tr("undo.redo")} aria-label={tr("undo.redo")}>↷</button>
-              </span>
-            )}
             <button className="copy-btn" onClick={editing ? cancelEdit : startEdit}>
               {editing ? tr("ex.cancel") : tr("ex.edit")}</button>
             <button className="copy-btn" disabled={!editing} onClick={formatEdit}>{tr("ex.format")}</button>
