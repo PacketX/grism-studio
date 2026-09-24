@@ -6196,6 +6196,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc }) {
             <b>{tr("cap.rwTitle")}</b>
             <p>{tr("cap.rwBody").replace("{list}", rewrites.map((r) =>
               `${r.id}${r.port ? " → " + r.port : ""}${r.name ? " · " + r.name : ""} (${tr("cap.rwVia")} ${r.via.join(", ")})`).join("、"))}</p>
+            <p>{tr("cap.rwUnstable")}</p>
             <p>{tr("cap.rwHint")}</p>
             <p className="dim">{tr("cap.rwStillOk")}</p>
           </div>

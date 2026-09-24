@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.167.0";
+export const STUDIO_VERSION = "2.168.0";
 
 export const I18N = {
   en: {
@@ -36,8 +36,9 @@ export const I18N = {
     "cap.delTitle": "Delete this file?", "cap.delTitleN": "Delete these files?", "cap.selectAll": "Select all", "cap.delSelected": "Delete selected",
     "cap.markForDelete": "Mark for deletion",
     "cap.noDelWriting": "The capture running now is writing this file — it can be deleted once the capture ends.", "cap.delBody": "The capture file is removed from the storage volume. This cannot be undone.",
-    "cap.rwTitle": "This capture may record rewritten packets",
+    "cap.rwTitle": "Capturing on these interfaces carries a risk",
     "cap.rwBody": "On the interfaces chosen, the running configuration already sends traffic to outputs that change the packet: {list}. A capture is another output on the same packet, so what lands in the file may be the rewritten bytes rather than what arrived.",
+    "cap.rwUnstable": "It can also leave the device itself misbehaving, so this is not something to run on a system carrying traffic that matters without expecting that.",
     "cap.rwHint": "To be sure of capturing what arrived, send that chain to a LOOP port instead, and add a chain from that LOOP port to the output that rewrites — the rewrite then happens on the second pass, after this capture has seen the packet.",
     "cap.rwStillOk": "Starting the capture anyway is fine; this is only a warning.",
     "cap.rwVia": "from",
@@ -850,8 +851,9 @@ export const I18N = {
     "cap.delTitle": "刪除這個檔案?", "cap.delTitleN": "刪除這些檔案?", "cap.selectAll": "全選", "cap.delSelected": "刪除選取的檔案",
     "cap.markForDelete": "標記為待刪除",
     "cap.noDelWriting": "目前這次側錄正在寫入這個檔案 — 等側錄結束後才能刪除。", "cap.delBody": "側錄檔會從儲存空間移除,且無法復原。",
-    "cap.rwTitle": "這次側錄可能錄到被改寫的封包",
+    "cap.rwTitle": "在這些介面上側錄有風險",
     "cap.rwBody": "在選擇的介面上,執行中的設定已經把流量送往會改寫封包的輸出:{list}。側錄是同一個封包的另一個輸出,因此錄進檔案的可能是改寫後的內容,而不是進來時的樣子。",
+    "cap.rwUnstable": "此外,在這種情況下側錄也可能造成裝置運作異常,若這台正在承載重要流量,請將這點一併考慮進去。",
     "cap.rwHint": "若要確保錄到的是進來時的封包,可以把該鏈結改成先送到 LOOP 介面,再另外設定一條「從該 LOOP 介面進來 → 送到原本會改寫的輸出」,改寫就會發生在第二趟,也就是這次側錄看過封包之後。",
     "cap.rwStillOk": "要直接開始側錄也沒問題,這只是提醒。",
     "cap.rwVia": "來自",
