@@ -3967,7 +3967,7 @@ group("pcap live view");
     check("names-only listings split too", C.autoSaves(namesOnly).length === 3 && C.userSaves(namesOnly).length === 1);
     check("the default type is still the user's", C.buildSaveXmlName({ slot: 1 }).startsWith(C.SAVE_XML_TYPE));
     check("the two types differ", C.AUTO_SAVE_TYPE !== C.SAVE_XML_TYPE);
-    check("ten versions are kept", C.AUTO_SAVE_KEEP === 10);
+    check("five versions are kept", C.AUTO_SAVE_KEEP === 5);
   }
 
   /* A capture is another output on the same packet, so an output that rewrites

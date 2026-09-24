@@ -4574,7 +4574,7 @@ export const SAVE_XML_TYPE = "map";
    the other's files. The device does not care what the type says; only these
    two readers do. */
 export const AUTO_SAVE_TYPE = "pre";
-export const AUTO_SAVE_KEEP = 10;
+export const AUTO_SAVE_KEEP = 5;
 
 /* Descriptions are stored beside the files now, because this encoding cannot
    carry most of them: btoa throws on anything outside latin-1, so a Chinese
