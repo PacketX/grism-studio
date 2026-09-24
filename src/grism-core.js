@@ -3173,7 +3173,7 @@ function portsInUse(doc) {
 }
 
 /* VLAN ids the configuration already uses, so a detour tag collides with
-   nothing: what outputs add, and what filters match on. */
+   nothing: what outputs and chains add, and what filters match on. */
 function vlansInUse(doc) {
   const used = new Set();
   const n = (v) => { const x = parseInt(v, 10); if (Number.isFinite(x)) used.add(x); };
@@ -3184,6 +3184,14 @@ function vlansInUse(doc) {
     if (node.t === "find" && /vlan/i.test(node.field ?? "")) n(node.val);
     (node.children ?? []).forEach(walk);
   })(f.root);
+  for (const c of doc?.chains ?? []) {
+    n(c.inVlan?.vlanid);
+    (function walk(node) {
+      if (!node) return;
+      if (node.t === "out") n(node.vlanid);
+      ["match", "notmatch"].forEach((k) => walk(node[k]));
+    })(c.tree);
+  }
   return used;
 }
 
@@ -3192,21 +3200,22 @@ function vlansInUse(doc) {
    a chain coming back from it sends to the output. The packet is captured on
    its first pass and rewritten on its second.
 
-   One LOOP port carries all of them, which matters because a device has few
-   and they are usually spoken for. What tells the passes apart is a VLAN tag:
-   the detour adds a distinct one per output on the way out, the chains back in
-   match on it, and a single ingress action strips it again.
+   One LOOP port carries all of them -- a device has few and they are usually
+   spoken for -- and one chain brings them all back. What tells them apart is a
+   VLAN tag, carried by the chain itself: <out vlantype="tagging" vlanid="N">
+   on the way out, <in vlantype="stripping"> on the way back. No extra outputs
+   and no action, so the only things added are the filters that read the tag.
 
-   That ordering is the firmware's: fcdata_find matches the filters, then
-   work_action runs the ingress actions, then the packet is emitted (dpdk/main.c
-   and src/main.c). So the filters still see the tag the action removes, and
-   the output emits the packet exactly as it would have.
+   The ordering is the firmware's: fcdata_find matches the filters, then
+   work_action and work_in_handle apply the ingress actions and the chain's own
+   in-vlan handling, then the packet is emitted (dpdk/main.c, src/main.c). So
+   the filters still see the tag that the same chain is about to strip.
 
    Only the chains the capture is actually on are changed; anything else still
    reaches the output directly, which is what it did before.
 
-   Returns { ok, loop, pairs, doc } or { ok: false, need, free } when there is
-   no free LOOP port to route through. */
+   Returns { ok, loop, pairs, doc } or { ok: false } when there is no free LOOP
+   port to route through. */
 export function buildLoopFix(doc, ports, loopPorts) {
   const risky = captureRewriteRisk(doc, ports);
   const used = portsInUse(doc);
@@ -3217,30 +3226,23 @@ export function buildLoopFix(doc, ports, loopPorts) {
   const loop = free[0];
   const takenVlan = vlansInUse(doc);
   const nextVlan = (() => { let v = 3001; return () => { while (takenVlan.has(v)) v += 1; takenVlan.add(v); return v++; }; })();
-  let nextOutId = Math.max(0, ...(doc?.outputs ?? []).map((o) => Number(o.id) || 0)) + 1;
   let nextFilterId = Math.max(0, ...(doc?.filters ?? []).map((f) => Number(f.id) || 0)) + 1;
 
   const next = JSON.parse(JSON.stringify(doc ?? {}));
-  next.outputs = next.outputs ?? []; next.filters = next.filters ?? [];
-  next.chains = next.chains ?? []; next.actions = next.actions ?? [];
+  next.filters = next.filters ?? []; next.chains = next.chains ?? [];
 
   const pairs = risky.map((r) => {
     const vlan = nextVlan();
-    const detour = {
-      id: nextOutId++, name: `to ${loop} for ${r.id}`, port: loop,
-      mods: [{ id: nid(), k: "Q", op: "add", val: String(vlan), attrs: {} }], oattrs: {},
-    };
     const filter = {
       id: nextFilterId++, name: `${loop} vlan ${vlan}`, sessionBase: "no", matchedlog: "no",
       blockifempty: "no", fattrs: {},
       root: { id: nid(), t: "or", children: [{ id: nid(), t: "find", field: "vlan.id", rel: "==", val: String(vlan) }] },
     };
-    next.outputs.push(detour);
     next.filters.push(filter);
-    return { output: r.id, port: r.port, name: r.name, via: r.via, loop, vlan, detour: "O" + detour.id, filter: "F" + filter.id };
+    return { output: r.id, port: r.port, name: r.name, via: r.via, loop, vlan, filter: "F" + filter.id };
   });
 
-  const byOutput = new Map(pairs.map((p) => [p.output, p.detour]));
+  const byOutput = new Map(pairs.map((p) => [p.output, p]));
   const chosen = new Set((Array.isArray(ports) ? ports : String(ports ?? "").split(","))
     .map((p) => String(p).trim()).filter(Boolean));
   for (const c of next.chains) {
@@ -3249,30 +3251,29 @@ export function buildLoopFix(doc, ports, loopPorts) {
     (function walk(n) {
       if (!n) return;
       if (n.t === "out" && n.ports) {
-        n.ports = String(n.ports).split(",").map((x) => x.trim()).filter(Boolean)
-          .map((tok) => byOutput.get(tok) ?? tok).join(",");
+        const toks = String(n.ports).split(",").map((x) => x.trim()).filter(Boolean);
+        const hit = toks.map((t) => byOutput.get(t)).find(Boolean);
+        if (hit) {
+          /* An <out> carries one tag, so a node that also sends somewhere else
+             keeps those destinations untouched and only the rewriting output
+             moves to the LOOP port. */
+          n.ports = toks.map((t) => (byOutput.has(t) ? hit.loop : t)).join(",");
+          n.vlantype = "tagging"; n.vlanid = String(hit.vlan);
+        }
       }
       ["match", "notmatch"].forEach((k) => walk(n[k]));
       (n.children ?? []).forEach(walk);
     })(c.tree);
   }
 
-  /* One action for the port, not one per tag: the strip runs after the filters
-     have matched, so every packet coming back can lose its tag the same way. */
-  next.actions.push({
-    id: Math.max(0, ...next.actions.map((a) => Number(a.id) || 0)) + 1,
-    name: `strip ${loop} detour vlan`, type: "input-packet-process", port: loop,
-    mods: [{ id: nid(), k: "stripping", val: "vlan", attrs: {} }], portA: "", portB: "",
-  });
-
-  // one chain back per output, told apart by the tag it was sent with
-  pairs.forEach((p) => {
-    next.chains.push({
-      cid: nid(), ports: loop,
-      tree: { id: nid(), t: "branch", fids: p.filter, fidOp: "or",
-              match: mkOut(p.output), notmatch: mkUnset() },
-    });
-  });
+  /* One chain back, testing each tag in turn: the chain strips the tag on the
+     way in, and every packet that came through the detour matches exactly one
+     of the filters. */
+  const back = pairs.reduceRight((rest, p) => ({
+    id: nid(), t: "branch", fids: p.filter, fidOp: "or",
+    match: mkOut(p.output), notmatch: rest,
+  }), mkUnset());
+  next.chains.push({ cid: nid(), ports: loop, inVlan: { vlantype: "stripping" }, tree: back });
   return { ok: true, loop, pairs, doc: next };
 }
 

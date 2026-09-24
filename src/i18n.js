@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.172.0";
+export const STUDIO_VERSION = "2.173.0";
 
 export const I18N = {
   en: {
@@ -44,7 +44,7 @@ export const I18N = {
     "cap.rwFix": "Rewrite the configuration for me",
     "cap.rwFixNone": "There is no free LOOP port to route through. A LOOP port already named anywhere in the configuration — as a chain ingress, as somewhere a chain sends to, or as the port an output sits on — already has traffic of its own.",
     "cap.rwFixTitle": "Route these outputs behind a LOOP port?",
-    "cap.rwFixBody": "The chains this capture is on will send to {loop} instead, each tagged with a VLAN of its own, and chains coming back from {loop} will match on that tag and send to the output it was meant for. One action on {loop} strips the tag again. The packet is captured on its first pass and rewritten on its second.",
+    "cap.rwFixBody": "The chains this capture is on will send to {loop} instead, each tagged with a VLAN of its own, and one chain coming back from {loop} will strip the tag, match on it, and send to the output it was meant for. The packet is captured on its first pass and rewritten on its second. Nothing else is added: the chains carry the tagging themselves.",
     "cap.rwFixList": "What changes",
     "cap.rwFixVia": "now goes through",
     "cap.rwFixKeep": "One LOOP port carries all of them. Chains this capture is not on still reach those outputs directly.",
@@ -891,7 +891,7 @@ export const I18N = {
     "cap.rwFix": "幫我改寫設定",
     "cap.rwFixNone": "沒有可用的 LOOP 介面可以繞道。只要這個 LOOP 介面已經出現在設定中的任何地方 — 當作鏈結入口、已有鏈結送往、或是某個輸出所在的埠 — 它就已經有自己的流量了。",
     "cap.rwFixTitle": "把這些輸出改走 LOOP 介面?",
-    "cap.rwFixBody": "這次側錄所在的鏈結會改成送往 {loop},每個輸出各打上一個專屬的 VLAN tag;再由從 {loop} 進來的鏈結依這個 tag 判斷原本要送往哪個輸出。{loop} 上會有一個 action 把 tag 再拿掉。封包在第一趟被側錄到,第二趟才被改寫。",
+    "cap.rwFixBody": "這次側錄所在的鏈結會改成送往 {loop},每個輸出各打上一個專屬的 VLAN tag;再由一條從 {loop} 進來的鏈結把 tag 拿掉、依它判斷原本要送往哪個輸出。封包在第一趟被側錄到,第二趟才被改寫。不會新增其他東西 — tag 的加與拿都由鏈結本身完成。",
     "cap.rwFixList": "會變更的內容",
     "cap.rwFixVia": "改為經過",
     "cap.rwFixKeep": "所有輸出共用同一個 LOOP 介面。不在這次側錄範圍內的鏈結,仍然直接送往那些輸出。",

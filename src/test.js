@@ -3840,25 +3840,29 @@ group("pcap live view");
     check("a free LOOP port is chosen", fix.pairs[0].loop === "L0");
     const out = C.serializeRun(fix.doc);
     const p0 = fix.pairs[0];
-    check("the capture's chain now sends to the detour output",
-      new RegExp(`<in>P4</in>[\\s\\S]*?<out>${p0.detour}</out>`).test(out));
-    check("the detour output goes to the LOOP port with a tag of its own",
-      new RegExp(`<output id="${p0.detour.slice(1)}"[\\s\\S]*?<port>L0</port>[\\s\\S]*?<Q type="add">${p0.vlan}</Q>`).test(out));
-    check("a chain back matches that tag and reaches the output",
-      new RegExp(`<in>L0</in>[\\s\\S]*?<fid>${p0.filter}</fid>[\\s\\S]*?<out>O2</out>`).test(out));
-    check("the tag is stripped by one action on the LOOP port",
-      /<action type="input-packet-process"[\s\S]*?<port>L0<\/port>[\s\S]*?<stripping>vlan<\/stripping>/.test(out)
-      && (out.match(/input-packet-process/g) || []).length === 1);
+    check("the capture's chain sends to the LOOP port, tagged",
+      new RegExp(`<in>P4</in>[\\s\\S]*?<out vlantype="tagging" vlanid="${p0.vlan}">L0</out>`).test(out));
+    check("the chain back strips the tag on the way in",
+      /<in vlantype="stripping">L0<\/in>/.test(out));
+    check("it matches that tag and reaches the output",
+      new RegExp(`<in vlantype="stripping">L0</in>[\\s\\S]*?<fid>${p0.filter}</fid>[\\s\\S]*?<out>O2</out>`).test(out));
+    /* The chain carries the tagging itself, so nothing else has to be added:
+       no detour output to send through and no action to strip with. */
+    check("no extra output is created", (fix.doc.outputs ?? []).length === (doc.outputs ?? []).length);
+    check("no action is created", (fix.doc.actions ?? []).length === (doc.actions ?? []).length);
     check("chains the capture is not on are untouched", /<in>P6<\/in>[\s\S]*?<out>O2<\/out>/.test(out));
     check("the plan says which ingress reaches it", p0.via.join() === "P4");
     /* One LOOP port carries every output -- a device has few of them -- and
-       the tags are what tell the passes apart. */
+       one chain brings them all back. */
     const two = C.buildLoopFix(doc, ["P4", "P5"], ["L0"]);
     check("one LOOP port is enough for several outputs", two.ok && two.pairs.length === 2
       && two.pairs.every((p) => p.loop === "L0"));
     check("each output gets a tag of its own", two.pairs[0].vlan !== two.pairs[1].vlan);
-    check("one strip action serves them all",
-      (C.serializeRun(two.doc).match(/input-packet-process/g) || []).length === 1);
+    check("one chain brings them all back",
+      two.doc.chains.length === doc.chains.length + 1
+      && (C.serializeRun(two.doc).match(/vlantype="stripping"/g) || []).length === 1);
+    check("that chain tests every tag", two.pairs.every((p) =>
+      new RegExp(`<fid>${p.filter}</fid>`).test(C.serializeRun(two.doc))));
     check("a tag already in the configuration is not reused", (() => {
       const withVlan = C.parseRun(xml.replace('<Q op="add">100</Q>', '<Q op="add">3001</Q>')).doc;
       const r = C.buildLoopFix(withVlan, ["P4"], ["L0"]);

@@ -9987,7 +9987,8 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
    edit is usually a handful -- with the whole file one button away. */
 function XmlDiff({ base, current, tr, inline = false }) {
   const [open, setOpen] = React.useState(inline);
-  const [whole, setWhole] = React.useState(false);
+  // in the card it is the whole file: that is what is about to be submitted
+  const [whole, setWhole] = React.useState(inline);
   const rows = React.useMemo(() => (base == null ? [] : diffLines(base, current)), [base, current]);
   const stat = React.useMemo(() => diffStat(rows), [rows]);
   const shown = React.useMemo(() => (whole ? rows : collapseDiff(rows, 3)), [rows, whole]);
@@ -10000,8 +10001,6 @@ function XmlDiff({ base, current, tr, inline = false }) {
           <span className="ex-diff-n add">+{stat.added}</span>
           <span className="ex-diff-n del">−{stat.removed}</span>
           <span className="set-hint">{tr("ex.diffVsLoaded")}</span>
-          <label className="tf-interval ex-diff-whole"><input type="checkbox" checked={whole}
-            onChange={(e) => setWhole(e.target.checked)} /> {tr("ex.diffWhole")}</label>
         </div>
         {changed === 0 ? <p className="sys-note dim">{tr("ex.diffNone")}</p> : (
           <pre className="ex-diff-body inline mono">{shown.map((r, i) => (
@@ -10117,14 +10116,11 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
   const [applyErr, setApplyErr] = useState("");
   const [showSaved, setShowSaved] = useState(false);
   const [applyWarn, setApplyWarn] = useState([]);
-  const [view, setView] = useState("xml");              // the card shows the XML, or what changed
   const diffCount = React.useMemo(() => {
     if (baseline == null) return 0;
     const d = diffStat(diffLines(baseline, runXml));
     return d.added + d.removed;
   }, [baseline, runXml]);
-  // nothing to look at once it matches again
-  React.useEffect(() => { if (diffCount === 0) setView("xml"); }, [diffCount]);
   const [history, setHistory] = useState([]);          // pre-submit snapshots
   const [histBusy, setHistBusy] = useState("");
   const [histErr, setHistErr] = useState("");
@@ -10314,15 +10310,13 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
       <div className="export-main">
         <div className="xb-head">
           <span className="xb-title">{tr("ex.completeRun")}{editing && <span className="xb-editing"> · {tr("ex.editing")}</span>}</span>
-          {/* The diff belongs where the XML is read, not in a panel beside it:
-              the last look before submitting is at this card. */}
-          {!editing && baseline != null && (
-            <span className="xb-view" role="group">
-              <button className={"xb-view-b" + (view === "xml" ? " on" : "")}
-                onClick={() => setView("xml")}>{tr("ex.viewXml")}</button>
-              <button className={"xb-view-b" + (view === "diff" ? " on" : "")}
-                onClick={() => setView("diff")}>{tr("ex.viewDiff")}
-                {diffCount > 0 && <span className="xb-view-n">{diffCount}</span>}</button>
+          {/* Edited, and the card shows the whole file as a diff -- the last
+              look before submitting is at this card, and there is nothing to
+              choose between: unedited it is the XML, as it always was. */}
+          {!editing && diffCount > 0 && (
+            <span className="xb-diffn">{tr("ex.viewDiff")}
+              <span className="ex-diff-n add">+{diffStat(diffLines(baseline, runXml)).added}</span>
+              <span className="ex-diff-n del">−{diffStat(diffLines(baseline, runXml)).removed}</span>
             </span>
           )}
           <div className="xb-actions">
@@ -10350,7 +10344,7 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
           ? (
             <XmlEditor value={edit} onChange={setEdit} className="xml-editor-flex" />
           )
-          : view === "diff" && baseline != null
+          : diffCount > 0
             ? <XmlDiff base={baseline} current={runXml} tr={tr} inline />
             : <XmlView xml={runXml} />}
       </div>
