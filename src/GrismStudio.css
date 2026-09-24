@@ -1947,3 +1947,15 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
   border:1px solid rgba(224,163,58,.45); background:rgba(224,163,58,.07); color:var(--txt);}
 .cap-warn b{display:block; margin-bottom:4px; color:var(--warn);}
 .cap-warn p{margin:4px 0 0;}
+/* what the device was running before each submit */
+.ex-hist{margin-top:16px; border-top:1px solid var(--line); padding-top:12px;}
+.ex-hist-title{margin:0 0 4px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--txt-faint); font-weight:600; display:flex; align-items:center; gap:8px;}
+.ex-hist-n{font-family:var(--mono); color:var(--accent-2);}
+.ex-hist-list{list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:4px;}
+.ex-hist-list li{display:flex; align-items:center; gap:8px; font-size:12px;
+  padding:4px 6px; border-radius:6px; background:var(--panel-2);}
+.ex-hist-when{flex:1 1 auto; white-space:nowrap;}
+.ex-hist-size{font-size:11px;}
+.ex-hist-tag{font-size:10px; color:var(--accent-2); border:1px solid var(--line-2);
+  border-radius:99px; padding:0 7px; white-space:nowrap;}

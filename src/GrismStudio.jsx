@@ -32,6 +32,7 @@ import {
   parseXsd, validateAgainstXsd, xsdProblemLine,
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
   savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
+  AUTO_SAVE_TYPE, AUTO_SAVE_KEEP, autoSaves, userSaves, autoSavesToPrune,
   bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus, bypassValue,
   parseUpdateServer, updateServerProblem,
   parseAServers, parseAdsnAgents, buildAServersConfigSet, buildAdsnAgentsConfigSet, aServerKind, nextMappingRow,
@@ -8265,7 +8266,9 @@ function SavedConfigs({ runXml, onLoadXml, lang, open, onClose, t }) {
   const fetchList = async () => {
     const res = await fetch("/grism/task/get_save_xml_list", { credentials: "include" });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    return savedConfigsFrom(await res.json());
+    // the pre-submit snapshots share this directory but are not saves the user
+    // made, and are listed on their own in the Export tab
+    return userSaves(savedConfigsFrom(await res.json()));
   };
   const load = useCallback(async () => {
     try { setFiles(await fetchList()); setListErr(false); }
@@ -9918,6 +9921,52 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   );
 }
 
+/* What the device was running before each submit. Kept in the same directory
+   as the user's saved configurations but under its own type, so the two lists
+   never show each other's files.
+
+   Reloading one only replaces the document being edited -- getting it back
+   onto the device is a submit like any other, which is itself snapshotted. */
+function VersionHistory({ files, onLoad, busy, lang, tr }) {
+  const [ask, setAsk] = React.useState(null);
+  const rows = autoSaves(files ?? []);
+  return (
+    <section className="ex-hist">
+      <h4 className="ex-hist-title">{tr("ex.histTitle")}
+        {rows.length > 0 && <span className="ex-hist-n">{rows.length}</span>}
+      </h4>
+      <p className="set-hint">{tr("ex.histNote").replace("{n}", String(AUTO_SAVE_KEEP))}</p>
+      {rows.length === 0 ? <p className="sys-note dim">{tr("ex.histEmpty")}</p> : (
+        <ul className="ex-hist-list">
+          {rows.map((f, i) => (
+            <li key={f.name}>
+              <span className="ex-hist-when mono">{formatSavedTime(Math.floor((f.saved ?? 0) / 1000), lang)}</span>
+              {/* the newest is what the last submit replaced */}
+              {i === 0 && <span className="ex-hist-tag">{tr("ex.histLatest")}</span>}
+              <span className="ex-hist-size dim mono">{f.size ? fmtBytes(f.size) : ""}</span>
+              <button className="copy-btn" disabled={!!busy} onClick={() => setAsk(f)}>
+                {busy === f.name ? tr("ex.histLoading") : tr("ex.histLoad")}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {ask && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setAsk(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{tr("ex.histConfirm")}</div>
+            <p className="modal-body">{tr("ex.histConfirmBody")}<br />
+              <code className="cap-del-name">{formatSavedTime(Math.floor((ask.saved ?? 0) / 1000), lang)}</code></p>
+            <button className="opt" onClick={() => { const f = ask; setAsk(null); onLoad(f); }}>
+              <span className="opt-name">{tr("ex.histLoad")}</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setAsk(null)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t }) {
   const tr = t || ((k) => k);
   const [copied, setCopied] = useState(false);
@@ -9928,6 +9977,70 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
   const [applyErr, setApplyErr] = useState("");
   const [showSaved, setShowSaved] = useState(false);
   const [applyWarn, setApplyWarn] = useState([]);
+  const [history, setHistory] = useState([]);          // pre-submit snapshots
+  const [histBusy, setHistBusy] = useState("");
+  const [histErr, setHistErr] = useState("");
+
+  const savePost = async (path, fields) => {
+    const body = new URLSearchParams();
+    Object.entries(fields).forEach(([k, v]) => body.set(k, v));
+    const res = await fetch("/grism/task/" + path, { method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res;
+  };
+  const loadHistory = useCallback(async () => {
+    if (!loggedIn) return [];
+    try {
+      const res = await fetch("/grism/task/get_save_xml_list", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const all = savedConfigsFrom(await res.json());
+      setHistory(all);
+      return all;
+    } catch { return []; }
+  }, [loggedIn]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  /* Keep what the device is running now, before it is replaced. The snapshot
+     is of the device, not of the document being submitted: that is what makes
+     the list a way back rather than a record of what was sent.
+
+     It never blocks the submit. Failing to take a safety net is worth saying
+     and not worth refusing to go on for. */
+  const snapshotBeforeSubmit = async () => {
+    try {
+      const res = await fetch("/grism/task/get_running_file?filename=run.xml", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const current = await res.text();
+      if (!current.trim()) return "";                      // nothing running yet: nothing to keep
+      const all = await loadHistory();
+      const name = buildSaveXmlName({
+        type: AUTO_SAVE_TYPE,
+        slot: nextSaveSlot(autoSaves(all)),
+        timestamp: Date.now(),
+        size: new TextEncoder().encode(current).length,
+      });
+      await savePost("save_xml", { name, data: current });
+      const after = await loadHistory();
+      // prune oldest-first; one failing to go is not worth failing the submit
+      for (const gone of autoSavesToPrune(after, AUTO_SAVE_KEEP)) {
+        try { await savePost("del_xml", { name: gone }); } catch { /* next time */ }
+      }
+      await loadHistory();
+      return "";
+    } catch { return tr("ex.histSaveFailed"); }
+  };
+
+  const loadVersion = async (f) => {
+    setHistBusy(f.name); setHistErr("");
+    try {
+      const res = await savePost("get_save_xml", { name: f.name });
+      const xml = await res.text();
+      if (!xml.trim()) throw new Error("empty");
+      onApplyXml(xml);                                     // throws if it will not parse
+    } catch { setHistErr(tr("ex.histLoadFailed")); }
+    finally { setHistBusy(""); }
+  };
   const copy = () => { if (problems.length) return; navigator.clipboard?.writeText(runXml); setCopied(true); setTimeout(() => setCopied(false), 1400); };
 
   const startEdit = () => { setEdit(runXml); setApplyErr(""); setApplyWarn([]); };
@@ -9973,6 +10086,8 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
     if (problems.length || submit.state === "sending" || apply.active || edit !== null) return;
     setSubmit({ state: "sending", msg: "" });
     try {
+      const snapWarn = await snapshotBeforeSubmit();
+      setHistErr(snapWarn);
       // same-origin: the tool is served from the device, so a relative path
       // needs no host and shares the device's session cookie automatically.
       const body = new URLSearchParams();
@@ -10001,6 +10116,7 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
     setApply({ active: false, msg: "", warn });
     if (warn) return;
     setSubmit({ state: "ok", msg: "applied" });
+    loadHistory();
     onApplied?.(); // config is now live on the device → clear dirty state
     setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
   };
@@ -10097,6 +10213,10 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
           {warnings.map((p, i) => <li key={i} onClick={() => onGoto(p.scope)}><code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}</li>)}
         </ul>}
         {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">{tr("ex.allValidate")}</p>}
+        {loggedIn && !editing && <>
+          {histErr && <p className="submit-note warn">{histErr}</p>}
+          <VersionHistory files={history} onLoad={loadVersion} busy={histBusy} lang={lang} tr={tr} />
+        </>}
       </aside>
       {loggedIn && <OtherConfigFiles t={t} />}
     </div>

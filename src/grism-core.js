@@ -4349,6 +4349,12 @@ export const portOptionsForField = (field, dataPorts, mgmtPorts) => [
    The separator cannot occur inside base64, whose alphabet has no "." or "_". */
 const SAVE_XML_SEP = ".0_";
 export const SAVE_XML_TYPE = "map";
+/* Snapshots taken automatically before a submit live in the same directory --
+   there is only one -- but under their own type, so neither list ever shows
+   the other's files. The device does not care what the type says; only these
+   two readers do. */
+export const AUTO_SAVE_TYPE = "pre";
+export const AUTO_SAVE_KEEP = 10;
 
 /* Descriptions are stored beside the files now, because this encoding cannot
    carry most of them: btoa throws on anything outside latin-1, so a Chinese
@@ -4361,8 +4367,8 @@ const latin1Base64 = (text) => {
   try { return btoa(s); } catch { return ""; }
 };
 
-export function buildSaveXmlName({ description = "", slot = 1, timestamp = 0, size = 0 } = {}) {
-  return [SAVE_XML_TYPE, String(slot), String(timestamp), latin1Base64(description), String(size)]
+export function buildSaveXmlName({ description = "", slot = 1, timestamp = 0, size = 0, type = SAVE_XML_TYPE } = {}) {
+  return [type, String(slot), String(timestamp), latin1Base64(description), String(size)]
     .join(SAVE_XML_SEP) + ".xml";
 }
 
@@ -4395,13 +4401,30 @@ export function savedConfigsFrom(payload) {
         mtime: num(f?.mtime),
         slot: num(f?.slot, parseSaveXmlName(f?.name).slot),
         saved: num(f?.saved, parseSaveXmlName(f?.name).saved),
+        type: parseSaveXmlName(f?.name).type,
       }))
     : (Array.isArray(payload?.save_xml_list) ? payload.save_xml_list : []).map((name) => {
         const m = parseSaveXmlName(name);
-        return { name: String(name), description: m.description, size: m.size, mtime: null, slot: m.slot, saved: m.saved };
+        return { name: String(name), description: m.description, size: m.size, mtime: null,
+                 slot: m.slot, saved: m.saved, type: m.type };
       });
   return list.filter((f) => f.name)
     .sort((a, b) => (b.saved ?? 0) - (a.saved ?? 0) || a.name.localeCompare(b.name));
+}
+
+/* The two halves of that directory. A save the user made and a snapshot taken
+   on their behalf answer different questions, so neither list shows the
+   other's files. */
+export const isAutoSave = (f) => (f?.type ?? parseSaveXmlName(f?.name).type) === AUTO_SAVE_TYPE;
+export const autoSaves = (files) => (files ?? []).filter(isAutoSave);
+export const userSaves = (files) => (files ?? []).filter((f) => !isAutoSave(f));
+
+/* Which snapshots to delete to stay within the limit, oldest first. Called
+   after writing a new one, so `keep` is the number that survives. */
+export function autoSavesToPrune(files, keep = AUTO_SAVE_KEEP) {
+  const rows = autoSaves(files).slice()
+    .sort((a, b) => (b.saved ?? 0) - (a.saved ?? 0) || String(b.name).localeCompare(String(a.name)));
+  return rows.slice(Math.max(0, keep)).map((f) => f.name);
 }
 
 /* Lowest slot not already taken, so names stay tidy as saves come and go

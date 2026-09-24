@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.168.0";
+export const STUDIO_VERSION = "2.169.0";
 
 export const I18N = {
   en: {
@@ -615,6 +615,15 @@ export const I18N = {
     "flt.notOnDevice": "(not on this device)",
     /* Extra running-config files (run1.xml…run15.xml). Deliberately quiet: the
        intended workflow is run.xml, and these are the exception. */
+    "ex.histTitle": "Previous versions",
+    "ex.histNote": "Before each submit, what the device was running is kept here. The last {n} are held; older ones are removed. These are separate from your saved configurations.",
+    "ex.histEmpty": "Nothing yet — the first snapshot is taken the next time you submit.",
+    "ex.histLoad": "Load", "ex.histLoading": "Loading…",
+    "ex.histLatest": "most recent",
+    "ex.histLoadFailed": "Could not load that version",
+    "ex.histSaveFailed": "The current version could not be saved first; the submit went ahead anyway.",
+    "ex.histConfirm": "Load this version?",
+    "ex.histConfirmBody": "It replaces the document you are editing. Nothing is sent to the device until you submit.",
     "sv.title": "Saved configurations", "sv.none": "Nothing saved on this device yet.",
     "sv.note": "Snapshots of the running configuration kept on the device. Loading one replaces everything on screen.",
     "sv.saveCurrent": "save what is on screen", "sv.description": "Description",
@@ -1428,6 +1437,15 @@ export const I18N = {
     "ex.appliedLive": "設定已套用 — 裝置現在執行的是",
     "flt.pickCountry": "— 選擇國家 —", "flt.pickPort": "— 選擇連接埠 —",
     "flt.notOnDevice": "(此裝置沒有)",
+    "ex.histTitle": "先前的版本",
+    "ex.histNote": "每次提交前,會把裝置當下執行的設定保留在這裡。最多保留 {n} 份,較舊的會自動移除。這些與你自己儲存的設定分開存放。",
+    "ex.histEmpty": "尚無紀錄 — 下次提交時會存下第一份。",
+    "ex.histLoad": "載入", "ex.histLoading": "載入中…",
+    "ex.histLatest": "最近一次",
+    "ex.histLoadFailed": "無法載入該版本",
+    "ex.histSaveFailed": "提交前未能存下目前版本,但提交仍已送出。",
+    "ex.histConfirm": "載入這個版本?",
+    "ex.histConfirmBody": "這會取代你正在編輯的內容。在你按下提交之前,不會送任何東西到裝置。",
     "sv.title": "已儲存的設定", "sv.none": "此裝置尚未儲存任何設定。",
     "sv.note": "保存在裝置上的執行設定快照。載入會取代畫面上目前的全部內容。",
     "sv.saveCurrent": "另存目前設定", "sv.description": "描述",

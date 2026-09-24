@@ -3821,6 +3821,36 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  /* What the device was running before each submit is kept beside the user's
+     own saved configurations, and neither list may show the other's files. */
+  {
+    const mk = (type, slot, ts, size = 10) => C.buildSaveXmlName({ type, slot, timestamp: ts, size });
+    const payload = { files: [
+      { name: mk(C.SAVE_XML_TYPE, 1, 1000), description: "mine" },
+      { name: mk(C.AUTO_SAVE_TYPE, 1, 2000) },
+      { name: mk(C.AUTO_SAVE_TYPE, 2, 3000) },
+      { name: mk(C.AUTO_SAVE_TYPE, 3, 4000) },
+    ] };
+    const all = C.savedConfigsFrom(payload);
+    check("the type is carried through", all.every((f) => f.type) && new Set(all.map((f) => f.type)).size === 2);
+    check("a save the user made is not a snapshot", C.userSaves(all).length === 1
+      && C.userSaves(all)[0].description === "mine");
+    check("the snapshots are their own list", C.autoSaves(all).length === 3);
+    check("newest first", C.autoSaves(all)[0].saved === 4000);
+    check("pruning keeps the newest", C.autoSavesToPrune(all, 2).length === 1
+      && C.autoSavesToPrune(all, 2)[0].includes("2000"));
+    check("nothing to prune under the limit", C.autoSavesToPrune(all, 10).length === 0);
+    check("pruning never touches the user's saves",
+      C.autoSavesToPrune(all, 0).length === 3 && !C.autoSavesToPrune(all, 0).some((n) => n.startsWith(C.SAVE_XML_TYPE)));
+    check("slots are allocated within the snapshots", C.nextSaveSlot(C.autoSaves(all)) === 4);
+    // the older firmware answers names only; the split still has to work
+    const namesOnly = C.savedConfigsFrom({ save_xml_list: payload.files.map((f) => f.name) });
+    check("names-only listings split too", C.autoSaves(namesOnly).length === 3 && C.userSaves(namesOnly).length === 1);
+    check("the default type is still the user's", C.buildSaveXmlName({ slot: 1 }).startsWith(C.SAVE_XML_TYPE));
+    check("the two types differ", C.AUTO_SAVE_TYPE !== C.SAVE_XML_TYPE);
+    check("ten versions are kept", C.AUTO_SAVE_KEEP === 10);
+  }
+
   /* A capture is another output on the same packet, so an output that rewrites
      it can reach the file first. .157 routes P4 to O2, which rewrites the TCP
      SYN MSS -- capturing on P4 is worth a word of warning. */
