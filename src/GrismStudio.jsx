@@ -1089,7 +1089,8 @@ export default function GrismStudio() {
         )}
         {tab === "simulate" && (
           <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} loopPorts={loopPorts} t={t}
-            simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped} />
+            simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped}
+            hbTargets={hbTargets} />
         )}
         {tab === "export" && (
           <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
@@ -5712,6 +5713,66 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
    Traffic → Capture: record packets to a storage volume for a
    fixed number of seconds, then download the pcap
    ============================================================ */
+/* The hover that says what a filter is testing or what an output does. Several
+   places can only fit "F1" or "O2" -- the overview's chain diagram, and the
+   simulator's switches and trace -- and the reference is enough to find the
+   thing but not to read the page.
+
+   Fixed rather than absolute: each of those sits inside something that
+   scrolls, and a box that scrolls on one axis clips on both. */
+function useNodeTip() {
+  const [tip, setTip] = React.useState(null);
+  const show = (ev, { rows = [], outs = [], op = "" }) => {
+    if (!rows.length && !outs.length) return;   // nothing more to say than the node already does
+    const b = ev.currentTarget.getBoundingClientRect();
+    // both edges of the anchor: the tip goes above it, or below when the top
+    // of the window is too close -- a filter with a dozen conditions is tall
+    setTip({ x: b.left + b.width / 2, top: b.top, bottom: b.bottom, rows, outs, op });
+  };
+  return { tip, show, hide: () => setTip(null) };
+}
+
+function NodeTip({ tip }) {
+  const ref = React.useRef(null);
+  const [at, setAt] = React.useState(null);
+  /* Placed after measuring, before paint: a long tip above a node near the top
+     of the window was drawn off-screen entirely, and a wide one beside a node
+     at the edge ran past it. */
+  React.useLayoutEffect(() => {
+    if (!tip || !ref.current) { setAt(null); return; }
+    const b = ref.current.getBoundingClientRect();
+    const below = b.height + 14 > tip.top;
+    const half = b.width / 2;
+    setAt({
+      x: Math.min(Math.max(tip.x, half + 8), window.innerWidth - half - 8),
+      y: below ? tip.bottom : tip.top,
+      below,
+    });
+  }, [tip]);
+  if (!tip) return null;
+  return (
+    <div ref={ref} className={"ch-tip fixed" + (at?.below ? " below" : "")}
+      style={{ left: at?.x ?? tip.x, top: at?.y ?? tip.top }} role="tooltip">
+      {tip.outs.map((o) => (
+        <div className="ch-tip-row" key={o.id}>
+          <span className="ch-tip-id out">{o.id}{o.port ? ` → ${o.port}` : ""}</span>
+          {o.name && <span className="ch-tip-name">{o.name}</span>}
+          <span className="ch-tip-cond">{o.actions.join(" · ")}</span>
+        </div>
+      ))}
+      {tip.rows.map((r, i) => (
+        <div className="ch-tip-row" key={r.id + i}>
+          <span className={"ch-tip-id" + (r.neg ? " neg" : "") + (r.missing ? " miss" : "")}>
+            {(r.neg ? "!" : "") + r.id}</span>
+          {r.name && <span className="ch-tip-name">{r.name}</span>}
+          <span className={"ch-tip-cond" + (r.missing ? " miss" : "")}>{r.cond}</span>
+          {i < tip.rows.length - 1 && <span className="ch-tip-op">{tip.op}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* Reads a capture file as it grows and shows the packets in it.
 
    Nothing here asks the device for anything new: the listing already says
@@ -6292,20 +6353,13 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
 
   const rootMidY = root ? rowY(nodeById[root.id].row) : 44;
 
-  /* Same hover as the Chains canvas: a node can only fit "F1,!F3" or "O2", and
-     what the reader wants is the conditions behind them. */
-  const [tip, setTip] = React.useState(null);      // { x, y, rows, outs, op }
-  const showTip = (ev, { fids, op, dest }) => {
-    const rows = fids ? branchConditions(fids, filters, tr, hbTargets) : [];
-    const outs = dest ? outDestinations(dest, outputs, tr) : [];
-    if (!rows.length && !outs.length) return;      // a plain port has nothing more to say
-    /* Viewport coordinates and a fixed tip: .ov-chain scrolls horizontally,
-       and a box that scrolls on one axis clips on both -- an absolute tip over
-       the top row would be cut off by the card's own edge. */
-    const box = ev.currentTarget.getBoundingClientRect();
-    setTip({ x: box.left + box.width / 2, y: box.top,
-             rows, outs, op: op === "and" ? tr("crit.and") : tr("crit.or") });
-  };
+  // the same hover the Chains canvas and the simulator offer
+  const { tip, show, hide } = useNodeTip();
+  const showTip = (ev, { fids, op, dest }) => show(ev, {
+    rows: fids ? branchConditions(fids, filters, tr, hbTargets) : [],
+    outs: dest ? outDestinations(dest, outputs, tr) : [],
+    op: op === "and" ? tr("crit.and") : tr("crit.or"),
+  });
 
   // an arrow from (x1,y1) to (x2,y2) with a label of the given kind at the target.
   const arrow = (x1, y1, x2, y2, kind, key, labelText) => {
@@ -6347,7 +6401,7 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
   };
 
   return (
-    <div className="ov-chain" onMouseLeave={() => setTip(null)}>
+    <div className="ov-chain" onMouseLeave={hide}>
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="ov-flow"
           role="img" aria-label={`${tr("ov.chains")} ${chain.ingress}`}>
         {/* ingress */}
@@ -6376,7 +6430,7 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
           return (
             <g key={"d" + d} className="ovf-node"
               onMouseEnter={(ev) => showTip(ev, { dest: d })}
-              onMouseLeave={() => setTip(null)}>
+              onMouseLeave={hide}>
               <rect x={outX} y={destY[d] - h / 2} width={outWEff} height={h} rx="7"
                 className={d === "drop" ? "ovf-out drop" : "ovf-out"} />
               <text x={outX + outWEff / 2} y={destY[d] + (subText ? -2 : 5)}
@@ -6397,7 +6451,7 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
               {drawSide(nx, "notmatch", "notmatch")}
               <g className="ovf-node"
                 onMouseEnter={(ev) => showTip(ev, { fids: nx.node.test, op: nx.node.op })}
-                onMouseLeave={() => setTip(null)}>
+                onMouseLeave={hide}>
               <rect x={x} y={y - 18} width={testW} height="36" rx="7" className="ovf-test" />
               {/* How the filters combine is only worth saying when there is
                   more than one of them. The device writes <fid type="and"> on
@@ -6416,26 +6470,7 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
           <marker id="ovfArN" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6 Z" className="ovf-ar notmatch" /></marker>
         </defs>
       </svg>
-      {tip && (
-        <div className="ch-tip fixed" style={{ left: tip.x, top: tip.y }} role="tooltip">
-          {tip.outs.map((o) => (
-            <div className="ch-tip-row" key={o.id}>
-              <span className="ch-tip-id out">{o.id}{o.port ? ` → ${o.port}` : ""}</span>
-              {o.name && <span className="ch-tip-name">{o.name}</span>}
-              <span className="ch-tip-cond">{o.actions.join(" · ")}</span>
-            </div>
-          ))}
-          {tip.rows.map((r, i) => (
-            <div className="ch-tip-row" key={r.id + i}>
-              <span className={"ch-tip-id" + (r.neg ? " neg" : "") + (r.missing ? " miss" : "")}>
-                {(r.neg ? "!" : "") + r.id}</span>
-              {r.name && <span className="ch-tip-name">{r.name}</span>}
-              <span className={"ch-tip-cond" + (r.missing ? " miss" : "")}>{r.cond}</span>
-              {i < tip.rows.length - 1 && <span className="ch-tip-op">{tip.op}</span>}
-            </div>
-          ))}
-        </div>
-      )}
+      <NodeTip tip={tip} />
     </div>
   );
 });
@@ -8752,7 +8787,8 @@ function simulateChain(chain, states, filterAlt) {
     if (node.t === "branch") {
       const matched = evalFids(node.fids, node.fidOp, states);
       const alt = node.fids.split(",").map((t) => { const id = t.trim().replace(/^!/, ""); const neg = t.trim().startsWith("!"); return (neg ? "!" : "") + (filterAlt[id] || id); }).join(node.fidOp === "and" ? " AND " : " OR ");
-      steps.push({ id: node.id, fids: node.fids, alt, matched });
+      // op travels with the step: the hover joins several filters with it
+      steps.push({ id: node.id, fids: node.fids, op: node.fidOp, alt, matched });
       const nextNode = matched ? node.match : node.notmatch;
       if (!nextNode || isUnset(nextNode)) {
         outcome = { kind: "default", key: matched ? "sim.matchUnspec" : "sim.notMatchUnspec" };
@@ -9611,7 +9647,7 @@ function L2greTab({ data, correlating, onData, t }) {
   );
 }
 
-function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, t }) {
+function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, hbTargets, t }) {
   /* Where each "On" in an outcome actually sends the packet. */
   const outIdx = React.useMemo(() => outputIndex(doc), [doc.outputs]);
   const destLines = (text) => String(text ?? "").split(",").map((x) => x.trim()).filter(Boolean)
@@ -9680,6 +9716,15 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   }, [doc.chains, inPort]);
 
   const results = useMemo(() => matchingChains.map((c) => ({ chain: c, ...simulateChain(c, states, filterAlt) })), [matchingChains, states, filterAlt]);
+
+  /* The switches and the trace say "F1" and "O2" and nothing else, which is the
+     same problem the chain pictures have. Same hover, same two sources. */
+  const { tip, show, hide } = useNodeTip();
+  const showFids = (ev, fids, op) => show(ev, {
+    rows: branchConditions(fids, doc.filters, tr, hbTargets),
+    op: op === "and" ? tr("crit.and") : tr("crit.or"),
+  });
+  const showOuts = (ev, ports) => show(ev, { outs: outDestinations(ports, doc.outputs, tr) });
 
   const setFilter = (fid, on) => setStates((s) => ({ ...s, [fid]: on }));
   const allNotMatch = () => setStates({});
@@ -9786,7 +9831,8 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
               const on = !!states[fid];
               const undef = !definedSet.has(fid);
               return (
-                <div key={fid} className="sim-switch-row">
+                <div key={fid} className="sim-switch-row"
+                  onMouseEnter={(ev) => showFids(ev, fid)} onMouseLeave={hide}>
                   <span className="sim-fid">{fid}{undef && <span className="sim-undef" title={tr("sim.notDefined")}> ·dev</span>}</span>
                   <span className="sim-falt">{filterAlt[fid]}</span>
                   <button className={"sim-toggle" + (on ? " match" : " notmatch")} onClick={() => setFilter(fid, !on)}>
@@ -9814,14 +9860,16 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
               {steps.map((s) => (
                 <React.Fragment key={s.id}>
                   <div className="sim-arrow">↓</div>
-                  <div className={"sim-node branch " + (s.matched ? "matched" : "notmatched")}>
+                  <div className={"sim-node branch " + (s.matched ? "matched" : "notmatched")}
+                    onMouseEnter={(ev) => showFids(ev, s.fids, s.op)} onMouseLeave={hide}>
                     <span className="sim-node-k">{s.fids}{s.alt && s.alt !== s.fids ? ` · ${s.alt}` : ""}</span>
                     <span className={"sim-node-badge " + (s.matched ? "match" : "notmatch")}>{(s.matched ? tr("sim.match") : tr("sim.notMatch")) + " →"}</span>
                   </div>
                 </React.Fragment>
               ))}
               <div className="sim-arrow">↓</div>
-              <div className={"sim-node out " + outcome.kind}>
+              <div className={"sim-node out " + outcome.kind}
+                onMouseEnter={(ev) => { if (outcome.kind === "out") showOuts(ev, outcome.text); }} onMouseLeave={hide}>
                 <span className="sim-node-k">{outcome.kind === "out" ? (outcome.mode === "loadBalance" ? tr("sim.loadBalance") : tr("sim.output")) : outcome.kind === "drop" ? tr("sim.discard") : tr("sim.default")}</span>
                 <span className="sim-node-v">{outcomeText(outcome)}{outcome.kind === "out" && outcome.mode === "loadBalance" ? ` (${outcome.lb})` : ""}</span>
                 {/* "O2" is a reference; say which port it leaves by, and what it
@@ -9841,6 +9889,7 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
         ))}
       </section>
       </div>
+      <NodeTip tip={tip} />
     </div>
   );
 }

@@ -453,10 +453,15 @@ export function branchConditions(fids, filters, t, hbTargets) {
       cond: f ? describeCriterion(f.root, t, hbTargets) : "",
       missing: !f,
       /* An empty <or> matches everything -- legal, and the one case where a
-         filter with no conditions is not a mistake but is worth saying. */
+         filter with no conditions is not a mistake but is worth saying. Which
+         way round it goes is the filter's own blockifempty: with "yes" the
+         same empty group matches nothing instead, and saying "matches
+         everything" there is exactly backwards. */
       empty: !!f && !hasAnyFind(f.root),
+      blockIfEmpty: !!f && f.blockifempty === "yes",
     };
-  }).map((x) => ({ ...x, cond: x.missing ? tr("ch.tipMissing") : x.empty ? tr("ch.tipEmpty") : x.cond }));
+  }).map((x) => ({ ...x, cond: x.missing ? tr("ch.tipMissing")
+    : x.empty ? tr(x.blockIfEmpty ? "ch.tipEmptyBlock" : "ch.tipEmpty") : x.cond }));
 }
 
 // Flatten a chain's decision tree into readable routing rules, e.g.

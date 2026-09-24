@@ -3821,6 +3821,22 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  // An empty filter's meaning depends on blockifempty, and the hover said one
+  // of the two regardless. .157 runs <filter id="3" blockifempty="yes"><or/>.
+  {
+    const tr = (k) => k;
+    const empty = { id: 3, blockifempty: "no", root: { t: "or", children: [] } };
+    const blocking = { id: 3, blockifempty: "yes", root: { t: "or", children: [] } };
+    const has = { id: 4, blockifempty: "yes",
+      root: { t: "or", children: [{ t: "find", name: "ip.addr", relation: "==", content: "1.1.1.1" }] } };
+    check("an empty filter matches everything", C.branchConditions("F3", [empty], tr)[0].cond === "ch.tipEmpty");
+    check("blockifempty flips that", C.branchConditions("F3", [blocking], tr)[0].cond === "ch.tipEmptyBlock");
+    check("blockIfEmpty is reported", C.branchConditions("F3", [blocking], tr)[0].blockIfEmpty === true
+      && C.branchConditions("F3", [empty], tr)[0].blockIfEmpty === false);
+    // blockifempty says nothing about a filter that does have conditions
+    check("a filter with conditions is unaffected", !/ch\.tipEmpty/.test(C.branchConditions("F4", [has], tr)[0].cond));
+  }
+
   // How several filters combine is worth saying; how one filter combines is
   // not. The device writes <fid type="and"> on single-filter branches as well,
   // which the overview rendered as "F5 (all)".

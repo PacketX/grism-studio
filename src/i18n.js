@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.160.0";
+export const STUDIO_VERSION = "2.162.0";
 
 export const I18N = {
   en: {
@@ -803,6 +803,7 @@ export const I18N = {
     "ch.zoomIn": "Zoom in", "ch.zoomOut": "Zoom out", "ch.zoomReset": "Back to 100%",
     "ch.tipMissing": "no filter with this id is defined",
     "ch.tipEmpty": "no conditions — matches everything",
+    "ch.tipEmptyBlock": "no conditions, blockifempty=\"yes\" — matches nothing",
     "ch.tipPlainOut": "forwards unchanged",
     "ch.zoomFit": "fit to view", "ch.zoomFitTip": "Scale the drawing until the whole chain fits the pane. Ctrl + scroll zooms too.",
     "ch.filtersReferenced": "Filters referenced",
@@ -1607,6 +1608,7 @@ export const I18N = {
     "ch.zoomIn": "放大", "ch.zoomOut": "縮小", "ch.zoomReset": "回到 100%",
     "ch.tipMissing": "沒有這個 id 的篩選器",
     "ch.tipEmpty": "沒有任何條件 — 會比對到全部",
+    "ch.tipEmptyBlock": "沒有任何條件,blockifempty=\"yes\" — 不會比對到任何封包",
     "ch.tipPlainOut": "原樣轉送,不做任何改寫",
     "ch.zoomFit": "縮放至適合", "ch.zoomFitTip": "縮放到整條鏈結剛好放進畫面。也可以用 Ctrl + 滾輪縮放。",
     "ch.filtersReferenced": "引用的篩選器",
