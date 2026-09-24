@@ -6,7 +6,7 @@ import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
   buildArgsConfigSet, buildInTunnelsConfigSet, buildPortConfigSet, buildServicesConfigSet,
-  cUpdate, chainProblems, changedPorts, changedServices, diffDoc, docSnapshot, isDeviceFilterId,
+  cUpdate, chainProblems, changedPorts, changedServices, deviceFilterList, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
@@ -356,6 +356,10 @@ export default function GrismStudio() {
      and "to the IDS" is the part that says which one is right. */
   const [portDescs, setPortDescs] = useState({});
   const [hbTargets, setHbTargets] = useState([]); // heartbeat targets from get_config: {id, sendPort, receivePort}
+  /* The filters the device built for itself. Read once rather than polled: this
+     answers "does this id exist", which does not change between edits, and the
+     counters card polls the same endpoint for the numbers that do. */
+  const [deviceFilters, setDeviceFilters] = useState([]);
   const [deviceStorages, setDeviceStorages] = useState([]); // enabled storage names from get_config (output port options)
   const [loopPorts, setLoopPorts] = useState([]); // ports on a LOOP-type interface (out returns in on the same port)
   const [activeFilter, setActiveFilter] = useState(1);
@@ -569,12 +573,16 @@ export default function GrismStudio() {
           enable: t.enable === true, description: String(t.description ?? "").trim() }))
         .filter((t) => t.id != null);
       setHbTargets(targets);
+      fetch("/grism/task/get_filter_counter", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => setDeviceFilters(deviceFilterList(j)))
+        .catch(() => { /* the tips fall back to the id range */ });
       const storages = (cfg.storages ?? []).filter((s) => s.enable).map((s) => s.name).filter(Boolean);
       setDeviceStorages([...new Set(storages)]);
       // grism.port.linkdown can name a management interface as well as a data
       // port, and those live in ifcfgs rather than interfaces
       setMgmtPorts([...new Set(mgmtPortNames(cfg))]);
-    } catch { setDevicePorts(null); setHbTargets([]); setDeviceStorages([]); setLoopPorts([]); setMgmtPorts([]); setPortDescs({}); } // keep defaults
+    } catch { setDevicePorts(null); setHbTargets([]); setDeviceFilters([]); setDeviceStorages([]); setLoopPorts([]); setMgmtPorts([]); setPortDescs({}); } // keep defaults
   }, []);
 
   // set the sync baseline from the device's running config WITHOUT replacing the
@@ -1023,7 +1031,7 @@ export default function GrismStudio() {
           </div>
         )}
         {tab === "overview" && (
-          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t} loggedIn={!!login.who} hbTargets={hbTargets}
+          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t} loggedIn={!!login.who} hbTargets={hbTargets} deviceFilters={deviceFilters}
             onOpenTemplates={() => setShowTemplates(true)}
             onGoto={goTab} />
         )}
@@ -1066,7 +1074,7 @@ export default function GrismStudio() {
           <FiltersTab
             doc={doc} setDoc={setDoc}
             activeFilter={activeFilter} setActiveFilter={setActiveFilter}
-            setFilterRoot={setFilterRoot} hbTargets={hbTargets} t={t} touched={changes?.filters?.touched}
+            setFilterRoot={setFilterRoot} hbTargets={hbTargets} deviceFilters={deviceFilters} t={t} touched={changes?.filters?.touched}
             portOptions={devicePorts ?? DEFAULT_PORTS} mgmtPorts={mgmtPorts} lang={lang}
           />
         )}
@@ -1085,12 +1093,12 @@ export default function GrismStudio() {
             activeChain={activeChain} setActiveChain={setActiveChain}
             t={t}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null}
-            portDescs={portDescs} hbTargets={hbTargets} />
+            portDescs={portDescs} hbTargets={hbTargets} deviceFilters={deviceFilters} />
         )}
         {tab === "simulate" && (
           <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} loopPorts={loopPorts} t={t}
             simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped}
-            hbTargets={hbTargets} />
+            hbTargets={hbTargets} deviceFilters={deviceFilters} />
         )}
         {tab === "export" && (
           <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
@@ -1120,7 +1128,7 @@ export default function GrismStudio() {
 /* ============================================================
    Overview tab — auto-generated explanation of the current doc
    ============================================================ */
-function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, onOpenTemplates, hbTargets }) {
+function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, onOpenTemplates, hbTargets, deviceFilters }) {
   const tr = t || ((k) => k);
   const info = useMemo(() => describeDoc(doc, tr, hbTargets), [doc, lang, hbTargets]);
   const [filtersOpen, setFiltersOpen] = React.useState(false); // Overview: show all filters vs first few
@@ -1239,7 +1247,7 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
           <h3 className="ov-h3">{tr("ov.chains")} <span className="ov-count">{info.chains.length}</span></h3>
           <div className="ov-chains">
             {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} outputInfo={info.outputInfo}
-              filters={doc.filters} outputs={doc.outputs} hbTargets={hbTargets} t={tr} />)}
+              filters={doc.filters} outputs={doc.outputs} hbTargets={hbTargets} deviceFilters={deviceFilters} t={tr} />)}
           </div>
           <button className="ov-jump" onClick={() => onGoto("chain")}>{tr("ov.editChains")}</button>
         </section>
@@ -6303,7 +6311,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds }) {
   );
 }
 
-const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outputInfo = {}, filters = [], outputs = [], hbTargets, t }) {
+const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outputInfo = {}, filters = [], outputs = [], hbTargets, deviceFilters, t }) {
   const tr = t || ((k) => ({ "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match", "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "all", "flow.any": "any" }[k] || k));
   const flow = chain.flow || { root: null, terminal: null };
   const root = flow.root;
@@ -6356,7 +6364,7 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
   // the same hover the Chains canvas and the simulator offer
   const { tip, show, hide } = useNodeTip();
   const showTip = (ev, { fids, op, dest }) => show(ev, {
-    rows: fids ? branchConditions(fids, filters, tr, hbTargets) : [],
+    rows: fids ? branchConditions(fids, filters, tr, hbTargets, deviceFilters) : [],
     outs: dest ? outDestinations(dest, outputs, tr) : [],
     op: op === "and" ? tr("crit.and") : tr("crit.or"),
   });
@@ -7586,7 +7594,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, t, touched }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, deviceFilters, t, touched }) {
   const tr = t || ((k) => k);
   // {name} placeholders, so a translation can put the value where its own
   // grammar needs it rather than where English happened to put it
@@ -7883,7 +7891,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
      chain -- and reading the chain is the whole point of the picture. */
   const [tip, setTip] = React.useState(null);   // { x, y, rows, op }
   const showTip = (ev, node) => {
-    const rows = node.t === "branch" ? branchConditions(node.fids, doc.filters, tr, hbTargets) : [];
+    const rows = node.t === "branch" ? branchConditions(node.fids, doc.filters, tr, hbTargets, deviceFilters) : [];
     const outs = node.t === "out" ? outDestinations(node.ports, doc.outputs, tr) : [];
     if (!rows.length && !outs.length) return;
     const box = ev.currentTarget.getBoundingClientRect();
@@ -9647,7 +9655,7 @@ function L2greTab({ data, correlating, onData, t }) {
   );
 }
 
-function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, hbTargets, t }) {
+function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, hbTargets, deviceFilters, t }) {
   /* Where each "On" in an outcome actually sends the packet. */
   const outIdx = React.useMemo(() => outputIndex(doc), [doc.outputs]);
   const destLines = (text) => String(text ?? "").split(",").map((x) => x.trim()).filter(Boolean)
@@ -9721,7 +9729,7 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
      same problem the chain pictures have. Same hover, same two sources. */
   const { tip, show, hide } = useNodeTip();
   const showFids = (ev, fids, op) => show(ev, {
-    rows: branchConditions(fids, doc.filters, tr, hbTargets),
+    rows: branchConditions(fids, doc.filters, tr, hbTargets, deviceFilters),
     op: op === "and" ? tr("crit.and") : tr("crit.or"),
   });
   const showOuts = (ev, ports) => show(ev, { outs: outDestinations(ports, doc.outputs, tr) });

@@ -440,18 +440,40 @@ export function outDestinations(ports, outputs, t) {
 
    A reference to a filter that is not defined is reported as such rather than
    skipped: an unresolved id is exactly what someone hovering wants to find. */
-export function branchConditions(fids, filters, t, hbTargets) {
+/* What a filter's conditions read as. An empty group is the one case where the
+   conditions alone do not say what happens: by default it matches everything,
+   and blockifempty="yes" turns that around. describeCriterion answers
+   "(match any)" either way, which is true of the group and useless about the
+   filter -- so anything showing a filter to a reader goes through here. */
+export function filterCondText(f, t, hbTargets) {
+  const tr = t || ((k) => k);
+  if (!f) return "";
+  if (!hasAnyFind(f.root)) return tr(f.blockifempty === "yes" ? "ch.tipEmptyBlock" : "ch.tipEmpty");
+  return describeCriterion(f.root, t, hbTargets);
+}
+
+export function branchConditions(fids, filters, t, hbTargets, deviceFilters) {
   const tr = t || ((k) => k);
   const by = new Map((filters ?? []).map((f) => ["F" + f.id, f]));
+  /* Filters the device made for itself -- the live blacklists fed over syslog
+     or xmlrpc -- are in no configuration document, so looking one up here finds
+     nothing. Calling that "no filter with this id" is wrong twice over: it is
+     not missing, and the reader is sent looking for something to fix. When
+     get_filter_counter has been read, it says which ones the device really
+     holds; without it, the id range is the next best thing. */
+  const onDev = new Map((deviceFilters ?? []).map((d) => ["F" + d.id, d]));
   return String(fids || "").split(",").map((s) => s.trim()).filter(Boolean).map((tok) => {
     const neg = tok.startsWith("!");
     const id = tok.replace(/^!/, "");
     const f = by.get(id);
+    const dev = !f ? onDev.get(id) : null;
     return {
       id, neg,
       name: f ? (f.name || f.alt || "") : "",
-      cond: f ? describeCriterion(f.root, t, hbTargets) : "",
-      missing: !f,
+      cond: f ? filterCondText(f, t, hbTargets) : "",
+      missing: !f && !dev && !isDeviceFilterId(id),
+      device: !!dev || (!f && isDeviceFilterId(id)),
+      deviceRefs: dev ? dev.refs : null,
       /* An empty <or> matches everything -- legal, and the one case where a
          filter with no conditions is not a mistake but is worth saying. Which
          way round it goes is the filter's own blockifempty: with "yes" the
@@ -460,8 +482,11 @@ export function branchConditions(fids, filters, t, hbTargets) {
       empty: !!f && !hasAnyFind(f.root),
       blockIfEmpty: !!f && f.blockifempty === "yes",
     };
-  }).map((x) => ({ ...x, cond: x.missing ? tr("ch.tipMissing")
-    : x.empty ? tr(x.blockIfEmpty ? "ch.tipEmptyBlock" : "ch.tipEmpty") : x.cond }));
+  }).map((x) => ({ ...x, cond:
+    x.missing ? tr("ch.tipMissing")
+    : x.device ? (x.deviceRefs === null ? tr("ch.tipOnDeviceMaybe")
+                  : tr("ch.tipOnDevice").replace("{n}", String(x.deviceRefs)))
+    : x.cond }));
 }
 
 // Flatten a chain's decision tree into readable routing rules, e.g.
@@ -520,7 +545,7 @@ export function destLabel(tok, index) {
 
 // Whole-document overview: counts, per-filter conditions, per-chain routing, ports used.
 export function describeDoc(doc, t, hbTargets) {
-  const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: describeCriterion(f.root, t, hbTargets) }));
+  const filters = (doc.filters ?? []).map((f) => ({ id: "F" + f.id, name: f.name || f.alt || "", cond: filterCondText(f, t, hbTargets) }));
   const filterNames = Object.fromEntries(filters.map((f) => [f.id, f.name]));
   const outputInfo = outputIndex(doc);
   const chains = (doc.chains ?? []).map((c) => ({ ingress: c.ports || "P0", rules: summarizeChainTree(c.tree), flow: summarizeChain(c.tree) }));
@@ -2044,6 +2069,13 @@ export function summarizeFilterCounters(list) {
     };
   }).sort((a, b) => b.matched - a.matched || b.tried - a.tried);
 }
+
+/* Which filter ids the device itself holds, from get_filter_counter, with how
+   many entries each carries. Used to tell a filter the device made from one
+   that is genuinely missing. */
+export const deviceFilterList = (payload) =>
+  (Array.isArray(payload?.filter_counter) ? payload.filter_counter : [])
+    .map((f) => ({ id: f.id, refs: Number(f.count) || 0 }));
 
 /* Flatten flow_service into service rows with their busiest hosts.
    Each host entry is [ip, sessions, bytes]. */

@@ -3821,6 +3821,33 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  // Filters the device builds for itself (live blacklists over syslog/xmlrpc)
+  // are in no configuration document. .157's chains reference F10001, F20001,
+  // F100001 and F100002, and the hover called every one of them missing.
+  {
+    const tr = (k) => (k === "ch.tipOnDevice" ? "on the device — {n} entries" : k);
+    const dev = C.deviceFilterList({ filter_counter: [
+      { id: 10001, count: 36221, try_count: 65 }, { id: 100001, count: 10688, try_count: 65 }] });
+    check("device filter list read from the counters", dev.length === 2 && dev[0].id === 10001 && dev[0].refs === 36221);
+    const known = C.branchConditions("F10001", [], tr, [], dev)[0];
+    check("a filter the device reports is not missing", known.missing === false && known.device === true);
+    check("its size comes through", known.deviceRefs === 36221 && known.cond.includes("36221"));
+    // signed out there are no counters, so the id range answers instead
+    const guess = C.branchConditions("F10001", [], tr, [])[0];
+    check("the id range stands in without the counters", guess.missing === false && guess.device === true
+      && guess.cond === "ch.tipOnDeviceMaybe");
+    // below the device threshold and in no document: genuinely missing
+    const gone = C.branchConditions("F999", [], tr, [], dev)[0];
+    check("a low id in no document is still missing", gone.missing === true && gone.device === false
+      && gone.cond === "ch.tipMissing");
+    // a locally defined filter is unaffected by any of this
+    const local = C.branchConditions("F7", [{ id: 7, name: "x", blockifempty: "no",
+      root: { t: "or", children: [{ t: "find", field: "ip.addr", rel: "==", val: "1.1.1.1" }] } }], tr, [], dev)[0];
+    check("a defined filter still shows its conditions", local.missing === false && local.device === false
+      && /1\.1\.1\.1/.test(local.cond));
+    check("negation survives", C.branchConditions("!F10001", [], tr, [], dev)[0].neg === true);
+  }
+
   // An empty filter's meaning depends on blockifempty, and the hover said one
   // of the two regardless. .157 runs <filter id="3" blockifempty="yes"><or/>.
   {
@@ -3828,7 +3855,15 @@ group("pcap live view");
     const empty = { id: 3, blockifempty: "no", root: { t: "or", children: [] } };
     const blocking = { id: 3, blockifempty: "yes", root: { t: "or", children: [] } };
     const has = { id: 4, blockifempty: "yes",
-      root: { t: "or", children: [{ t: "find", name: "ip.addr", relation: "==", content: "1.1.1.1" }] } };
+      root: { t: "or", children: [{ t: "find", field: "ip.addr", rel: "==", val: "1.1.1.1" }] } };
+    /* The overview lists conditions without going through a chain, and said
+       "(match any)" for an empty filter -- true of the group, and the opposite
+       of the truth about a filter with blockifempty="yes". */
+    check("the listed condition follows blockifempty", C.filterCondText(empty, tr) === "ch.tipEmpty"
+      && C.filterCondText(blocking, tr) === "ch.tipEmptyBlock");
+    check("a filter with conditions still describes them", /1\.1\.1\.1/.test(C.filterCondText(has, tr)));
+    const od = C.describeDoc({ filters: [blocking], chains: [] }, tr);
+    check("describeDoc uses it", od.filters[0].cond === "ch.tipEmptyBlock");
     check("an empty filter matches everything", C.branchConditions("F3", [empty], tr)[0].cond === "ch.tipEmpty");
     check("blockifempty flips that", C.branchConditions("F3", [blocking], tr)[0].cond === "ch.tipEmptyBlock");
     check("blockIfEmpty is reported", C.branchConditions("F3", [blocking], tr)[0].blockIfEmpty === true

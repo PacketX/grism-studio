@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.162.0";
+export const STUDIO_VERSION = "2.163.0";
 
 export const I18N = {
   en: {
@@ -802,6 +802,8 @@ export const I18N = {
     "ch.portsDefaultNote": "Default list — sign in to load the device\u2019s actual ports.",
     "ch.zoomIn": "Zoom in", "ch.zoomOut": "Zoom out", "ch.zoomReset": "Back to 100%",
     "ch.tipMissing": "no filter with this id is defined",
+    "ch.tipOnDevice": "built on the device, not in this configuration — {n} entries",
+    "ch.tipOnDeviceMaybe": "built on the device, not in this configuration — sign in to read its size",
     "ch.tipEmpty": "no conditions — matches everything",
     "ch.tipEmptyBlock": "no conditions, blockifempty=\"yes\" — matches nothing",
     "ch.tipPlainOut": "forwards unchanged",
@@ -1607,6 +1609,8 @@ export const I18N = {
     "ch.portsDefaultNote": "這是預設清單 — 登入後會載入裝置實際的連接埠。",
     "ch.zoomIn": "放大", "ch.zoomOut": "縮小", "ch.zoomReset": "回到 100%",
     "ch.tipMissing": "沒有這個 id 的篩選器",
+    "ch.tipOnDevice": "由裝置建立,不在這份設定裡 — {n} 筆",
+    "ch.tipOnDeviceMaybe": "由裝置建立,不在這份設定裡 — 登入後可讀取筆數",
     "ch.tipEmpty": "沒有任何條件 — 會比對到全部",
     "ch.tipEmptyBlock": "沒有任何條件,blockifempty=\"yes\" — 不會比對到任何封包",
     "ch.tipPlainOut": "原樣轉送,不做任何改寫",
