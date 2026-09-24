@@ -34,7 +34,7 @@ import {
   savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
   bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus, bypassValue,
   parseUpdateServer, updateServerProblem,
-  parseAServers, parseAdsnAgents, buildAServersConfigSet, buildAdsnAgentsConfigSet, aServerKind,
+  parseAServers, parseAdsnAgents, buildAServersConfigSet, buildAdsnAgentsConfigSet, aServerKind, nextMappingRow,
   switchServerProblems, hasAdsnAgent,
   pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
   tRemove, tUpdate, tmplText, toks, validate,
@@ -2493,8 +2493,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     setter((rows) => rows.map((r, j) => j === i ? { ...r, ...patch } : r));
   const patchMapping = (setter, i, row, patch) => setter((rows) => rows.map((r, j) => j === i
     ? { ...r, mapping: r.mapping.map((m, k) => k === row ? { ...m, ...patch } : m) } : r));
-  const addMapping = (setter, i, blank) => setter((rows) => rows.map((r, j) => j === i
-    ? { ...r, mapping: [...r.mapping, blank] } : r));
+  /* The new row continues the sequence rather than arriving empty: these are
+     filled in P1→V1, P2→V2, and retyping both sides of every row is the whole
+     work of the card. */
+  const addMapping = (setter, i, keys) => setter((rows) => rows.map((r, j) => j === i
+    ? { ...r, mapping: [...r.mapping, nextMappingRow(r.mapping, keys)] } : r));
   const dropMapping = (setter, i, row) => setter((rows) => rows.map((r, j) => j === i
     ? { ...r, mapping: r.mapping.filter((_, k) => k !== row) } : r));
   const applySwitchServers = async () => {
@@ -3082,11 +3085,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                             <input value={srv.interval} inputMode="numeric"
                               onChange={(e) => patchServer(setSwA, i, { interval: e.target.value.trim() })} /></label>
                         </div>
-                        <SwitchMapping rows={srv.mapping} tr={tr} left={tr("set.swPort")} right={tr("set.swVport")}
-                          leftKey="switchPort" rightKey="vport" placeholders={["P1", "V1"]}
+                        <SwitchMapping rows={srv.mapping} tr={tr} left={tr("set.swVport")} right={tr("set.swPort")}
+                          leftKey="vport" rightKey="switchPort" placeholders={["V1", "P1"]}
                           problems={swProblems.filter((x) => x.scope === srv.name && x.row !== undefined)}
                           onPatch={(row, patch) => patchMapping(setSwA, i, row, patch)}
-                          onAdd={() => addMapping(setSwA, i, { switchPort: "", vport: "" })}
+                          onAdd={() => addMapping(setSwA, i, ["vport", "switchPort"])}
                           onDrop={(row) => dropMapping(setSwA, i, row)} />
                       </div>
                     ))}
@@ -3118,7 +3121,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                           leftKey="vport" rightKey="port" placeholders={["V0", "0"]}
                           problems={swProblems.filter((x) => x.scope === srv.name && x.row !== undefined)}
                           onPatch={(row, patch) => patchMapping(setSwAdsn, i, row, patch)}
-                          onAdd={() => addMapping(setSwAdsn, i, { vport: "", port: "" })}
+                          onAdd={() => addMapping(setSwAdsn, i, ["vport", "port"])}
                           onDrop={(row) => dropMapping(setSwAdsn, i, row)} />
                       </div>
                     ))}

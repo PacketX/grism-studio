@@ -5145,6 +5145,25 @@ const sameScalars = (a, b, keys) => keys.every((k) => String(a?.[k] ?? "") === S
    nothing -- and the mapping rows go in as the add/delete the firmware parses.
    passhash is only sent when a new password was typed: the config holds a hash
    and there is nothing to send back otherwise. */
+/* The value one past this one, for the row a mapping card adds. Mappings run
+   in sequence -- P1→V1, P2→V2 -- so the useful blank row is the previous one
+   stepped on, not an empty pair. The trailing number is what moves; anything
+   in front of it, and the width it was padded to, stay as they were. */
+export function nextMappingValue(v) {
+  const m = /^(.*?)(\d+)$/.exec(String(v ?? "").trim());
+  if (!m) return "";
+  const next = String(Number(m[2]) + 1);
+  // "V09" steps to "V10", not "V010"
+  return m[1] + (m[2].length > 1 && m[2].startsWith("0") ? next.padStart(m[2].length, "0") : next);
+}
+
+/* The row to add after these ones: the last row stepped on, or blanks when
+   there is nothing to step from. */
+export function nextMappingRow(rows, keys) {
+  const last = (rows ?? [])[(rows ?? []).length - 1];
+  return Object.fromEntries(keys.map((k) => [k, last ? nextMappingValue(last[k]) : ""]));
+}
+
 export function buildAServersConfigSet(now, base, passwords = {}) {
   const parts = [];
   for (const s of now ?? []) {

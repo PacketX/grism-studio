@@ -3821,6 +3821,25 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  // A mapping card is filled in in sequence, so the row it adds continues it
+  {
+    check("a trailing number steps on", C.nextMappingValue("P1") === "P2"
+      && C.nextMappingValue("V15") === "V16" && C.nextMappingValue("7") === "8");
+    check("zero padding is kept", C.nextMappingValue("V09") === "V10" && C.nextMappingValue("P007") === "P008");
+    check("a prefix with its own digits survives", C.nextMappingValue("0/15") === "0/16");
+    check("nothing to step from gives nothing", C.nextMappingValue("") === ""
+      && C.nextMappingValue("Px") === "" && C.nextMappingValue(undefined) === "");
+    const rows = [{ vport: "V1", switchPort: "P1" }, { vport: "V2", switchPort: "P2" }];
+    check("the added row continues both columns",
+      JSON.stringify(C.nextMappingRow(rows, ["vport", "switchPort"])) === JSON.stringify({ vport: "V3", switchPort: "P3" }));
+    check("the first row is blank", JSON.stringify(C.nextMappingRow([], ["vport", "port"]))
+      === JSON.stringify({ vport: "", port: "" }));
+    // a column that was left empty stays empty rather than becoming "1"
+    check("an empty column is not invented",
+      JSON.stringify(C.nextMappingRow([{ vport: "V4", port: "" }], ["vport", "port"]))
+      === JSON.stringify({ vport: "V5", port: "" }));
+  }
+
   // Filters the device builds for itself (live blacklists over syslog/xmlrpc)
   // are in no configuration document. .157's chains reference F10001, F20001,
   // F100001 and F100002, and the hover called every one of them missing.
