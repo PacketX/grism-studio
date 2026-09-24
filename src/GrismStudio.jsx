@@ -33,6 +33,7 @@ import {
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
   savedConfigsFrom, buildSaveXmlName, nextSaveSlot, formatSavedTime,
   AUTO_SAVE_TYPE, AUTO_SAVE_KEEP, autoSaves, userSaves, autoSavesToPrune,
+  diffLines, collapseDiff, diffStat,
   bypassSupport, bypassStatusUrl, bypassModeUrl, parseBypassStatus, bypassValue,
   parseUpdateServer, updateServerProblem,
   parseAServers, parseAdsnAgents, buildAServersConfigSet, buildAdsnAgentsConfigSet, aServerKind, nextMappingRow,
@@ -1102,7 +1103,7 @@ export default function GrismStudio() {
             hbTargets={hbTargets} deviceFilters={deviceFilters} />
         )}
         {tab === "export" && (
-          <ExportTab runXml={runXml} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
+          <ExportTab runXml={runXml} baseline={baseline} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
             onApplied={() => { setBaseline(runXml); setBaselineDoc(doc); }}
             onApplyXml={(xmlText) => {
               const { doc: parsed, warnings } = parseRun(xmlText); // throws on malformed → caught in ExportTab
@@ -9921,6 +9922,51 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   );
 }
 
+/* What this document changed, line by line, against the version it was loaded
+   from. The doc-level diff drives the tab badges; this is the text itself,
+   which is what anyone about to submit wants to read.
+
+   Untouched stretches are collapsed -- a run.xml is hundreds of lines and an
+   edit is usually a handful -- with the whole file one button away. */
+function XmlDiff({ base, current, tr }) {
+  const [open, setOpen] = React.useState(false);
+  const [whole, setWhole] = React.useState(false);
+  const rows = React.useMemo(() => (base == null ? [] : diffLines(base, current)), [base, current]);
+  const stat = React.useMemo(() => diffStat(rows), [rows]);
+  const shown = React.useMemo(() => (whole ? rows : collapseDiff(rows, 3)), [rows, whole]);
+  const changed = stat.added + stat.removed;
+
+  return (
+    <section className="ex-diff">
+      <h4 className="ex-diff-title">{tr("ex.diffTitle")}
+        {base != null && changed > 0 && <>
+          <span className="ex-diff-n add">+{stat.added}</span>
+          <span className="ex-diff-n del">−{stat.removed}</span>
+        </>}
+        {base != null && changed > 0 && (
+          <button className="copy-btn ex-diff-toggle" onClick={() => setOpen((v) => !v)}>
+            {open ? tr("ex.diffHide") : tr("ex.diffShow")}</button>
+        )}
+      </h4>
+      {base == null ? <p className="sys-note dim">{tr("ex.diffNoBase")}</p>
+        : changed === 0 ? <p className="sys-note dim">{tr("ex.diffNone")}</p>
+        : (<>
+          <p className="set-hint">{tr("ex.diffVsLoaded")}</p>
+          {open && (<>
+            <label className="tf-interval ex-diff-whole"><input type="checkbox" checked={whole}
+              onChange={(e) => setWhole(e.target.checked)} /> {tr("ex.diffWhole")}</label>
+            <pre className="ex-diff-body mono">{shown.map((r, i) => (
+              r.kind === "gap"
+                ? <span className="dl gap" key={i}>{`    ⋯ ${tr("ex.diffGap").replace("{n}", String(r.count))}\n`}</span>
+                : <span className={"dl " + r.kind} key={i}>
+                    {`${r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "} ${r.text}\n`}</span>
+            ))}</pre>
+          </>)}
+        </>)}
+    </section>
+  );
+}
+
 /* What the device was running before each submit. Kept in the same directory
    as the user's saved configurations but under its own type, so the two lists
    never show each other's files.
@@ -9967,7 +10013,7 @@ function VersionHistory({ files, onLoad, busy, lang, tr }) {
   );
 }
 
-function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t }) {
+function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t }) {
   const tr = t || ((k) => k);
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
@@ -10213,6 +10259,7 @@ function ExportTab({ runXml, problems, warnings = [], onGoto, onApplyXml, onAppl
           {warnings.map((p, i) => <li key={i} onClick={() => onGoto(p.scope)}><code>{p.scope}</code> {p.label ? <b>{p.label}</b> : null} — {p.msg}</li>)}
         </ul>}
         {!editing && problems.length === 0 && submit.state === "idle" && applyWarn.length === 0 && <p className="export-ok">{tr("ex.allValidate")}</p>}
+        {!editing && <XmlDiff base={baseline} current={runXml} tr={tr} />}
         {loggedIn && !editing && <>
           {histErr && <p className="submit-note warn">{histErr}</p>}
           <VersionHistory files={history} onLoad={loadVersion} busy={histBusy} lang={lang} tr={tr} />

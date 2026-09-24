@@ -4337,6 +4337,79 @@ export const portOptionsForField = (field, dataPorts, mgmtPorts) => [
 
 
 /* ============================================================
+   Line diff, for showing what an edit changed
+   ============================================================ */
+
+/* Longest common subsequence over lines, after trimming the common head and
+   tail -- which for a configuration that was edited in one place is nearly all
+   of it, and turns an O(n*m) table into a small one.
+
+   Returns rows of { kind: "same" | "add" | "del", text, a, b } where a and b
+   are 1-based line numbers in the old and new text, null where the line does
+   not exist on that side. */
+export function diffLines(oldText, newText) {
+  const A = String(oldText ?? "").replace(/\r\n/g, "\n").split("\n");
+  const B = String(newText ?? "").replace(/\r\n/g, "\n").split("\n");
+  let head = 0;
+  while (head < A.length && head < B.length && A[head] === B[head]) head += 1;
+  let tail = 0;
+  while (tail < A.length - head && tail < B.length - head
+         && A[A.length - 1 - tail] === B[B.length - 1 - tail]) tail += 1;
+  const a = A.slice(head, A.length - tail);
+  const b = B.slice(head, B.length - tail);
+
+  // LCS table over what is left
+  const n = a.length, m = b.length;
+  const lcs = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const rows = [];
+  for (let i = 0; i < head; i++) rows.push({ kind: "same", text: A[i], a: i + 1, b: i + 1 });
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { rows.push({ kind: "same", text: a[i], a: head + i + 1, b: head + j + 1 }); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) { rows.push({ kind: "del", text: a[i], a: head + i + 1, b: null }); i++; }
+    else { rows.push({ kind: "add", text: b[j], a: null, b: head + j + 1 }); j++; }
+  }
+  while (i < n) { rows.push({ kind: "del", text: a[i], a: head + i + 1, b: null }); i++; }
+  while (j < m) { rows.push({ kind: "add", text: b[j], a: null, b: head + j + 1 }); j++; }
+  for (let k = 0; k < tail; k++) {
+    rows.push({ kind: "same", text: A[A.length - tail + k], a: A.length - tail + k + 1, b: B.length - tail + k + 1 });
+  }
+  return rows;
+}
+
+/* The same rows with untouched stretches collapsed to a { kind: "gap", count }
+   marker, keeping `context` lines either side of every change -- a run.xml is
+   hundreds of lines and an edit is usually a handful. */
+export function collapseDiff(rows, context = 3) {
+  const keep = new Array(rows.length).fill(false);
+  rows.forEach((r, i) => {
+    if (r.kind === "same") return;
+    for (let k = Math.max(0, i - context); k <= Math.min(rows.length - 1, i + context); k++) keep[k] = true;
+  });
+  const out = [];
+  let skipped = 0;
+  rows.forEach((r, i) => {
+    if (keep[i]) {
+      if (skipped) { out.push({ kind: "gap", count: skipped }); skipped = 0; }
+      out.push(r);
+    } else skipped += 1;
+  });
+  if (skipped) out.push({ kind: "gap", count: skipped });
+  return out;
+}
+
+/* How much changed, for a heading that does not make the reader count. */
+export const diffStat = (rows) => ({
+  added: (rows ?? []).filter((r) => r.kind === "add").length,
+  removed: (rows ?? []).filter((r) => r.kind === "del").length,
+});
+
+/* ============================================================
    Saved configurations (etc/save-config)
 
    A snapshot of run.xml kept on the device, listed by

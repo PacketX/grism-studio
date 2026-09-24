@@ -3821,6 +3821,44 @@ group("pcap live view");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
   }
 
+  /* The Export tab shows what this document changed, line by line. */
+  {
+    const a = "a\nb\nc\nd\ne";
+    check("identical texts have no changes", C.diffStat(C.diffLines(a, a)).added === 0
+      && C.diffStat(C.diffLines(a, a)).removed === 0);
+    check("every line is kept when nothing changed", C.diffLines(a, a).every((r) => r.kind === "same"));
+    const rows = C.diffLines(a, "a\nb\nX\nd\ne");
+    check("a replaced line is one del and one add", C.diffStat(rows).added === 1 && C.diffStat(rows).removed === 1);
+    check("line numbers point into both sides", (() => {
+      const del = rows.find((r) => r.kind === "del"), add = rows.find((r) => r.kind === "add");
+      return del.a === 3 && del.b === null && add.b === 3 && add.a === null;
+    })());
+    check("an inserted line is an add alone", C.diffStat(C.diffLines(a, "a\nb\nc\nNEW\nd\ne")).added === 1
+      && C.diffStat(C.diffLines(a, "a\nb\nc\nNEW\nd\ne")).removed === 0);
+    check("a deleted line is a del alone", C.diffStat(C.diffLines(a, "a\nb\nd\ne")).removed === 1
+      && C.diffStat(C.diffLines(a, "a\nb\nd\ne")).added === 0);
+    check("text against nothing is all additions", C.diffStat(C.diffLines("", a)).added === 5);
+    check("CRLF does not read as a change", C.diffStat(C.diffLines("a\r\nb", "a\nb")).added === 0);
+    // the whole run.xml is hundreds of lines; untouched stretches collapse
+    const long = Array.from({ length: 60 }, (_, i) => "line" + i).join("\n");
+    const edited = long.split("\n").map((l, i) => (i === 30 ? "CHANGED" : l)).join("\n");
+    const collapsed = C.collapseDiff(C.diffLines(long, edited), 3);
+    check("untouched stretches collapse", collapsed.length < 20 && collapsed.some((r) => r.kind === "gap"));
+    check("the gap says how many it hides", collapsed.filter((r) => r.kind === "gap")
+      .every((r) => Number.isFinite(r.count) && r.count > 0));
+    check("changes survive collapsing", C.diffStat(collapsed).added === 1 && C.diffStat(collapsed).removed === 1);
+    check("context is kept around a change", (() => {
+      const i = collapsed.findIndex((r) => r.kind === "del");
+      return collapsed[i - 1]?.kind === "same" && collapsed.slice(i).some((r) => r.kind === "same");
+    })());
+    // a run.xml shaped diff: one attribute edited deep in the file
+    const xmlA = '<run>\n  <filter id="1">\n    <or>\n      <find name="ip.addr" content="1.1.1.1"/>\n    </or>\n  </filter>\n</run>';
+    const xmlB = xmlA.replace("1.1.1.1", "8.8.8.8");
+    const xr = C.diffLines(xmlA, xmlB);
+    check("an edited attribute shows both lines", C.diffStat(xr).added === 1 && C.diffStat(xr).removed === 1
+      && xr.find((r) => r.kind === "add").text.includes("8.8.8.8"));
+  }
+
   /* What the device was running before each submit is kept beside the user's
      own saved configurations, and neither list may show the other's files. */
   {

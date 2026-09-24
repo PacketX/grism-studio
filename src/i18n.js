@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.169.0";
+export const STUDIO_VERSION = "2.170.0";
 
 export const I18N = {
   en: {
@@ -615,6 +615,15 @@ export const I18N = {
     "flt.notOnDevice": "(not on this device)",
     /* Extra running-config files (run1.xml…run15.xml). Deliberately quiet: the
        intended workflow is run.xml, and these are the exception. */
+    "ex.diffTitle": "Changes",
+    "ex.diffVs": "against what the device is running",
+    "ex.diffVsLoaded": "against the version this document was loaded from",
+    "ex.diffNone": "Nothing has changed.",
+    "ex.diffNoBase": "Load the running configuration to compare against it.",
+    "ex.diffAdded": "added", "ex.diffRemoved": "removed",
+    "ex.diffGap": "{n} unchanged lines",
+    "ex.diffShow": "Show changes", "ex.diffHide": "Hide changes",
+    "ex.diffWhole": "whole file",
     "ex.histTitle": "Previous versions",
     "ex.histNote": "Before each submit, what the device was running is kept here. The last {n} are held; older ones are removed. These are separate from your saved configurations.",
     "ex.histEmpty": "Nothing yet — the first snapshot is taken the next time you submit.",
@@ -1437,6 +1446,15 @@ export const I18N = {
     "ex.appliedLive": "設定已套用 — 裝置現在執行的是",
     "flt.pickCountry": "— 選擇國家 —", "flt.pickPort": "— 選擇連接埠 —",
     "flt.notOnDevice": "(此裝置沒有)",
+    "ex.diffTitle": "變更內容",
+    "ex.diffVs": "與裝置執行中的設定比較",
+    "ex.diffVsLoaded": "與這份文件載入時的版本比較",
+    "ex.diffNone": "沒有任何變更。",
+    "ex.diffNoBase": "先載入執行中的設定,才能與它比較。",
+    "ex.diffAdded": "新增", "ex.diffRemoved": "刪除",
+    "ex.diffGap": "{n} 行未變更",
+    "ex.diffShow": "顯示變更", "ex.diffHide": "隱藏變更",
+    "ex.diffWhole": "完整檔案",
     "ex.histTitle": "先前的版本",
     "ex.histNote": "每次提交前,會把裝置當下執行的設定保留在這裡。最多保留 {n} 份,較舊的會自動移除。這些與你自己儲存的設定分開存放。",
     "ex.histEmpty": "尚無紀錄 — 下次提交時會存下第一份。",
