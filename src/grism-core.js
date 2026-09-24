@@ -1715,6 +1715,13 @@ export function summarizeStatus(s) {
 
 
 export const IFCFG_FIELDS = ["enable", "ip", "name", "eth", "netmask", "gateway", "garp_interval", "bypassfilter"];
+/* What the page actually sets. garp_interval and bypassfilter are read (they
+   are part of the section) but never shown and never edited here, so writing
+   them back would replace whatever they hold with whatever this page last
+   happened to read -- stale if they were changed elsewhere since, and empty if
+   the value was whitespace, which trim() turns into nothing. A configSet that
+   omits them leaves them exactly as they are. */
+export const IFCFG_WRITE_FIELDS = IFCFG_FIELDS.filter((k) => k !== "garp_interval" && k !== "bypassfilter");
 // Pull the management ifcfgs sections out of a parsed config document. Returns an
 // array of { role, fields{} } for each <ifcfgs><find role="management*">.
 export function parseMgmtIfaces(xmlText) {
@@ -1732,7 +1739,7 @@ export function parseMgmtIfaces(xmlText) {
 // Build the minimal <configSet> holding just one management ifcfgs section.
 export function buildMgmtConfigSet(iface) {
   const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
-  const lines = IFCFG_FIELDS.map((k) => `            <${k}>${esc(iface.fields[k])}</${k}>`).join("\n");
+  const lines = IFCFG_WRITE_FIELDS.map((k) => `            <${k}>${esc(iface.fields[k])}</${k}>`).join("\n");
   return `<configSet reboot="no">\n    <ifcfgs>\n        <find role="${esc(iface.role)}">\n${lines}\n        </find>\n    </ifcfgs>\n</configSet>`;
 }
 

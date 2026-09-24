@@ -1101,13 +1101,24 @@ group("interface settings");
 group("device settings");
 {
   const iface = { role: "management", fields: { enable: "True", ip: "192.168.1.151", name: "M0",
-    eth: "eth1", netmask: "255.255.255.0", gateway: "192.168.1.1", garp_interval: "0", bypassfilter: "" } };
+    eth: "eth1", netmask: "255.255.255.0", gateway: "192.168.1.1", garp_interval: "7", bypassfilter: "yes" } };
   const cfg = C.buildMgmtConfigSet(iface);
   check("configSet wrapper", cfg.includes('<configSet reboot="no">'));
   check("role attribute", cfg.includes('role="management"'));
   check("ip written", cfg.includes("<ip>192.168.1.151</ip>"));
   check("only the ifcfgs section", !cfg.includes("<args>") && !cfg.includes("<interfaces>"));
-  check("every ifcfg field present", C.IFCFG_FIELDS.every((k) => cfg.includes("<" + k + ">")));
+  check("every field the page sets is present", C.IFCFG_WRITE_FIELDS.every((k) => cfg.includes("<" + k + ">")));
+  /* The two the page never shows are left out entirely: writing them back --
+     even with the value just read -- replaces whatever the device holds, and
+     the device is where they are set from. */
+  check("garp_interval not written", !cfg.includes("garp_interval"));
+  check("bypassfilter not written", !cfg.includes("bypassfilter"));
+  check("hidden fields are still read", C.IFCFG_FIELDS.includes("garp_interval") && C.IFCFG_FIELDS.includes("bypassfilter"));
+  // whitespace-only is exactly how .13 holds bypassfilter, and trim() makes it ""
+  const parsed = C.parseMgmtIfaces('<run><ifcfgs><find role="management"><ip>10.0.0.1</ip>'
+    + '<garp_interval>0</garp_interval><bypassfilter>   </bypassfilter></find></ifcfgs></run>');
+  check("a whitespace hidden value cannot be emptied by a save",
+    parsed[0].fields.bypassfilter === "" && !C.buildMgmtConfigSet(parsed[0]).includes("bypassfilter"));
 }
 
 /* ---------- traffic formatting ---------- */
