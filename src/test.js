@@ -3842,12 +3842,17 @@ group("pcap live view");
        they are not in MemTotal and must not be taken off it. */
     const mips = C.fixedMemory({ memTotal: 534060, memUsed: 364020 },
       { memory: { flow: 200000000, flowv6: 0, in_os_total: 0 } }, {});
-    check("bootmem tables are reported", Math.round(mips.tables) === Math.round(200000000 / 1024));
+    check("bootmem tables are still measured", Math.round(mips.tables) === Math.round(200000000 / 1024));
     check("bootmem tables are not subtracted", mips.tablesInOs === false && mips.fixed === 0
       && mips.restTotal === 534060);
+    /* And with nothing to subtract there is nothing to show: the card is the
+       plain one it has always been, not a list of figures it cannot act on. */
+    check("a MIPS device keeps the plain card", mips.known === false);
     // without either source the card has nothing to add
     check("nothing known leaves the plain total", C.fixedMemory(status, null, null).known === false);
     check("hugepages alone are enough to be known", C.fixedMemory(status, null, { hugepagesSetupSize: "6G" }).known === true);
+    check("tables in the OS total are enough on their own",
+      C.fixedMemory(status, stats, null).known === true);
     // the reservation cannot exceed the total, whatever the configuration says
     check("the fixed part is clamped to the total",
       C.fixedMemory({ memTotal: 1000, memUsed: 900 }, null, { hugepagesSetupSize: "8G" }).restTotal === 0);

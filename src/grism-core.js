@@ -1777,7 +1777,11 @@ export function fixedMemory(status, stats, args) {
     dedup: mem ? (Number(mem.dedup) || 0) / 1024 : 0,
     fixed, restTotal, restUsed,
     restPct: pct(restUsed, restTotal),
-    known: !!mem || hugepages > 0,
+    /* Only worth showing where something can actually come off the total. On
+       MIPS nothing can -- no hugepages, and the tables are bootmem, outside
+       the total already -- so the card stays the plain one it has always
+       been rather than listing figures it cannot act on. */
+    known: fixed > 0,
   };
 }
 
