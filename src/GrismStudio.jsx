@@ -38,7 +38,7 @@ import {
   parseUpdateServer, updateServerProblem,
   parseAServers, parseAdsnAgents, buildAServersConfigSet, buildAdsnAgentsConfigSet, aServerKind, nextMappingRow,
   switchServerProblems, hasAdsnAgent,
-  pct, ph, relationsFor, serializeRun, setSide, summarizeStatus,
+  pct, ph, relationsFor, serializeRun, setSide, summarizeStatus, fixedMemory,
   tRemove, tUpdate, tmplText, toks, validate,
   speedSwitch, groupSpeeds, PORT_SPEEDS, formatPortSpeed,
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
@@ -1341,6 +1341,27 @@ function SystemStatusTab({ loggedIn, t }) {
   }, [auto, loggedIn, load]);
 
   const info = useMemo(() => summarizeStatus(status), [status]);
+  /* What grism allocated, and what the configuration reserved for hugepages.
+     Read once rather than polled: neither changes until grism restarts, and
+     the status poll is already the expensive one on these devices. */
+  const [memStats, setMemStats] = React.useState(null);
+  const [memArgs, setMemArgs] = React.useState(null);
+  React.useEffect(() => {
+    if (!loggedIn) return;
+    let alive = true;
+    (async () => {
+      try {
+        const [st, cfg] = await Promise.all([
+          fetch("/grism/task/get_statistics_json", { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
+          fetch("/grism/task/get_config", { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
+        ]);
+        if (!alive) return;
+        setMemStats(st); setMemArgs(cfg?.args ?? null);
+      } catch { /* the card falls back to the plain total */ }
+    })();
+    return () => { alive = false; };
+  }, [loggedIn]);
+  const fixed = useMemo(() => fixedMemory(info, memStats, memArgs), [info, memStats, memArgs]);
 
   if (!loggedIn) return (
     <div className="sys-wrap"><div className="sys-need-login">{tr("sys.needLogin")}</div></div>
@@ -1397,11 +1418,38 @@ function SystemStatusTab({ loggedIn, t }) {
             </div>
           </section>
 
-          {/* Memory */}
+          {/* Memory. The headline is what is left once the startup reservations
+              are set aside: a box that reserves 8GB of hugepages and 4GB of
+              flow tables out of 16GB reads as 87% used while it is idle, and
+              that number answers nothing anyone asks of it. */}
           <section className="sys-card">
-            <h3 className="sys-card-title">{tr("sys.memory")} <span className="sys-card-metric">{info.memPct}%</span></h3>
-            <div className="sys-bar big"><div className="sys-bar-fill" style={{ width: info.memPct + "%" }} /></div>
-            <p className="sys-note">{tr("sys.used")} {fmtKB(info.memUsed)} {tr("sys.of")} {fmtKB(info.memTotal)}</p>
+            <h3 className="sys-card-title">{tr("sys.memory")}
+              <span className="sys-card-metric">{fixed.known ? fixed.restPct : info.memPct}%</span></h3>
+            <div className="sys-bar big"><div className="sys-bar-fill"
+              style={{ width: (fixed.known ? fixed.restPct : info.memPct) + "%" }} /></div>
+            {fixed.known ? <>
+              <p className="sys-note">{tr("sys.memRestNote")
+                .replace("{used}", fmtKB(fixed.restUsed)).replace("{total}", fmtKB(fixed.restTotal))}</p>
+              <div className="mem-fixed">
+                <div className="mem-fixed-head">{tr("sys.memReserved")}
+                  <span className="mono">{fmtKB(fixed.hugepages + fixed.tables)}</span></div>
+                {fixed.hugepages > 0 && <div className="mem-fixed-row">
+                  <span>{tr("sys.memHugepages")}</span><span className="mono">{fmtKB(fixed.hugepages)}</span></div>}
+                {fixed.flow > 0 && <div className="mem-fixed-row">
+                  <span>{tr("sys.memFlow")}</span><span className="mono">{fmtKB(fixed.flow)}</span></div>}
+                {fixed.flowv6 > 0 && <div className="mem-fixed-row">
+                  <span>{tr("sys.memFlowv6")}</span><span className="mono">{fmtKB(fixed.flowv6)}</span></div>}
+                {fixed.dedup > 0 && <div className="mem-fixed-row">
+                  <span>{tr("sys.memDedup")}</span><span className="mono">{fmtKB(fixed.dedup)}</span></div>}
+                {/* the MIPS tables are outside this total, so they are listed
+                    for what they cost and not taken off it */}
+                {fixed.tables > 0 && !fixed.tablesInOs &&
+                  <p className="set-hint">{tr("sys.memBootmem")}</p>}
+              </div>
+              <p className="sys-note dim">{tr("sys.used")} {fmtKB(info.memUsed)} {tr("sys.of")} {fmtKB(info.memTotal)}</p>
+            </> : (
+              <p className="sys-note">{tr("sys.used")} {fmtKB(info.memUsed)} {tr("sys.of")} {fmtKB(info.memTotal)}</p>
+            )}
           </section>
 
           {/* Disk */}

@@ -1285,6 +1285,8 @@ check("no Chinese entry is left in English", (() => {
     // the switch server names and the two protocol names, written the same
     // way on both sides
     "ADSN agent", "VPort", "GRISM-APH", "GRISM-A",
+    // the hugepage reservation is named after the thing that takes it
+    "DPDK hugepages",
     // 3GPP column names, written the same way in both languages
     "MME/AMF UE ID", "RAN UE ID", "PLMN ID", "CELL ID", "SPID",
     "UL GTP TEID", "UL GTP IPv4", "DL GTP TEID", "DL GTP IPv4", "UE IPv4"]);
@@ -3819,6 +3821,38 @@ group("pcap live view");
     // an empty phrase would match every row, which is never what was meant
     check("an empty phrase is rejected", C.parseFilterExpr('""').error === "operand");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
+  }
+
+  /* Memory that is spoken for before anything runs. A device that reserves 8GB
+     of hugepages and 4GB of flow tables out of 16GB reads as 87% used while it
+     is idle; the figures below are .13's, read off it. */
+  {
+    const status = { memTotal: 16407552, memUsed: 14202240 };          // KB
+    const stats = { memory: { flow: 4412849000, flowv6: 339150000, dedup: 0, in_os_total: 1 } };
+    const f = C.fixedMemory(status, stats, { hugepagesSetupSize: "8G" });
+    check("hugepages are read from the configuration", f.hugepages === 8 * 1024 * 1024);
+    check("the tables are read from the firmware", Math.round(f.flow) === Math.round(4412849000 / 1024)
+      && Math.round(f.flowv6) === Math.round(339150000 / 1024));
+    check("both come off the total", f.fixed === f.hugepages + f.tables
+      && f.restTotal === status.memTotal - f.fixed);
+    check("and off what is used", f.restUsed === status.memUsed - f.fixed);
+    check("the headline becomes the rest", f.restPct === C.pct(f.restUsed, f.restTotal)
+      && f.restPct < 40 && C.pct(status.memUsed, status.memTotal) > 80);
+    /* On MIPS the tables come from bootmem, reserved before Linux boots, so
+       they are not in MemTotal and must not be taken off it. */
+    const mips = C.fixedMemory({ memTotal: 534060, memUsed: 364020 },
+      { memory: { flow: 200000000, flowv6: 0, in_os_total: 0 } }, {});
+    check("bootmem tables are reported", Math.round(mips.tables) === Math.round(200000000 / 1024));
+    check("bootmem tables are not subtracted", mips.tablesInOs === false && mips.fixed === 0
+      && mips.restTotal === 534060);
+    // without either source the card has nothing to add
+    check("nothing known leaves the plain total", C.fixedMemory(status, null, null).known === false);
+    check("hugepages alone are enough to be known", C.fixedMemory(status, null, { hugepagesSetupSize: "6G" }).known === true);
+    // the reservation cannot exceed the total, whatever the configuration says
+    check("the fixed part is clamped to the total",
+      C.fixedMemory({ memTotal: 1000, memUsed: 900 }, null, { hugepagesSetupSize: "8G" }).restTotal === 0);
+    check("size suffixes", C.parseSize("8G") === 8589934592 && C.parseSize("512M") === 536870912
+      && C.parseSize("1024") === 1024 && C.parseSize("") === 0 && C.parseSize("what") === 0);
   }
 
   /* Offering the LOOP detour, not just describing it: the chains the capture is

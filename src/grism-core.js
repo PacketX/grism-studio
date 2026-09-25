@@ -1743,6 +1743,53 @@ export function summarizeStatus(s) {
     cpu, cpuOverall, memTotal, memUsed, memFree, memPct: pct(memUsed, memTotal), disks, procs, temps, fans, psus };
 }
 
+/* Memory that is spoken for the moment grism starts and is never going to come
+   back: the hugepages reserved for DPDK, and the flow tables it allocates.
+
+   Both are part of what the status page calls used, and neither says anything
+   about how the device is coping -- a box that reserves 8GB of hugepages and
+   4GB of flow tables out of 16GB reads as 87% used while it is idle. Taking
+   them off both sides answers the question the number is there for: how much
+   of what is left is in use.
+
+   The flow tables only count where they came from the OS: on MIPS they are
+   allocated from bootmem, reserved before Linux boots, so they are not in
+   MemTotal and subtracting them would remove memory it never counted. The
+   firmware says which, in memory.in_os_total.
+
+   Sizes are in KB throughout, as the status page has them. */
+export function fixedMemory(status, stats, args) {
+  const mem = stats?.memory ?? null;
+  const hugepages = parseSize(args?.hugepagesSetupSize) / 1024;      // bytes → KB
+  const inOs = mem ? Number(mem.in_os_total) === 1 : false;
+  const tables = mem ? (Number(mem.flow) || 0) + (Number(mem.flowv6) || 0) + (Number(mem.dedup) || 0) : 0;
+  const tablesKB = tables / 1024;
+  const total = Number(status?.memTotal) || 0;
+  const used = Number(status?.memUsed) || 0;
+  // only what the OS actually counted may come off its total
+  const fixed = Math.min(total, hugepages + (inOs ? tablesKB : 0));
+  const restTotal = Math.max(0, total - fixed);
+  const restUsed = Math.max(0, used - fixed);
+  return {
+    hugepages, tables: tablesKB, tablesInOs: inOs,
+    flow: mem ? (Number(mem.flow) || 0) / 1024 : 0,
+    flowv6: mem ? (Number(mem.flowv6) || 0) / 1024 : 0,
+    dedup: mem ? (Number(mem.dedup) || 0) / 1024 : 0,
+    fixed, restTotal, restUsed,
+    restPct: pct(restUsed, restTotal),
+    known: !!mem || hugepages > 0,
+  };
+}
+
+/* "8G", "512M", "1024" (bytes) as bytes. The configuration writes the
+   hugepage reservation the way the DPDK tools take it. */
+export function parseSize(v) {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*([KMGT]?)B?\s*$/i.exec(String(v ?? ""));
+  if (!m) return 0;
+  const mult = { "": 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4 }[m[2].toUpperCase()];
+  return Math.round(Number(m[1]) * mult);
+}
+
 
 export const IFCFG_FIELDS = ["enable", "ip", "name", "eth", "netmask", "gateway", "garp_interval", "bypassfilter"];
 /* What the page actually sets. garp_interval and bypassfilter are read (they

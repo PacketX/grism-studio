@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.180.0";
+export const STUDIO_VERSION = "2.181.0";
 
 export const I18N = {
   en: {
@@ -154,6 +154,12 @@ export const I18N = {
     "sys.lastUpdated": "Updated", "sys.loadFailed": "Couldn't load system status",
     "sys.host": "Host", "sys.uptime": "Uptime", "sys.datetime": "Device time", "sys.loadavg": "Load average",
     "sys.cpu": "CPU usage", "sys.core": "core",
+    "sys.memReserved": "Reserved at startup",
+    "sys.memHugepages": "DPDK hugepages", "sys.memFlow": "Flow table", "sys.memFlowv6": "IPv6 flow table",
+    "sys.memDedup": "Deduplication table",
+    "sys.memRest": "of the rest in use",
+    "sys.memRestNote": "{used} of {total} once what is reserved at startup is set aside.",
+    "sys.memBootmem": "reserved before Linux, outside this total",
     "sys.memory": "Memory", "sys.used": "used", "sys.of": "of",
     "sys.disk": "Disk", "sys.availShort": "avail",
     "sys.processes": "Processes", "sys.proc.name": "Process", "sys.proc.pid": "PID",
@@ -1004,6 +1010,12 @@ export const I18N = {
     "sys.lastUpdated": "更新於", "sys.loadFailed": "無法載入系統狀態",
     "sys.host": "主機", "sys.uptime": "運行時間", "sys.datetime": "裝置時間", "sys.loadavg": "負載平均",
     "sys.cpu": "CPU 使用率", "sys.core": "核心",
+    "sys.memReserved": "啟動時即固定佔用",
+    "sys.memHugepages": "DPDK hugepages", "sys.memFlow": "連線表", "sys.memFlowv6": "IPv6 連線表",
+    "sys.memDedup": "去重複表",
+    "sys.memRest": "其餘記憶體使用率",
+    "sys.memRestNote": "扣除啟動時即固定佔用的部分後,已用 {used} / 共 {total}。",
+    "sys.memBootmem": "在 Linux 之前就保留,不計入此總量",
     "sys.memory": "記憶體", "sys.used": "已用", "sys.of": "／",
     "sys.disk": "磁碟", "sys.availShort": "可用",
     "sys.processes": "行程", "sys.proc.name": "行程", "sys.proc.pid": "PID",
