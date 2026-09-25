@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.179.0";
+export const STUDIO_VERSION = "2.180.0";
 
 export const I18N = {
   en: {
@@ -32,6 +32,9 @@ export const I18N = {
     "cap.confirmTitle": "Start capturing?",
     "cap.confirmBody": "This is added to the configuration the device is running and takes effect immediately. The added configuration is removed once the capture's seconds to live expire.",
     "cap.confirmDesc": "Runs for the seconds to live, then removes itself",
+    "cap.stopConfirmTitle": "Stop capturing?",
+    "cap.stopConfirmBody": "Stopping submits an empty configuration, which clears the capture and makes the device read its running configuration again — the same reload that starting one causes. Files already written are kept.",
+    "cap.stopConfirmDesc": "Clears the capture and reloads the running configuration",
     "cap.delDesc": "The file cannot be recovered",
     "cap.delTitle": "Delete this file?", "cap.delTitleN": "Delete these files?", "cap.selectAll": "Select all", "cap.delSelected": "Delete selected",
     "cap.markForDelete": "Mark for deletion",
@@ -879,6 +882,9 @@ export const I18N = {
     "cap.confirmTitle": "開始側錄?",
     "cap.confirmBody": "這會附加於裝置執行中的設定並立即套用。側錄的存活秒數結束後,附加的設定會移除。",
     "cap.confirmDesc": "執行至存活秒數結束後自動移除",
+    "cap.stopConfirmTitle": "中斷側錄?",
+    "cap.stopConfirmBody": "中斷會送出一份空的設定,藉此清掉這次側錄,裝置也會因此重新讀取執行中的設定 — 與開始側錄時造成的重新載入相同。已經寫出的檔案會保留。",
+    "cap.stopConfirmDesc": "清掉這次側錄,並重新讀取執行中的設定",
     "cap.delDesc": "檔案無法復原",
     "cap.delTitle": "刪除這個檔案?", "cap.delTitleN": "刪除這些檔案?", "cap.selectAll": "全選", "cap.delSelected": "刪除選取的檔案",
     "cap.markForDelete": "標記為待刪除",

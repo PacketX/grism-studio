@@ -6275,7 +6275,9 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
               page is showing -- a capture started before the page was opened,
               or one whose <stl> has run out while its filters stay loaded --
               and there has to be a way to clear it without starting another. */}
-          <button className="copy-btn" onClick={stop}>
+          {/* Asks first, as starting does: both submit an instant configuration
+              and both make the device read its running configuration again. */}
+          <button className="copy-btn" onClick={() => setAsk({ kind: "stop" })}>
             {stopping ? tr("cap.stopping") : tr("cap.stop")}</button>
           {running > 0 && <span className="cap-countdown">
             <span className="cap-dot" aria-hidden="true" />{tr("cap.capturing")} <b className="mono">{running}s</b>
@@ -6355,19 +6357,24 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
           <div className={"modal" + (ask.kind === "delete" ? " modal-warn" : "")} onClick={(e) => e.stopPropagation()}>
             <div className="modal-title">
               {ask.kind === "start" ? tr("cap.confirmTitle")
+                : ask.kind === "stop" ? tr("cap.stopConfirmTitle")
                 : ask.files.length > 1 ? `${tr("cap.delTitleN")} (${ask.files.length})` : tr("cap.delTitle")}
             </div>
             <p className="modal-body">
-              {ask.kind === "start" ? tr("cap.confirmBody") : tr("cap.delBody")}
+              {ask.kind === "start" ? tr("cap.confirmBody")
+                : ask.kind === "stop" ? tr("cap.stopConfirmBody") : tr("cap.delBody")}
               {ask.kind === "delete" && <><br />{ask.files.map((n) => <code className="cap-del-name" key={n}>{n}</code>)}</>}
             </p>
             <button className={"opt" + (ask.kind === "delete" ? " drop" : "")} onClick={() => {
               const a = ask; setAsk(null);
               if (a.kind === "start") { start(); return; }
+              if (a.kind === "stop") { stop(); return; }
                 br.removeFiles(a.files).catch((e) => setErr(String(e.message || e))).finally(() => fileSel.clear());
             }}>
-              <span className="opt-name">{ask.kind === "start" ? tr("cap.start") : tr("common.delete")}</span>
-              <span className="opt-desc">{ask.kind === "start" ? tr("cap.confirmDesc") : tr("cap.delDesc")}</span>
+              <span className="opt-name">{ask.kind === "start" ? tr("cap.start")
+                : ask.kind === "stop" ? tr("cap.stop") : tr("common.delete")}</span>
+              <span className="opt-desc">{ask.kind === "start" ? tr("cap.confirmDesc")
+                : ask.kind === "stop" ? tr("cap.stopConfirmDesc") : tr("cap.delDesc")}</span>
             </button>
             <button className="opt-cancel" onClick={() => setAsk(null)}>{tr("common.cancel")}</button>
           </div>
