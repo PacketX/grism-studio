@@ -1971,18 +1971,23 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .ex-diff-body{margin:8px 0 0; padding:8px 10px; max-height:340px; overflow:auto; white-space:pre;
   background:var(--bg); border:1px solid var(--line-2); border-radius:8px; font-size:11px; line-height:1.55;}
 .ex-diff-body .dl{display:block;}
-.ex-diff-body .dl.plus{background:rgba(51,196,141,.13); color:#8ff0c6;}
-.ex-diff-body .dl.minus{background:rgba(224,82,82,.13); color:#ffb3b3;}
+.ex-diff-body .dl.plus{background:rgba(51,196,141,.15);}
+.ex-diff-body .dl.minus{background:rgba(224,82,82,.15);}
+/* the marker column: the one part of a diff line that is not XML */
+.ex-diff-body .dl-mark{display:inline-block; width:1.4em; font-weight:700; color:var(--txt-faint);}
+.ex-diff-body .dl.plus .dl-mark{color:#33c48d;}
+.ex-diff-body .dl.minus .dl-mark{color:#e05252;}
 /* Those two were picked against the dark panel; on the light one they were a
    pale wash of near-white text. Same idea, inverted: a light tint with text
    dark enough to read on it. */
-.gs-root.light .ex-diff-body .dl.plus{background:rgba(26,127,86,.14); color:#0a5c3e;}
-.gs-root.light .ex-diff-body .dl.minus{background:rgba(190,40,40,.13); color:#8c1d1d;}
-.gs-root.light .ex-diff-body .dl.same{color:#3d444d;}
+.gs-root.light .ex-diff-body .dl.plus{background:rgba(26,127,86,.15);}
+.gs-root.light .ex-diff-body .dl.minus{background:rgba(190,40,40,.13);}
+.gs-root.light .ex-diff-body .dl.plus .dl-mark{color:#0a5c3e;}
+.gs-root.light .ex-diff-body .dl.minus .dl-mark{color:#8c1d1d;}
 .gs-root.light .ex-diff-body .dl.gap{color:#6b7683;}
 .gs-root.light .ex-diff-n.plus{color:#0a5c3e;}
 .gs-root.light .ex-diff-n.minus{color:#8c1d1d;}
-.ex-diff-body .dl.same{color:var(--txt-dim);}
+
 .ex-diff-body .dl.gap{color:var(--txt-faint); font-style:italic;}
 .cap-warn-act{margin-top:9px;}
 .modal-wide{max-width:640px;}

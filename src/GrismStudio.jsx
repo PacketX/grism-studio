@@ -10102,12 +10102,16 @@ function XmlDiff({ base, current, tr, inline = false }) {
           <button className="ex-diff-n minus jump" onClick={() => jump("minus")} title={tr("ex.diffJump")}>−{stat.removed}</button>
           <span className="set-hint">{tr("ex.diffVsLoaded")} · {tr("ex.diffJump")}</span>
         </div>
+        {/* The same highlighter the plain view uses, so a line reads as XML
+            whether or not it changed; the marker column stays outside it so
+            the text lines up and can still be copied as XML. */}
         {changed === 0 ? <p className="sys-note dim">{tr("ex.diffNone")}</p> : (
-          <pre className="ex-diff-body inline mono" ref={bodyRef}>{shown.map((r, i) => (
+          <pre className="ex-diff-body inline mono xml" ref={bodyRef}>{shown.map((r, i) => (
             r.kind === "gap"
               ? <span className="dl gap" key={i}>{`    ⋯ ${tr("ex.diffGap").replace("{n}", String(r.count))}\n`}</span>
               : <span className={"dl " + (r.kind === "add" ? "plus" : r.kind === "del" ? "minus" : r.kind)} key={i}>
-                  {`${r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "} ${r.text}\n`}</span>
+                  <span className="dl-mark">{r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "}</span>
+                  {highlightXmlLine(r.text, i)}{"\n"}</span>
           ))}</pre>
         )}
       </div>
@@ -10132,11 +10136,12 @@ function XmlDiff({ base, current, tr, inline = false }) {
           {open && (<>
             <label className="tf-interval ex-diff-whole"><input type="checkbox" checked={whole}
               onChange={(e) => setWhole(e.target.checked)} /> {tr("ex.diffWhole")}</label>
-            <pre className="ex-diff-body mono">{shown.map((r, i) => (
+            <pre className="ex-diff-body mono xml">{shown.map((r, i) => (
               r.kind === "gap"
                 ? <span className="dl gap" key={i}>{`    ⋯ ${tr("ex.diffGap").replace("{n}", String(r.count))}\n`}</span>
                 : <span className={"dl " + (r.kind === "add" ? "plus" : r.kind === "del" ? "minus" : r.kind)} key={i}>
-                    {`${r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "} ${r.text}\n`}</span>
+                    <span className="dl-mark">{r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "}</span>
+                    {highlightXmlLine(r.text, i)}{"\n"}</span>
             ))}</pre>
           </>)}
         </>)}
