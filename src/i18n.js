@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.183.0";
+export const STUDIO_VERSION = "2.187.0";
 
 export const I18N = {
   en: {
@@ -186,7 +186,10 @@ export const I18N = {
     "set.confirmRebootTitle": "Reboot the device?", "set.confirmHaltTitle": "Shut the device down?",
     "set.confirmRebootBody": "All traffic stops until the device finishes restarting.",
     "set.confirmHaltBody": "All traffic stops. The device has to be powered on physically.",
-    "set.rebooting": "Rebooting", "set.rebootingBody": "The device is restarting — reload this page once it is back.",
+    "set.rebooting": "Rebooting", "set.rebootingBody": "The device is restarting. This page is watching for it and will say when it answers again.",
+    "set.rebootWaiting": "waiting for it to answer — {s}s",
+    "set.rebootBack": "The device is back", "set.rebootBackBody": "It answered after {s}s, restarted.",
+    "set.rebootReload": "Reload the page", "set.rebootSlow": "It has been {s}s. It may still be starting, or it may have come back on a different address.",
     "set.halting": "Shutting down", "set.haltingBody": "The device is powering off.",
     "set.logging": "Logging", "set.lgEnable": "Enabled",
     "set.lgNetflowNote": "Collectors that receive the NetFlow records.",
@@ -719,6 +722,9 @@ export const I18N = {
     "adv.actions": "Actions apply ingress packet processing or link-pair failover. Most setups don't need these.",
     "login.title": "Sign in to the device", "login.username": "Username", "login.password": "Password",
     "login.signingIn": "signing in…", "login.signIn": "Sign in",
+    "login.expired": "The device session has ended. Sign in again to continue.",
+    "login.readOnly": "read-only", "login.readOnlyTip": "This account may look at everything and change nothing.",
+    "login.readOnlyBanner": "Signed in as a read-only account — the configuration can be read but not submitted.",
     "confirm.discardTitle": "Discard current edits?",
     "common.delete": "Delete", "common.cancel": "Cancel", "common.optional": "optional",
     "common.use": "use", "common.useSuggested": "Use this name, read from what this element already does.",
@@ -848,6 +854,8 @@ export const I18N = {
     "ch.dropNote": "0 discards the packet outright, which is not the same as leaving it unspecified.",
     "ch.portsDefaultNote": "Default list — sign in to load the device\u2019s actual ports.",
     "ch.zoomIn": "Zoom in", "ch.zoomOut": "Zoom out", "ch.zoomReset": "Back to 100%",
+    "ch.vlanStrip": "strips the VLAN tag", "ch.vlanTag": "adds VLAN tag {id}",
+    "ch.tipIngress": "traffic in", "ch.tipEgress": "leaves by",
     "ch.tipMissing": "no filter with this id is defined",
     "ch.tipOnDevice": "built on the device, not in this configuration — {n} entries",
     "ch.tipOnDeviceMaybe": "built on the device, not in this configuration — sign in to read its size",
@@ -1042,7 +1050,10 @@ export const I18N = {
     "set.confirmRebootTitle": "重新開機?", "set.confirmHaltTitle": "關閉裝置?",
     "set.confirmRebootBody": "所有流量會中斷,直到裝置重開完成。",
     "set.confirmHaltBody": "所有流量會中斷,且需要實體開機才能恢復。",
-    "set.rebooting": "重新開機中", "set.rebootingBody": "裝置正在重開,完成後請重新整理此頁。",
+    "set.rebooting": "重新開機中", "set.rebootingBody": "裝置正在重開,此頁會持續等待,回應後會告訴你。",
+    "set.rebootWaiting": "等待回應中 — 已 {s} 秒",
+    "set.rebootBack": "裝置已回來", "set.rebootBackBody": "{s} 秒後回應,已完成重新啟動。",
+    "set.rebootReload": "重新整理頁面", "set.rebootSlow": "已經過 {s} 秒。可能還在啟動,也可能換到別的位址了。",
     "set.halting": "關機中", "set.haltingBody": "裝置正在關閉電源。",
     "set.logging": "紀錄輸出", "set.lgEnable": "啟用",
     "set.lgNetflowNote": "接收 NetFlow 紀錄的收集器。",
@@ -1573,6 +1584,9 @@ export const I18N = {
     "adv.actions": "Actions 套用入口封包處理或 link-pair failover。大多數設定不需要這些。",
     "login.title": "登入裝置", "login.username": "帳號", "login.password": "密碼",
     "login.signingIn": "登入中…", "login.signIn": "登入",
+    "login.expired": "裝置連線階段已結束,請重新登入。",
+    "login.readOnly": "唯讀", "login.readOnlyTip": "這個帳號可以看所有內容,但不能變更任何設定。",
+    "login.readOnlyBanner": "目前以唯讀帳號登入 —— 可以讀取設定,但不能提交變更。",
     "confirm.discardTitle": "放棄目前的編輯?",
     "common.delete": "刪除", "common.cancel": "取消", "common.optional": "選填",
     "common.use": "採用", "common.useSuggested": "採用這個名稱,它是從這個元素目前的內容推出來的。",
@@ -1702,6 +1716,8 @@ export const I18N = {
     "ch.dropNote": "選擇 0 代表明確丟棄,與「未指定」不同。",
     "ch.portsDefaultNote": "這是預設清單 — 登入後會載入裝置實際的連接埠。",
     "ch.zoomIn": "放大", "ch.zoomOut": "縮小", "ch.zoomReset": "回到 100%",
+    "ch.vlanStrip": "移除 VLAN tag", "ch.vlanTag": "加上 VLAN tag {id}",
+    "ch.tipIngress": "流量進入", "ch.tipEgress": "由此送出",
     "ch.tipMissing": "沒有這個 id 的篩選器",
     "ch.tipOnDevice": "由裝置建立,不在這份設定裡 — {n} 筆",
     "ch.tipOnDeviceMaybe": "由裝置建立,不在這份設定裡 — 登入後可讀取筆數",

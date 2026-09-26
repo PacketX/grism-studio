@@ -1447,6 +1447,41 @@ group("change tracking");
 group("current user endpoint");
 check("bare username body", C.extractUsername("packetx") === "packetx");
 check("json body", C.extractUsername('{"username":"packetx","priv":15}') === "packetx");
+
+/* --- account privilege: priv 1 is the read-only account pywww refuses writes for --- */
+check("priv from json", C.extractPriv('{"username":"guest","priv":1}') === 1);
+check("priv from header string", C.extractPriv({ priv: "1" }) === 1);
+check("priv 15 is full", C.extractPriv('{"username":"packetx","priv":15}') === 15);
+check("priv absent", C.extractPriv('{"username":"packetx"}') === null);
+check("priv from html", C.extractPriv("<html>404</html>") === null);
+check("priv from empty header", C.extractPriv({ priv: null }) === null);
+check("readonly 1", C.isReadOnlyPriv(1) === true);
+check("readonly 15", C.isReadOnlyPriv(15) === false);
+// no answer means full access, the way it behaved before the field was read
+check("readonly unknown", C.isReadOnlyPriv(null) === false);
+
+/* --- which requests a read-only account must not make --- */
+check("submitxml is a write", C.isWriteRequest("/grism/task/submitxml", "POST") === true);
+check("submit_instant is a write", C.isWriteRequest("/grism/task/submit_instant", "POST") === true);
+check("set_switch_interface is a write", C.isWriteRequest("/grism/task/set_switch_interface", "POST") === true);
+check("del_storage_file is a write", C.isWriteRequest("/grism/task/del_storage_file?name=a", "POST") === true);
+check("save_xml is a write", C.isWriteRequest("/grism/task/save_xml", "POST") === true);
+check("reboot is a write", C.isWriteRequest("/grism/task/reboot") === true);
+check("restore is a write", C.isWriteRequest("/grism/task/restore", "POST") === true);
+check("upload_pcap is a write", C.isWriteRequest("/grism/task/upload_pcap_file", "POST") === true);
+check("firmware download is a write", C.isWriteRequest("/grism/task/update_download?version=1", "GET") === true);
+check("change_password is a write", C.isWriteRequest("/change_password", "POST") === true);
+check("get_config is not", C.isWriteRequest("/grism/task/get_config") === false);
+check("get_statistics posted is not", C.isWriteRequest("/grism/task/get_statistics_json", "POST") === false);
+check("get_filter_counter is not", C.isWriteRequest("/grism/task/get_filter_counter", "GET") === false);
+check("update_check is not", C.isWriteRequest("/grism/task/update_check") === false);
+check("backup is not", C.isWriteRequest("/grism/task/backup") === false);
+// sign-in and sign-out must survive, or a read-only session could not end
+check("login allowed", C.isWriteRequest("/direct_login", "POST") === false);
+check("logout allowed", C.isWriteRequest("/logout", "POST") === false);
+// an unknown POST to the task API is a write until something says otherwise
+check("unknown task POST", C.isWriteRequest("/grism/task/frobnicate", "POST") === true);
+check("absolute url", C.isWriteRequest("https://d/grism/task/submitxml", "POST") === true);
 check("object payload", C.extractUsername({ username: "packetx" }) === "packetx");
 check("capitalised key", C.extractUsername({ User: "admin" }) === "admin");
 check("nested under args", C.extractUsername({ args: { username: "a1" } }) === "a1");
@@ -3821,6 +3856,24 @@ group("pcap live view");
     // an empty phrase would match every row, which is never what was meant
     check("an empty phrase is rejected", C.parseFilterExpr('""').error === "operand");
     check("a broken filter is not a matcher", C.parseFilterExpr("(tcp").ok === false);
+  }
+
+  /* The ingress and plain-port nodes on the chain canvas, and the VLAN
+     handling the chain does itself -- an attribute nothing else draws. */
+  {
+    const tr = (k) => k;
+    check("stripping reads as itself", C.vlanOpText({ vlantype: "stripping" }, tr) === "ch.vlanStrip");
+    check("tagging carries the id", C.vlanOpText({ vlantype: "tagging", vlanid: "3001" },
+      (k) => (k === "ch.vlanTag" ? "adds {id}" : k)) === "adds 3001");
+    check("no attribute, nothing to say", C.vlanOpText(null, tr) === "" && C.vlanOpText({}, tr) === "");
+    const descs = { P4: "uplink", P5: "" };
+    check("ports carry what they were called",
+      JSON.stringify(C.plainPorts("P4,P5", descs)) === JSON.stringify([
+        { name: "P4", desc: "uplink" }, { name: "P5", desc: "" }]));
+    // O-tokens are outDestinations' business; 0 is the discard
+    check("outputs are left out", C.plainPorts("O2,P5", descs).map((p) => p.name).join() === "P5");
+    check("zero reads as drop", C.plainPorts("0").map((p) => p.name).join() === "drop");
+    check("nothing in, nothing out", C.plainPorts("").length === 0 && C.plainPorts(null).length === 0);
   }
 
   /* Memory that is spoken for before anything runs. A device that reserves 8GB

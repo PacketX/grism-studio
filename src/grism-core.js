@@ -421,6 +421,28 @@ export function outputActions(o, t) {
   return out;
 }
 
+/* What a chain's own VLAN handling does, for the hover on an ingress or an
+   output node. These are attributes on <in> and <out> rather than anything in
+   an <output>, so nothing else in the picture shows them -- a chain that tags
+   on its way out and strips on its way back in looks exactly like one that
+   does not. */
+export function vlanOpText(v, t) {
+  const tr = t || ((k) => k);
+  if (!v || !v.vlantype) return "";
+  if (v.vlantype === "stripping") return tr("ch.vlanStrip");
+  if (v.vlantype === "tagging") return tr("ch.vlanTag").replace("{id}", String(v.vlanid ?? ""));
+  return String(v.vlantype);
+}
+
+/* The plain ports a chain names, with whatever the operator called them. The
+   O-tokens are somebody else's business (outDestinations); these are the ones
+   that are just a port. */
+export function plainPorts(ports, descs = {}) {
+  return String(ports ?? "").split(",").map((p) => p.trim()).filter(Boolean)
+    .filter((p) => !/^O\d+$/.test(p))
+    .map((p) => ({ name: p === "0" ? "drop" : p, desc: descs[p] || "" }));
+}
+
 /* The outputs a chain's <out> names, resolved. Plain ports are left out: the
    node already shows them and there is nothing more to say about one. */
 export function outDestinations(ports, outputs, t) {
@@ -2247,6 +2269,63 @@ export function extractUsername(payload) {
     if (typeof v === "string" && v.trim()) return v.trim();
   }
   return "";
+}
+
+/* What the account is allowed to do. get_current_user answers
+   {"username":"guest","priv":1}, and pywww's inner_check_admin refuses every
+   write for priv 1 -- guest, or a TACACS account the server would not authorize.
+   Anything else (15 is what a local login gets) is full access. A body that
+   does not say, from firmware whose endpoint predates the field, is read as
+   full access: that is how it behaved before this existed. */
+export const PRIV_READONLY = 1;
+
+export function extractPriv(payload) {
+  if (payload == null) return null;
+  if (typeof payload === "string") {
+    const t = payload.trim();
+    if (!t || t.startsWith("<")) return null;
+    try { return extractPriv(JSON.parse(t)); } catch { return null; }
+  }
+  if (typeof payload !== "object") return null;
+  const src = payload.args ?? payload.data ?? payload;
+  for (const k of ["priv", "userpriv", "Userpriv", "privilege"]) {
+    const v = src?.[k];
+    if (v === 0 || (typeof v === "number" && Number.isFinite(v))) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+  }
+  return null;
+}
+
+export function isReadOnlyPriv(priv) {
+  return priv != null && Number(priv) === PRIV_READONLY;
+}
+
+/* Which requests change something on the device.
+
+   A read-only account is refused by pywww, but being refused one request at a
+   time is not the same as the page knowing: the buttons stay live, the errors
+   read as faults, and a half-applied sequence looks like a bug rather than a
+   permission. So the page stops these itself -- named by path, because the
+   method does not separate them (plenty of reads are POSTs here).
+
+   Login and logout are writes by any reading and must stay allowed, or a
+   read-only session could not end. */
+const WRITE_PATHS = [
+  /^\/grism\/task\/submit/, /^\/grism\/task\/set_/, /^\/grism\/task\/del_/,
+  /^\/grism\/task\/save_/, /^\/grism\/task\/restore/, /^\/grism\/task\/reboot/,
+  /^\/grism\/task\/upload/, /^\/grism\/task\/update_download/,
+  /^\/grism\/task\/(create|delete|change|add|remove|clear|reset|start|stop)_/,
+  /^\/change_password/, /^\/create_user/, /^\/delete_user/,
+];
+
+export function isWriteRequest(url, method = "GET") {
+  let path = String(url ?? "");
+  try { path = new URL(path, "http://d/").pathname; } catch { /* keep it as given */ }
+  if (path === "/direct_login" || path === "/logout") return false;
+  if (WRITE_PATHS.some((re) => re.test(path))) return true;
+  // an unknown POST to the task API is a write until something says otherwise
+  return String(method).toUpperCase() === "POST" && /^\/grism\/task\//.test(path)
+    && !/^\/grism\/task\/get_/.test(path);
 }
 
 /* ===================== interface (port) settings =====================

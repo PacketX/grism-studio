@@ -21,9 +21,9 @@ import {
   inputFieldsFor, inputProblems, isDrop, isEmptyFilter, isUnset, layoutChain,
   mkAction, mkActionMod, mkChain, firstTwoPorts, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
-  buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, fmtPct,
+  buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
-  branchConditions, outDestinations, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  branchConditions, outDestinations, vlanOpText, plainPorts, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
@@ -338,7 +338,7 @@ export default function GrismStudio() {
   useEffect(() => { writePref("lang", lang); }, [lang]);
   const t = useMemo(() => makeT(lang), [lang]);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null });
+  const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null, ro: false });
 
   /* The L2GRE correlation table only exists on a device that is decapsulating
      L2GRE, so its page appears only when the device has rows to show. Read once
@@ -545,14 +545,17 @@ export default function GrismStudio() {
     requestLoad({ kind: "running", run: doLoadRunning });
   }, [doLoadRunning, requestLoad]);
 
-  // Ask the device who is signed in. Any failure (missing endpoint, error status,
-  // unexpected body) resolves to "" so the caller just keeps its fallback.
+  /* Ask the device who is signed in, and what that account may do. Any failure
+     (missing endpoint, error status, unexpected body) resolves to no name and
+     no privilege, so the caller keeps its fallback and full access -- the way
+     it behaved before the privilege was read at all. */
   const fetchCurrentUser = useCallback(async () => {
     try {
       const res = await fetch("/grism/task/get_current_user", { credentials: "include" });
-      if (!res.ok) return "";
-      return extractUsername(await res.text());
-    } catch { return ""; }
+      if (!res.ok) return { name: "", priv: null };
+      const body = await res.text();
+      return { name: extractUsername(body), priv: extractPriv(body) };
+    } catch { return { name: "", priv: null }; }
   }, []);
 
   // fetch the device's interface/port list; flatten every interface's ports to
@@ -641,7 +644,12 @@ export default function GrismStudio() {
       });
       if (!res.ok) throw new Error(`login failed (${res.status})`);
       setSignedOutNotice("");
-      setLogin((l) => ({ ...l, busy: false, ok: true, pass: "", open: false, who: username }));
+      /* direct_login answers with the privilege in a header as well as a
+         cookie, so the read-only badge is up before the first page loads. */
+      const priv = extractPriv({ priv: res.headers.get("X-PacketX-Userpriv") });
+      setLogin((l) => ({ ...l, busy: false, ok: true, pass: "", open: false, who: username,
+                         ro: isReadOnlyPriv(priv) }));
+      if (priv == null) fetchCurrentUser().then(({ priv: p }) => setLogin((l) => ({ ...l, ro: isReadOnlyPriv(p) })));
       setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
       loadDevicePorts();   // interface/port list for the pickers
       // loadRunning() replaces the document and sets the baseline itself. It only
@@ -652,7 +660,7 @@ export default function GrismStudio() {
     } catch (e) {
       setLogin((l) => ({ ...l, busy: false, err: e.message || "login failed" }));
     }
-  }, [loadBaseline, loadDevicePorts, loadRunning, docModified]);
+  }, [loadBaseline, loadDevicePorts, loadRunning, docModified, fetchCurrentUser]);
 
   // On mount, detect an existing device session (the session cookie survives a
   // page refresh even though React state resets). We probe an authed endpoint;
@@ -672,8 +680,9 @@ export default function GrismStudio() {
         // doesn't answer, fall back to the cookie and then to a generic marker.
         setLogin((l) => ({ ...l, who: signedInUser() || "signed in" }));
         loadDevicePorts(cfg);
-        fetchCurrentUser().then((name) => {
-          if (name && !cancelled) setLogin((l) => (l.who ? { ...l, who: name } : l));
+        fetchCurrentUser().then(({ name, priv }) => {
+          if (cancelled) return;
+          setLogin((l) => (l.who ? { ...l, who: name || l.who, ro: isReadOnlyPriv(priv) } : l));
         });
         doLoadRunning();   // loads the running config AND sets the sync baseline
       } catch { /* offline or not authed — stay logged out */ }
@@ -691,7 +700,7 @@ export default function GrismStudio() {
     setDeviceStorages([]);
     setLoopPorts([]);
     setL2greOn(false); setL2gre(null); setDeviceModel("");
-    setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "" }));
+    setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "", ro: false }));
     /* The open document may be the device's running config, which is no longer
        ours to show and can no longer be reloaded. Go back to the overview on the
        starter template, so what is on screen matches what we still have. */
@@ -707,7 +716,57 @@ export default function GrismStudio() {
     }
   }, [resetHistory]);
 
+  /* One place that watches every request, because there are ninety of them and
+     two things have to hold for all of them.
+
+     A 404 is the answer to "no session" as much as to "no such endpoint":
+     nginx's authenticated location list is what reaches pywww and its catch-all
+     returns 404, so a session that has ended -- expired, or lost to a reboot --
+     turns every call into a 404 while the page still shows itself as signed in
+     and every panel reads as broken. On a 404 we ask who is signed in; that
+     endpoint is behind the same list, so if it cannot answer either, the
+     session is gone and we say so instead of letting the page rot. It is asked
+     at most once every few seconds, and a 404 from a device that simply lacks
+     an endpoint (older firmware, a capture not yet written) is left alone --
+     the session answers, so nothing happens.
+
+     And a read-only account gets its writes stopped here rather than one
+     refusal at a time from the device. */
+  const authRef = React.useRef({ who: null, ro: false });
+  authRef.current = { who: login.who, ro: login.ro };
+  const sessionProbe = React.useRef({ at: 0, busy: false });
+  useEffect(() => {
+    const real = window.fetch.bind(window);
+    const checkSession = async () => {
+      const now = Date.now();
+      if (sessionProbe.current.busy || now - sessionProbe.current.at < 5000) return;
+      sessionProbe.current = { at: now, busy: true };
+      try {
+        const res = await real("/grism/task/get_current_user", { credentials: "include" });
+        const alive = res.ok && !!extractUsername(await res.text());
+        if (!alive && authRef.current.who) doLogout(t("login.expired"));
+      } catch { /* offline, not signed out -- leave the session alone */ }
+      finally { sessionProbe.current.busy = false; }
+    };
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : (input?.url ?? "");
+      const method = init?.method ?? (typeof input === "object" ? input?.method : "") ?? "GET";
+      if (authRef.current.ro && isWriteRequest(url, method)) {
+        return new Response(READ_ONLY_BODY, { status: 403, statusText: "read-only account" });
+      }
+      const res = await real(input, init);
+      if (res.status === 404 && authRef.current.who && /^\/(grism|change_password|create_user|delete_user)/.test(
+            (() => { try { return new URL(url, location.href).pathname; } catch { return ""; } })())
+          && !url.includes("get_current_user")) {
+        checkSession();
+      }
+      return res;
+    };
+    return () => { window.fetch = real; };
+  }, [doLogout, t]);
+
   return (
+    <ReadOnlyCtx.Provider value={login.ro}>
     <div className={"gs-root" + (theme === "light" ? " light" : "")}>
       <ModalA11y />
 
@@ -940,7 +999,9 @@ export default function GrismStudio() {
                     <>
                       <div className="acct-user">
                         <span className="acct-user-k">{t("user.signedIn")}</span>
-                        <span className="acct-user-v">{login.who}</span>
+                        <span className="acct-user-v">{login.who}
+                          {login.ro && <span className="ro-badge" title={t("login.readOnlyTip")}>{t("login.readOnly")}</span>}
+                        </span>
                       </div>
                       <button className="acct-item" onClick={() => { setAcctOpen(false); doLogout(); }}>
                         {t("btn.logout")}
@@ -977,6 +1038,7 @@ export default function GrismStudio() {
         </div>
       </header>
       {signedOutNotice && <div className="load-banner">{signedOutNotice}</div>}
+      {login.ro && <div className="load-banner warn">{t("login.readOnlyBanner")}</div>}
       {load.state === "error" && <div className="load-banner err">{t("banner.loadFailed")}: {load.msg}.{" "}
         {load.cleared ? t("banner.clearedNotDevice") : t("banner.checkSignedIn")}</div>}
       {load.state === "ok" && load.msg.includes("warning") && <div className="load-banner warn">{load.msg} — {t("banner.someUnrecognised")}</div>}
@@ -1136,6 +1198,7 @@ export default function GrismStudio() {
         </TabErrorBoundary>
       </div>
     </div>
+    </ReadOnlyCtx.Provider>
   );
 }
 
@@ -1797,6 +1860,9 @@ function vportProblemText(p, tr) {
 }
 
 function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
+  /* Every write on this tab passes through one confirm step, so that is where
+     a read-only account is turned away -- thirty-odd apply buttons, one gate. */
+  const readOnly = useReadOnly();
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
   const [ifaces, setIfaces] = React.useState([]);
@@ -2273,6 +2339,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   // The device stops responding as it powers down, so a network error here is the
   // expected outcome rather than a failure to report.
   const [powered, setPowered] = React.useState(null);   // "reboot" | "halt" once requested
+  /* A reboot used to end at "reload this page once it is back", leaving the
+     reader to guess when that was. Watch for it instead: the uptime it
+     answers with is what proves it restarted rather than never having gone
+     -- right after the request the old system is still answering. */
+  const [rebootWatch, setRebootWatch] = React.useState(null);   // { secs, back }
   // { title, body, phase } while the device installs and restarts.
   // A clock would only ever be a guess: how long an image takes to apply varies,
   // and the number keeps counting after the device is already back. Report what
@@ -2482,6 +2553,67 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
     } catch { /* connection dropped -- the device is going */ }
     setSubmit({ state: "idle", msg: "" });
     setPowered(kind);
+    if (kind === "reboot") watchForReboot();
+  };
+
+  /* Watch for it to go away and come back. Both halves matter: right after the
+     request the old system is still answering, so an answer on its own proves
+     nothing, and a reboot loses the session -- nginx then answers 404 for
+     every authenticated path, so waiting for a 200 from one waits forever.
+
+     What is polled is the page's own directory, which nginx serves without a
+     session. The uptime is read too where it can be, and a smaller one is
+     proof of a restart even if nothing was ever seen to fail. Halting is not
+     watched: nothing is coming back. */
+  const watchForReboot = async () => {
+    // read it now rather than reach for the status page's copy: this component
+    // does not have one, and the number has to predate the restart anyway
+    let before = NaN;
+    try {
+      const res = await fetch("/grism/task/get_system_status", { credentials: "include", cache: "no-store" });
+      if (res.ok) before = Number((await res.json())?.uptime_s);
+    } catch { /* already gone: any answer from here on is the new system */ }
+    const started = Date.now();
+    /* Counted, not flagged. Issuing the reboot tears down the connection it
+       was sent on, so the very next poll fails while the device is still up --
+       taken as "it went down", the poll after that reports it back within
+       seconds, before it has even begun to restart. */
+    let downs = 0, ups = 0, sawDown = false;
+    setRebootWatch({ secs: 0, back: false });
+    for (let i = 0; i < 300; i++) {                       // ~10 minutes, then give up quietly
+      await new Promise((r) => setTimeout(r, 2000));
+      const secs = Math.round((Date.now() - started) / 1000);
+      let back = false;
+      try {
+        // no session needed, and cache-busted so a reply means the server replied
+        /* With a timeout: a device that has gone away does not refuse the
+           connection, it says nothing, and a fetch left to its own devices
+           waits out the TCP timeout -- so the poll that should have counted a
+           failure every two seconds counted one a minute, and it was back
+           before the count said it had ever left. */
+        await fetch(`./?ping=${Date.now()}`, { cache: "no-store", signal: AbortSignal.timeout(1500) });
+        downs = 0;
+        ups += 1;
+        // two answers in a row, after it was gone for three polls
+        if (sawDown && ups >= 2) back = true;
+        else if (!sawDown && Number.isFinite(before)) {
+          // never seen to fail: only a smaller uptime says it restarted
+          try {
+            const res = await fetch("/grism/task/get_system_status",
+              { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(1500) });
+            if (res.ok) {
+              const now = Number((await res.json())?.uptime_s);
+              if (Number.isFinite(now) && now < before) back = true;
+            }
+          } catch { /* going down between the two requests */ }
+        }
+      } catch {
+        ups = 0;
+        if (++downs >= 3) sawDown = true;                 // ~6s unreachable
+      }
+      setRebootWatch({ secs, back });
+      if (back) return;
+    }
   };
 
   // Flow settings straddle two places in the config: the on/off switches and table
@@ -4415,7 +4547,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <p className="modal-body"><strong>{tr("set.changePwWho").replace("{user}", me)}</strong></p>}
             {confirm.kind === "factory" &&
               <p className="modal-body"><strong>{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></strong></p>}
-            <button className="opt drop" onClick={() => {
+            {readOnly && <p className="modal-body warn">{tr("login.readOnlyTip")}</p>}
+            <button className="opt drop" disabled={readOnly} onClick={() => {
               const k = confirm.kind;
               setConfirm(null);
               if (k === "zone") { submitForm("/grism/set_time_zone", "timezone", zone, () => setZoneBase(zone)); return; }
@@ -4600,9 +4733,23 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       {powered && (
         <div className="apply-overlay">
           <div className="apply-card">
-            <div className="apply-spinner" />
-            <div className="apply-msg">{tr(powered === "reboot" ? "set.rebooting" : "set.halting")}</div>
-            <div className="apply-sub">{tr(powered === "reboot" ? "set.rebootingBody" : "set.haltingBody")}</div>
+            {!rebootWatch?.back && <div className="apply-spinner" />}
+            <div className="apply-msg">{rebootWatch?.back ? tr("set.rebootBack")
+              : tr(powered === "reboot" ? "set.rebooting" : "set.halting")}</div>
+            <div className="apply-sub">{rebootWatch?.back
+              ? tr("set.rebootBackBody").replace("{s}", String(rebootWatch.secs))
+              : tr(powered === "reboot" ? "set.rebootingBody" : "set.haltingBody")}</div>
+            {rebootWatch && !rebootWatch.back && (
+              <div className="apply-sub mono">{tr("set.rebootWaiting").replace("{s}", String(rebootWatch.secs))}</div>
+            )}
+            {/* Long enough that something else is probably wrong, and saying so
+                beats a spinner that never stops. */}
+            {rebootWatch && !rebootWatch.back && rebootWatch.secs >= 180 && (
+              <div className="apply-sub warn">{tr("set.rebootSlow").replace("{s}", String(rebootWatch.secs))}</div>
+            )}
+            {rebootWatch?.back && (
+              <button className="sys-refresh" onClick={() => window.location.reload()}>{tr("set.rebootReload")}</button>
+            )}
           </div>
         </div>
       )}
@@ -5795,15 +5942,28 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
    scrolls, and a box that scrolls on one axis clips on both. */
 function useNodeTip() {
   const [tip, setTip] = React.useState(null);
-  const show = (ev, { rows = [], outs = [], op = "" }) => {
-    if (!rows.length && !outs.length) return;   // nothing more to say than the node already does
+  const show = (ev, { rows = [], outs = [], op = "", ports = [], vlan = "", kind = "" }) => {
+    // nothing more to say than the node already does
+    if (!rows.length && !outs.length && !ports.length && !vlan) return;
     const b = ev.currentTarget.getBoundingClientRect();
     // both edges of the anchor: the tip goes above it, or below when the top
     // of the window is too close -- a filter with a dozen conditions is tall
-    setTip({ x: b.left + b.width / 2, top: b.top, bottom: b.bottom, rows, outs, op });
+    setTip({ x: b.left + b.width / 2, top: b.top, bottom: b.bottom, rows, outs, op, ports, vlan, kind });
   };
   return { tip, show, hide: () => setTip(null) };
 }
+
+/* What a blocked write answers with. Read by whatever error path the caller
+   already has, so no call site needs to know about the account. */
+const READ_ONLY_BODY = "read-only account: this device session may not change the configuration";
+
+/* Read-only reaches deep into the tabs -- the confirm step of settings, of the
+   submit, of a capture -- and threading a prop through every one of them would
+   touch components that have nothing else to do with it. */
+const ReadOnlyCtx = React.createContext(false);
+const useReadOnly = () => React.useContext(ReadOnlyCtx);
+
+const GAP = 8;   // breathing room kept between a tip and the window edge
 
 function NodeTip({ tip }) {
   const ref = React.useRef(null);
@@ -5814,18 +5974,42 @@ function NodeTip({ tip }) {
   React.useLayoutEffect(() => {
     if (!tip || !ref.current) { setAt(null); return; }
     const b = ref.current.getBoundingClientRect();
-    const below = b.height + 14 > tip.top;
+    /* Above unless there is more room below. Measuring both sides matters for
+       the node at the top of a long chain as much as for the one at the
+       bottom: flipping on "does it fit above" alone put a tall tip below a
+       node near the foot of the window, where it fit even less. */
+    const above = tip.top - GAP, under = window.innerHeight - tip.bottom - GAP;
+    const below = b.height > above && under > above;
+    const room = below ? under : above;
     const half = b.width / 2;
     setAt({
-      x: Math.min(Math.max(tip.x, half + 8), window.innerWidth - half - 8),
+      x: Math.min(Math.max(tip.x, half + GAP), window.innerWidth - half - GAP),
       y: below ? tip.bottom : tip.top,
       below,
+      // still taller than the side it sits on: let it scroll rather than run off
+      maxH: b.height > room ? Math.max(room, 90) : null,
     });
   }, [tip]);
   if (!tip) return null;
   return (
     <div ref={ref} className={"ch-tip fixed" + (at?.below ? " below" : "")}
-      style={{ left: at?.x ?? tip.x, top: at?.y ?? tip.top }} role="tooltip">
+      style={{ left: at?.x ?? tip.x, top: at?.y ?? tip.top,
+               maxHeight: at?.maxH ? at.maxH + "px" : undefined,
+               overflowY: at?.maxH ? "auto" : undefined }} role="tooltip">
+      {(tip.ports ?? []).map((p) => (
+        <div className="ch-tip-row" key={"p" + p.name}>
+          <span className="ch-tip-id out">{p.name}</span>
+          {p.desc && <span className="ch-tip-name">{p.desc}</span>}
+          {tip.kind && <span className="ch-tip-cond">{tip.kind}</span>}
+        </div>
+      ))}
+      {/* the chain's own VLAN handling, which nothing else in the picture shows */}
+      {tip.vlan && (
+        <div className="ch-tip-row">
+          <span className="ch-tip-id">VLAN</span>
+          <span className="ch-tip-cond">{tip.vlan}</span>
+        </div>
+      )}
       {tip.outs.map((o) => (
         <div className="ch-tip-row" key={o.id}>
           <span className="ch-tip-id out">{o.id}{o.port ? ` → ${o.port}` : ""}</span>
@@ -6108,6 +6292,7 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
 }
 
 function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPorts = [], onApplyXml, onGoExport }) {
+  const readOnly = useReadOnly();   // starting and stopping a capture both reload the running config
   const tr = t || ((k) => k);
   const [sel, setSel] = React.useState([]);          // ingress ports
   const [filter, setFilter] = React.useState("");
@@ -6316,7 +6501,8 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
         )}
         {err && <div className="sys-err">{err}</div>}
         <div className="set-actions">
-          <button className="sys-refresh" disabled={problems.length > 0 || running > 0 || applying}
+          <button className="sys-refresh" disabled={problems.length > 0 || running > 0 || applying || readOnly}
+            title={readOnly ? tr("login.readOnlyTip") : undefined}
             onClick={() => setAsk({ kind: "start" })}>
             {running > 0 ? tr("cap.running") : tr("cap.start")}</button>
           {/* always live: an instant configuration outlives the countdown this
@@ -6413,7 +6599,8 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
                 : ask.kind === "stop" ? tr("cap.stopConfirmBody") : tr("cap.delBody")}
               {ask.kind === "delete" && <><br />{ask.files.map((n) => <code className="cap-del-name" key={n}>{n}</code>)}</>}
             </p>
-            <button className={"opt" + (ask.kind === "delete" ? " drop" : "")} onClick={() => {
+            {readOnly && <p className="modal-body warn">{tr("login.readOnlyTip")}</p>}
+            <button className={"opt" + (ask.kind === "delete" ? " drop" : "")} disabled={readOnly} onClick={() => {
               const a = ask; setAsk(null);
               if (a.kind === "start") { start(); return; }
               if (a.kind === "stop") { stop(); return; }
@@ -8025,19 +8212,24 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   /* Hovering a filter node shows what it is testing. The node can only fit
      "F1,!F3", which is enough to find the filter and not enough to read the
      chain -- and reading the chain is the whole point of the picture. */
-  const [tip, setTip] = React.useState(null);   // { x, y, rows, op }
+  /* The shared tip, not a local one: this used to place itself inside the pane
+     with position:absolute and no clamping at all, so a node near an edge --
+     which on a wide chain is most of them -- hung the tip outside the window. */
+  const { tip, show, hide: hideTip } = useNodeTip();
   const showTip = (ev, node) => {
     const rows = node.t === "branch" ? branchConditions(node.fids, doc.filters, tr, hbTargets, deviceFilters) : [];
     const outs = node.t === "out" ? outDestinations(node.ports, doc.outputs, tr) : [];
-    if (!rows.length && !outs.length) return;
-    const box = ev.currentTarget.getBoundingClientRect();
-    const host = paneRef.current?.getBoundingClientRect();
-    if (!host) return;
-    /* Positioned off the node's own box rather than off the model, so zoom and
-       pan need no arithmetic here: the browser has already done it. */
-    setTip({ x: box.left - host.left + paneRef.current.scrollLeft + box.width / 2,
-             y: box.top - host.top + paneRef.current.scrollTop,
-             rows, outs, op: node.fidOp === "and" ? tr("crit.and") : tr("crit.or") });
+    /* The ingress and the plain-port destinations had no hover at all: the
+       node shows "P4" and the name the operator gave it is elsewhere, and the
+       chain's own VLAN handling is on an attribute nothing in the picture
+       draws. */
+    const ports = node.t === "in" ? plainPorts(chain?.ports, portDescs)
+      : node.t === "out" ? plainPorts(node.ports, portDescs) : [];
+    const vlan = node.t === "in" ? vlanOpText(chain?.inVlan, tr)
+      : node.t === "out" ? vlanOpText(node, tr) : "";
+    const kind = node.t === "in" ? tr("ch.tipIngress") : node.t === "out" ? tr("ch.tipEgress") : "";
+    show(ev, { rows, outs, ports, vlan, kind,
+               op: node.fidOp === "and" ? tr("crit.and") : tr("crit.or") });
   };
   const center = (n) => ({ x: n._x + NODE_W / 2 + PAD, y: n._y + PAD });
   const byId = Object.fromEntries(placed.map((n) => [n.id, n]));
@@ -8139,37 +8331,17 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             return <g key={n.id} className={`gnode ${n.t}${drop ? " drop" : ""}${bad ? " bad" : ""}${isSel ? " sel" : ""}`}
               onClick={(ev) => { ev.stopPropagation(); setSelId(n.id); }}
               onMouseEnter={(ev) => showTip(ev, n)}
-              onMouseLeave={() => setTip(null)}>
+              onMouseLeave={hideTip}>
               <rect x={x} y={y} width={NODE_W} height={NODE_H} rx="9" />
               {bad && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
               {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">{tr("ch.capIngress")}</text><text x={c.x} y={c.y + 12} className="n-main">{n.ports}</text></>}
+
               {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || tr("ch.capFilter")}</text><text x={c.x} y={c.y + 12} className="n-main">{n.fids}</text></>; })()}
               {n.t === "out" && <><text x={c.x} y={c.y - 5} className="n-kind">{drop ? tr("ch.capDiscard") : (n.mode === "loadBalance" ? tr("ch.capBalance") : tr("ch.capOutput"))}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : withOutPorts(n.ports)}</text></>}
             </g>;
           })}
         </svg>
-        {tip && (
-          <div className="ch-tip" style={{ left: tip.x, top: tip.y }} role="tooltip">
-            {/* a custom output: what it does to the packet, which is the
-                reason it exists rather than being a plain port */}
-            {(tip.outs ?? []).map((o) => (
-              <div className="ch-tip-row" key={o.id}>
-                <span className="ch-tip-id out">{o.id}{o.port ? ` → ${o.port}` : ""}</span>
-                {o.name && <span className="ch-tip-name">{o.name}</span>}
-                <span className="ch-tip-cond">{o.actions.join(" · ")}</span>
-              </div>
-            ))}
-            {tip.rows.map((r, i) => (
-              <div className="ch-tip-row" key={r.id + i}>
-                <span className={"ch-tip-id" + (r.neg ? " neg" : "") + (r.missing ? " miss" : "")}>
-                  {(r.neg ? "!" : "") + r.id}</span>
-                {r.name && <span className="ch-tip-name">{r.name}</span>}
-                <span className={"ch-tip-cond" + (r.missing ? " miss" : "")}>{r.cond}</span>
-                {i < tip.rows.length - 1 && <span className="ch-tip-op">{tip.op}</span>}
-              </div>
-            ))}
-          </div>
-        )}
+        <NodeTip tip={tip} />
       </section>
 
       <aside className="chain-rail">
@@ -10212,6 +10384,7 @@ function VersionHistory({ files, onLoad, onDelete, busy, lang, tr }) {
 }
 
 function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t }) {
+  const readOnly = useReadOnly();
   const tr = t || ((k) => k);
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
@@ -10405,7 +10578,9 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
             <p className="modal-body">
               {docSource === "template" ? tr("ex.confirmBodyTmpl") : tr("ex.confirmBody")}
             </p>
-            <button className={"opt" + (docSource === "template" ? " drop" : "")} onClick={() => { setConfirmSubmit(false); submitToDevice(); }}>
+            {readOnly && <p className="modal-body warn">{tr("login.readOnlyTip")}</p>}
+            <button className={"opt" + (docSource === "template" ? " drop" : "")} disabled={readOnly}
+              onClick={() => { setConfirmSubmit(false); submitToDevice(); }}>
               <span className="opt-name">{docSource === "template" ? tr("ex.submitAnyway") : tr("ex.submitApply")}</span>
               <span className="opt-desc">{tr("ex.overwriteDesc")}</span>
             </button>
@@ -10433,7 +10608,9 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
               ? <button className="submit-btn" disabled={!!editErr} onClick={applyEdit}>{tr("ex.applyChanges")}</button>
               : loggedIn && (
                 <button className={"submit-btn" + (submit.state === "error" ? " err" : submit.state === "ok" ? " ok" : "")}
-                  disabled={problems.length > 0 || submit.state === "sending" || apply.active} onClick={() => setConfirmSubmit(true)}>{submitLabel}</button>
+                  disabled={problems.length > 0 || submit.state === "sending" || apply.active || readOnly}
+                  title={readOnly ? tr("login.readOnlyTip") : undefined}
+                  onClick={() => setConfirmSubmit(true)}>{submitLabel}</button>
               )}
           </div>
         </div>
