@@ -766,8 +766,7 @@ export default function GrismStudio() {
   }, [doLogout, t]);
 
   return (
-    <ReadOnlyCtx.Provider value={login.ro}>
-    <div className={"gs-root" + (theme === "light" ? " light" : "")}>
+    <div className={"gs-root" + (theme === "light" ? " light" : "") + (login.ro ? " read-only" : "")}>
       <ModalA11y />
 
       <header className="topbar">
@@ -1198,7 +1197,6 @@ export default function GrismStudio() {
         </TabErrorBoundary>
       </div>
     </div>
-    </ReadOnlyCtx.Provider>
   );
 }
 
@@ -1860,9 +1858,6 @@ function vportProblemText(p, tr) {
 }
 
 function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
-  /* Every write on this tab passes through one confirm step, so that is where
-     a read-only account is turned away -- thirty-odd apply buttons, one gate. */
-  const readOnly = useReadOnly();
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
   const [ifaces, setIfaces] = React.useState([]);
@@ -2398,11 +2393,22 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
         throw new Error(key ? tr(key) : "HTTP " + res.status);
       }
       setUsers(parseUserList(await res.text()));
-      try {
-        const who = await fetch("/grism/task/get_current_user", { credentials: "include" });
-        setMe(who.ok ? (extractUsername(await who.text()) || null) : null);
-      } catch { setMe(null); }
     } catch (e) { setUsers([]); setAcctErr(String(e.message || e)); }
+  }, []);
+
+  /* Who is signed in, asked on its own.
+
+     This used to run inside loadUsers, after /list_user had succeeded -- but
+     that endpoint was lost when the Go app was retired and 404s on current
+     firmware, so the throw came first and `me` stayed null. Changing your own
+     password needs nothing from the account list, and changePasswordProblem
+     refuses without a name: the button was therefore disabled for every
+     account on every device that no longer serves /list_user. */
+  const loadMe = React.useCallback(async () => {
+    try {
+      const who = await fetch("/grism/task/get_current_user", { credentials: "include" });
+      setMe(who.ok ? (extractUsername(await who.text()) || null) : null);
+    } catch { setMe(null); }
   }, []);
 
   /* Each account call posts JSON; on success reload the list rather than patching
@@ -2440,6 +2446,8 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   }, [loggedIn, section, bypassHw, loadBypass]);
   React.useEffect(() => { if (loggedIn && section === "auth" && users === null) loadUsers(); },
     [loggedIn, section, users, loadUsers]);
+  React.useEffect(() => { if (loggedIn && section === "auth" && me === null) loadMe(); },
+    [loggedIn, section, me, loadMe]);
 
   const [wait, setWait] = React.useState(null);
   const waitPhase = wait?.phase;
@@ -3963,7 +3971,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
                 {/* The change ends this session the moment it lands, so it is
                     worth one question first -- and the fields are carried into
                     the dialog rather than cleared, so cancelling loses nothing. */}
-                <button className="sys-refresh"
+                {/* ro-allow: changing your own password is not a change to the
+                    device's configuration, so a read-only account keeps it. */}
+                <button className="sys-refresh ro-allow"
                   disabled={acctBusy || !!changePasswordProblem(pw.old, pw.next, pw.confirm, me)}
                   onClick={() => setConfirm({ kind: "changePw", old: pw.old, next: pw.next })}>
                   {tr("set.acctChangePwGo")}</button>
@@ -4530,7 +4540,9 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
       {confirm && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setConfirm(null)}>
-          <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+          {/* data-kind so the read-only rule can single one out: this dialog is
+              shared by every write on the tab, and changePw is the exception. */}
+          <div className="modal modal-warn" data-kind={confirm.kind} onClick={(e) => e.stopPropagation()}>
             <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw","upload"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
@@ -4547,8 +4559,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               <p className="modal-body"><strong>{tr("set.changePwWho").replace("{user}", me)}</strong></p>}
             {confirm.kind === "factory" &&
               <p className="modal-body"><strong>{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></strong></p>}
-            {readOnly && <p className="modal-body warn">{tr("login.readOnlyTip")}</p>}
-            <button className="opt drop" disabled={readOnly} onClick={() => {
+            <button className="opt drop" onClick={() => {
               const k = confirm.kind;
               setConfirm(null);
               if (k === "zone") { submitForm("/grism/set_time_zone", "timezone", zone, () => setZoneBase(zone)); return; }
@@ -5957,12 +5968,6 @@ function useNodeTip() {
    already has, so no call site needs to know about the account. */
 const READ_ONLY_BODY = "read-only account: this device session may not change the configuration";
 
-/* Read-only reaches deep into the tabs -- the confirm step of settings, of the
-   submit, of a capture -- and threading a prop through every one of them would
-   touch components that have nothing else to do with it. */
-const ReadOnlyCtx = React.createContext(false);
-const useReadOnly = () => React.useContext(ReadOnlyCtx);
-
 const GAP = 8;   // breathing room kept between a tip and the window edge
 
 function NodeTip({ tip }) {
@@ -6292,7 +6297,6 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
 }
 
 function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPorts = [], onApplyXml, onGoExport }) {
-  const readOnly = useReadOnly();   // starting and stopping a capture both reload the running config
   const tr = t || ((k) => k);
   const [sel, setSel] = React.useState([]);          // ingress ports
   const [filter, setFilter] = React.useState("");
@@ -6501,8 +6505,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
         )}
         {err && <div className="sys-err">{err}</div>}
         <div className="set-actions">
-          <button className="sys-refresh" disabled={problems.length > 0 || running > 0 || applying || readOnly}
-            title={readOnly ? tr("login.readOnlyTip") : undefined}
+          <button className="sys-refresh" disabled={problems.length > 0 || running > 0 || applying}
             onClick={() => setAsk({ kind: "start" })}>
             {running > 0 ? tr("cap.running") : tr("cap.start")}</button>
           {/* always live: an instant configuration outlives the countdown this
@@ -6599,8 +6602,7 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
                 : ask.kind === "stop" ? tr("cap.stopConfirmBody") : tr("cap.delBody")}
               {ask.kind === "delete" && <><br />{ask.files.map((n) => <code className="cap-del-name" key={n}>{n}</code>)}</>}
             </p>
-            {readOnly && <p className="modal-body warn">{tr("login.readOnlyTip")}</p>}
-            <button className={"opt" + (ask.kind === "delete" ? " drop" : "")} disabled={readOnly} onClick={() => {
+            <button className={"opt" + (ask.kind === "delete" ? " drop" : "")} onClick={() => {
               const a = ask; setAsk(null);
               if (a.kind === "start") { start(); return; }
               if (a.kind === "stop") { stop(); return; }
@@ -10384,7 +10386,6 @@ function VersionHistory({ files, onLoad, onDelete, busy, lang, tr }) {
 }
 
 function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, onApplyXml, onApplied, docSource, loggedIn, lang, t }) {
-  const readOnly = useReadOnly();
   const tr = t || ((k) => k);
   const [copied, setCopied] = useState(false);
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
@@ -10578,8 +10579,7 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
             <p className="modal-body">
               {docSource === "template" ? tr("ex.confirmBodyTmpl") : tr("ex.confirmBody")}
             </p>
-            {readOnly && <p className="modal-body warn">{tr("login.readOnlyTip")}</p>}
-            <button className={"opt" + (docSource === "template" ? " drop" : "")} disabled={readOnly}
+            <button className={"opt" + (docSource === "template" ? " drop" : "")}
               onClick={() => { setConfirmSubmit(false); submitToDevice(); }}>
               <span className="opt-name">{docSource === "template" ? tr("ex.submitAnyway") : tr("ex.submitApply")}</span>
               <span className="opt-desc">{tr("ex.overwriteDesc")}</span>
@@ -10608,8 +10608,7 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
               ? <button className="submit-btn" disabled={!!editErr} onClick={applyEdit}>{tr("ex.applyChanges")}</button>
               : loggedIn && (
                 <button className={"submit-btn" + (submit.state === "error" ? " err" : submit.state === "ok" ? " ok" : "")}
-                  disabled={problems.length > 0 || submit.state === "sending" || apply.active || readOnly}
-                  title={readOnly ? tr("login.readOnlyTip") : undefined}
+                  disabled={problems.length > 0 || submit.state === "sending" || apply.active}
                   onClick={() => setConfirmSubmit(true)}>{submitLabel}</button>
               )}
           </div>

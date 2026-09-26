@@ -1467,10 +1467,12 @@ check("set_switch_interface is a write", C.isWriteRequest("/grism/task/set_switc
 check("del_storage_file is a write", C.isWriteRequest("/grism/task/del_storage_file?name=a", "POST") === true);
 check("save_xml is a write", C.isWriteRequest("/grism/task/save_xml", "POST") === true);
 check("reboot is a write", C.isWriteRequest("/grism/task/reboot") === true);
+check("halt is a write", C.isWriteRequest("/grism/task/halt") === true);
 check("restore is a write", C.isWriteRequest("/grism/task/restore", "POST") === true);
 check("upload_pcap is a write", C.isWriteRequest("/grism/task/upload_pcap_file", "POST") === true);
 check("firmware download is a write", C.isWriteRequest("/grism/task/update_download?version=1", "GET") === true);
-check("change_password is a write", C.isWriteRequest("/change_password", "POST") === true);
+// changing your own password writes to the account, not to the configuration
+check("change_password allowed", C.isWriteRequest("/change_password", "POST") === false);
 check("get_config is not", C.isWriteRequest("/grism/task/get_config") === false);
 check("get_statistics posted is not", C.isWriteRequest("/grism/task/get_statistics_json", "POST") === false);
 check("get_filter_counter is not", C.isWriteRequest("/grism/task/get_filter_counter", "GET") === false);

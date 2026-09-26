@@ -2309,13 +2309,18 @@ export function isReadOnlyPriv(priv) {
    method does not separate them (plenty of reads are POSTs here).
 
    Login and logout are writes by any reading and must stay allowed, or a
-   read-only session could not end. */
+   read-only session could not end. So is changing your own password: it writes
+   to the account, not to the configuration the account may not touch. */
 const WRITE_PATHS = [
   /^\/grism\/task\/submit/, /^\/grism\/task\/set_/, /^\/grism\/task\/del_/,
-  /^\/grism\/task\/save_/, /^\/grism\/task\/restore/, /^\/grism\/task\/reboot/,
+  /^\/grism\/task\/save_/, /^\/grism\/task\/restore/,
+  /* Powering the device down is a GET with no prefix the rules above share, so
+     it has to be named: without it, halt was the one write that reached the
+     device from a read-only session. */
+  /^\/grism\/task\/reboot/, /^\/grism\/task\/halt/,
   /^\/grism\/task\/upload/, /^\/grism\/task\/update_download/,
   /^\/grism\/task\/(create|delete|change|add|remove|clear|reset|start|stop)_/,
-  /^\/change_password/, /^\/create_user/, /^\/delete_user/,
+  /^\/create_user/, /^\/delete_user/,
 ];
 
 export function isWriteRequest(url, method = "GET") {

@@ -2040,3 +2040,43 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
   letter-spacing:.3px; text-transform:uppercase; background:var(--warn-bg, rgba(214,158,46,.18));
   color:var(--warn); vertical-align:middle;}
 .modal-body.warn{color:var(--warn);}
+
+/* Read-only account: the whole app in one class rather than a disabled prop on
+   every write button.
+
+   The device already refuses these writes (pywww's inner_check_admin) and the
+   page's fetch wrapper turns each one back with a 403 before it leaves the
+   browser -- so this rule is only about not offering the click in the first
+   place. It grays out the buttons that change something on the device and
+   nothing else: refresh, load, cancel, revert, tab navigation, editing a local
+   draft and the account menu all stay live, because a read-only account may
+   still look at everything and move around freely.
+
+   Targeted by where the write lives, not by a marker on each button:
+   - .modal .opt:not(.opt-cancel) is every confirmation's go button -- the last
+     step of a settings apply, a capture start/stop, a saved-config delete;
+   - the rest are the buttons that open those confirmations, or submit directly,
+     picked out by the container they sit in (.set-actions apply, .sys-head
+     clear) or by a class only a write uses (.submit-btn, .tf-bypass, .xf-add,
+     .xf-del). Apply is .sys-refresh inside .set-actions; the plain refresh and
+     revert buttons are elsewhere or a different class, so they are left alone. */
+.gs-root.read-only .modal .opt:not(.opt-cancel),
+.gs-root.read-only .set-actions .sys-refresh,
+.gs-root.read-only .set-actions .del,
+.gs-root.read-only .sys-head .del,
+.gs-root.read-only .submit-btn,
+.gs-root.read-only .tf-bypass,
+.gs-root.read-only .xf-add,
+.gs-root.read-only .xf-del{
+  opacity:.45; pointer-events:none;
+}
+
+/* ...except a write that is not a change to the device: your own password.
+   Marked .ro-allow at the button and singled out in the shared confirm dialog
+   by its data-kind, since that dialog serves every other write on the tab.
+   Both selectors carry one more class than the rules above, so they win
+   regardless of order. */
+.gs-root.read-only .set-actions .ro-allow,
+.gs-root.read-only .modal[data-kind="changePw"] .opt:not(.opt-cancel){
+  opacity:1; pointer-events:auto;
+}
