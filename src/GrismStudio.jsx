@@ -1129,7 +1129,7 @@ export default function GrismStudio() {
           <SystemLogTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "settings" && (
-          <SettingsTab loggedIn={!!login.who} t={t} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
+          <SettingsTab loggedIn={!!login.who} readOnly={login.ro} t={t} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
             onUseTemplate={(id) => applyTemplate(TEMPLATES.find((x) => x.id === id), "chain")}
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
@@ -1857,7 +1857,7 @@ function vportProblemText(p, tr) {
   return "";
 }
 
-function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
+function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
   const [ifaces, setIfaces] = React.useState([]);
@@ -2261,7 +2261,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       setViewsBase(parsed); setViews(parsed);
     } catch (e) { warnFetch("login authentication", e); }
   }, [getConfig]);
-  React.useEffect(() => { if (loggedIn && section === "auth" && !views) loadViews(); }, [loggedIn, section, views, loadViews]);
+  React.useEffect(() => { if (loggedIn && !readOnly && section === "auth" && !views) loadViews(); }, [loggedIn, readOnly, section, views, loadViews]);
 
   const loadHeartbeat = React.useCallback(async () => {
     try {
@@ -2444,8 +2444,13 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
   React.useEffect(() => {
     if (loggedIn && bypassHw && section === "ports") loadBypass(bypassHw);
   }, [loggedIn, section, bypassHw, loadBypass]);
-  React.useEffect(() => { if (loggedIn && section === "auth" && users === null) loadUsers(); },
-    [loggedIn, section, users, loadUsers]);
+  /* The privilege arrives after mount (it is fetched), so this cannot be an
+     initial state -- and it has to keep holding, or the section the account was
+     already on stays on screen. */
+  React.useEffect(() => { if (readOnly && section !== "auth") setSection("auth"); }, [readOnly, section]);
+  // /list_user is not shown to a read-only account, and 404s on current firmware anyway
+  React.useEffect(() => { if (loggedIn && !readOnly && section === "auth" && users === null) loadUsers(); },
+    [loggedIn, readOnly, section, users, loadUsers]);
   React.useEffect(() => { if (loggedIn && section === "auth" && me === null) loadMe(); },
     [loggedIn, section, me, loadMe]);
 
@@ -2867,6 +2872,41 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
   const setIfaceField = (idx, k, v) => setIfaces((arr) => arr.map((it, i) => i === idx ? { ...it, fields: { ...it.fields, [k]: v } } : it));
 
+
+  /* Its own variable, not inline in the section below: a read-only account is
+     shown this card and nothing else, so it has to render outside the
+     `views`-loaded gate that the rest of the section sits behind. */
+  const changePwCard = (
+    <section className="sys-card">
+      <h3 className="sys-card-title">{tr("set.acctChangePw")}</h3>
+      {!me && <p className="set-hint warn">{tr("set.acctWhoUnknown")}</p>}
+      <div className="set-grid">
+        <label className="set-field"><span>{tr("set.acctOldPassword")}</span>
+          <input type="password" value={pw.old} autoComplete="current-password"
+            onChange={(e) => setPw((o) => ({ ...o, old: e.target.value }))} /></label>
+        <label className="set-field"><span>{tr("set.acctNewPassword")}</span>
+          <input type="password" value={pw.next} autoComplete="new-password"
+            onChange={(e) => setPw((o) => ({ ...o, next: e.target.value }))} /></label>
+        <label className="set-field"><span>{tr("set.acctConfirm")}</span>
+          <input type="password" value={pw.confirm} autoComplete="new-password"
+            onChange={(e) => setPw((o) => ({ ...o, confirm: e.target.value }))} /></label>
+      </div>
+      <div className="set-actions">
+        {/* The change ends this session the moment it lands, so it is
+            worth one question first -- and the fields are carried into
+            the dialog rather than cleared, so cancelling loses nothing. */}
+        {/* ro-allow: changing your own password is not a change to the
+            device's configuration, so a read-only account keeps it. */}
+        <button className="sys-refresh ro-allow"
+          disabled={acctBusy || !!changePasswordProblem(pw.old, pw.next, pw.confirm, me)}
+          onClick={() => setConfirm({ kind: "changePw", old: pw.old, next: pw.next })}>
+          {tr("set.acctChangePwGo")}</button>
+      </div>
+    {acctErr && <p className="set-hint err">{acctErr}</p>}
+    {acctOk && <p className="set-hint ok">{acctOk}</p>}
+          </section>
+  );
+
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("set.needLogin")}</div></div>;
 
   return (
@@ -2880,6 +2920,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
       <div className="sys-head">
         <h2 className="sys-title">{tr("set.title")}</h2>
         <div className="sys-controls">
+          {/* Nothing to switch between when only one section is shown.
+              Rendered conditionally rather than with the hidden attribute: that
+              attribute is only a UA-stylesheet display:none, and .set-seg sets
+              display:inline-flex, which wins -- it stayed on screen. */}
+          {!readOnly && (
           <div className="set-seg">
             <button className={section === "system" ? "on" : ""} onClick={() => setSection("system")}>{tr("set.system")}</button>
             <button className={section === "ports" ? "on" : ""} onClick={() => setSection("ports")}>{tr("set.interfaces")}</button>
@@ -2897,7 +2942,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             <button className={section === "firmware" ? "on" : ""} onClick={() => setSection("firmware")}>{tr("set.firmware")}</button>
             <button className={section === "raw" ? "on" : ""} onClick={() => setSection("raw")}>{tr("set.rawXml")}</button>
           </div>
-          {/* refresh whichever section is on screen — they read different endpoints */}
+          )}
+          {/* refresh whichever section is on screen — they read different endpoints.
+              Left out for a read-only account: the one card it is shown reads
+              nothing this would re-read. */}
+          {!readOnly && (
           <button className="sys-refresh" disabled={state === "loading"}
             onClick={() => {
               getConfig(true);          // refresh means re-read, not reuse the cache
@@ -2914,10 +2963,12 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
               else { setEditingRaw(false); load(); }
             }}>
             {state === "loading" ? tr("set.loading") : tr("set.load")}</button>
+          )}
         </div>
       </div>
 
-      <CardJump rootRef={pageRef} section={section} />
+      {/* an index of one card is not an index */}
+      {!readOnly && <CardJump rootRef={pageRef} section={section} />}
       </div>
 
       {state === "error" && <div className="sys-err">{tr("set.loadFailed")}: {errMsg}</div>}
@@ -3896,7 +3947,11 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
 
       {section === "auth" && (
         <div className="set-forms">
-          {!views ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
+          {/* A read-only account gets this one card and nothing else -- not the
+              account list, not the remote-auth servers, not even the note that
+              introduces them: none of it is theirs to change, and showing it
+              greyed out only invites the question of how to un-grey it. */}
+          {readOnly ? changePwCard : !views ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
             <p className="page-note">{tr("set.authNote")}</p>
 
           <section className="sys-card">
@@ -3953,34 +4008,7 @@ function SettingsTab({ loggedIn, t, portOptions = DEFAULT_PORTS, filterIds = [],
             {/* Its own card, not a second heading inside the accounts one: a card
                 is what the index on this page indexes, and changing your own
                 password is the thing people come to this section to find. */}
-            <section className="sys-card">
-              <h3 className="sys-card-title">{tr("set.acctChangePw")}</h3>
-              {!me && <p className="set-hint warn">{tr("set.acctWhoUnknown")}</p>}
-              <div className="set-grid">
-                <label className="set-field"><span>{tr("set.acctOldPassword")}</span>
-                  <input type="password" value={pw.old} autoComplete="current-password"
-                    onChange={(e) => setPw((o) => ({ ...o, old: e.target.value }))} /></label>
-                <label className="set-field"><span>{tr("set.acctNewPassword")}</span>
-                  <input type="password" value={pw.next} autoComplete="new-password"
-                    onChange={(e) => setPw((o) => ({ ...o, next: e.target.value }))} /></label>
-                <label className="set-field"><span>{tr("set.acctConfirm")}</span>
-                  <input type="password" value={pw.confirm} autoComplete="new-password"
-                    onChange={(e) => setPw((o) => ({ ...o, confirm: e.target.value }))} /></label>
-              </div>
-              <div className="set-actions">
-                {/* The change ends this session the moment it lands, so it is
-                    worth one question first -- and the fields are carried into
-                    the dialog rather than cleared, so cancelling loses nothing. */}
-                {/* ro-allow: changing your own password is not a change to the
-                    device's configuration, so a read-only account keeps it. */}
-                <button className="sys-refresh ro-allow"
-                  disabled={acctBusy || !!changePasswordProblem(pw.old, pw.next, pw.confirm, me)}
-                  onClick={() => setConfirm({ kind: "changePw", old: pw.old, next: pw.next })}>
-                  {tr("set.acctChangePwGo")}</button>
-              </div>
-            {acctErr && <p className="set-hint err">{acctErr}</p>}
-            {acctOk && <p className="set-hint ok">{acctOk}</p>}
-          </section>
+            {changePwCard}
             {[["radius", "RADIUS", 1812], ["tacacs", "TACACS+", 49]].map(([key, label, defPort]) => (
               <section className="sys-card" key={key}>
                 <h3 className="sys-card-title">{label}</h3>
