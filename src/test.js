@@ -1449,6 +1449,26 @@ check("bare username body", C.extractUsername("packetx") === "packetx");
 check("json body", C.extractUsername('{"username":"packetx","priv":15}') === "packetx");
 
 /* --- account privilege: priv 1 is the read-only account pywww refuses writes for --- */
+/* --- what gets selected after a delete --- */
+{
+  const items = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+  check("removal picks the next", C.selectAfterRemoval(items, 2) === 3);
+  check("removal from the front", C.selectAfterRemoval(items, 1) === 2);
+  // the last one has no next: the one before it takes the selection
+  check("removal of the last falls back", C.selectAfterRemoval(items, 4) === 3);
+  check("single item leaves nothing", C.selectAfterRemoval([{ id: 7 }], 7) === null);
+  check("empty list", C.selectAfterRemoval([], 1) === null);
+  check("missing key leaves the first", C.selectAfterRemoval(items, 99) === 1);
+  check("not an array", C.selectAfterRemoval(undefined, 1) === null);
+  // chains are keyed by cid
+  const chains = [{ cid: "a" }, { cid: "b" }, { cid: "c" }];
+  check("removal by cid", C.selectAfterRemoval(chains, "b", "cid") === "c");
+  check("removal of last cid", C.selectAfterRemoval(chains, "c", "cid") === "b");
+  // ids need not be contiguous or sorted -- position is what matters
+  const gappy = [{ id: 10 }, { id: 3 }, { id: 77 }];
+  check("removal by position not id order", C.selectAfterRemoval(gappy, 3) === 77);
+}
+
 check("priv from json", C.extractPriv('{"username":"guest","priv":1}') === 1);
 check("priv from header string", C.extractPriv({ priv: "1" }) === 1);
 check("priv 15 is full", C.extractPriv('{"username":"packetx","priv":15}') === 15);

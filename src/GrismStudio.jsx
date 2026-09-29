@@ -23,7 +23,7 @@ import {
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
-  branchConditions, outDestinations, vlanOpText, plainPorts, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  branchConditions, outDestinations, vlanOpText, plainPorts, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
@@ -6975,7 +6975,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
   };
   const delFilter = (id) => {
     setDoc((d) => ({ ...d, filters: d.filters.filter((x) => x.id !== id) }));
-    setActiveFilter(doc.filters.find((x) => x.id !== id)?.id ?? null);
+    setActiveFilter(selectAfterRemoval(doc.filters, id));
   };
   const patchMeta = (patch) => setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, ...patch } : x) }));
   const patchFattr = (name, v) => patchMeta({ fattrs: { ...(f.fattrs ?? {}), [name]: v } });
@@ -7276,7 +7276,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, port
   };
   const delInput = (id) => {
     setDoc((d) => ({ ...d, inputs: (d.inputs ?? []).filter((x) => x.id !== id) }));
-    setActiveInput(inputs.find((x) => x.id !== id)?.id ?? null);
+    setActiveInput(selectAfterRemoval(inputs, id));
   };
   const patch = (p) => setDoc((d) => ({ ...d, inputs: d.inputs.map((x) => x.id === inp.id ? { ...x, ...p } : x) }));
   const setField = (k, v) => patch({ fields: { ...(inp.fields ?? {}), [k]: v } });
@@ -7475,7 +7475,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, p
   };
   const delOutput = (id) => {
     setDoc((d) => ({ ...d, outputs: (d.outputs ?? []).filter((x) => x.id !== id) }));
-    setActiveOutput(outputs.find((x) => x.id !== id)?.id ?? null);
+    setActiveOutput(selectAfterRemoval(outputs, id));
   };
   // Which modifiers are offered for a given output type.
   //   httprequesthijack → only redirect2safeweb
@@ -7673,7 +7673,7 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, p
   };
   const delAction = (id) => {
     setDoc((d) => ({ ...d, actions: (d.actions ?? []).filter((x) => x.id !== id) }));
-    setActiveAction(actions.find((x) => x.id !== id)?.id ?? null);
+    setActiveAction(selectAfterRemoval(actions, id));
   };
   const patch = (patchObj) => setDoc((d) => ({ ...d, actions: d.actions.map((x) => x.id === a.id ? { ...x, ...patchObj } : x) }));
   const addMod = (k) => patch({ mods: [...(a.mods ?? []), mkActionMod(k)] });
@@ -8104,7 +8104,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   };
   const delChain = (targetCid) => {
     setDoc((d) => ({ ...d, chains: d.chains.filter((c) => c.cid !== targetCid) }));
-    setActiveChain(chains.find((c) => c.cid !== targetCid)?.cid ?? null);
+    setActiveChain(selectAfterRemoval(chains, targetCid, "cid"));
     setSelId(null);
   };
   const [chainDragCid, setChainDragCid] = useState(null);

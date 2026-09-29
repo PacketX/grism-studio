@@ -2333,6 +2333,25 @@ export function isWriteRequest(url, method = "GET") {
     && !/^\/grism\/task\/get_/.test(path);
 }
 
+/* What to select after removing one item from a list.
+
+   The item that takes its place: the one after it, or the last one when what
+   was removed was itself last. Every one of these lists deletes whatever is
+   currently open, and they all used to fall back to `find(x => x.id !== id)`
+   -- the first item that is not the removed one, which is the first item --
+   so deleting the ninth filter dropped you back at the first and you had to
+   scroll back to where you were working, every time.
+
+   Chains are keyed by cid rather than id, hence the key parameter. */
+export function selectAfterRemoval(items, removedKey, key = "id") {
+  const list = Array.isArray(items) ? items : [];
+  const i = list.findIndex((x) => x?.[key] === removedKey);
+  if (i < 0) return list[0]?.[key] ?? null;       // not there: leave it on the first
+  const rest = list.filter((_, k) => k !== i);
+  if (!rest.length) return null;                   // nothing left to select
+  return (rest[i] ?? rest[rest.length - 1])[key];
+}
+
 /* ===================== interface (port) settings =====================
    Ports come from get_config's `interfaces` list; their live link state comes from
    the statistics feed, keyed by port name. Only description and enable are
