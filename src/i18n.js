@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.195.0";
+export const STUDIO_VERSION = "2.197.0";
 
 export const I18N = {
   en: {
@@ -729,6 +729,8 @@ export const I18N = {
     "dbg.coreOn": "Write a core dump when the engine crashes",
     "dbg.coreHint": "Applies to the running processes immediately and survives a reboot. Dumps land below; the newest two are kept.",
     "dbg.coreFile": "Core dump", "dbg.when": "When", "dbg.download": "Download",
+    "dbg.copyIdent": "Copy for report",
+    "dbg.manifestHint": "Send the manifest along with the dump — it records the firmware the dump came from:",
     "dbg.restartTitle": "Restart the packet engine?", "dbg.restartBody": "All traffic stops while it comes back up, and the running configuration is reloaded.",
     "dbg.reboot": "Reboot device", "dbg.rebootTitle": "Reboot the device?",
     "dbg.rebootBody": "On this platform the engine can only be started once per boot, so recovery is a reboot. ftproot lives in memory: collected core dumps are LOST on reboot — download them first.",
@@ -1602,6 +1604,8 @@ export const I18N = {
     "dbg.coreOn": "引擎當機時寫出 core dump",
     "dbg.coreHint": "立即套用到執行中的行程,重開機後仍保持。傾印檔會列在下方,最多保留最新兩份。",
     "dbg.coreFile": "傾印檔", "dbg.when": "時間", "dbg.download": "下載",
+    "dbg.copyIdent": "複製回報資訊",
+    "dbg.manifestHint": "回報時請連同傾印檔一起提供 manifest,它記錄了傾印檔所屬的韌體版本:",
     "dbg.restartTitle": "重新啟動封包引擎?", "dbg.restartBody": "重啟期間所有流量會中斷,並重新讀取執行中的設定。",
     "dbg.reboot": "重新開機", "dbg.rebootTitle": "重新開機?",
     "dbg.rebootBody": "此平台的引擎每次開機只能啟動一次,恢復方式是重新開機。注意:ftproot 位於記憶體,已收集的 core dump 會在重開機時刪除,請先下載。",

@@ -1865,7 +1865,8 @@ function DebugCard({ tr, onReboot }) {
   const [st, setSt] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [err, setErr] = React.useState("");
-  const [ask, setAsk] = React.useState(null);   // "restart" | {del: name}
+  const [ask, setAsk] = React.useState(null);   // "restart" | "reboot" | {del: name}
+  const [copied, setCopied] = React.useState(false);
   const load = React.useCallback(async () => {
     try {
       const res = await fetch("/grism/task/get_debug_status", { credentials: "include" });
@@ -1904,12 +1905,33 @@ function DebugCard({ tr, onReboot }) {
             : <button className="sys-refresh" disabled={!!busy} onClick={() => call("/grism/task/restart_grism", "restart")}>
                 {busy === "restart" ? tr("dbg.restarting") : tr("dbg.restart")}</button>}
         </div>
+        {/* Everything a crash report needs in one line: a core dump cannot be
+            symbolized without the exact revision it came from, and asking for
+            it afterwards is one more round-trip with a site that is already
+            having a bad day. */}
+        {(st.version || st.revision) && (
+          <p className="dbg-ident mono">
+            {st.model && <>{st.model} · </>}{st.version}
+            {st.revision && <> · <span title={st.revision}>{st.revision.slice(0, 12)}</span></>}
+            <button className="copy-btn" onClick={() => {
+              const txt = `model=${st.model} version=${st.version} revision=${st.revision}`
+                + (st.cores?.length ? ` cores=${st.cores.map((c) => c.name).join(",")}` : "");
+              navigator.clipboard?.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+            }}>{copied ? tr("ex.copied") : tr("dbg.copyIdent")}</button>
+          </p>
+        )}
         <label className="set-check">
           <input type="checkbox" checked={!!st.debug_core} disabled={!!busy}
             onChange={(e) => call("/grism/task/set_debug_core?enable=" + (e.target.checked ? "1" : "0"), "toggle")} />
           <span>{tr("dbg.coreOn")}</span>
         </label>
         <p className="set-hint dim">{tr("dbg.coreHint")}</p>
+        {(st.cores ?? []).length > 0 && (
+          <p className="set-hint">
+            {tr("dbg.manifestHint")}{" "}
+            <a className="copy-btn" href="/grism/task/get_core_file?name=MANIFEST.txt" download>{"MANIFEST.txt"}</a>
+          </p>
+        )}
         {(st.cores ?? []).length > 0 && (
           <table className="acct-table">
             <thead><tr><th>{tr("dbg.coreFile")}</th><th>{tr("xf.size")}</th><th>{tr("dbg.when")}</th><th /></tr></thead>
