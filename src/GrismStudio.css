@@ -2080,3 +2080,10 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .gs-root.read-only .modal[data-kind="changePw"] .opt:not(.opt-cancel){
   opacity:1; pointer-events:auto;
 }
+
+/* crash-debug card: the status line reads at a glance */
+.dbg-status{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+.dbg-dot{width:9px; height:9px; border-radius:50%; flex:0 0 auto;}
+.dbg-dot.up{background:var(--ok, #2ecc71);}
+.dbg-dot.down{background:var(--danger, #e74c3c); animation:dbg-blink 1.2s infinite;}
+@keyframes dbg-blink{50%{opacity:.35;}}

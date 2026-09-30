@@ -1857,6 +1857,96 @@ function vportProblemText(p, tr) {
   return "";
 }
 
+/* Crash debugging: core dumps switched on for the running processes (prlimit
+   reaches them without a restart), the dumps listed for download, and the data
+   plane restartable in place -- the remedy at a customer site used to be a
+   reboot, which also destroyed the evidence. */
+function DebugCard({ tr }) {
+  const [st, setSt] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const [ask, setAsk] = React.useState(null);   // "restart" | {del: name}
+  const load = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_debug_status", { credentials: "include" });
+      if (res.ok) { setSt(await res.json()); setErr(""); }
+    } catch { /* next poll */ }
+  }, []);
+  React.useEffect(() => { load(); const id = setInterval(load, 5000); return () => clearInterval(id); }, [load]);
+  const call = async (url, tag) => {
+    setBusy(tag); setErr("");
+    try {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setBusy(""); load(); }
+  };
+  const alive = st?.grism_alive;
+  return (
+    <section className="sys-card">
+      <h3 className="sys-card-title">{tr("dbg.title")}</h3>
+      <p className="set-hint">{tr("dbg.note")}</p>
+      {st === null ? <p className="sys-note dim">{tr("set.loading")}</p> : <>
+        <div className="dbg-status">
+          <span className={"dbg-dot" + (alive ? " up" : " down")} aria-hidden="true" />
+          <span>{alive ? tr("dbg.grismUp") : tr("dbg.grismDown")}</span>
+          {/* the process count says a partial death out loud: some cores gone, RPC still answering */}
+          {st.grism_pids > 0 && <span className="dim"> · {tr("dbg.procs").replace("{n}", String(st.grism_pids))}</span>}
+          {/* restarting reloads the whole data plane; while grism is down there
+              is nothing left to protect, so no confirmation on that side */}
+          {alive
+            ? <button className="copy-btn" disabled={!!busy} onClick={() => setAsk("restart")}>{tr("dbg.restart")}</button>
+            : <button className="sys-refresh" disabled={!!busy} onClick={() => call("/grism/task/restart_grism", "restart")}>
+                {busy === "restart" ? tr("dbg.restarting") : tr("dbg.restart")}</button>}
+        </div>
+        <label className="set-check">
+          <input type="checkbox" checked={!!st.debug_core} disabled={!!busy}
+            onChange={(e) => call("/grism/task/set_debug_core?enable=" + (e.target.checked ? "1" : "0"), "toggle")} />
+          <span>{tr("dbg.coreOn")}</span>
+        </label>
+        <p className="set-hint dim">{tr("dbg.coreHint")}</p>
+        {(st.cores ?? []).length > 0 && (
+          <table className="acct-table">
+            <thead><tr><th>{tr("dbg.coreFile")}</th><th>{tr("xf.size")}</th><th>{tr("dbg.when")}</th><th /></tr></thead>
+            <tbody>
+              {st.cores.map((c) => (
+                <tr key={c.name}>
+                  <td className="mono">{c.name}</td>
+                  <td className="mono">{fmtBytes(c.size)}</td>
+                  <td>{new Date(c.mtime * 1000).toLocaleString()}</td>
+                  <td className="acct-act">
+                    <a className="copy-btn" href={"/grism/task/get_core_file?name=" + encodeURIComponent(c.name)}
+                      download>{tr("dbg.download")}</a>{" "}
+                    <button className="del" disabled={!!busy} onClick={() => setAsk({ del: c.name })}>{tr("common.delete")}</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {err && <p className="set-hint err">{err}</p>}
+      </>}
+      {ask && (
+        <div className="modal-scrim confirm-load-scrim" onClick={() => setAsk(null)}>
+          <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{ask === "restart" ? tr("dbg.restartTitle") : tr("dbg.delTitle")}</div>
+            <p className="modal-body">{ask === "restart" ? tr("dbg.restartBody")
+              : <>{tr("dbg.delBody")}<br /><code className="cap-del-name">{ask.del}</code></>}</p>
+            <button className="opt drop" onClick={() => {
+              const a = ask; setAsk(null);
+              if (a === "restart") call("/grism/task/restart_grism", "restart");
+              else call("/grism/task/del_core_file?name=" + encodeURIComponent(a.del), "del");
+            }}>
+              <span className="opt-name">{ask === "restart" ? tr("dbg.restart") : tr("common.delete")}</span>
+            </button>
+            <button className="opt-cancel" onClick={() => setAsk(null)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
   const tr = t || ((k) => k);
   const [raw, setRaw] = React.useState("");
@@ -4380,6 +4470,9 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
               <p className="set-hint mono snmp-sample">{snmpCommand(SNMP_EXAMPLES[1], window.location.hostname, communityBase || community)}</p>
             </section>
           </>)}
+          {/* outside the svc gate: crash debugging must work exactly when
+              things are broken enough that other loads may be failing */}
+          <DebugCard tr={tr} />
         </div>
       )}
 
@@ -6190,9 +6283,21 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
     return packets.filter((p) => expr.test({ text: p.text, f: p.d.f }));
   }, [packets, expr]);
 
-  React.useEffect(() => {
+  /* Keyed on the newest packet, not on how many are held.
+
+     The list is a ring: once it reaches LIVE_KEEP the oldest fall off the top
+     as new ones arrive, so the length stops changing while packets keep
+     coming -- and the effect, which only watched the length, stopped firing.
+     The view followed the newest right up until the buffer filled and then
+     quietly stopped, which is exactly when there is most to follow. A filter
+     that matches at a steady rate plateaus the same way.
+
+     A layout effect, so the scroll lands in the same frame the rows do rather
+     than a painted frame later. */
+  const newestNo = shown.length ? shown[shown.length - 1].no : 0;
+  React.useLayoutEffect(() => {
     if (follow && !paused && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [shown.length, follow, paused]);
+  }, [newestNo, shown.length, follow, paused]);
 
   /* Walking the list with the arrow keys, over what is on screen rather than
      what is held -- with a filter on, Down goes to the next matching packet.
@@ -6364,11 +6469,20 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
   /* Held here, not in PacketLive: starting a capture takes the card away until
      the next .tmp appears, and a filter someone typed should not go with it. */
   const [liveQ, setLiveQ] = React.useState("");
+  /* A .tmp in the listing is the device's own record that a capture output is
+     still open -- it renames the file, stamping the end time into the name,
+     only when it closes it. So that, not `loaded`, is what decides whether
+     there is something live to show.
+
+     `loaded` is per-mount state, and this tab unmounts when you navigate away.
+     Requiring it meant coming back to a capture that was still running showed
+     the folder and nothing else: the packets were still being written, and the
+     page had simply forgotten it was the one that asked for them. */
   React.useEffect(() => {
-    if (!loaded || liveFile || !liveOn) return;
+    if (liveFile || !liveOn) return;
     const tmp = files.find((f) => !f.isDir && isPartialCapture(f.name));
     if (tmp) setLiveFile(tmp.name);
-  }, [files, loaded, liveFile, liveOn]);
+  }, [files, liveFile, liveOn]);
 
   // while a capture runs, count down and refresh the folder every second
   React.useEffect(() => {

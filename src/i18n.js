@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.191.0";
+export const STUDIO_VERSION = "2.193.0";
 
 export const I18N = {
   en: {
@@ -722,6 +722,15 @@ export const I18N = {
     "adv.actions": "Actions apply ingress packet processing or link-pair failover. Most setups don't need these.",
     "login.title": "Sign in to the device", "login.username": "Username", "login.password": "Password",
     "login.signingIn": "signing in…", "login.signIn": "Sign in",
+    "dbg.title": "Crash debugging",
+    "dbg.note": "When the packet engine dies, this is how the evidence comes back: turn on core dumps, reproduce, download the dump for analysis.",
+    "dbg.grismUp": "packet engine running", "dbg.grismDown": "packet engine is DOWN",
+    "dbg.procs": "{n} processes", "dbg.restart": "Restart engine", "dbg.restarting": "restarting…",
+    "dbg.coreOn": "Write a core dump when the engine crashes",
+    "dbg.coreHint": "Applies to the running processes immediately and survives a reboot. Dumps land below; the newest two are kept.",
+    "dbg.coreFile": "Core dump", "dbg.when": "When", "dbg.download": "Download",
+    "dbg.restartTitle": "Restart the packet engine?", "dbg.restartBody": "All traffic stops while it comes back up, and the running configuration is reloaded.",
+    "dbg.delTitle": "Delete this core dump?", "dbg.delBody": "It cannot be recovered.",
     "login.expired": "The device session has ended. Sign in again to continue.",
     "login.readOnly": "read-only", "login.readOnlyTip": "This account may look at everything and change nothing.",
     "login.readOnlyBanner": "Signed in as a read-only account — the configuration can be read but not submitted.",
@@ -1584,6 +1593,15 @@ export const I18N = {
     "adv.actions": "Actions 套用入口封包處理或 link-pair failover。大多數設定不需要這些。",
     "login.title": "登入裝置", "login.username": "帳號", "login.password": "密碼",
     "login.signingIn": "登入中…", "login.signIn": "登入",
+    "dbg.title": "當機偵錯",
+    "dbg.note": "封包引擎異常終止時的採證流程:開啟 core dump、重現問題、下載傾印檔回來分析。",
+    "dbg.grismUp": "封包引擎執行中", "dbg.grismDown": "封包引擎已停止",
+    "dbg.procs": "{n} 個行程", "dbg.restart": "重新啟動引擎", "dbg.restarting": "重啟中…",
+    "dbg.coreOn": "引擎當機時寫出 core dump",
+    "dbg.coreHint": "立即套用到執行中的行程,重開機後仍保持。傾印檔會列在下方,最多保留最新兩份。",
+    "dbg.coreFile": "傾印檔", "dbg.when": "時間", "dbg.download": "下載",
+    "dbg.restartTitle": "重新啟動封包引擎?", "dbg.restartBody": "重啟期間所有流量會中斷,並重新讀取執行中的設定。",
+    "dbg.delTitle": "刪除這份 core dump?", "dbg.delBody": "刪除後無法復原。",
     "login.expired": "裝置連線階段已結束,請重新登入。",
     "login.readOnly": "唯讀", "login.readOnlyTip": "這個帳號可以看所有內容,但不能變更任何設定。",
     "login.readOnlyBanner": "目前以唯讀帳號登入 —— 可以讀取設定,但不能提交變更。",
