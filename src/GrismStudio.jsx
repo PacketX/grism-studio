@@ -1892,9 +1892,14 @@ function DebugCard({ tr }) {
           <span>{alive ? tr("dbg.grismUp") : tr("dbg.grismDown")}</span>
           {/* the process count says a partial death out loud: some cores gone, RPC still answering */}
           {st.grism_pids > 0 && <span className="dim"> · {tr("dbg.procs").replace("{n}", String(st.grism_pids))}</span>}
-          {/* restarting reloads the whole data plane; while grism is down there
-              is nothing left to protect, so no confirmation on that side */}
-          {alive
+          {/* On MIPS a second start in the same boot wedges during init, so the
+              recovery there is a reboot -- the back end says which. Restarting
+              reloads the whole data plane; while grism is down there is
+              nothing left to protect, so no confirmation on that side. */}
+          {st.restart_supported === false
+            ? <button className={alive ? "copy-btn" : "sys-refresh"} disabled={!!busy}
+                onClick={() => setAsk("reboot")}>{tr("dbg.reboot")}</button>
+            : alive
             ? <button className="copy-btn" disabled={!!busy} onClick={() => setAsk("restart")}>{tr("dbg.restart")}</button>
             : <button className="sys-refresh" disabled={!!busy} onClick={() => call("/grism/task/restart_grism", "restart")}>
                 {busy === "restart" ? tr("dbg.restarting") : tr("dbg.restart")}</button>}
@@ -1929,15 +1934,19 @@ function DebugCard({ tr }) {
       {ask && (
         <div className="modal-scrim confirm-load-scrim" onClick={() => setAsk(null)}>
           <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{ask === "restart" ? tr("dbg.restartTitle") : tr("dbg.delTitle")}</div>
+            <div className="modal-title">{ask === "restart" ? tr("dbg.restartTitle")
+              : ask === "reboot" ? tr("dbg.rebootTitle") : tr("dbg.delTitle")}</div>
             <p className="modal-body">{ask === "restart" ? tr("dbg.restartBody")
+              : ask === "reboot" ? tr("dbg.rebootBody")
               : <>{tr("dbg.delBody")}<br /><code className="cap-del-name">{ask.del}</code></>}</p>
             <button className="opt drop" onClick={() => {
               const a = ask; setAsk(null);
               if (a === "restart") call("/grism/task/restart_grism", "restart");
+              else if (a === "reboot") call("/grism/task/reboot", "reboot");
               else call("/grism/task/del_core_file?name=" + encodeURIComponent(a.del), "del");
             }}>
-              <span className="opt-name">{ask === "restart" ? tr("dbg.restart") : tr("common.delete")}</span>
+              <span className="opt-name">{ask === "restart" ? tr("dbg.restart")
+                : ask === "reboot" ? tr("dbg.reboot") : tr("common.delete")}</span>
             </button>
             <button className="opt-cancel" onClick={() => setAsk(null)}>{tr("common.cancel")}</button>
           </div>
