@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.194.0";
+export const STUDIO_VERSION = "2.195.0";
 
 export const I18N = {
   en: {
@@ -731,7 +731,7 @@ export const I18N = {
     "dbg.coreFile": "Core dump", "dbg.when": "When", "dbg.download": "Download",
     "dbg.restartTitle": "Restart the packet engine?", "dbg.restartBody": "All traffic stops while it comes back up, and the running configuration is reloaded.",
     "dbg.reboot": "Reboot device", "dbg.rebootTitle": "Reboot the device?",
-    "dbg.rebootBody": "On this platform the engine can only be started once per boot, so recovery is a reboot. Collected core dumps are kept.",
+    "dbg.rebootBody": "On this platform the engine can only be started once per boot, so recovery is a reboot. ftproot lives in memory: collected core dumps are LOST on reboot — download them first.",
     "dbg.delTitle": "Delete this core dump?", "dbg.delBody": "It cannot be recovered.",
     "login.expired": "The device session has ended. Sign in again to continue.",
     "login.readOnly": "read-only", "login.readOnlyTip": "This account may look at everything and change nothing.",
@@ -1604,7 +1604,7 @@ export const I18N = {
     "dbg.coreFile": "傾印檔", "dbg.when": "時間", "dbg.download": "下載",
     "dbg.restartTitle": "重新啟動封包引擎?", "dbg.restartBody": "重啟期間所有流量會中斷,並重新讀取執行中的設定。",
     "dbg.reboot": "重新開機", "dbg.rebootTitle": "重新開機?",
-    "dbg.rebootBody": "此平台的引擎每次開機只能啟動一次,恢復方式是重新開機。已收集的 core dump 會保留。",
+    "dbg.rebootBody": "此平台的引擎每次開機只能啟動一次,恢復方式是重新開機。注意:ftproot 位於記憶體,已收集的 core dump 會在重開機時刪除,請先下載。",
     "dbg.delTitle": "刪除這份 core dump?", "dbg.delBody": "刪除後無法復原。",
     "login.expired": "裝置連線階段已結束,請重新登入。",
     "login.readOnly": "唯讀", "login.readOnlyTip": "這個帳號可以看所有內容,但不能變更任何設定。",

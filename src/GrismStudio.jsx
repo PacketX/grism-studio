@@ -1861,7 +1861,7 @@ function vportProblemText(p, tr) {
    reaches them without a restart), the dumps listed for download, and the data
    plane restartable in place -- the remedy at a customer site used to be a
    reboot, which also destroyed the evidence. */
-function DebugCard({ tr }) {
+function DebugCard({ tr, onReboot }) {
   const [st, setSt] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [err, setErr] = React.useState("");
@@ -1942,7 +1942,10 @@ function DebugCard({ tr }) {
             <button className="opt drop" onClick={() => {
               const a = ask; setAsk(null);
               if (a === "restart") call("/grism/task/restart_grism", "restart");
-              else if (a === "reboot") call("/grism/task/reboot", "reboot");
+              /* the settings tab owns the reboot machinery -- the held
+                 screen, the countdown, the came-back watcher -- so the same
+                 promise reads the same everywhere */
+              else if (a === "reboot") onReboot();
               else call("/grism/task/del_core_file?name=" + encodeURIComponent(a.del), "del");
             }}>
               <span className="opt-name">{ask === "restart" ? tr("dbg.restart")
@@ -4481,7 +4484,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
           </>)}
           {/* outside the svc gate: crash debugging must work exactly when
               things are broken enough that other loads may be failing */}
-          <DebugCard tr={tr} />
+          <DebugCard tr={tr} onReboot={() => submitPower("/grism/task/reboot", "reboot")} />
         </div>
       )}
 
