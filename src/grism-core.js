@@ -4789,7 +4789,11 @@ export const SAVE_XML_TYPE = "map";
    the other's files. The device does not care what the type says; only these
    two readers do. */
 export const AUTO_SAVE_TYPE = "pre";
-export const AUTO_SAVE_KEEP = 5;
+/* Nothing on the device enforces a count -- pywww writes what it is given and
+   this is the only thing that prunes -- so the limit is only about how far back
+   it is useful to reach. A snapshot of .189's is 6KB against 26GB free, which
+   is to say the number can be whatever is wanted. */
+export const AUTO_SAVE_KEEP = 10;
 
 /* Descriptions are stored beside the files now, because this encoding cannot
    carry most of them: btoa throws on anything outside latin-1, so a Chinese
