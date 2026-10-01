@@ -413,6 +413,41 @@ group("device request methods");
   check("update_download_update is not POSTed", !!call && !/method:\s*"POST"/.test(call[0]));
 }
 
+group("what a flow table setting is actually worth");
+/* Mirrors the firmware: src/statistics.c reports v4 capacity as
+   flowCacheBaseSize * FLOW_CACHE_NODE_TOP and v6 as flowv6TableSize, while
+   tools/common/statistics.c on arm64 multiplies both by cores-1. The numbers
+   below are the two lab devices' own settings. */
+{
+  check("the bucket size matches the firmware's", C.FLOW_CACHE_NODE_TOP === 16);
+
+  // .189, a MIPS T12S: 150000 / 500000, cores 16 but the tables are not per-core
+  const m4 = C.flowTableCapacity(150000, { family: "v4", cores: 16, perCore: false });
+  const m6 = C.flowTableCapacity(500000, { family: "v6", cores: 16, perCore: false });
+  check("MIPS v4 is sixteen to one", m4.total === 2400000 && m4.buckets === 16 && m4.workers === 1);
+  check("MIPS v6 is one to one", m6.total === 500000 && m6.buckets === 1 && m6.workers === 1);
+
+  // .152, an arm64 Q16: 23000 / 30000 across 24 cores, one of which forwards nothing
+  const d4 = C.flowTableCapacity(23000, { family: "v4", cores: 24, perCore: true });
+  const d6 = C.flowTableCapacity(30000, { family: "v6", cores: 24, perCore: true });
+  check("arm64 v4 is per packet core as well",
+    d4.total === 23000 * 16 * 23 && d4.workers === 23);
+  check("arm64 v6 is per packet core", d6.total === 30000 * 23 && d6.buckets === 1);
+
+  // core 0 forwards nothing, so it is cores-1 and never cores
+  check("the control core does not count",
+    C.flowTableCapacity(1, { family: "v6", cores: 8, perCore: true }).total === 7);
+  check("a single core leaves the figure alone",
+    C.flowTableCapacity(1000, { family: "v6", cores: 1, perCore: true }).total === 1000);
+  check("an unknown core count multiplies by nothing rather than by NaN",
+    C.flowTableCapacity(1000, { family: "v6", perCore: true }).total === 1000
+    && C.flowTableCapacity(1000, { family: "v6", cores: "", perCore: true }).total === 1000);
+  check("nothing in, nothing to say",
+    C.flowTableCapacity(0, { family: "v4", cores: 8, perCore: true }) === null
+    && C.flowTableCapacity("", { family: "v4" }) === null
+    && C.flowTableCapacity(-5, { family: "v4" }) === null);
+}
+
 group("the update overlay walks its three phases");
 /* Measured on .188 before the fix: submitted at +0s showing "更新中", at +1s
    already "更新完成" -- before the 25MB upload had finished, let alone the

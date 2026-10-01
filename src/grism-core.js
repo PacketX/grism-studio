@@ -2547,6 +2547,30 @@ export function parseFirmwareVersion(text) {
   };
 }
 
+/* What a flow-table setting is actually worth in sessions.
+
+   Neither field is the number of sessions it will hold. The v4 figure is a
+   count of hash buckets and each holds FLOW_CACHE_NODE_TOP of them, which the
+   firmware has fixed at 16 -- so the engine reports capacity as
+   flowCacheBaseSize * 16 (src/statistics.c on MIPS). On arm64 the tables are
+   per packet-core and the engine multiplies both by cores-1, core 0 being the
+   control core that forwards nothing (tools/common/statistics.c).
+
+   So the same 150000 means 2.4M sessions on a MIPS box and, on a 24-core arm64
+   one, 55.2M. Typing a number and getting a capacity two orders of magnitude
+   away from it is not something anyone should have to know to read. */
+export const FLOW_CACHE_NODE_TOP = 16;         // mirrors the firmware's #define
+export function flowTableCapacity(value, { family, cores, perCore }) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const buckets = family === "v6" ? 1 : FLOW_CACHE_NODE_TOP;
+  const c = Number(cores);
+  /* cores-1, and only where the tables are per-core. A config that does not
+     say how many cores it has gets no multiplier rather than a wrong one. */
+  const workers = perCore && Number.isFinite(c) && c > 1 ? c - 1 : 1;
+  return { total: n * buckets * workers, buckets, workers };
+}
+
 /* Which phase the update overlay should be in after one poll of get_version.
 
    Three states, in the order a reader expects to see them: updating while the

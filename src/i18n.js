@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.203.0";
+export const STUDIO_VERSION = "2.204.0";
 
 export const I18N = {
   en: {
@@ -346,6 +346,10 @@ export const I18N = {
     "set.fsNone": "No services defined.", "set.fsUnnamed": "(unnamed)",
     "set.flow": "Flow tracking", "set.flowV4": "Track IPv4 flows", "set.flowV6": "Track IPv6 flows",
     "set.flowV4Size": "IPv4 flow table size", "set.flowV6Size": "IPv6 flow table size",
+    "set.flowReal": "= {sum} sessions ({how})",
+    "set.flowRealPlain": "= {sum} sessions",
+    "set.flowSizeNote": "Neither figure is the session count. The IPv4 table holds {n} sessions per entry, so its capacity is the number above × {n}; the IPv6 table holds one.",
+    "set.flowSizeNoteR": "Neither figure is the session count. The IPv4 table holds {n} sessions per entry, and both tables exist once per packet core — {cores} of them here — so the capacity is the number above × {n} × {cores} for IPv4 and × {cores} for IPv6.",
     "set.flowNote": "The device groups packets into flows so filters and exports can work per connection rather than per packet. The table sizes cap how many flows it can follow at once.",
     "set.flowTimeouts": "Flow timeouts",
     "set.flowTimeoutsNote": "When a flow is considered finished: after this long while still active, after this long idle, or once a TCP FIN/RST is seen.",
@@ -1226,6 +1230,10 @@ export const I18N = {
     "set.fsNone": "尚未定義服務。", "set.fsUnnamed": "(未命名)",
     "set.flow": "連線追蹤", "set.flowV4": "追蹤 IPv4 連線", "set.flowV6": "追蹤 IPv6 連線",
     "set.flowV4Size": "IPv4 連線表大小", "set.flowV6Size": "IPv6 連線表大小",
+    "set.flowReal": "= {sum} 條連線({how})",
+    "set.flowRealPlain": "= {sum} 條連線",
+    "set.flowSizeNote": "這兩個數字都不是連線數。IPv4 連線表每筆可容納 {n} 條連線,實際容量是上面的數字 × {n};IPv6 每筆一條。",
+    "set.flowSizeNoteR": "這兩個數字都不是連線數。IPv4 連線表每筆可容納 {n} 條連線,而兩張表都是每個封包核心各一份(此機為 {cores} 個),所以實際容量是上面的數字 × {n} × {cores}(IPv4)與 × {cores}(IPv6)。",
     "set.flowNote": "裝置會把封包歸納成連線,讓篩選與紀錄輸出能以連線為單位運作而非逐封包。表格大小決定同時能追蹤多少條連線。",
     "set.flowTimeouts": "連線逾時",
     "set.flowTimeoutsNote": "判定連線結束的條件:持續活躍達此秒數、閒置達此秒數,或偵測到 TCP FIN/RST。",

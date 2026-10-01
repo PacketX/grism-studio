@@ -9,7 +9,7 @@ import {
   cUpdate, chainProblems, changedPorts, changedServices, deviceFilterList, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
-  portDescriptions, ifacePortLabel, nextUpdatePhase,
+  portDescriptions, ifacePortLabel, nextUpdatePhase, flowTableCapacity, FLOW_CACHE_NODE_TOP,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
@@ -2332,9 +2332,12 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
     return () => { alive = false; };
   }, [loggedIn, section]);
 
-  // model and running version for the firmware page
+  /* Model and running version. Not gated on the firmware section any more: the
+     packet-processing section needs the product line too, to say what a flow
+     table setting is worth -- the arm64 tables are per-core and the MIPS ones
+     are not. One GET, once per visit. */
   React.useEffect(() => {
-    if (!loggedIn || section !== "firmware" || fw.version) return;
+    if (!loggedIn || fw.version) return;
     (async () => {
       try {
         const cfg = await getConfig();
@@ -3620,14 +3623,47 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                 <label className="set-check"><input type="checkbox" checked={!!sys.flowv6}
                   onChange={(e) => setSysField("flowv6", e.target.checked)} /> {tr("set.flowV6")}</label>
               </div>
-              <div className="set-grid">
-                <label className="ml"><span>{tr("set.flowV4Size")}</span>
-                  <input type="number" min="0" value={sys.flowCacheBaseSize ?? 0}
-                    onChange={(e) => setSysField("flowCacheBaseSize", Number(e.target.value) || 0)} /></label>
-                <label className="ml"><span>{tr("set.flowV6Size")}</span>
-                  <input type="number" min="0" value={sys.flowv6TableSize ?? 0}
-                    onChange={(e) => setSysField("flowv6TableSize", Number(e.target.value) || 0)} /></label>
-              </div>
+              {/* Neither figure is the number of sessions. Say what each one
+                  works out to, and show the arithmetic -- someone checking a
+                  capacity against a datasheet needs to see where it came from,
+                  not just trust a total. */}
+              {(() => {
+                const perCore = firmwareRestartsOnly(fw.version);
+                const cores = Number(rawCfg?.args?.cores);
+                const cap = (v, family) => {
+                  const c = flowTableCapacity(v, { family, cores, perCore });
+                  if (!c) return null;
+                  const bits = [];
+                  if (c.buckets > 1) bits.push(`${c.buckets}`);
+                  if (c.workers > 1) bits.push(`${c.workers}`);
+                  /* Exact, not 2.40M: this is the figure someone checks against
+                     a datasheet. And no "(150000)" when there was no sum to
+                     show -- the working only earns its place when it changes
+                     the answer. */
+                  return tr(bits.length ? "set.flowReal" : "set.flowRealPlain")
+                    .replace("{sum}", c.total.toLocaleString())
+                    .replace("{how}", [String(v), ...bits].join(" × "));
+                };
+                const v4 = cap(sys.flowCacheBaseSize, "v4");
+                const v6 = cap(sys.flowv6TableSize, "v6");
+                return (<>
+                  <div className="set-grid">
+                    <label className="ml"><span>{tr("set.flowV4Size")}</span>
+                      <input type="number" min="0" value={sys.flowCacheBaseSize ?? 0}
+                        onChange={(e) => setSysField("flowCacheBaseSize", Number(e.target.value) || 0)} />
+                      {v4 && <em className="set-derived">{v4}</em>}</label>
+                    <label className="ml"><span>{tr("set.flowV6Size")}</span>
+                      <input type="number" min="0" value={sys.flowv6TableSize ?? 0}
+                        onChange={(e) => setSysField("flowv6TableSize", Number(e.target.value) || 0)} />
+                      {v6 && <em className="set-derived">{v6}</em>}</label>
+                  </div>
+                  {/* replaceAll: both placeholders occur twice in the note, and
+                      a plain replace() only ever changes the first. */}
+                  <p className="set-hint">{tr(perCore ? "set.flowSizeNoteR" : "set.flowSizeNote")
+                    .replaceAll("{n}", String(FLOW_CACHE_NODE_TOP))
+                    .replaceAll("{cores}", Number.isFinite(cores) && cores > 1 ? String(cores - 1) : "?")}</p>
+                </>);
+              })()}
               {lg && (<>
                 <div className="oattr-subhead">{tr("set.flowTimeouts")}</div>
                 <p className="set-hint">{tr("set.flowTimeoutsNote")}</p>
