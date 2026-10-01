@@ -455,6 +455,21 @@ export function outDestinations(ports, outputs, t) {
     });
 }
 
+/* How far apart the overview diagram stacks its destination boxes.
+
+   They are spread across the test rows so the edges between the two columns
+   stay readable, and rowCount/destCount is what gives that. But it is only a
+   wish: a chain with more destinations than rows -- a plain forward fanning out
+   to five ports has one row and five of them -- drives the factor below 1 and
+   the spacing below the height of a box, and every box is then drawn on top of
+   the one before it. So the pitch is floored at a box plus a gap; crowding the
+   diagram taller is the lesser evil against a pile nobody can read. */
+export function destPitch(rowCount, destCount, boxH, rowH, gap = 12) {
+  const rows = Math.max(Number(rowCount) || 0, 1);
+  const dests = Math.max(Number(destCount) || 0, 1);
+  return Math.max(boxH + gap, (rows / dests) * rowH);
+}
+
 /* What a branch node is actually testing, filter by filter, for the hover on
    the chain canvas. The node itself can only show "F1,!F3" -- enough to find
    the filter but not to read the chain -- so this resolves each reference to
@@ -521,7 +536,9 @@ export let _cfid = 0;
 export function summarizeChain(tree) {
   const build = (node) => {
     if (!node || node.t === "__unset__") return { kind: "default" };
-    if (node.t === "out") return node.ports === "0" ? { kind: "drop" } : { kind: "ports", ports: node.ports, mode: node.mode };
+    /* lb rides along: it is the hash a loadBalance out splits on, and the
+       overview's hover is the only place in the picture that says so. */
+    if (node.t === "out") return node.ports === "0" ? { kind: "drop" } : { kind: "ports", ports: node.ports, mode: node.mode, lb: node.lb };
     if (node.t === "branch") {
       return { kind: "test", node: {
         id: "t" + (++_cfid),

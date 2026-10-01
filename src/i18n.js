@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.197.0";
+export const STUDIO_VERSION = "2.198.0";
 
 export const I18N = {
   en: {
@@ -765,6 +765,7 @@ export const I18N = {
     "flt.blockIfEmptyTip": "By default an empty filter matches everything; set this to make it match nothing instead.",
     "flt.matchedLogTip": "Send matched packets to syslog (requires syslog to be configured under System).",
     "flt.mpslogTip": "Send the per-second match count to syslog (requires syslog to be configured under System).",
+    "flt.emptyMsg": "No filters yet. A <filter> is a named set of conditions — reference it from a chain as F1 to split traffic on it.",
     "flt.unnamed": "unnamed", "flt.namePh": "e.g. block list",
     "flt.opAllMatch": "all must match", "flt.opAnyMatch": "any must match", "flt.opNotMatch": "must NOT match the item below",
     "flt.addCondition": "+ Condition", "flt.addGroup": "+ Group", "flt.addNot": "+ NOT",
@@ -1640,6 +1641,7 @@ export const I18N = {
     "flt.blockIfEmptyTip": "預設空篩選器會符合所有封包;設為 yes 則改成不符合任何封包。",
     "flt.matchedLogTip": "將命中的封包以 syslog 送出(需先在「系統」設定 syslog)。",
     "flt.mpslogTip": "將每秒命中次數以 syslog 送出(需先在「系統」設定 syslog)。",
+    "flt.emptyMsg": "尚無 filter。<filter> 是一組具名條件 — 在鏈結中以 F1 引用,用來分流。",
     "flt.unnamed": "未命名", "flt.namePh": "例如 block list",
     "flt.opAllMatch": "全部都要符合", "flt.opAnyMatch": "任一符合即可", "flt.opNotMatch": "下方項目必須「不」符合",
     "flt.addCondition": "+ 條件", "flt.addGroup": "+ 群組", "flt.addNot": "+ NOT",

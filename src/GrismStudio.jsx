@@ -23,7 +23,7 @@ import {
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
-  branchConditions, outDestinations, vlanOpText, plainPorts, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  branchConditions, outDestinations, destPitch, vlanOpText, plainPorts, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
@@ -1118,7 +1118,7 @@ export default function GrismStudio() {
           </div>
         )}
         {tab === "overview" && (
-          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t} loggedIn={!!login.who} hbTargets={hbTargets} deviceFilters={deviceFilters}
+          <OverviewTab doc={doc} docSource={docSource} templateName={templateName} lang={lang} t={t} loggedIn={!!login.who} hbTargets={hbTargets} deviceFilters={deviceFilters} portDescs={portDescs}
             onOpenTemplates={() => setShowTemplates(true)}
             onGoto={goTab} />
         )}
@@ -1203,7 +1203,7 @@ export default function GrismStudio() {
 /* ============================================================
    Overview tab — auto-generated explanation of the current doc
    ============================================================ */
-function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, onOpenTemplates, hbTargets, deviceFilters }) {
+function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, onOpenTemplates, hbTargets, deviceFilters, portDescs = {} }) {
   const tr = t || ((k) => k);
   const info = useMemo(() => describeDoc(doc, tr, hbTargets), [doc, lang, hbTargets]);
   const [filtersOpen, setFiltersOpen] = React.useState(false); // Overview: show all filters vs first few
@@ -1322,7 +1322,7 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
           <h3 className="ov-h3">{tr("ov.chains")} <span className="ov-count">{info.chains.length}</span></h3>
           <div className="ov-chains">
             {info.chains.map((c, i) => <ChainFlow key={i} chain={c} filterNames={info.filterNames} outputInfo={info.outputInfo}
-              filters={doc.filters} outputs={doc.outputs} hbTargets={hbTargets} deviceFilters={deviceFilters} t={tr} />)}
+              filters={doc.filters} outputs={doc.outputs} portDescs={portDescs} hbTargets={hbTargets} deviceFilters={deviceFilters} t={tr} />)}
           </div>
           <button className="ov-jump" onClick={() => onGoto("chain")}>{tr("ov.editChains")}</button>
         </section>
@@ -6812,13 +6812,21 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
   );
 }
 
-const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outputInfo = {}, filters = [], outputs = [], hbTargets, deviceFilters, t }) {
+const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outputInfo = {}, filters = [], outputs = [], portDescs = {}, hbTargets, deviceFilters, t }) {
   const tr = t || ((k) => ({ "flow.in": "traffic in", "flow.match": "match", "flow.nomatch": "no match", "flow.forward": "forward", "flow.loadBalance": "load balance", "flow.duplicate": "duplicate", "flow.all": "matches all", "flow.any": "matches any" }[k] || k));
   const flow = chain.flow || { root: null, terminal: null };
   const root = flow.root;
   const terminal = flow.terminal;
 
-  const ingressW = 62, testW = 200, outW = 78, colGap = 76, rowH = 76;
+  /* The ingress box was a fixed 62px whatever went in it, so a chain taking six
+     ports -- "P2,P3,P4,P5,P6,P7" -- wrote its label straight across both edges
+     of its own box and into the arrows leaving it. It sizes to the text now (12px
+     monospace, ~7.2px a character), and a list too long for even that is cut and
+     left to the hover. */
+  const ingressFull = String(chain.ingress ?? "");
+  const ingressLbl = ingressFull.length > 24 ? ingressFull.slice(0, 23) + "…" : ingressFull;
+  const testW = 200, outW = 78, colGap = 76, rowH = 76;
+  const ingressW = Math.max(62, Math.round(ingressLbl.length * 7.2) + 16);
   const inX = 30;
   const colX = (depth) => inX + ingressW + colGap + depth * (testW + colGap);
 
@@ -6838,37 +6846,84 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
   const nodeById = {};
   realNodes.forEach((x) => { nodeById[x.node.id] = x; });
 
-  // collect distinct destination ports (+drop) across every side, first-seen order.
+  /* Collect distinct destination ports (+drop) across every side, first-seen
+     order. destMeta keeps how each one is reached: for a bare port the hover is
+     the only place that can say "load balance · 5thash", which the picture
+     otherwise never shows. */
   const destOrder = [];
-  const addPorts = (side) => { if (side.kind === "ports") side.ports.split(",").map((s) => s.trim()).filter(Boolean).forEach((p) => { if (!destOrder.includes(p)) destOrder.push(p); }); if (side.kind === "drop" && !destOrder.includes("drop")) destOrder.push("drop"); };
+  const destMeta = {};
+  const noteDest = (d) => {
+    if (!destOrder.includes(d)) destOrder.push(d);
+    return destMeta[d] || (destMeta[d] = { modes: [], lb: [] });
+  };
+  const addPorts = (side) => {
+    if (side.kind === "ports") {
+      const ps = side.ports.split(",").map((s) => s.trim()).filter(Boolean);
+      const mode = ps.length > 1 ? (side.mode === "loadBalance" ? "loadBalance" : "duplicate") : "forward";
+      ps.forEach((p) => {
+        const m = noteDest(p);
+        if (!m.modes.includes(mode)) m.modes.push(mode);
+        if (mode === "loadBalance" && side.lb && !m.lb.includes(side.lb)) m.lb.push(side.lb);
+      });
+    }
+    if (side.kind === "drop") noteDest("drop");
+  };
   realNodes.forEach((x) => { addPorts(x.node.match); addPorts(x.node.notmatch); });
   if (!root && terminal) addPorts(terminal);
 
   const outX = colX(maxDepth + 1);
   const rowCount = Math.max(realNodes.length, 1);
   const destCount = Math.max(destOrder.length, 1);
-  const destY = {};
-  destOrder.forEach((d, i) => { destY[d] = rowY(i * (rowCount / destCount)) + (destCount < rowCount ? rowH / 2 : 0); });
-  const height = Math.max(rowY(rowCount - 1) + 50, rowY(destCount - 1) + 50, 110);
   /* A destination that resolves to an output carries a second line (its port and
-     name), which needs a wider box than a bare "P1" does. */
+     name), which needs a wider -- and taller -- box than a bare "P1" does. Both
+     are settled before the boxes are placed, because the height is what decides
+     how far apart they have to sit. */
   const destSub = Object.fromEntries(destOrder.map((d) => {
     const oi = outputInfo[d];
     const sub = oi ? [oi.port, oi.name].filter(Boolean).join(" · ") : "";
     return [d, sub.length > 24 ? sub.slice(0, 23) + "…" : sub];
   }));
-  const outWEff = destOrder.some((d) => destSub[d]) ? 160 : outW;
+  const anySub = destOrder.some((d) => destSub[d]);
+  const outWEff = anySub ? 160 : outW;
+  const destH = anySub ? 42 : 30;
+  const pitch = destPitch(rowCount, destCount, destH, rowH);
+  const destY = {};
+  destOrder.forEach((d, i) => { destY[d] = 44 + i * pitch + (destCount < rowCount ? rowH / 2 : 0); });
+  const destSpan = (destCount - 1) * pitch;
+  const height = Math.max(rowY(rowCount - 1) + 50, 44 + destSpan + destH / 2 + 20, 110);
   const width = outX + outWEff + 40;
 
-  const rootMidY = root ? rowY(nodeById[root.id].row) : 44;
+  /* With no test column to line up against, the ingress sits level with the
+     middle of the fan instead of at the top of it. */
+  const rootMidY = root ? rowY(nodeById[root.id].row) : 44 + destSpan / 2;
 
   // the same hover the Chains canvas and the simulator offer
   const { tip, show, hide } = useNodeTip();
-  const showTip = (ev, { fids, op, dest }) => show(ev, {
-    rows: fids ? branchConditions(fids, filters, tr, hbTargets, deviceFilters) : [],
-    outs: dest ? outDestinations(dest, outputs, tr) : [],
-    op: op === "and" ? tr("crit.and") : tr("crit.or"),
-  });
+  /* How traffic reaches a destination, for the hover. The edge carries a
+     "load balance" label once per side; the hash it balances on is written
+     nowhere in the picture at all. */
+  const destKindText = (d) => {
+    if (d === "drop") return tr("sim.dropped");   // discarded, not "leaves by"
+    const m = destMeta[d];
+    if (!m || !m.modes.length) return tr("ch.tipEgress");
+    const names = { loadBalance: "flow.loadBalance", duplicate: "flow.duplicate", forward: "flow.forward" };
+    return m.modes.map((k) => tr(names[k])).concat(m.lb).join(" · ");
+  };
+  /* A bare port resolved to no output, so the tip had nothing to say and never
+     opened -- on a chain whose every destination is a plain port, hovering the
+     output column did nothing. plainPorts gives the port and whatever the
+     operator named it, the way the Chains canvas already does. */
+  const showTip = (ev, { fids, op, dest, ingress }) => {
+    const outs = dest ? outDestinations(dest, outputs, tr) : [];
+    const ports = ingress ? plainPorts(ingressFull, portDescs)
+      : dest && !outs.length ? plainPorts(dest, portDescs) : [];
+    show(ev, {
+      rows: fids ? branchConditions(fids, filters, tr, hbTargets, deviceFilters) : [],
+      outs, ports,
+      kind: ingress ? tr("ch.tipIngress") : ports.length ? destKindText(dest) : "",
+      op: op === "and" ? tr("crit.and") : tr("crit.or"),
+    });
+  };
 
   // an arrow from (x1,y1) to (x2,y2) with a label of the given kind at the target.
   const arrow = (x1, y1, x2, y2, kind, key, labelText) => {
@@ -6913,9 +6968,11 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
     <div className="ov-chain" onMouseLeave={hide}>
       <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="ov-flow"
           role="img" aria-label={`${tr("ov.chains")} ${chain.ingress}`}>
-        {/* ingress */}
-        <rect x={inX} y={rootMidY - 16} width={ingressW} height="32" rx="7" className="ovf-in" />
-        <text x={inX + ingressW / 2} y={rootMidY + 5} className="ovf-in-lbl">{chain.ingress}</text>
+        {/* ingress -- hovering it names the ports in full, truncated label or not */}
+        <g className="ovf-node" onMouseEnter={(ev) => showTip(ev, { ingress: true })} onMouseLeave={hide}>
+          <rect x={inX} y={rootMidY - 16} width={ingressW} height="32" rx="7" className="ovf-in" />
+          <text x={inX + ingressW / 2} y={rootMidY + 5} className="ovf-in-lbl">{ingressLbl}</text>
+        </g>
 
         {/* pure forward chain (no tests): ingress → output(s) */}
         {!root && terminal && (() => {
@@ -7150,7 +7207,17 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
   const onAddNot = (id) => mutate(id, (n) => ({ ...n, children: [...(n.children ?? []), mkNot()] }));
   const onRemove = (id) => setFilterRoot(f.id, (root) => tRemove(root, id));
 
-  if (!f) return <div className="empty-pane"><button className="primary" onClick={addFilter}>{tr("common.newFilter")}</button></div>;
+  /* A bare button straight inside .empty-pane got none of the centring and width
+     .empty-cta carries, so the one page that can legitimately start empty was
+     also the one that looked broken. Same shape as inputs/outputs/actions. */
+  if (!f) return (
+    <div className="empty-pane">
+      <div className="empty-cta">
+        <p>{tr("flt.emptyMsg")}</p>
+        <button className="primary" onClick={addFilter}>{tr("common.newFilter")}</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="filters-layout">

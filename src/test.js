@@ -3898,6 +3898,25 @@ group("pcap live view");
     check("nothing in, nothing out", C.plainPorts("").length === 0 && C.plainPorts(null).length === 0);
   }
 
+  /* The overview's destination column. The regression that prompted this: a
+     plain forward chain out to five ports -- one test row, five destinations --
+     drew all five boxes 15px apart in a 30px box. */
+  {
+    const rowH = 76, boxH = 30;
+    check("a lone destination keeps the row pitch",
+      C.destPitch(1, 1, boxH, rowH) === rowH);
+    check("more destinations than rows never overlap",
+      C.destPitch(1, 5, boxH, rowH) >= boxH);
+    check("the five-port forward chain, specifically",
+      C.destPitch(1, 5, boxH, rowH) === boxH + 12 && (1 / 5) * rowH < boxH);
+    check("taller boxes are spread further",
+      C.destPitch(1, 5, 42, rowH) > C.destPitch(1, 5, 30, rowH));
+    check("plenty of rows still spreads them over the rows",
+      C.destPitch(8, 2, boxH, rowH) === 4 * rowH);
+    check("a zero count does not collapse the pitch",
+      C.destPitch(0, 0, boxH, rowH) === rowH && C.destPitch(1, 0, boxH, rowH) === rowH);
+  }
+
   /* Memory that is spoken for before anything runs. A device that reserves 8GB
      of hugepages and 4GB of flow tables out of 16GB reads as 87% used while it
      is idle; the figures below are .13's, read off it. */
