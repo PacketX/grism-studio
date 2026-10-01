@@ -1023,6 +1023,10 @@
 .sess-sub{font-size:10.5px; color:var(--txt-faint);}
 .sess-breakdowns{display:flex; flex-direction:column; gap:14px;}
 .sess-bd-head{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--txt-faint); margin-bottom:6px;}
+/* what the table counts, said beside its name -- the scope is part of reading
+   the figures, not a footnote to go looking for */
+.sess-bd-qual{margin-left:6px; padding:1px 5px; border:1px solid var(--line); border-radius:4px;
+  font-family:var(--mono); font-size:9.5px; letter-spacing:0; text-transform:none; cursor:help;}
 .tf-mini-table{width:100%; border-collapse:collapse; font-size:12px;}
 .tf-mini-table th{text-align:left; padding:4px 8px; font-size:10px; letter-spacing:.06em; text-transform:uppercase;
   color:var(--txt-faint); border-bottom:1px solid var(--line); font-weight:600;}

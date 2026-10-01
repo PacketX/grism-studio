@@ -5538,9 +5538,14 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
       <div className="sess-breakdowns">
         <div><div className="sess-bd-head">{protoLabel}</div>
           <BreakdownTable rows={info.protocols} keyLabel={tr("sess.proto")} labelOf={protocolName} tr={tr} /></div>
-        <div><div className="sess-bd-head">{tr("sess.tcpPorts")}</div>
+        {/* The engine only counts ports 1-1023 (FLOW_CACHE_ACTIVE_PORT_MAX), and
+            a session with neither end below that is not counted here at all --
+            which reads as missing traffic unless the table says so itself. */}
+        <div><div className="sess-bd-head">{tr("sess.tcpPorts")}
+          <span className="sess-bd-qual" title={tr("sess.portRangeTip")}>{tr("sess.portRange")}</span></div>
           <BreakdownTable rows={info.tcp} keyLabel={tr("sess.port")} labelOf={portLabel} tr={tr} /></div>
-        <div><div className="sess-bd-head">{tr("sess.udpPorts")}</div>
+        <div><div className="sess-bd-head">{tr("sess.udpPorts")}
+          <span className="sess-bd-qual" title={tr("sess.portRangeTip")}>{tr("sess.portRange")}</span></div>
           <BreakdownTable rows={info.udp} keyLabel={tr("sess.port")} labelOf={portLabel} tr={tr} /></div>
       </div>
     </section>

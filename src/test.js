@@ -1295,6 +1295,16 @@ check("no Chinese entry is left in English", (() => {
   if (same.length) console.log("    untranslated:", same.join(", "));
   return same.length === 0;
 })());
+/* The engine counts ports 1-1023 -- FLOW_CACHE_ACTIVE_PORT_MAX is 1024 and the
+   test is a strict "<" -- and attributes a session to dport, else sport, else
+   not at all. Both languages have to quote that same boundary. */
+check("the port-range note quotes 1024 in both languages", ["en", "zh-TW"].every((l) =>
+  I18N[l]["sess.portRange"].includes("1024") && I18N[l]["sess.portRangeTip"].includes("1024")));
+check("the tip says what happens when neither end qualifies", (() => {
+  const en = I18N.en["sess.portRangeTip"];
+  return /destination/.test(en) && /source/.test(en) && /(neither|not appear)/.test(en);
+})());
+
 check("both dictionaries cover the same keys", (() => {
   const en = Object.keys(I18N.en), zh = Object.keys(I18N["zh-TW"]);
   const missing = en.filter((k) => !zh.includes(k));

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.200.0";
+export const STUDIO_VERSION = "2.201.0";
 
 export const I18N = {
   en: {
@@ -130,13 +130,15 @@ export const I18N = {
     "sess.total": "Total sessions", "sess.concurrent": "Concurrent", "sess.netflow": "NetFlow records",
     "sess.eps": "events/sec", "sess.ofTotal": "of capacity", "sess.protocols": "Protocols", "sess.nextHdr": "Next headers",
     "sess.tcpPorts": "TCP ports", "sess.udpPorts": "UDP ports",
+    "sess.portRange": "ports < 1024",
+    "sess.portRangeTip": "Only ports 1-1023 are counted. A session is attributed to its destination port when that is below 1024, otherwise to its source port — so a session with neither end below 1024 does not appear here at all.",
     "sess.proto": "Protocol", "sess.port": "Port", "sess.sessions": "Sessions", "sess.bytes": "Bytes",
     "sess.none": "no active sessions",
     "sess.pktTypes": "Packet types", "sess.pktType": "Type", "sess.count": "Count",
     "sess.filters": "Filter hit counters", "sess.filterId": "Filter", "sess.refs": "Refs",
     "sess.tried": "Evaluated", "sess.matched": "Matched", "sess.rate": "Hit rate", "sess.perSec": "Matches/sec",
     "sess.noFilters": "No filter counters reported.",
-    "sess.note": "Total sessions is the maximum the device supports; concurrent is how many are open right now, and usage is the share of that capacity in use. Protocol and port breakdowns show the busiest entries first — sessions is the live count, bytes the traffic those sessions are carrying. Filter counters show how many packets each filter evaluated and how many it matched.",
+    "sess.note": "Total sessions is the maximum the device supports; concurrent is how many are open right now, and usage is the share of that capacity in use. Protocol and port breakdowns show the busiest entries first — sessions is the live count, bytes the traffic those sessions are carrying. The port breakdowns count ports below 1024 only, so traffic between two high ports is absent from them. Filter counters show how many packets each filter evaluated and how many it matched.",
     "svc.title": "Flow services", "svc.public": "Public", "svc.private": "Private",
     "svc.scope": "Scope", "svc.service": "Service", "svc.hosts": "Top 100 hosts", "svc.host": "Host",
     "svc.loading": "Reading the flow service table…",
@@ -1008,13 +1010,15 @@ export const I18N = {
     "sess.total": "總連線數", "sess.concurrent": "在線數", "sess.netflow": "NetFlow 筆數",
     "sess.eps": "筆/秒", "sess.ofTotal": "使用率", "sess.protocols": "協定", "sess.nextHdr": "Next header",
     "sess.tcpPorts": "TCP 埠", "sess.udpPorts": "UDP 埠",
+    "sess.portRange": "僅 < 1024",
+    "sess.portRangeTip": "只統計 1024 以下的埠(1-1023)。連線會算在目的埠(當目的埠小於 1024),否則算在來源埠 — 兩端都不小於 1024 的連線不會出現在這張表。",
     "sess.proto": "協定", "sess.port": "埠", "sess.sessions": "連線數", "sess.bytes": "位元組",
     "sess.none": "目前沒有連線",
     "sess.pktTypes": "封包類型", "sess.pktType": "類型", "sess.count": "次數",
     "sess.filters": "篩選器命中計數", "sess.filterId": "篩選器", "sess.refs": "引用",
     "sess.tried": "比對次數", "sess.matched": "命中次數", "sess.rate": "命中率", "sess.perSec": "命中/秒",
     "sess.noFilters": "裝置未回報篩選器計數。",
-    "sess.note": "總連線數是裝置支援的最大連線數量,在線數是目前開啟中的連線,使用率則是已用掉的容量比例。協定與埠的明細依繁忙程度排序,「連線數」為目前在線數,「位元組」為這些連線承載的流量。篩選器計數顯示每個篩選器比對了多少封包、命中多少。",
+    "sess.note": "總連線數是裝置支援的最大連線數量,在線數是目前開啟中的連線,使用率則是已用掉的容量比例。協定與埠的明細依繁忙程度排序,「連線數」為目前在線數,「位元組」為這些連線承載的流量。埠的明細只統計 1024 以下的埠,因此兩端都是高位埠的流量不會出現在其中。篩選器計數顯示每個篩選器比對了多少封包、命中多少。",
     "svc.title": "流量服務", "svc.public": "公開", "svc.private": "私有",
     "svc.scope": "範圍", "svc.service": "服務", "svc.hosts": "TOP 100 主機", "svc.host": "主機",
     "svc.loading": "正在讀取流量服務表…",
