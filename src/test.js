@@ -413,6 +413,53 @@ group("device request methods");
   check("update_download_update is not POSTed", !!call && !/method:\s*"POST"/.test(call[0]));
 }
 
+group("every port picker names its ports");
+/* P0..P11 are told apart by what the operator called them and by nothing else,
+   so a list that offers a port to pick has to carry its description. Eight of
+   them did not -- deduplication, SD-WAN correlation, heartbeat send/receive,
+   the five logging source ports, the logging scope, the filter port condition,
+   and the simulator's ingress and inline pair -- while the chain, inputs,
+   outputs, actions and capture pages all did. */
+{
+  const descs = { P4: "uplink", P5: "" };
+  check("a named port reads with its name", C.ifacePortLabel("P4", descs) === "P4 — uplink");
+  check("an unnamed one is just the port", C.ifacePortLabel("P5", descs) === "P5"
+    && C.ifacePortLabel("P9", descs) === "P9");
+  check("no descriptions at all is still fine",
+    C.ifacePortLabel("P1") === "P1" && C.ifacePortLabel("P1", {}) === "P1");
+  check("whitespace is not a description", C.ifacePortLabel("P2", { P2: "   " }) === "P2");
+
+  const cfg = { interfaces: [
+    { type: "ETH", ports: [{ name: "P0", description: "wan" }, { name: "P1", description: "" }] },
+    { type: "LOOP", ports: [{ name: "P9", description: "loopback" }] },
+  ] };
+  check("descriptions come off the config body",
+    JSON.stringify(C.portDescriptions(cfg)) === JSON.stringify({ P0: "wan", P9: "loopback" }));
+  check("LOOP ports are described too", C.portDescriptions(cfg).P9 === "loopback");
+  check("an empty or absent config gives an empty map",
+    Object.keys(C.portDescriptions(null)).length === 0
+    && Object.keys(C.portDescriptions({})).length === 0);
+
+  /* The regression itself: a picker built from a port list has to pass the
+     descriptions on. Checked against the source because it is a wiring
+     mistake, not a logic one -- it type-checks and renders perfectly. */
+  const jsx2 = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+  const bare = [];
+  for (const m of jsx2.matchAll(/<PortSelect\b[^>]*>/g)) {
+    if (!/\bdescs=/.test(m[0])) bare.push("PortSelect");
+  }
+  for (const m of jsx2.matchAll(/<InterfacePicker\b[^>]*>/g)) {
+    if (!/\bdescs=/.test(m[0])) bare.push("InterfacePicker");
+  }
+  if (bare.length) console.log("    pickers with no descriptions:", bare.join(", "));
+  check("every PortSelect and InterfacePicker is given descriptions", bare.length === 0);
+  // the two CheckAccordions over ports, and the three <option> lists over them
+  check("the port CheckAccordions carry a sub",
+    (jsx2.match(/items=\{ports\.map\(\(n\) => \(\{ id: n, b: n, sub: portDescs/g) ?? []).length === 2);
+  check("the port option lists go through ifacePortLabel",
+    (jsx2.match(/<option key=\{p[n]?\} value=\{p[n]?\}>\{ifacePortLabel\(/g) ?? []).length === 4);
+}
+
 group("internal accounts");
 // the device's own account, taken straight from its /list_user answer
 check("sha256Hex matches the device's hash for packetx",

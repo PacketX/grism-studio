@@ -3035,6 +3035,27 @@ export function dataPortNames(cfg, { includeLoop = false } = {}) {
   return sortPortNames([...new Set(names)]);
 }
 
+/* What the operator called each port, keyed by port name.
+   A dozen ports named P0..P11 are told apart by nothing else, so every list
+   that offers one to choose from should carry this -- see ifacePortLabel. */
+export function portDescriptions(cfg) {
+  const out = {};
+  (cfg?.interfaces ?? []).flatMap((i) => i.ports ?? []).forEach((p) => {
+    const d = String(p?.description ?? "").trim();
+    if (p?.name && d) out[p.name] = d;
+  });
+  return out;
+}
+
+/* A port as it should read wherever one is offered: "P4 — uplink", or just
+   "P4" when it was never named. An <option> takes no markup, which is why
+   this is one string and not two spans. */
+export function ifacePortLabel(name, descs) {
+  const n = String(name ?? "");
+  const d = String(descs?.[n] ?? "").trim();
+  return d ? `${n} — ${d}` : n;
+}
+
 /* Enabled management interfaces, e.g. M0 / M1. */
 export function managementPortNames(cfg) {
   return (cfg?.ifcfgs ?? [])

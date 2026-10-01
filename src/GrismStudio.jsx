@@ -9,6 +9,7 @@ import {
   cUpdate, chainProblems, changedPorts, changedServices, deviceFilterList, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
+  portDescriptions, ifacePortLabel,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
@@ -1163,7 +1164,7 @@ export default function GrismStudio() {
             doc={doc} setDoc={setDoc}
             activeFilter={activeFilter} setActiveFilter={setActiveFilter}
             setFilterRoot={setFilterRoot} hbTargets={hbTargets} deviceFilters={deviceFilters} t={t} touched={changes?.filters?.touched}
-            portOptions={devicePorts ?? DEFAULT_PORTS} mgmtPorts={mgmtPorts} lang={lang}
+            portOptions={devicePorts ?? DEFAULT_PORTS} mgmtPorts={mgmtPorts} portDescs={portDescs} lang={lang}
           />
         )}
         {tab === "inputs" && (
@@ -1184,7 +1185,7 @@ export default function GrismStudio() {
             portDescs={portDescs} hbTargets={hbTargets} deviceFilters={deviceFilters} />
         )}
         {tab === "simulate" && (
-          <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} loopPorts={loopPorts} t={t}
+          <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} portDescs={portDescs} loopPorts={loopPorts} t={t}
             simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped}
             hbTargets={hbTargets} deviceFilters={deviceFilters} />
         )}
@@ -1675,7 +1676,7 @@ function InterfacePicker({ value, ports, onChange, tr, hideBulk = false, descs =
 
 /* One collector target. Every exporter shares this shape — address, port, which
    interfaces to cover and an optional filter — so they share one editor. */
-function LogTarget({ target, onPatch, onRemove, tr, extra, dataPorts = [], filterIds = [], hideScope = false }) {
+function LogTarget({ target, onPatch, onRemove, tr, extra, dataPorts = [], portDescs = {}, filterIds = [], hideScope = false }) {
   return (
     <div className="hb-target">
       <div className="hb-target-head">
@@ -1697,7 +1698,7 @@ function LogTarget({ target, onPatch, onRemove, tr, extra, dataPorts = [], filte
             </select></label>
         )}
       </div>
-      {!hideScope && <InterfacePicker value={target.interfaces} ports={dataPorts} tr={tr}
+      {!hideScope && <InterfacePicker value={target.interfaces} ports={dataPorts} descs={portDescs} tr={tr}
         onChange={(v) => onPatch({ interfaces: v })} />}
       {extra}
     </div>
@@ -2024,6 +2025,11 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
   const [cpssSvc, setCpssSvc] = React.useState(null);   // systemctl show cpss
 
   const [rawCfg, setRawCfg] = React.useState(null);   // for the port pickers
+  /* Every list on this page that offers a port to pick carries what the
+     operator called it: P0..P11 are told apart by nothing else. Derived here
+     rather than threaded in as a prop, because the page already holds the
+     config body the names come from. */
+  const portDescs = React.useMemo(() => portDescriptions(rawCfg), [rawCfg]);
   // LAN bypass: only some models have the relays, so the section appears only
   // when the config says so. null = not read yet, true/false = the relay state.
   /* pair number -> true | false. A pair missing from the map is one the device
@@ -3683,7 +3689,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                     {ports.length === 0
                       ? <span className="dim">{tr("set.loading")}</span>
                       : <CheckAccordion label={tr("set.dedupAllPorts")} alwaysMulti t={tr}
-                          items={ports.map((n) => ({ id: n, b: n, on: chosen.includes(n) }))}
+                          items={ports.map((n) => ({ id: n, b: n, sub: portDescs[n] ?? "", on: chosen.includes(n) }))}
                           onToggle={(n) => setSysField("deduplicationPorts", togglePortInList(sys.deduplicationPorts, n))}
                           onSetOne={(n) => setSysField("deduplicationPorts", n ?? "")}
                           onAll={(on) => setSysField("deduplicationPorts", on ? formatPortList(ports) : "")} />}
@@ -3788,10 +3794,10 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                           <input type="number" min="0" value={t.id}
                             onChange={(e) => setHbTarget(i, { id: Number(e.target.value) || 0 })} /></label>
                         <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.hbSend")}</span>
-                          <PortSelect value={t.sendPort} options={portOptions}
+                          <PortSelect value={t.sendPort} options={portOptions} descs={portDescs}
                             onChange={(v) => setHbTarget(i, { sendPort: v })} invalid={!t.sendPort} /></label>
                         <label className="ml" style={{ flex: "0 1 140px" }}><span>{tr("set.hbReceive")}</span>
-                          <PortSelect value={t.receivePort} options={portOptions}
+                          <PortSelect value={t.receivePort} options={portOptions} descs={portDescs}
                             onChange={(v) => setHbTarget(i, { receivePort: v })} invalid={!t.receivePort} /></label>
                         <label className="ml"><span>{tr("tf.desc")}</span>
                           <input value={t.description} placeholder={tr("common.optional")}
@@ -3941,7 +3947,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                         {ports.length === 0
                           ? <span className="dim">{tr("set.loading")}</span>
                           : <CheckAccordion label={tr("set.sdwanPickPorts")} alwaysMulti
-                              items={ports.map((n) => ({ id: n, b: n, on: picked.includes(n) }))}
+                              items={ports.map((n) => ({ id: n, b: n, sub: portDescs[n] ?? "", on: picked.includes(n) }))}
                               onToggle={(n) => setSysField(portKey, togglePortInList(sys[portKey], n))}
                               onSetOne={(n) => setSysField(portKey, n ?? "")}
                               onAll={(on) => setSysField(portKey, on ? formatPortList(ports) : "")}
@@ -4204,7 +4210,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                 {shown(path === "netflow" ? lg.netflow.targets : lg[path].targets).length === 0 &&
                   <p className="out-empty">{tr("set.lgNoTargets")}</p>}
                 {(path === "netflow" ? lg.netflow.targets : lg[path].targets).map((x, i) => x.enable && (
-                  <LogTarget key={i} target={x} tr={tr} dataPorts={dataPorts} filterIds={filterIds}
+                  <LogTarget key={i} target={x} tr={tr} dataPorts={dataPorts} portDescs={portDescs} filterIds={filterIds}
                     onPatch={(p) => patch(path, i, p)} onRemove={() => drop(path, i)}
                     extra={targetExtra?.(x, i)} />
                 ))}
@@ -4220,7 +4226,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                   onChange={(e) => setLg((o) => ({ ...o, enable: e.target.checked }))} /> {tr("set.lgEnable")}</label>
                 <div className="set-grid">
                   <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
-                    <PortSelect value={lg.netflow.port} options={srcPorts}
+                    <PortSelect value={lg.netflow.port} options={srcPorts} descs={portDescs}
                       onChange={(v) => setLg((o) => ({ ...o, netflow: { ...o.netflow, port: v } }))} /></label>
                 </div>
                 </>
@@ -4240,12 +4246,12 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                   onChange={(e) => setLg((o) => ({ ...o, syslog: { ...o.syslog, enable: e.target.checked } }))} /> {tr("set.lgEnable")}</label>
                 <div className="set-grid">
                   <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
-                    <PortSelect value={lg.syslog.port} options={srcPorts}
+                    <PortSelect value={lg.syslog.port} options={srcPorts} descs={portDescs}
                       onChange={(v) => setLg((o) => ({ ...o, syslog: { ...o.syslog, port: v } }))} /></label>
                 </div>
                 {shown(lg.syslog.targets).length === 0 && <p className="out-empty">{tr("set.lgNoTargets")}</p>}
                 {lg.syslog.targets.map((x, i) => x.enable && (
-                  <LogTarget key={i} target={x} tr={tr} dataPorts={dataPorts} filterIds={filterIds}
+                  <LogTarget key={i} target={x} tr={tr} dataPorts={dataPorts} portDescs={portDescs} filterIds={filterIds}
                     hideScope={x.type === "system"}
                     onPatch={(p) => patch("syslog", i, p)} onRemove={() => drop("syslog", i)}
                     extra={(
@@ -4269,7 +4275,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
               {exporter("dns", tr("set.lgDns"), tr("set.lgDnsNote"), (
                 <div className="set-grid">
                   <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
-                    <PortSelect value={lg.dns.port} options={srcPorts}
+                    <PortSelect value={lg.dns.port} options={srcPorts} descs={portDescs}
                       onChange={(v) => setLg((o) => ({ ...o, dns: { ...o.dns, port: v } }))} /></label>
                   {[["active_timeout", "set.lgActive"], ["inactive_timeout", "set.lgInactive"]].map(([k, lbl]) => (
                     <label className="ml" style={{ flex: "0 1 150px" }} key={k}><span>{tr(lbl)}</span>
@@ -4286,7 +4292,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
               {exporter("http", tr("set.lgHttp"), tr("set.lgHttpNote"), (
                 <div className="set-grid">
                   <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
-                    <PortSelect value={lg.http.port} options={srcPorts}
+                    <PortSelect value={lg.http.port} options={srcPorts} descs={portDescs}
                       onChange={(v) => setLg((o) => ({ ...o, http: { ...o.http, port: v } }))} /></label>
                 </div>
               ))}
@@ -4294,7 +4300,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
               {exporter("ssl", tr("set.lgTls"), tr("set.lgTlsNote"), (
                 <div className="set-grid">
                   <label className="ml" style={{ flex: "0 1 130px" }}><span>{tr("set.lgPort")}</span>
-                    <PortSelect value={lg.ssl.port} options={srcPorts}
+                    <PortSelect value={lg.ssl.port} options={srcPorts} descs={portDescs}
                       onChange={(v) => setLg((o) => ({ ...o, ssl: { ...o.ssl, port: v } }))} /></label>
                   <label className="set-check"><input type="checkbox" checked={lg.ssl.ja3}
                     onChange={(e) => setLg((o) => ({ ...o, ssl: { ...o.ssl, ja3: e.target.checked } }))} /> JA3</label>
@@ -7171,7 +7177,7 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
   );
 }
 
-function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, portOptions, mgmtPorts, lang, t, touched }) {
+function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, portOptions, mgmtPorts, portDescs = {}, lang, t, touched }) {
   const tr = t || ((k) => k);
   const [attrsOpen, setAttrsOpen] = useState(false);   // advanced attributes panel
   const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
@@ -7308,7 +7314,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
 
         <div className="tree-scroll">
           <CritNode node={f.root} depth={0} canRemove={false} isRoot={true} hbTargets={hbTargets}
-            portOptions={portOptions} mgmtPorts={mgmtPorts} lang={lang} t={tr}
+            portOptions={portOptions} mgmtPorts={mgmtPorts} portDescs={portDescs} lang={lang} t={tr}
             onChangeOp={onChangeOp} onChangeFind={onChangeFind}
             onAddCond={onAddCond} onAddGroup={onAddGroup} onAddNot={onAddNot} onRemove={onRemove} />
         </div>
@@ -7344,7 +7350,7 @@ const RAILS = ["#5eead4", "#7dd3fc", "#c4b5fd", "#fda4af", "#fcd34d"];
 function CritNode(props) {
   const { node, depth, isRoot } = props;
   if (node.t === "find") return <FindRow node={node} onChange={props.onChangeFind} onRemove={props.onRemove} canRemove={props.canRemove}
-    hbTargets={props.hbTargets} portOptions={props.portOptions} mgmtPorts={props.mgmtPorts} lang={props.lang} t={props.t} />;
+    hbTargets={props.hbTargets} portOptions={props.portOptions} mgmtPorts={props.mgmtPorts} portDescs={props.portDescs} lang={props.lang} t={props.t} />;
   const isNot = node.t === "not";
   const rail = RAILS[depth % RAILS.length];
   return (
@@ -7383,7 +7389,7 @@ function CritNode(props) {
     </div>
   );
 }
-function FindRow({ node, onChange, onRemove, canRemove, hbTargets, portOptions, mgmtPorts, lang, t }) {
+function FindRow({ node, onChange, onRemove, canRemove, hbTargets, portOptions, mgmtPorts, portDescs = {}, lang, t }) {
   const tr = t || ((k) => k);
   const f = FIELD_INDEX[node.field]; const kind = f?.kind ?? "str";
   const rels = relationsFor(kind); const isEx = kind === "exists";
@@ -7434,7 +7440,7 @@ function FindRow({ node, onChange, onRemove, canRemove, hbTargets, portOptions, 
                 onChange={(e) => onChange(node.id, { val: e.target.value })}>
                 {!node.val && <option value="">{tr("flt.pickPort")}</option>}
                 {!listed && node.val && <option value={node.val}>{node.val} {tr("flt.notOnDevice")}</option>}
-                {ports.map((pn) => <option key={pn} value={pn}>{pn}</option>)}
+                {ports.map((pn) => <option key={pn} value={pn}>{ifacePortLabel(pn, portDescs)}</option>)}
               </select>
           : <input className={"val" + (err ? " invalid" : "")} value={node.val} placeholder={ph(kind)}
               onChange={(e) => onChange(node.id, { val: e.target.value })} />}
@@ -7457,13 +7463,7 @@ function FindRow({ node, onChange, onRemove, canRemove, hbTargets, portOptions, 
    never silently disappears. */
 function PortSelect({ value, options, onChange, invalid, descs }) {
   const opts = options.includes(value) || !value ? options : [value, ...options];
-  /* A dozen ports named P0..P11 are told apart by what the operator called
-     them, so the name the device carries goes in the option text. An option
-     element takes no markup, hence the dash rather than a second span. */
-  const label = (p) => {
-    const d = String(descs?.[p] ?? "").trim();
-    return p + (d ? " — " + d : "") + (!options.includes(p) ? " (custom)" : "");
-  };
+  const label = (p) => ifacePortLabel(p, descs) + (!options.includes(p) ? " (custom)" : "");
   return (
     <select className={"m-port" + (invalid ? " invalid" : "")} value={value} onChange={(e) => onChange(e.target.value)}>
       {!value && <option value="">— select —</option>}
@@ -9387,7 +9387,7 @@ function simulateChain(chain, states, filterAlt) {
    as chain ingress / output highlighted. Clicking a port selects it as the
    simulation ingress. Below, user-added inline devices (e.g. an external IPS)
    are drawn bridging two ports. */
-function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], t }) {
+function DevicePanel({ portOptions, portDescs = {}, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], t }) {
   const tr = t || ((k) => k);
   const portRole = (p) => { const i = inPortSet.has(p), o = outPortSet.has(p); return i && o ? "both" : i ? "in" : o ? "out" : "idle"; };
   const inlinePorts = new Set(inlines.flatMap((x) => [x.portA, x.portB]));
@@ -9792,12 +9792,12 @@ function DevicePanel({ portOptions, inPortSet, outPortSet, selected, onPick, inl
                     <div className="inline-pop-ports">
                       <select value={inlineDraft.portA} onChange={(e) => setInlineDraft((s) => ({ ...s, portA: e.target.value }))}>
                         <option value="">{tr("sim.portA")}</option>
-                        {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                        {portOptions.map((p) => <option key={p} value={p}>{ifacePortLabel(p, portDescs)}</option>)}
                       </select>
                       <span className="inline-lead-bridge">⇄</span>
                       <select value={inlineDraft.portB} onChange={(e) => setInlineDraft((s) => ({ ...s, portB: e.target.value }))}>
                         <option value="">{tr("sim.portB")}</option>
-                        {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                        {portOptions.map((p) => <option key={p} value={p}>{ifacePortLabel(p, portDescs)}</option>)}
                       </select>
                     </div>
                     <div className="inline-pop-actions">
@@ -10228,7 +10228,7 @@ function L2greTab({ data, correlating, onData, t }) {
   );
 }
 
-function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, hbTargets, deviceFilters, t }) {
+function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, hbTargets, deviceFilters, t }) {
   /* Where each "On" in an outcome actually sends the packet. */
   const outIdx = React.useMemo(() => outputIndex(doc), [doc.outputs]);
   const destLines = (text) => String(text ?? "").split(",").map((x) => x.trim()).filter(Boolean)
@@ -10379,7 +10379,7 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
   return (
     <div className="sim-page">
       <div className="dev-panel-outer" style={panelHeight ? { height: panelHeight, flex: "0 0 auto" } : undefined}>
-        <DevicePanel portOptions={portOptions} inPortSet={inPortSet} outPortSet={chainOutPorts}
+        <DevicePanel portOptions={portOptions} portDescs={portDescs} inPortSet={inPortSet} outPortSet={chainOutPorts}
           selected={inPort} onPick={(p) => setInPort(p)}
           inlines={inlines} onRemoveInline={removeInline}
           inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
@@ -10394,7 +10394,7 @@ function SimulateTab({ doc, definedIds, portOptions, loopPorts = [], simState, s
           <div className="sim-label">{tr("sim.ingressPort")}</div>
           <select className="sim-inport" value={inPort} onChange={(e) => setInPort(e.target.value)}>
             <option value="">— {tr("sim.selectIngressOpt")} —</option>
-            {[...new Set([...chainInPorts, ...portOptions])].map((p) => <option key={p} value={p}>{p}{chainInPorts.includes(p) ? "" : ` (${tr("sim.noChain")})`}</option>)}
+            {[...new Set([...chainInPorts, ...portOptions])].map((p) => <option key={p} value={p}>{ifacePortLabel(p, portDescs)}{chainInPorts.includes(p) ? "" : ` (${tr("sim.noChain")})`}</option>)}
           </select>
         </div>
 
