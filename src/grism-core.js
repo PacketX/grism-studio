@@ -455,6 +455,50 @@ export function outDestinations(ports, outputs, t) {
     });
 }
 
+/* A canvas node is a fixed 150px box -- the layout engine measures everything
+   in NODE_W -- and its main line is 14px monospace, about 16 characters. A chain
+   taking seven ports wrote "P2,P3,P4,P5,P6,P7,P12" straight through both walls
+   of its own node.
+
+   Consecutive ports collapse to a range first, which is how the list would be
+   written by hand anyway and is usually all that is needed: "P2-P7,P12" is nine
+   characters and loses nothing. A run of two is left alone -- "P10-P11" is
+   longer than "P10,P11". */
+export function compactPorts(text) {
+  const toks = String(text ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const part = /^([A-Za-z]+)(\d+)$/;
+  const out = [];
+  for (let i = 0; i < toks.length;) {
+    const m = part.exec(toks[i]);
+    let j = i;
+    if (m) {
+      let n = Number(m[2]);
+      for (; j + 1 < toks.length; j++, n++) {
+        const m2 = part.exec(toks[j + 1]);
+        if (!m2 || m2[1] !== m[1] || Number(m2[2]) !== n + 1) break;
+      }
+    }
+    out.push(j - i >= 2 ? `${toks[i]}-${toks[j]}` : toks.slice(i, j + 1).join(","));
+    i = j + 1;
+  }
+  return out.join(",");
+}
+
+/* What of that actually fits on the node. Whole entries are dropped for a "+N"
+   counter rather than cutting mid-name: "P2,P3,P4,P5,P6…" reads as a port list
+   that has been truncated, but "P1" cut out of "P12" reads as a different port
+   that exists. The full value stays one hover away either way. */
+export function fitNodeText(text, maxChars) {
+  const s = compactPorts(text);
+  if (s.length <= maxChars) return s;
+  const toks = s.split(",").filter(Boolean);
+  for (let keep = toks.length - 1; keep >= 1; keep--) {
+    const cand = `${toks.slice(0, keep).join(",")} +${toks.length - keep}`;
+    if (cand.length <= maxChars) return cand;
+  }
+  return s.slice(0, Math.max(1, maxChars - 1)) + "…";
+}
+
 /* How far apart the overview diagram stacks its destination boxes.
 
    They are spread across the test rows so the edges between the two columns

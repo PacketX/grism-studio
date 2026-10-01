@@ -23,7 +23,7 @@ import {
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
-  branchConditions, outDestinations, destPitch, vlanOpText, plainPorts, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPorts, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
@@ -6824,7 +6824,7 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
      monospace, ~7.2px a character), and a list too long for even that is cut and
      left to the hover. */
   const ingressFull = String(chain.ingress ?? "");
-  const ingressLbl = ingressFull.length > 24 ? ingressFull.slice(0, 23) + "…" : ingressFull;
+  const ingressLbl = fitNodeText(ingressFull, 24);
   const testW = 200, outW = 78, colGap = 76, rowH = 76;
   const ingressW = Math.max(62, Math.round(ingressLbl.length * 7.2) + 16);
   const inX = 30;
@@ -8207,6 +8207,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   };
   const outAlt = (ports) => { for (const tok of String(ports).split(",")) { const t = tok.trim(); if (outputAlt[t]) return outputAlt[t]; } return ""; };
   const capAlt = (s) => s && s.length > 30 ? s.slice(0, 29) + "…" : s; // visible cap; full text in a hover tooltip
+  /* The main line is 14px monospace (measured: 8.43px a character) inside the
+     fixed NODE_W box, with a little room left at each wall. */
+  const NODE_CHARS = Math.floor((NODE_W - 12) / 8.43);
 
   const [destOpen, setDestOpen] = useState(null);   // chain whose full output list is showing
   const sel = placed.find((n) => n.id === selId) || null;
@@ -8579,10 +8582,10 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               onMouseLeave={hideTip}>
               <rect x={x} y={y} width={NODE_W} height={NODE_H} rx="9" />
               {bad && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
-              {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">{tr("ch.capIngress")}</text><text x={c.x} y={c.y + 12} className="n-main">{n.ports}</text></>}
+              {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">{tr("ch.capIngress")}</text><text x={c.x} y={c.y + 12} className="n-main"><title>{n.ports}</title>{fitNodeText(n.ports, NODE_CHARS)}</text></>}
 
-              {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || tr("ch.capFilter")}</text><text x={c.x} y={c.y + 12} className="n-main">{n.fids}</text></>; })()}
-              {n.t === "out" && <><text x={c.x} y={c.y - 5} className="n-kind">{drop ? tr("ch.capDiscard") : (n.mode === "loadBalance" ? tr("ch.capBalance") : tr("ch.capOutput"))}</text><text x={c.x} y={c.y + 12} className="n-main">{drop ? "drop (0)" : withOutPorts(n.ports)}</text></>}
+              {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || tr("ch.capFilter")}</text><text x={c.x} y={c.y + 12} className="n-main"><title>{n.fids}</title>{fitNodeText(n.fids, NODE_CHARS)}</text></>; })()}
+              {n.t === "out" && <><text x={c.x} y={c.y - 5} className="n-kind">{drop ? tr("ch.capDiscard") : (n.mode === "loadBalance" ? tr("ch.capBalance") : tr("ch.capOutput"))}</text><text x={c.x} y={c.y + 12} className="n-main"><title>{drop ? "drop (0)" : withOutPorts(n.ports)}</title>{drop ? "drop (0)" : fitNodeText(withOutPorts(n.ports), NODE_CHARS)}</text></>}
             </g>;
           })}
         </svg>

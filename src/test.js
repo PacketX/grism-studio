@@ -3898,6 +3898,34 @@ group("pcap live view");
     check("nothing in, nothing out", C.plainPorts("").length === 0 && C.plainPorts(null).length === 0);
   }
 
+  /* Port lists that do not fit their node. Measured on .150: the main line is
+     8.43px a character in a 150px box, so 21 characters of ingress overflowed
+     it by 27px. */
+  {
+    check("a consecutive run becomes a range",
+      C.compactPorts("P2,P3,P4,P5,P6,P7,P12") === "P2-P7,P12");
+    check("a run of two is left alone", C.compactPorts("P10,P11") === "P10,P11");
+    check("runs do not jump a gap", C.compactPorts("P0,P1,P2,P4,P5,P6") === "P0-P2,P4-P6");
+    check("a different prefix breaks the run", C.compactPorts("P1,P2,Q3,Q4,Q5") === "P1,P2,Q3-Q5");
+    check("output references are left alone",
+      C.compactPorts("O1(P0),O2(P1)") === "O1(P0),O2(P1)");
+    check("nothing in, nothing out", C.compactPorts("") === "" && C.compactPorts(null) === "");
+
+    const N = 16;   // what fits a 150px node
+    check("the .150 ingress now fits", C.fitNodeText("P2,P3,P4,P5,P6,P7,P12", N) === "P2-P7,P12");
+    check("a list that already fits is untouched",
+      C.fitNodeText("P0,P1,P8,P10,P11", N) === "P0,P1,P8,P10,P11");
+    check("what cannot be ranged drops whole entries",
+      C.fitNodeText("P1,P3,P5,P7,P9,P11,P13", N) === "P1,P3,P5,P7 +3");
+    check("every result fits the cap", ["P2,P3,P4,P5,P6,P7,P12", "P1,P3,P5,P7,P9,P11,P13",
+      "O1(P0),O2(P1),O3(P2)", "P0"].every((s) => C.fitNodeText(s, N).length <= N));
+    // a port cut out of a longer name reads as a port that exists
+    check("no entry is ever cut mid-name",
+      !/P1$/.test(C.fitNodeText("P12,P13,P14,P15,P16,P17,P18", N)));
+    check("a single unsplittable value still gets cut",
+      C.fitNodeText("AVeryLongSingleTokenIndeed", 10) === "AVeryLong…");
+  }
+
   /* The overview's destination column. The regression that prompted this: a
      plain forward chain out to five ports -- one test row, five destinations --
      drew all five boxes 15px apart in a 30px box. */
