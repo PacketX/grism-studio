@@ -9,7 +9,7 @@ import {
   cUpdate, chainProblems, changedPorts, changedServices, deviceFilterList, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
-  portDescriptions, ifacePortLabel,
+  portDescriptions, ifacePortLabel, nextUpdatePhase,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
@@ -2589,13 +2589,6 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
   React.useEffect(() => {
     if (!waitPhase || waitPhase === "done") return;
     let alive = true;
-    /* One failed read is not the device going away. Applying an image rewrites
-       scripts/pywww underneath a running manage.py, which reloads and answers
-       500 (or refuses the connection) for a few seconds -- and a single such
-       tick used to be enough to call the device "rebooting", so the very next
-       success declared the update complete while it was still flashing. Only a
-       run of failures long enough to outlast that reload counts as gone. */
-    const DOWN_TICKS = 3;                     // × 2s, comfortably past a reload
     let downRun = 0;
     const ping = async () => {
       let up = false, version = "";
@@ -2603,30 +2596,20 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
         // no-store: a cached 200 would read as "back up" while it is still down
         const res = await fetch("/grism/task/get_version", { credentials: "include", cache: "no-store" });
         up = res.ok;
-        if (up) version = (await res.text()).trim();
+        /* Parsed, not raw. get_version answers "<version>-<revision>", and
+           wasVersion holds the parsed version alone -- so comparing the whole
+           body against it made them differ on the very first poll, every time,
+           and the update reported itself complete about a second after it was
+           submitted. The arm64 line hid it behind its ten-second hold; MIPS has
+           no hold, so there it finished before the upload did. */
+        if (up) version = parseFirmwareVersion(await res.text()).version;
       } catch { up = false; }
       if (!alive) return;
       downRun = up ? 0 : downRun + 1;
       const goneFor = downRun;
       setWait((w) => {
-        if (!w || w.phase === "done") return w;
-        if (!up) {
-          return (goneFor >= DOWN_TICKS && w.phase !== "rebooting") ? { ...w, phase: "rebooting" } : w;
-        }
-        /* A device that restarts its services rather than itself may never be
-           unreachable for long enough to count as gone -- so what says the
-           update landed is the version it now reports. Only useful when the
-           image is a different build; the down-then-up rule still covers a
-           reflash of the same one. */
-        if (w.holdUntil && Date.now() < w.holdUntil) {
-          // still inside the hold: say what is happening, not that it is over
-          return w.phase === "rebooting" ? w : { ...w, phase: "rebooting" };
-        }
-        if (w.wasVersion && version && version !== w.wasVersion) return { ...w, phase: "done" };
-        // Reachable only means finished if it had gone away first. The device is
-        // still answering for the first moments of an update, and treating that
-        // as success would flash "complete" before anything had happened.
-        return w.phase === "rebooting" ? { ...w, phase: "done" } : w;
+        const phase = nextUpdatePhase(w, { up, goneFor, version, now: Date.now() });
+        return !w || phase === w.phase ? w : { ...w, phase };
       });
     };
     ping();

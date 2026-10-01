@@ -2547,6 +2547,40 @@ export function parseFirmwareVersion(text) {
   };
 }
 
+/* Which phase the update overlay should be in after one poll of get_version.
+
+   Three states, in the order a reader expects to see them: updating while the
+   device still answers, rebooting once it has gone, done when it is back.
+
+   `version` must be the PARSED version, the same thing wasVersion holds.
+   get_version answers "<version>-<revision>"; comparing that whole string
+   against a parsed wasVersion made them differ on the first poll every time,
+   so the overlay went straight to done about a second in -- before the upload
+   had even finished. The arm64 line masked it with its ten-second hold, MIPS
+   had nothing to mask it.
+
+   A run of failures, not one: applying an image rewrites pywww underneath a
+   running manage.py, which answers 500 for a few seconds, and treating that as
+   "the device went down" made the next success read as "finished". */
+export const UPDATE_DOWN_TICKS = 3;            // × 2s, comfortably past a reload
+export function nextUpdatePhase(wait, { up, goneFor, version, now }) {
+  if (!wait || wait.phase === "done") return wait?.phase ?? null;
+  if (!up) {
+    return goneFor >= UPDATE_DOWN_TICKS ? "rebooting" : wait.phase;
+  }
+  /* Still inside the hold a restart-only update keeps: say what is happening
+     rather than that it is over. */
+  if (wait.holdUntil && now < wait.holdUntil) return "rebooting";
+  /* A device that restarts its services may never be unreachable long enough
+     to count as gone, so what says the update landed is the version it now
+     reports. Only useful when the image is a different build; the
+     down-then-up rule below still covers a reflash of the same one. */
+  if (wait.wasVersion && version && version !== wait.wasVersion) return "done";
+  /* Reachable only means finished if it had gone away first -- the device is
+     still answering for the first moments of an update. */
+  return wait.phase === "rebooting" ? "done" : wait.phase;
+}
+
 /* How long the page stays held after an update that restarts services rather
    than the device.
 

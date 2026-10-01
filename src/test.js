@@ -413,6 +413,57 @@ group("device request methods");
   check("update_download_update is not POSTed", !!call && !/method:\s*"POST"/.test(call[0]));
 }
 
+group("the update overlay walks its three phases");
+/* Measured on .188 before the fix: submitted at +0s showing "更新中", at +1s
+   already "更新完成" -- before the 25MB upload had finished, let alone the
+   reboot. get_version answers "<version>-<revision>" and the poll compared
+   that whole string against a parsed wasVersion, so they differed on the first
+   tick every time. The arm64 line hid it behind its ten-second hold. */
+{
+  const reboot = { phase: "updating", wasVersion: "6.6.261001.1", holdUntil: 0 };
+  const T = 1000000;
+  const step = (w, o) => C.nextUpdatePhase(w, { now: T, ...o });
+
+  // the raw body is exactly what used to be passed in, and must not finish it
+  const RAW = "6.6.261001.1\n-d7a2f97960aa340b722767d34d1cbaa24eb0d83f";
+  check("the parsed version is not the raw body",
+    C.parseFirmwareVersion(RAW).version !== RAW.trim());
+  check("the device answering its own version is not 'done'",
+    step(reboot, { up: true, goneFor: 0, version: C.parseFirmwareVersion(RAW).version }) === "updating");
+
+  // MIPS: up → gone → back
+  check("still reachable means still updating",
+    step(reboot, { up: true, goneFor: 0, version: "6.6.261001.1" }) === "updating");
+  check("one failed read is not a reboot",
+    step(reboot, { up: false, goneFor: 1, version: "" }) === "updating"
+    && step(reboot, { up: false, goneFor: 2, version: "" }) === "updating");
+  check("a run of failures is",
+    step(reboot, { up: false, goneFor: 3, version: "" }) === "rebooting");
+  const gone = { ...reboot, phase: "rebooting" };
+  check("back up after being gone is done",
+    step(gone, { up: true, goneFor: 0, version: "6.6.261001.1" }) === "done");
+  check("a reflash of the same version still completes",
+    step(gone, { up: true, goneFor: 0, version: reboot.wasVersion }) === "done");
+
+  // arm64: never goes away, so the version it reports is what finishes it
+  const held = { phase: "updating", wasVersion: "7.6.260930.4", holdUntil: T + 5000 };
+  check("inside the hold it says rebooting",
+    step(held, { up: true, goneFor: 0, version: "7.6.261001.1" }) === "rebooting");
+  check("past the hold a new version finishes it",
+    C.nextUpdatePhase(held, { up: true, goneFor: 0, version: "7.6.261001.1", now: T + 6000 }) === "done");
+  check("past the hold the same version does not",
+    C.nextUpdatePhase(held, { up: true, goneFor: 0, version: "7.6.260930.4", now: T + 6000 }) === "updating");
+
+  check("done is terminal",
+    step({ ...reboot, phase: "done" }, { up: false, goneFor: 9, version: "" }) === "done");
+  check("no wait, no phase", C.nextUpdatePhase(null, { up: true, goneFor: 0, version: "x" }) === null);
+
+  // the poll must hand in a parsed version -- this is the regression itself
+  const jsx3 = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+  check("the poll parses get_version before comparing",
+    /version = parseFirmwareVersion\(await res\.text\(\)\)\.version/.test(jsx3));
+}
+
 group("every port picker names its ports");
 /* P0..P11 are told apart by what the operator called them and by nothing else,
    so a list that offers a port to pick has to carry its description. Eight of
