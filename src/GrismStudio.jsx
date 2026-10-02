@@ -9108,7 +9108,10 @@ function OtherConfigFiles({ t }) {
     await load();
   };
 
-  useEffect(() => { if (open && files === null) load(); }, [open, files, load]);
+  /* List the files as soon as the export page shows this section, not only
+     once it is opened: the count beside the title is what the closed state is
+     for, and loading lazily left it blank until someone clicked "show". */
+  useEffect(() => { if (files === null) load(); }, [files, load]);
 
   const openFile = async (name) => {
     setBusy(name); setState({ kind: "idle", msg: "" });
