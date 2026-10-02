@@ -3119,13 +3119,32 @@ const isLoopIface = (iface) => (iface?.type || "").toUpperCase() === "LOOP";
 /* Data ports traffic can arrive on. LOOP ports are excluded by default because
    they're never a sensible *source* for an exporter, but logging can still be
    scoped to them, so callers can ask for the full list. */
-export function dataPortNames(cfg, { includeLoop = false } = {}) {
+/* `enabledOnly` leaves out the ports the device has turned off -- a Q16 carries
+   sixteen V-ports and a disabled P3 it cannot forward on, and offering all of
+   them to pick from is offering a choice that does not work.
+
+   Absent means enabled: only an explicit false hides a port. A config that
+   predates the field, or one that omits it, must not lose every port it has. */
+export function dataPortNames(cfg, { includeLoop = false, enabledOnly = false } = {}) {
   const names = (cfg?.interfaces ?? [])
     .filter((i) => includeLoop || !isLoopIface(i))
     .flatMap((i) => i.ports ?? [])
+    .filter((p) => !enabledOnly || p?.enable !== false)
     .map((p) => p.name)
     .filter(Boolean);
   return sortPortNames([...new Set(names)]);
+}
+
+/* The ports a picker should offer: the ones that work, plus any the document
+   already names. A port turned off after a chain was written still has to be
+   visible there -- hiding it would leave a chain whose ingress the page cannot
+   show and the operator cannot correct. */
+export function portChoices(enabled, inUse) {
+  const seen = new Set(enabled ?? []);
+  const extra = (Array.isArray(inUse) ? inUse : String(inUse ?? "").split(","))
+    .map((s) => String(s).trim()).filter(Boolean)
+    .filter((p) => !seen.has(p) && !/^O\d+$/.test(p) && p !== "0" && p !== "S");
+  return extra.length ? sortPortNames([...(enabled ?? []), ...new Set(extra)]) : (enabled ?? []);
 }
 
 /* What the operator called each port, keyed by port name.

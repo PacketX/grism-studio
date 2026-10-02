@@ -24,7 +24,7 @@ import {
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
-  branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
@@ -575,8 +575,12 @@ export default function GrismStudio() {
       // Sort the device's ports predictably: virtual (V*) first, then physical (P*),
       // then anything else — each numerically ascending, so the pickers always read
       // V0, V1 … P0, P1 … regardless of the order the config happens to use.
-      const names = ifaces.flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
-      setDevicePorts(names.length ? sortPortNames([...new Set(names)]) : null);
+      /* Only the ports the device has enabled. A Q16 lists sixteen V-ports and
+         a disabled P3 it cannot forward on, and every picker was offering all
+         of them. Settings → Interfaces keeps its own list and still shows the
+         disabled ones, which is where they are turned back on. */
+      const names = dataPortNames(cfg, { includeLoop: true, enabledOnly: true });
+      setDevicePorts(names.length ? names : null);
       const descs = {};
       ifaces.flatMap((i) => i.ports ?? []).forEach((p) => {
         const d = String(p.description ?? "").trim();
@@ -586,7 +590,8 @@ export default function GrismStudio() {
       // ports belonging to a LOOP-type interface: traffic sent out returns on the
       // same port. Tracked separately so the panel can list & animate them.
       const loops = ifaces.filter((i) => (i.type || "").toUpperCase() === "LOOP")
-        .flatMap((i) => i.ports ?? []).map((p) => p.name).filter(Boolean);
+        .flatMap((i) => i.ports ?? []).filter((p) => p?.enable !== false)
+        .map((p) => p.name).filter(Boolean);
       setLoopPorts([...new Set(loops)]);
       // whether the device is correlating L2GRE at all -- the table page is only
       // worth showing when it is, or when it still holds rows from when it was
@@ -3698,7 +3703,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                    firmware then dedupes every port except LOOP ones, which it
                    skips on purpose. A named LOOP port is deduplicated, so the
                    list offers them too. */
-                const known = dataPortNames(rawCfg, { includeLoop: true });
+                const known = dataPortNames(rawCfg, { includeLoop: true, enabledOnly: true });
                 const chosen = parsePortList(sys.deduplicationPorts);
                 const ports = [...new Set([...known, ...chosen])];
                 const probs = dedupProblems(sys, known);
@@ -3935,10 +3940,10 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                    in the list, or a value set elsewhere would be invisible here
                    and impossible to clear. Validation knows about every port the
                    device has, so only a name it does not have is an error. */
-                const known = dataPortNames(rawCfg, { includeLoop: true });
+                const known = dataPortNames(rawCfg, { includeLoop: true, enabledOnly: true });
                 const chosen = [...parsePortList(sys.grel2CorrelationPort),
                                 ...parsePortList(sys.vxlanCorrelationPort)];
-                const ports = [...new Set([...dataPortNames(rawCfg), ...chosen])];
+                const ports = [...new Set([...dataPortNames(rawCfg, { enabledOnly: true }), ...chosen])];
                 const problems = sdwanProblems(sys, known);
                 const row = (tunnel, onKey, portKey, tunFlag, label) => {
                   const on = !!sys[onKey];
@@ -4212,7 +4217,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
             const drop = (path, i) => setLgTargets(path, (l) => l.map((x, j) => j === i ? { ...x, enable: false } : x));
             const shown = (l) => (l ?? []).map((x, i) => ({ x, i })).filter(({ x }) => x.enable);
             const srcPorts = logSourcePorts(rawCfg);
-            const dataPorts = dataPortNames(rawCfg, { includeLoop: true });   // scope may include LOOP
+            const dataPorts = dataPortNames(rawCfg, { includeLoop: true, enabledOnly: true });   // scope may include LOOP
 
             const exporter = (path, title, note, head, targetExtra) => (
               <section className="sys-card" key={path}>
@@ -8643,11 +8648,13 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
         <div className="inspector">
           <div className="insp-head">{sel ? (isUnset(sel) ? tr("ch.unspecified") : sel.t === "in" ? tr("ch.ingress") : sel.t === "branch" ? tr("ch.filter") : isDrop(sel) ? tr("ch.discard") : tr("ch.output")) : tr("ch.inspector")}</div>
           {!sel && <p className="insp-empty">{tr("ch.selectNode")}</p>}
+          {/* portChoices: a port turned off after this chain was written is
+              still listed, so it can be seen and removed. */}
           {sel && sel.t === "in" && <>
             <CheckAccordion
               label={tr("ch.ingressPorts")}
               t={t}
-              items={portOptions.map((p) => ({ id: p, b: p, sub: portDescs[p] ?? "", on: listHas(chain.ports, p) }))}
+              items={portChoices(portOptions, chain.ports).map((p) => ({ id: p, b: p, sub: portDescs[p] ?? "", on: listHas(chain.ports, p) }))}
               onToggle={(p) => toggleInPort(p)}
               onAll={(on) => setAllInPorts(portOptions, on)}
               onSetOne={(p) => setOneInPort(portOptions, p)}
@@ -8693,10 +8700,15 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 clears the rest and choosing a port clears them. */}
             {isDrop(sel) && <p className="insp-note">{tr("ch.dropNote")}</p>}
             <>
+              {/* Same for an out: a port it already names stays listed even
+                  after the device turns that port off. */}
               <CheckAccordion
                 label={tr("ch.outputPorts")}
                 t={t}
-                items={outChoices.map((c) => ({ id: c.id, b: c.label ?? c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
+                items={[...outChoices,
+                        ...portChoices([], sel.ports).filter((p2) => !outChoices.some((c) => c.id === p2))
+                          .map((p2) => ({ id: p2, sub: portDescs[p2] ?? "" }))]
+                  .map((c) => ({ id: c.id, b: c.label ?? c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
                 onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
                 onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
                 onSetOne={(p2) => setOneOutPort(sel.id, sel.ports, outChoices.map((c) => c.id), p2)}

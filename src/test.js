@@ -413,6 +413,45 @@ group("device request methods");
   check("update_download_update is not POSTed", !!call && !/method:\s*"POST"/.test(call[0]));
 }
 
+group("pickers offer only the ports that work");
+/* .152 is a Q16: sixteen V-ports and a disabled P3, none of which it can
+   forward on, and every picker was offering all twenty-four. */
+{
+  const cfg = { interfaces: [
+    { type: "ETH",  ports: [{ name: "P0", enable: true }, { name: "P1", enable: true },
+                            { name: "P3", enable: false }] },
+    { type: "CPSS", ports: [{ name: "V0", enable: false }, { name: "V1", enable: false }] },
+    { type: "LOOP", ports: [{ name: "P8", enable: true }, { name: "P9", enable: false }] },
+  ] };
+  check("disabled ports are left out",
+    C.dataPortNames(cfg, { includeLoop: true, enabledOnly: true }).join() === "P0,P1,P8");
+  check("without the flag nothing changes",
+    C.dataPortNames(cfg, { includeLoop: true }).join() === "V0,V1,P0,P1,P3,P8,P9");
+  check("a disabled LOOP port goes too",
+    !C.dataPortNames(cfg, { includeLoop: true, enabledOnly: true }).includes("P9"));
+
+  /* Absent means enabled. A config without the field must not lose every port
+     it has -- that would empty every picker on the device. */
+  const old = { interfaces: [{ type: "ETH", ports: [{ name: "P0" }, { name: "P1" }] }] };
+  check("a config with no enable field keeps its ports",
+    C.dataPortNames(old, { enabledOnly: true }).join() === "P0,P1");
+
+  // a port turned off after a chain was written still has to be visible
+  const enabled = ["P0", "P1", "P8"];
+  check("a port still in use is added back",
+    C.portChoices(enabled, "P0,P3").join() === "P0,P1,P3,P8");
+  check("and only once", C.portChoices(enabled, "P0,P0,P3").filter((p) => p === "P3").length === 1);
+  check("nothing in use leaves the list alone",
+    C.portChoices(enabled, "").join() === "P0,P1,P8"
+    && C.portChoices(enabled, null).join() === "P0,P1,P8");
+  check("an array of ports in use works the same",
+    C.portChoices(enabled, ["P3"]).join() === "P0,P1,P3,P8");
+  /* O-tokens and the two standalone values are not ports and must not be
+     added to a port list by this. */
+  check("output references and drop are not ports",
+    C.portChoices(enabled, "O2,0,S,P3").join() === "P0,P1,P3,P8");
+}
+
 group("the hover merges consecutive ports, but only where it may");
 /* A tip over a chain taking sixteen ports was sixteen rows. The merge has one
    rule: a row exists to carry the operator's name for that port, so ports whose
