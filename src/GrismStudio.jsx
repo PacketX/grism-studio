@@ -8236,6 +8236,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const NODE_CHARS = Math.floor((NODE_W - 12) / 8.43);
 
   const [destOpen, setDestOpen] = useState(null);   // chain whose full output list is showing
+  const [inOpen, setInOpen] = useState(null);       // and whose full ingress list is
   const sel = placed.find((n) => n.id === selId) || null;
   const mutate = (id, fn) => setChainTreeFor(cid, (tree) => cUpdate(tree, id, fn));
   // Apply a chip (defined filter/output) to the selected node. If the field
@@ -8386,7 +8387,12 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
         return o && o.port ? `${tok}(${o.port})` : tok;
       });
   };
-  const chainInFirst = (c) => (c.ports || "").split(",")[0].trim();
+  /* Every ingress port, not just the first. The row used to show ports[0] and
+     nothing else, so a chain taking six ports read as if it took one -- while
+     the destination beside it had carried a "+N" for the rest all along.
+     Consecutive ports collapse to a range first, which usually leaves nothing
+     to hide: P2,P3,P4,P5,P6,P7,P12 is two entries, not seven. */
+  const chainInPortsOf = (c) => compactPorts(c.ports || "").split(",").filter(Boolean);
 
   const ownerOf = (nid2) => {
     let found = null;
@@ -8520,7 +8526,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
       <aside className="chain-list" role="listbox" aria-label={tr("tab.chain")}>
         <div className="chain-list-head">{tr("tab.chain")}</div>
         {chains.map((c) => {
-          const inP = chainInFirst(c);
+          const inAll = chainInPortsOf(c);
           return (
             <div key={c.cid}
               className={"chain-item sortable" + (c.cid === cid ? " on" : "") + (c.cid === chainOverCid && chainDragCid !== c.cid ? " drop-target" : "") + (c.cid === chainDragCid ? " dragging" : "")}
@@ -8533,7 +8539,23 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               tabIndex={0} role="option" aria-selected={c.cid === cid}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveChain(c.cid); setSelId(null); } }}>
               <span className="drag-handle" title={tr("ch.dragReorder")} aria-hidden="true">⠿</span>
-              <span className="chain-flow"><b>{inP || "?"}</b> <span className="arr">→</span> <span className="dest">{(() => {
+              <span className="chain-flow"><b>{(() => {
+                if (!inAll.length) return "?";
+                const open = inOpen === c.cid;
+                const shown = open ? inAll : inAll.slice(0, 3);
+                return (<>
+                  {shown.join(",")}
+                  {/* the rest is a click away rather than gone, the way the
+                      destination beside it has always done it */}
+                  {inAll.length > shown.length && (
+                    <button className="dest-more"
+                      onClick={(e) => { e.stopPropagation(); setInOpen(c.cid); }}>+{inAll.length - shown.length}</button>
+                  )}
+                  {open && inAll.length > 3 && (
+                    <button className="dest-more" onClick={(e) => { e.stopPropagation(); setInOpen(null); }}>−</button>
+                  )}
+                </>);
+              })()}</b> <span className="arr">→</span> <span className="dest">{(() => {
                 const all = chainDest(c);
                 if (!all.length) return "—";
                 const open = destOpen === c.cid;

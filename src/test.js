@@ -413,6 +413,30 @@ group("device request methods");
   check("update_download_update is not POSTed", !!call && !/method:\s*"POST"/.test(call[0]));
 }
 
+group("the chain row shows every ingress port");
+/* The row read "P2 → P0, P1, P8 +2" for a chain whose ingress was
+   P2,P3,P4,P5,P6,P7,P12: it rendered ports[0] and dropped the rest, while the
+   destination beside it had carried a "+N" all along. */
+{
+  const ports = "P2,P3,P4,P5,P6,P7,P12";
+  const entries = C.compactPorts(ports).split(",").filter(Boolean);
+  check("six consecutive ports collapse to two entries",
+    entries.length === 2 && entries[0] === "P2-P7" && entries[1] === "P12");
+  check("so nothing has to be hidden at all", entries.length <= 3);
+  check("a single port is still a single port",
+    C.compactPorts("P4").split(",").filter(Boolean).join() === "P4");
+  check("no ingress at all yields nothing to show",
+    C.compactPorts("").split(",").filter(Boolean).length === 0);
+  // what the row would show for a list that cannot be ranged
+  const wide = C.compactPorts("P1,P3,P5,P7,P9").split(",").filter(Boolean);
+  check("an unrangeable list keeps every entry for the +N to count",
+    wide.length === 5 && wide.slice(0, 3).join(",") === "P1,P3,P5");
+
+  const jsx4 = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+  check("the row no longer takes only the first port",
+    !/\.split\(","\)\[0\]\.trim\(\)/.test(jsx4));
+}
+
 group("what a flow table setting is actually worth");
 /* Mirrors the firmware: src/statistics.c reports v4 capacity as
    flowCacheBaseSize * FLOW_CACHE_NODE_TOP and v6 as flowv6TableSize, while
