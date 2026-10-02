@@ -413,6 +413,52 @@ group("device request methods");
   check("update_download_update is not POSTed", !!call && !/method:\s*"POST"/.test(call[0]));
 }
 
+group("the hover merges consecutive ports, but only where it may");
+/* A tip over a chain taking sixteen ports was sixteen rows. The merge has one
+   rule: a row exists to carry the operator's name for that port, so ports whose
+   descriptions differ never merge -- shortening the tip by deleting the reason
+   it is there would be no improvement. */
+{
+  const n = (rows) => rows.map((r) => r.name).join(" | ");
+  const d = (rows) => rows.map((r) => `${r.name}=${r.desc}`).join(" | ");
+
+  check("an unnamed run becomes one row",
+    n(C.plainPortRuns("P0,P1,P2,P3")) === "P0-P3");
+  check("a run of two merges as well -- a row is worth more than two characters",
+    n(C.plainPortRuns("P10,P11")) === "P10-P11");
+  check("a gap breaks the run",
+    n(C.plainPortRuns("P0,P1,P2,P5,P6")) === "P0-P2 | P5-P6");
+  check("a different prefix breaks it too",
+    n(C.plainPortRuns("P1,P2,Q3,Q4")) === "P1-P2 | Q3-Q4");
+  check("one port is one row", n(C.plainPortRuns("P7")) === "P7");
+  check("nothing in, nothing out",
+    C.plainPortRuns("").length === 0 && C.plainPortRuns(null).length === 0);
+
+  // the constraint: descriptions must survive the merge intact
+  const descs = { P3: "uplink", P4: "uplink", P5: "span", P6: "" };
+  check("ports sharing a description merge and keep it",
+    d(C.plainPortRuns("P3,P4", descs)) === "P3-P4=uplink");
+  check("a differently named port in the middle splits the run",
+    d(C.plainPortRuns("P3,P4,P5,P6", descs)) === "P3-P4=uplink | P5=span | P6=");
+  check("a named port never merges into unnamed neighbours",
+    n(C.plainPortRuns("P2,P3,P4,P5", { P4: "uplink" })) === "P2-P3 | P4 | P5");
+  check("no port is lost whatever the descriptions", (() => {
+    const all = "P0,P1,P2,P3,P4,P5,P6,P7";
+    const rows = C.plainPortRuns(all, { P3: "a", P6: "b" });
+    const back = rows.flatMap((r) => {
+      const m = /^P(\d+)-P(\d+)$/.exec(r.name);
+      if (!m) return [r.name];
+      const out = [];
+      for (let i = +m[1]; i <= +m[2]; i++) out.push("P" + i);
+      return out;
+    });
+    return back.join(",") === all;
+  })());
+  // O-tokens are outDestinations' business and must still be dropped
+  check("output references stay out of it",
+    n(C.plainPortRuns("O1,P2,P3")) === "P2-P3");
+}
+
 group("the chain row shows every ingress port");
 /* The row read "P2 → P0, P1, P8 +2" for a chain whose ingress was
    P2,P3,P4,P5,P6,P7,P12: it rendered ports[0] and dropped the rest, while the

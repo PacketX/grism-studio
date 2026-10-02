@@ -24,7 +24,7 @@ import {
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
-  branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPorts, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
@@ -6941,12 +6941,13 @@ const ChainFlow = React.memo(function ChainFlow({ chain, filterNames = {}, outpu
   };
   /* A bare port resolved to no output, so the tip had nothing to say and never
      opened -- on a chain whose every destination is a plain port, hovering the
-     output column did nothing. plainPorts gives the port and whatever the
-     operator named it, the way the Chains canvas already does. */
+     output column did nothing. plainPortRuns gives the port and whatever the
+     operator named it, the way the Chains canvas already does, with
+     consecutive ports sharing a description merged into one row. */
   const showTip = (ev, { fids, op, dest, ingress }) => {
     const outs = dest ? outDestinations(dest, outputs, tr) : [];
-    const ports = ingress ? plainPorts(ingressFull, portDescs)
-      : dest && !outs.length ? plainPorts(dest, portDescs) : [];
+    const ports = ingress ? plainPortRuns(ingressFull, portDescs)
+      : dest && !outs.length ? plainPortRuns(dest, portDescs) : [];
     show(ev, {
       rows: fids ? branchConditions(fids, filters, tr, hbTargets, deviceFilters) : [],
       outs, ports,
@@ -8501,8 +8502,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
        node shows "P4" and the name the operator gave it is elsewhere, and the
        chain's own VLAN handling is on an attribute nothing in the picture
        draws. */
-    const ports = node.t === "in" ? plainPorts(chain?.ports, portDescs)
-      : node.t === "out" ? plainPorts(node.ports, portDescs) : [];
+    const ports = node.t === "in" ? plainPortRuns(chain?.ports, portDescs)
+      : node.t === "out" ? plainPortRuns(node.ports, portDescs) : [];
     const vlan = node.t === "in" ? vlanOpText(chain?.inVlan, tr)
       : node.t === "out" ? vlanOpText(node, tr) : "";
     const kind = node.t === "in" ? tr("ch.tipIngress") : node.t === "out" ? tr("ch.tipEgress") : "";

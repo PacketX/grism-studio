@@ -443,6 +443,41 @@ export function plainPorts(ports, descs = {}) {
     .map((p) => ({ name: p === "0" ? "drop" : p, desc: descs[p] || "" }));
 }
 
+/* The same list for a hover, with consecutive ports merged into a range. A tip
+   over a chain taking sixteen ports was sixteen rows deep; it is one or two
+   when nobody named them.
+
+   Only where the description matches, and that is the whole constraint: a row
+   exists to say what the operator called that port, so merging P4 "uplink" into
+   P3-P5 would be shortening the tip by deleting the reason it is there. Runs of
+   two merge as well -- unlike compactPorts, which weighs "P10-P11" against
+   "P10,P11" by width; here the saving is a row, and a row is always worth more
+   than two characters. */
+export function plainPortRuns(ports, descs = {}) {
+  const part = /^([A-Za-z]+)(\d+)$/;
+  const out = [];
+  let run = null;                  // { pre, first, last, desc }
+  const flush = () => {
+    if (!run) return;
+    out.push({
+      name: run.first === run.last ? `${run.pre}${run.first}`
+        : `${run.pre}${run.first}-${run.pre}${run.last}`,
+      desc: run.desc,
+    });
+    run = null;
+  };
+  for (const r of plainPorts(ports, descs)) {
+    const m = part.exec(r.name);
+    if (!m) { flush(); out.push(r); continue; }
+    const pre = m[1], n = Number(m[2]);
+    if (run && run.pre === pre && run.desc === r.desc && n === run.last + 1) { run.last = n; continue; }
+    flush();
+    run = { pre, first: n, last: n, desc: r.desc };
+  }
+  flush();
+  return out;
+}
+
 /* The outputs a chain's <out> names, resolved. Plain ports are left out: the
    node already shows them and there is nothing more to say about one. */
 export function outDestinations(ports, outputs, t) {
