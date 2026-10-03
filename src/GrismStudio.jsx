@@ -2234,7 +2234,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
   const SYS_ARGS = ["timeServer", "timeServer2", "resolveNameServer", "resolveNameServer2",
     "grel2CorrelationPort", "vxlanCorrelationPort", "encapsulationEncryptKeyTimeout",
     "deduplicationPorts", "s1apItemsClearIdleCron", "s1apItemsClearIdleMax"];
-  const PKT_ARGS = ["deduplication", "ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct", "tryRunXmltoGdp",
+  const PKT_ARGS = ["deduplication", "ipFragmentCorrelation", "tcpSegmentDataReassemble", "quicInitialReassemble", "sctpDataChunkReconstruct", "tryRunXmltoGdp",
     "grel2Correlation", "vxlanCorrelation", "encapsulationEncrypt",
     "s1cCorrelation", "flowExtensionGtpTunnelhdr"];
   const TUNNELS = ["GTP", "GRE", "IPV4", "VXLAN", "MPLS_IN_UDP", "MPLS_IN_GRE", "L2MPLS_IN_UDP", "L2MPLS_IN_GRE"];
@@ -3743,14 +3743,19 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.reassembly")}</h3>
               <p className="set-hint">{tr("set.reassemblyNote")}</p>
-              {[["ipFragmentCorrelation", "set.ipFrag"], ["tcpSegmentDataReassemble", "set.tcpSeg"], ["sctpDataChunkReconstruct", "set.sctpChunk"]].map(([k, lbl]) => (
-                <label className="set-check" key={k}><input type="checkbox" checked={!!sys[k]}
-                  onChange={(e) => setSysField(k, e.target.checked)} /> {tr(lbl)}</label>
+              {[["ipFragmentCorrelation", "set.ipFrag"], ["tcpSegmentDataReassemble", "set.tcpSeg"], ["quicInitialReassemble", "set.quicInit"], ["sctpDataChunkReconstruct", "set.sctpChunk"]].map(([k, lbl]) => (
+                <React.Fragment key={k}>
+                  <label className="set-check"><input type="checkbox" checked={!!sys[k]}
+                    onChange={(e) => setSysField(k, e.target.checked)} /> {tr(lbl)}</label>
+                  {/* QUIC is the one switch whose effect is not obvious from its name: it
+                      decrypts rather than reorders, so it gets a note of its own. */}
+                  {k === "quicInitialReassemble" && <p className="set-hint">{tr("set.quicInitNote")}</p>}
+                </React.Fragment>
               ))}
               <div className="set-actions">
                 <button className="sys-refresh"
-                  disabled={submit.state === "sending" || !sysDirty(["ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct"])}
-                  onClick={() => setConfirm({ kind: "args", keys: ["ipFragmentCorrelation", "tcpSegmentDataReassemble", "sctpDataChunkReconstruct"] })}>{tr("set.apply")}</button>
+                  disabled={submit.state === "sending" || !sysDirty(["ipFragmentCorrelation", "tcpSegmentDataReassemble", "quicInitialReassemble", "sctpDataChunkReconstruct"])}
+                  onClick={() => setConfirm({ kind: "args", keys: ["ipFragmentCorrelation", "tcpSegmentDataReassemble", "quicInitialReassemble", "sctpDataChunkReconstruct"] })}>{tr("set.apply")}</button>
               </div>
             </section>
 

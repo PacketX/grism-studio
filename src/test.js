@@ -781,8 +781,27 @@ group("settings builders");
   check("booleans become True/False", C.buildArgsConfigSet({ deduplication: true }).includes("<deduplication>True</deduplication>"));
   check("false booleans too", C.buildArgsConfigSet({ deduplication: false }).includes("<deduplication>False</deduplication>"));
   check("values escaped", C.buildArgsConfigSet({ resolveNameServer: "a&b" }).includes("a&amp;b"));
-  const fr = C.buildArgsConfigSet({ ipFragmentCorrelation: true, tcpSegmentDataReassemble: false, sctpDataChunkReconstruct: true });
-  check("all three reassembly flags", fr.includes("<ipFragmentCorrelation>True") && fr.includes("<tcpSegmentDataReassemble>False") && fr.includes("<sctpDataChunkReconstruct>True"));
+  const fr = C.buildArgsConfigSet({ ipFragmentCorrelation: true, tcpSegmentDataReassemble: false, quicInitialReassemble: true, sctpDataChunkReconstruct: true });
+  check("all four reassembly flags", fr.includes("<ipFragmentCorrelation>True") && fr.includes("<tcpSegmentDataReassemble>False")
+    && fr.includes("<quicInitialReassemble>True") && fr.includes("<sctpDataChunkReconstruct>True"));
+
+  // quicInitialReassemble is plumbed exactly like tcpSegmentDataReassemble: read
+  // out of get_config's <args> by PKT_ARGS, drawn as a row on the reassembly card,
+  // and carried by the card's Apply button. A key missing from any one of the
+  // three gives a checkbox that shows but never submits (or never loads), so
+  // scan the source for all of them.
+  {
+    const jsx = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+    const pktArgs = jsx.match(/const PKT_ARGS = \[[^\]]*\]/);
+    check("PKT_ARGS carries quicInitialReassemble", !!pktArgs && pktArgs[0].includes('"quicInitialReassemble"'));
+    check("reassembly card draws the QUIC row after the TCP one",
+      jsx.includes('["tcpSegmentDataReassemble", "set.tcpSeg"], ["quicInitialReassemble", "set.quicInit"]'));
+    const applyLists = jsx.match(/\[("ipFragmentCorrelation", "tcpSegmentDataReassemble"[^\]]*)\]/g) ?? [];
+    check("the card's Apply button dirties and confirms on the QUIC key",
+      applyLists.length === 2 && applyLists.every((l) => l.includes('"quicInitialReassemble"')));
+    check("the QUIC row's label and note exist in both languages", ["en", "zh-TW"].every((l) =>
+      !!I18N[l]["set.quicInit"] && !!I18N[l]["set.quicInitNote"]));
+  }
 
   const tun = C.buildInTunnelsConfigSet({ GTP: false, GRE: true, VXLAN: false });
   check("in-tunnels nested under filters", tun.includes("<filters>") && tun.includes("<in-tunnels>"));

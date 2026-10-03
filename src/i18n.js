@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.210.0";
+export const STUDIO_VERSION = "2.211.0";
 
 export const I18N = {
   en: {
@@ -365,6 +365,8 @@ export const I18N = {
     "set.reassembly": "Fragmentation & reassembly",
     "set.reassemblyNote": "Reassemble split traffic before filters run, so a condition can match content that spans fragments.",
     "set.ipFrag": "IP fragment correlation", "set.tcpSeg": "TCP segment reassembly", "set.sctpChunk": "SCTP data chunk reconstruction",
+    "set.quicInit": "QUIC Initial reassembly",
+    "set.quicInitNote": "Decrypts the Initial packets and recovers the ClientHello, so TLS filters and JA4 see QUIC connections too.",
     "set.sdwan": "SD-WAN tunnels",
     "set.sdwanNote": "Correlate traffic carried inside an SD-WAN overlay, so both directions of a session are recognised as one flow. Name the ports the encapsulated traffic arrives on, and turn on decapsulation for that tunnel type.",
     "set.mec": "MEC (S1AP/NGAP · GTP)",
@@ -1251,6 +1253,8 @@ export const I18N = {
     "set.reassembly": "分片與重組",
     "set.reassemblyNote": "在篩選器比對前先重組被切開的流量,讓條件能命中跨分片的內容。",
     "set.ipFrag": "IP 分片關聯", "set.tcpSeg": "TCP 分段重組", "set.sctpChunk": "SCTP 資料區塊重建",
+    "set.quicInit": "QUIC Initial 重組",
+    "set.quicInitNote": "解開 Initial 封包、組回 ClientHello,讓 TLS 篩選與 JA4 也能看到 QUIC 連線。",
     "set.sdwan": "SD-WAN 通道",
     "set.sdwanNote": "關聯 SD-WAN 疊加網路內的流量,讓同一條連線的兩個方向被視為同一筆流。請指定封裝流量進入的連接埠,並開啟該通道類型的解封裝。",
     "set.mec": "MEC (S1AP/NGAP · GTP)",
