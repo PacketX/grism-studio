@@ -24,7 +24,7 @@ import {
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
-  branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
+  branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, advancedInUse, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
@@ -791,7 +791,13 @@ export default function GrismStudio() {
             return (
               <span className={"ws-item" + (open ? " open" : "")} key={w.id}>
                 <button className={"ws-btn" + (active ? " on" : "")}
-                  onClick={() => { if (active) setNavOpen((v) => !v); else { gotoWorkspace(w.id); setNavOpen(true); } }}
+                  onClick={() => {
+                    const opening = !active || !navOpen;
+                    if (active) setNavOpen((v) => !v); else { gotoWorkspace(w.id); setNavOpen(true); }
+                    // a config that uses inputs, outputs or actions opens with
+                    // them in view, rather than behind a click on "advanced"
+                    if (w.id === "pipeline" && opening && advancedInUse(doc)) setAdvOpen(true);
+                  }}
                   aria-expanded={open}>
                   {t("ws." + w.id)}
                   <span className="ws-caret" aria-hidden="true">{open ? "▲" : "▼"}</span>

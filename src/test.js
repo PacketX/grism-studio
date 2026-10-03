@@ -436,6 +436,17 @@ group("pickers offer only the ports that work");
   check("a config with no enable field keeps its ports",
     C.dataPortNames(old, { enabledOnly: true }).join() === "P0,P1");
 
+  // the advanced group unfolds when any of its sections has something in it
+  check("advanced: empty document stays folded",
+    C.advancedInUse({ inputs: [], outputs: [], actions: [], filters: [{}], chains: [{}] }) === false);
+  check("advanced: an input unfolds it", C.advancedInUse({ inputs: [{}], outputs: [], actions: [] }) === true);
+  check("advanced: an output unfolds it", C.advancedInUse({ inputs: [], outputs: [{}] }) === true);
+  check("advanced: an action unfolds it", C.advancedInUse({ actions: [{}] }) === true);
+  check("advanced: no document is not in use", C.advancedInUse(null) === false);
+  check("advanced: the pipeline button uses it",
+    /w\.id === "pipeline" && opening && advancedInUse\(doc\)\) setAdvOpen\(true\)/.test(
+      readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8")));
+
   // a port turned off after a chain was written still has to be visible
   const enabled = ["P0", "P1", "P8"];
   check("a port still in use is added back",

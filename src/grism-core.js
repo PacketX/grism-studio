@@ -3135,6 +3135,13 @@ export function dataPortNames(cfg, { includeLoop = false, enabledOnly = false } 
   return sortPortNames([...new Set(names)]);
 }
 
+/* Whether the document uses any of the sections kept under "advanced" --
+   inputs, outputs, actions. Opening the pipeline then unfolds that group, so a
+   config built on them does not look as if it had none. */
+export function advancedInUse(doc) {
+  return ["inputs", "outputs", "actions"].some((k) => (doc?.[k]?.length ?? 0) > 0);
+}
+
 /* The ports a picker should offer: the ones that work, plus any the document
    already names. A port turned off after a chain was written still has to be
    visible there -- hiding it would leave a chain whose ingress the page cannot
