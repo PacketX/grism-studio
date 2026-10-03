@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.208.0";
+export const STUDIO_VERSION = "2.209.0";
 
 export const I18N = {
   en: {
@@ -26,6 +26,8 @@ export const I18N = {
     "cap.files": "Captured files", "cap.noFiles": "Nothing in this folder yet.",
     "cap.file": "File", "cap.modified": "Modified", "cap.download": "Download", "cap.writing": "still writing",
     "cap.auto": "auto refresh", "in.pickFiles": "click a name to replay it",
+    "in.pickAll": "replay all in this folder", "in.unpickAll": "remove this folder's files",
+    "in.pickRangeHint": "Shift+click a second name to pick every file between the two",
     "in.up": "Up one level", "in.folder": "folder",
     "in.upload": "Upload pcap files…", "in.uploading": "Uploading…",
     "in.uploadHint": "several files can be selected at once",
@@ -910,6 +912,8 @@ export const I18N = {
     "cap.files": "側錄檔案", "cap.noFiles": "此目錄尚無檔案。",
     "cap.file": "檔案", "cap.modified": "修改時間", "cap.download": "下載", "cap.writing": "寫入中",
     "cap.auto": "自動重整", "in.pickFiles": "點選檔名即可加入重播",
+    "in.pickAll": "此目錄全部加入重播", "in.unpickAll": "移除此目錄的檔案",
+    "in.pickRangeHint": "按住 Shift 再點另一個檔名,可一次選取兩者之間的所有檔案",
     "in.up": "上一層", "in.folder": "資料夾",
     "in.upload": "上傳 pcap 檔案…", "in.uploading": "上傳中…",
     "in.uploadHint": "可一次選擇多個檔案",

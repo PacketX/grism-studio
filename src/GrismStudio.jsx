@@ -5995,9 +5995,28 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
   const [ask, setAsk] = React.useState(null);        // files queued for deletion
   const sel = useFileSelection(br.files);
 
-  const toggle = (path) => onChange(chosen.includes(path)
-    ? chosen.filter((p) => p !== path)
-    : [...chosen, path].slice(0, max));
+  /* Picking several at once: Shift+click picks (or drops) every file between
+     the last name clicked and this one, and the header button takes the whole
+     folder. Folders and captures still being written are never picked. */
+  const lastPick = React.useRef(null);
+  const pickable = br.files.filter((f) => !f.isDir && !isPartialCapture(f.name))
+    .map((f) => storagePath(br.storage, br.dir, f.name));
+  const setMany = (paths, on) => onChange(on
+    ? [...chosen, ...paths.filter((p) => !chosen.includes(p))].slice(0, max)
+    : chosen.filter((p) => !paths.includes(p)));
+  const toggle = (path, shift = false) => {
+    const a = pickable.indexOf(lastPick.current), b = pickable.indexOf(path);
+    if (shift && a >= 0 && b >= 0) {
+      const span = pickable.slice(Math.min(a, b), Math.max(a, b) + 1);
+      setMany(span, chosen.includes(lastPick.current));   // follow the anchor's state
+    } else {
+      onChange(chosen.includes(path)
+        ? chosen.filter((p) => p !== path)
+        : [...chosen, path].slice(0, max));
+    }
+    lastPick.current = path;
+  };
+  const allHere = pickable.length > 0 && pickable.every((p) => chosen.includes(p));
 
   /* Upload one or more pcaps into the selected volume and directory. */
   const upload = async (list) => {
@@ -6053,6 +6072,13 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
       {err && <div className="sys-err">{err}</div>}
 
       <StorageCrumbs br={br} tr={tr} />
+      <div className="storage-upload">
+        <button className="copy-btn" disabled={pickable.length === 0}
+          onClick={() => setMany(pickable, !allHere)}>
+          {allHere ? tr("in.unpickAll") : tr("in.pickAll")}
+          {pickable.length > 0 ? ` (${pickable.length})` : ""}</button>
+        <span className="dim">{tr("in.pickRangeHint")}</span>
+      </div>
       <div className="tf-table-wrap storage-files">
         <table className="tf-table cap-table">
           <thead><tr>
@@ -6087,7 +6113,8 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
                 <tr key={"f:" + f.name} className={sel.marked.includes(f.name) ? "marked" : ""}>
                   {/* the name is the control: clicking it queues the file for replay */}
                   <td className={"mono cap-name pick-name" + (chosen.includes(path) ? " picked" : "")}
-                    onClick={() => toggle(path)} role="button" tabIndex={0}
+                    onClick={(e) => toggle(path, e.shiftKey)} role="button" tabIndex={0}
+                    onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); /* no text selection */ }}
                     title={chosen.includes(path) ? tr("in.remove") : tr("in.pickFiles")}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(path); } }}>
                     <span className="pick-mark" aria-hidden="true">{chosen.includes(path) ? "✓" : ""}</span>
