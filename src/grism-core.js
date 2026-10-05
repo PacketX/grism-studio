@@ -1389,6 +1389,9 @@ export const INPUT_GEN_FIELDS = [
   { k: "packet_size", label: "Packet size", kind: "num", ph: "1024" },
   { k: "speed", label: "Speed", kind: "num", ph: "10000" },
   { k: "msinterval", label: "Interval (ms)", kind: "num", ph: "1" },
+  /* seconds of traffic, then the generator stops until the next reload;
+     empty or 0 keeps the old behaviour of running until then */
+  { k: "duration", label: "Duration (s)", kind: "num", ph: "unlimited" },
   { k: "payload_text", label: "Payload text", kind: "str", ph: "abcdefg" },
   { k: "packet_data", label: "Packet data (hex)", kind: "str", ph: "000cbd0b…" },
   { k: "src_mac", label: "Source MAC", kind: "mac", ph: "00:0d:48:28:28:56" },

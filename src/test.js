@@ -280,6 +280,21 @@ group("replayPcap input modes");
   check("files: over 100 paths reported", C.inputProblems({ id: 4, type: "replayPcap", port: "P0", pcapMode: "files", filepaths: Array(101).fill("a.pcap"), fields: {} }, []).some((p) => /100/.test(p.msg)));
 }
 
+/* ---------- inputs: traffic-gen duration ---------- */
+group("traffic-gen duration");
+{
+  const gen = { id: 5, type: "traffic-gen", port: "P8", fields: { protocol: "UDP", packet_size: "512", duration: "30" } };
+  const s = C.serializeInput(gen);
+  check("duration emitted", s.includes("<duration>30</duration>"));
+  check("unset duration not emitted", !C.serializeInput({ ...gen, fields: { protocol: "UDP" } }).includes("duration"));
+  check("duration is a traffic-gen field only", C.inputFieldsFor("traffic-gen").some((f) => f.k === "duration")
+    && !C.inputFieldsFor("replayPcap").some((f) => f.k === "duration"));
+  const doc = C.parseRun(`<run><input type="traffic-gen"><port>P8</port><duration>30</duration></input></run>`);
+  check("duration parsed back", doc.doc.inputs[0].fields.duration === "30" && !doc.warnings.some((w) => /duration/.test(w)));
+  check("negative duration reported", C.inputProblems({ ...gen, fields: { duration: "-5" } }, []).length > 0);
+  check("30 seconds is fine", C.inputProblems(gen, []).length === 0);
+}
+
 /* ---------- human-readable summaries ---------- */
 group("doc summary (Overview)");
 {
