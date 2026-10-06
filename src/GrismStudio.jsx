@@ -6061,7 +6061,11 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
         const res = await new Promise((resolve, reject) => {
           const x = new XMLHttpRequest();
           xhrRef.current = x;
-          x.open("POST", "/grism/task/upload_pcap_file");
+          // the destination rides in the URL too, so the device knows it before
+          // the body arrives: it checks the room first and writes the file
+          // straight into place instead of spooling a copy through /tmp
+          x.open("POST", "/grism/task/upload_pcap_file?" +
+            new URLSearchParams({ storage: br.storage, dir: br.dir, name: f.name }));
           x.withCredentials = true;
           // e.loaded counts the multipart framing too, so hold it to the file
           x.upload.onprogress = (e) => setProg({ ...base, sent: done + Math.min(e.loaded, f.size),
@@ -6073,7 +6077,10 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
         });
         if (res.status < 200 || res.status >= 300) {
           const why = (res.responseText || "").trim().slice(0, 200);
-          throw new Error(`${f.name}: ${res.status === 413 ? tr("in.upTooBig").replace("{name}", f.name) : why || "HTTP " + res.status}`);
+          // 413 comes from nginx (over 1 GB, an HTML page) or from the device
+          // itself (no room, a line of text saying how much)
+          const nginx413 = res.status === 413 && (!why || why.startsWith("<"));
+          throw new Error(`${f.name}: ${nginx413 ? tr("in.upTooBig").replace("{name}", f.name) : why || "HTTP " + res.status}`);
         }
         done += f.size;
       }

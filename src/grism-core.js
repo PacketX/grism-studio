@@ -3701,6 +3701,9 @@ export function parseStorageFiles(payload, { storage, dir } = {}) {
   const rows = Array.isArray(payload) ? payload : (payload?.file_list ?? []);
   return (rows ?? [])
     .filter((r) => Array.isArray(r) && r.length >= 2)
+    // an upload in progress is written to ".upload-XXXX.part" and renamed when
+    // it completes; it is not a file anyone can use yet
+    .filter((r) => !/^\.upload-.*\.part$/.test(String(r[1])))
     .map((r) => {
       const name = String(r[1]);
       const isDir = Number(r[0]) === 0;

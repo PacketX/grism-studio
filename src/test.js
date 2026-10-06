@@ -2217,6 +2217,8 @@ group("extra running-config files");
     check("a file replacing one of the same name gets its bytes back", repl.fits && repl.free === 350 * MB);
     check("unknown free space leaves the decision to the device", C.uploadSpaceCheck([{ name: "a", size: 1 }], null).fits);
     check("a file over 1 GB is named", C.uploadSpaceCheck([{ name: "big.pcap", size: 2 * 1024 ** 3 }], null).tooBig[0] === "big.pcap");
+    check("an upload's part file is not listed",
+      C.parseStorageFiles({ file_list: [[1, ".upload-ab12.part", 5, "x"], [1, "a.pcap", 5, "x"]] }).map((f) => f.name).join() === "a.pcap");
     check("a volume's used KB is read from used, not the df percentage",
       C.parseStorages({ storages: [{ name: "H1", enable: true, used: 576, available: 1023424, usage: "1%" }] })[0].usage === 576);
   }
