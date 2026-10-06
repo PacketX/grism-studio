@@ -2205,6 +2205,12 @@ group("extra running-config files");
   check("sizes read in sensible units", C.formatFileSize(94) === "94 B" &&
     C.formatFileSize(4890).endsWith("KB") && C.formatFileSize(7320705).endsWith("MB"));
   check("a bad size formats to nothing", C.formatFileSize("x") === "" && C.formatFileSize(-1) === "");
+  {
+    const a = C.parseAllowList("192.168.1.10\n10.1.2.3/8, 192.168.1.10/32;172.16.0.0/12");
+    check("allow list entries are normalised", a.bad === null && a.entries.join(" ") === "192.168.1.10 10.0.0.0/8 172.16.0.0/12");
+    check("a bad allow list entry is named", C.parseAllowList("1.2.3.4 10.1.2.300").bad === "10.1.2.300" && C.parseAllowList("1.2.3.4/33").bad === "1.2.3.4/33");
+    check("an allow list covers an address inside a network", C.allowListCovers(["10.0.0.0/8"], "10.9.8.7") && !C.allowListCovers(["10.0.0.0/8"], "11.0.0.1") && C.allowListCovers(["0.0.0.0/0"], "1.2.3.4"));
+  }
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
   check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");

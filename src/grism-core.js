@@ -3733,6 +3733,42 @@ export const dirCrumbs = (dir) => {
 };
 
 /* The path an <input> filepath uses, e.g. H1/snapshot/capture.pcap */
+/* The management-access allow list as typed: entries split on commas, spaces
+   or new lines, each an IPv4 address or a network in CIDR form. Normalised the
+   way pywww stores them (a /32 is the bare address), duplicates dropped.
+   bad holds the first entry that is neither. */
+export function parseAllowList(text) {
+  const entries = [];
+  for (const tok of String(text ?? "").split(/[\s,;]+/).filter(Boolean)) {
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/.exec(tok);
+    const octets = m ? m.slice(1, 5).map(Number) : [];
+    const len = m && m[5] !== undefined ? Number(m[5]) : 32;
+    if (!m || octets.some((o) => o > 255) || len > 32) return { entries, bad: tok };
+    const n = ((octets[0] << 24) >>> 0) + (octets[1] << 16) + (octets[2] << 8) + octets[3];
+    const mask = len === 0 ? 0 : (0xffffffff << (32 - len)) >>> 0;
+    const net = (n & mask) >>> 0;
+    const addr = [net >>> 24, (net >>> 16) & 255, (net >>> 8) & 255, net & 255].join(".");
+    const e = len === 32 ? addr : `${addr}/${len}`;
+    if (!entries.includes(e)) entries.push(e);
+  }
+  return { entries, bad: null };
+}
+
+/* Whether ip falls inside one of the entries -- what saving the list would do
+   to the session saving it. */
+export function allowListCovers(entries, ip) {
+  const m = /^(?:::ffff:)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(ip ?? ""));
+  if (!m) return false;
+  const n = ((Number(m[1]) << 24) >>> 0) + (Number(m[2]) << 16) + (Number(m[3]) << 8) + Number(m[4]);
+  return entries.some((e) => {
+    const [a, l] = e.split("/"); const len = l === undefined ? 32 : Number(l);
+    const p = a.split(".").map(Number);
+    const net = ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3];
+    const mask = len === 0 ? 0 : (0xffffffff << (32 - len)) >>> 0;
+    return ((n & mask) >>> 0) === ((net & mask) >>> 0);
+  });
+}
+
 export const storagePath = (storage, dir, name) =>
   [storage, dir, name].map((p) => String(p ?? "").replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/");
 

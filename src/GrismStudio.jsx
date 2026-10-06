@@ -28,7 +28,7 @@ import {
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
-  extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize, uploadSpaceCheck, storageLocationOf,
+  extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize, uploadSpaceCheck, storageLocationOf, parseAllowList, allowListCovers,
   isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError, problemLine,
   parseXsd, validateAgainstXsd, xsdProblemLine,
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
@@ -2014,6 +2014,33 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
   const [svcBase, setSvcBase] = React.useState(null);
   const [svc, setSvc] = React.useState(null);
   const [community, setCommunity] = React.useState("");
+  /* Management access: the allow list pywww enforces with iptables. mgmt is
+     what the device answered (null before), mgmtText what is being typed. */
+  const [mgmt, setMgmt] = React.useState(null);
+  const [mgmtText, setMgmtText] = React.useState("");
+  const [mgmtState, setMgmtState] = React.useState({ state: "idle", msg: "" });
+  const loadMgmt = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_mgmt_access", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const m = await res.json();
+      setMgmt(m); setMgmtText((m.allow ?? []).join("\n"));
+    } catch (e) { warnFetch("management access", e); setMgmt({ unavailable: true }); }
+  }, []);
+  const saveMgmt = async () => {
+    setMgmtState({ state: "sending", msg: "" });
+    try {
+      const body = new URLSearchParams(); body.set("allow", parseAllowList(mgmtText).entries.join("\n"));
+      const res = await fetch("/grism/task/set_mgmt_access", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      // the device says why in a line of text: not in the list, no iptables
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || "HTTP " + res.status);
+      const r = await res.json();
+      setMgmt((m) => ({ ...m, allow: r.allow, rules: r.rules })); setMgmtText((r.allow ?? []).join("\n"));
+      setMgmtState({ state: "ok", msg: "" });
+      setTimeout(() => setMgmtState({ state: "idle", msg: "" }), 2500);
+    } catch (e) { setMgmtState({ state: "error", msg: String(e.message || e) }); }
+  };
   const [communityBase, setCommunityBase] = React.useState("");
   const [extras, setExtras] = React.useState(null);      // xmlrpc / backup service settings
   const [snmpCopied, setSnmpCopied] = React.useState(null);
@@ -2280,7 +2307,8 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
       const res = await fetch("/grism/get_snmp_read_community", { credentials: "include" });
       if (res.ok) { const v = (await res.text()).trim(); setCommunity(v); setCommunityBase(v); }
     } catch (e) { warnFetch("SNMP community", e); }
-  }, []);
+    loadMgmt();
+  }, [loadMgmt]);
   React.useEffect(() => {
     if (!loggedIn) return;
     if ((section === "system" || section === "packet") && !sys) loadSys();
@@ -4502,6 +4530,39 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
             </section>
             )}
 
+            {mgmt && (() => {
+              const parsed = parseAllowList(mgmtText);
+              const base = (mgmt.allow ?? []).join("\n");
+              const changed = parsed.entries.join("\n") !== base;
+              const locksOut = parsed.entries.length > 0 && mgmt.client_ip && !allowListCovers(parsed.entries, mgmt.client_ip);
+              const noIpt = mgmt.iptables === false;
+              return (
+                <section className="sys-card">
+                  <h3 className="sys-card-title">{tr("set.mgmtAccess")}</h3>
+                  {mgmt.unavailable ? <p className="set-hint err">{tr("set.mgmtUnavailable")}</p> : <>
+                    <p className="set-hint">{tr("set.mgmtNote").replace("{ports}", (mgmt.ports ?? []).join(", "))}</p>
+                    {noIpt && <p className="set-hint warn">{tr("set.mgmtNoIptables")}</p>}
+                    <p className="set-hint">{(mgmt.allow ?? []).length
+                      ? tr("set.mgmtActive").replace("{n}", String(mgmt.allow.length))
+                      : tr("set.mgmtOpen")}</p>
+                    <textarea className="mgmt-allow mono" rows={5} value={mgmtText} placeholder={"192.168.1.10\n10.0.0.0/8"}
+                      disabled={noIpt && !(mgmt.allow ?? []).length} onChange={(e) => setMgmtText(e.target.value)} />
+                    {mgmt.client_ip && <p className="set-hint">{tr("set.mgmtYou")} <span className="mono">{mgmt.client_ip}</span>
+                      {" "}<button className="copy-btn" disabled={allowListCovers(parsed.entries, mgmt.client_ip)}
+                        onClick={() => setMgmtText((t) => (t.trim() ? t.trimEnd() + "\n" : "") + mgmt.client_ip)}>{tr("set.mgmtAddMe")}</button></p>}
+                    {parsed.bad && <p className="set-hint err">{tr("set.mgmtBad").replace("{v}", parsed.bad)}</p>}
+                    {!parsed.bad && locksOut && <p className="set-hint err">{tr("set.mgmtLockout").replace("{ip}", mgmt.client_ip)}</p>}
+                    {mgmtState.state === "error" && <p className="set-hint err">{mgmtState.msg}</p>}
+                    {mgmtState.state === "ok" && <p className="set-hint ok">{tr("set.mgmtSaved")}</p>}
+                    <div className="set-actions">
+                      <button className="sys-refresh" disabled={!changed || !!parsed.bad || locksOut || mgmtState.state === "sending" || (noIpt && parsed.entries.length > 0)}
+                        onClick={() => setConfirm({ kind: "mgmtAccess", entries: parsed.entries })}>{tr("set.apply")}</button>
+                    </div>
+                  </>}
+                </section>
+              );
+            })()}
+
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.snmp")}</h3>
               <p className="set-hint">{tr("set.snmpNote")} <a href="/data/PACKETX-MIB.txt" download>PACKETX-MIB.txt</a></p>
@@ -4739,13 +4800,16 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
           {/* data-kind so the read-only rule can single one out: this dialog is
               shared by every write on the tab, and changePw is the exception. */}
           <div className="modal modal-warn" data-kind={confirm.kind} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw","upload"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw","upload","mgmtAccess"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
               : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
               ? `${tr("set.confirmApplyBody")} ${tr("set.svcWebWarn")}`
-              : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : ["restoreFile","factory","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body") : tr("set.confirmApplyBody")}</p>
+              : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : ["restoreFile","factory","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body")
+              : confirm.kind === "mgmtAccess" ? (confirm.entries.length
+                ? tr("set.mgmtAccessBody").replace("{list}", confirm.entries.join(", "))
+                : tr("set.mgmtAccessBodyOpen")) : tr("set.confirmApplyBody")}</p>
             {/* The reset takes the management address with it, so this session
                 ends the moment it is confirmed. Say where to continue while the
                 user can still choose not to. */}
@@ -4816,6 +4880,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
               }
               if (k === "snmp") { submitForm("/grism/set_snmp_read_community", "read_community", community,
                 () => setCommunityBase(community)); return; }
+              if (k === "mgmtAccess") { saveMgmt(); return; }
               /* Correlation lives in <args>, decapsulation in <filters>; the
                  device takes one configSet at a time, so send both. */
               /* Same split as SD-WAN: the switches are <args>, the GTP

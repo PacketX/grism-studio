@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.216.0";
+export const STUDIO_VERSION = "2.217.0";
 
 export const I18N = {
   en: {
@@ -442,6 +442,18 @@ export const I18N = {
     "set.uploadBody": "The uploaded build replaces what is installed now. A device is not rebooted, and the firmware image is not changed — reflashing puts its own copy back.",
     "set.svcVersion": "Version",
     "set.snmpNote": "Community string for SNMP reads. MIB file:",
+    "set.mgmtAccess": "Management access",
+    "set.mgmtNote": "Only these IPv4 addresses and networks may reach the device's own services ({ports}); everyone else is dropped. One per line, CIDR allowed (192.168.1.0/24). Empty means no restriction.",
+    "set.mgmtNoIptables": "This device has no iptables, so an allow list cannot be enforced here.",
+    "set.mgmtUnavailable": "The device did not answer for its management access settings.",
+    "set.mgmtActive": "In force: {n} allowed source(s).", "set.mgmtOpen": "In force: no restriction.",
+    "set.mgmtYou": "You are connecting from", "set.mgmtAddMe": "Add my address",
+    "set.mgmtBad": "Not an IPv4 address or network: {v}",
+    "set.mgmtLockout": "Your own address {ip} is not in the list — saving it would lock you out.",
+    "set.mgmtSaved": "Saved and in force.",
+    "set.mgmtAccessTitle": "Restrict management access?",
+    "set.mgmtAccessBody": "Only {list} will reach SSH, the web UI, XML-RPC and SNMP from now on. Anyone else is cut off at once.",
+    "set.mgmtAccessBodyOpen": "Remove the restriction: every source will reach SSH, the web UI, XML-RPC and SNMP again.",
     "snmp.exTitle": "Example OIDs",
     "snmp.exNote": "From PACKETX-MIB, checked against a running device. Copy takes the whole command with this device's address and community filled in.",
     "snmp.exWhat": "Reads", "snmp.exCopy": "copy command",
@@ -1336,6 +1348,18 @@ export const I18N = {
     "set.uploadBody": "上傳的版本會取代目前安裝的內容。裝置不會重新開機,韌體本身也不會變更 — 重新燒錄時會換回韌體內附的版本。",
     "set.svcVersion": "版本",
     "set.snmpNote": "SNMP 讀取用的社群字串。MIB 檔:",
+    "set.mgmtAccess": "管理介面存取限制",
+    "set.mgmtNote": "只允許下列 IPv4 位址或網段連到設備本身的服務({ports}),其他來源一律丟棄。每行一筆,可用 CIDR(例如 192.168.1.0/24)。空白表示不限制。",
+    "set.mgmtNoIptables": "此設備沒有 iptables,無法啟用存取限制。",
+    "set.mgmtUnavailable": "設備沒有回應存取限制的設定。",
+    "set.mgmtActive": "目前生效:允許 {n} 個來源。", "set.mgmtOpen": "目前生效:不限制。",
+    "set.mgmtYou": "您目前的連線位址", "set.mgmtAddMe": "加入我的位址",
+    "set.mgmtBad": "不是 IPv4 位址或網段:{v}",
+    "set.mgmtLockout": "清單中沒有您自己的位址 {ip},儲存後您將無法再連線。",
+    "set.mgmtSaved": "已儲存並生效。",
+    "set.mgmtAccessTitle": "要限制管理介面的存取來源嗎?",
+    "set.mgmtAccessBody": "之後只有 {list} 能連到 SSH、網頁、XML-RPC 和 SNMP,其他來源會立即被切斷。",
+    "set.mgmtAccessBodyOpen": "解除限制:所有來源都能再連到 SSH、網頁、XML-RPC 和 SNMP。",
     "snmp.exTitle": "OID 範例",
     "snmp.exNote": "取自 PACKETX-MIB,並在實機上驗證過。按複製會帶出完整指令,裝置位址與社群字串都已填好。",
     "snmp.exWhat": "用途", "snmp.exCopy": "複製指令",
