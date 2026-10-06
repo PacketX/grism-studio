@@ -3736,6 +3736,15 @@ export const dirCrumbs = (dir) => {
 export const storagePath = (storage, dir, name) =>
   [storage, dir, name].map((p) => String(p ?? "").replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/");
 
+/* The other way round: the volume and directory a stored path lives in --
+   "H1/sda1/raw.pcap" is volume H1, directory "sda1". null for an empty path or
+   one with no file part. */
+export function storageLocationOf(path) {
+  const parts = String(path ?? "").split("/").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  return { storage: parts[0], dir: parts.slice(1, -1).join("/") };
+}
+
 /* A .tmp file is still being written by the device — downloading it would give a
    truncated capture, so it isn't offered until the device renames it. */
 export const isPartialCapture = (name) => /\.tmp$/i.test(String(name ?? "").trim());
@@ -5454,6 +5463,13 @@ export function parseS1apItems(payload) {
       resIp: r?.["erab5-res-ipv4"] ?? "", resTeid: r?.["erab5-res-teid"] ?? "",
       spid: r?.spid ?? "", plmnid: r?.plmnid ?? "", cellid: r?.cellid ?? "",
       ueIp: r?.["ue-ipv4"] ?? "", idle: s1apNum(r?.idle),
+      /* the UE's data-plane traffic since its IP was learned; null from a
+         firmware that does not count it, so the page can tell "none yet"
+         from "not counted" */
+      traffic: r && r["ul-packets"] != null ? {
+        ulPackets: s1apNum(r["ul-packets"]), ulBytes: s1apNum(r["ul-bytes"]),
+        dlPackets: s1apNum(r["dl-packets"]), dlBytes: s1apNum(r["dl-bytes"]),
+      } : null,
     })),
     matched,
     offset: page[0],

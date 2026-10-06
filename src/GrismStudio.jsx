@@ -28,7 +28,7 @@ import {
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
-  extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize, uploadSpaceCheck,
+  extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize, uploadSpaceCheck, storageLocationOf,
   isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError, problemLine,
   parseXsd, validateAgainstXsd, xsdProblemLine,
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
@@ -5833,9 +5833,10 @@ function TrafficCountriesTab({ loggedIn, t, lang = "en" }) {
 /* ===================== storage browsing =====================
    Shared by the capture page and the replay-pcap inputs: list the enabled
    volumes, the directories inside one, and the files inside that. */
-function useStorageBrowser(loggedIn, { defaultDir = "" } = {}) {
+function useStorageBrowser(loggedIn, { defaultDir = "", defaultStorage = "" } = {}) {
   const [storages, setStorages] = React.useState([]);
   const [storage, setStorage] = React.useState("");
+  const defaultStorageRef = React.useRef(defaultStorage);
   const [dir, setDir] = React.useState(defaultDir);
   const [files, setFiles] = React.useState([]);
 
@@ -5847,7 +5848,9 @@ function useStorageBrowser(loggedIn, { defaultDir = "" } = {}) {
       if (!res.ok) return null;
       const list = parseStorages(await res.json());
       setStorages(list);
-      setStorage((cur) => cur || list[0]?.name || "");
+      // the caller's volume when the device has it, else the first one
+      const want = defaultStorageRef.current;
+      setStorage((cur) => cur || (want && list.some((x) => x.name === want) ? want : list[0]?.name || ""));
       return list;
     } catch (e) { warnFetch("storage volumes", e); return null; }
   }, []);
@@ -5870,7 +5873,8 @@ function useStorageBrowser(loggedIn, { defaultDir = "" } = {}) {
     (async () => {
       try {
         const top = parseStorageDirs(await post({ name: storage }));
-        if (alive) setDir(top.includes(defaultDir) ? defaultDir : "");
+        // a nested default ("sda1/day1") is there when its first level is
+        if (alive) setDir(top.includes(defaultDir.split("/")[0]) ? defaultDir : "");
       } catch { if (alive) setDir(""); }
     })();
     return () => { alive = false; };
@@ -6000,7 +6004,14 @@ function StorageCrumbs({ br, tr }) {
 /* Choose pcap files straight off the device's storage. Used inline by the
    replay-pcap input so paths never have to be typed. */
 function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
-  const br = useStorageBrowser(loggedIn, { defaultDir: "in" });
+  /* Open where the input's first file is, when it has one -- picking more
+     files for a replay of H1/sda1/... used to start over at H1/in every time.
+     Taken once, as the picker opens: picking or dropping files must not move
+     the folder under the reader. */
+  const [start] = React.useState(() => storageLocationOf(chosen[0]));
+  const br = useStorageBrowser(loggedIn, start
+    ? { defaultStorage: start.storage, defaultDir: start.dir }
+    : { defaultDir: "in" });
   const fileRef = React.useRef(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -7760,7 +7771,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, port
                     )}
                   </>);
                 })()}
-                <StorageFilePicker tr={tr} loggedIn chosen={(inp.filepaths ?? []).filter(Boolean)}
+                <StorageFilePicker key={inp.id} tr={tr} loggedIn chosen={(inp.filepaths ?? []).filter(Boolean)}
                   onChange={(paths) => patch({ filepaths: paths.length ? paths : [""] })} />
               </div>
             )}
@@ -10062,6 +10073,11 @@ function MecTab({ loggedIn, t }) {
      interval is theirs to change. */
   const [auto, setAuto] = React.useState(true);
   const [every, setEvery] = React.useState(5);
+  /* The MME/AMF and RAN UE IDs and the two TEIDs are for tracing a session,
+     not for watching the table: folded away until asked for, and the choice
+     is remembered in this browser. */
+  const [showIds, setShowIds] = React.useState(() => !!readPrefs().mecShowIds);
+  const toggleIds = () => setShowIds((v) => { writePref("mecShowIds", !v); return !v; });
   const [updatedAt, setUpdatedAt] = React.useState(null);
   // filters, applied by the device: a UE address or subnet, and an idle time
   // with the comparison the firmware implements (at most / longer than)
@@ -10214,6 +10230,9 @@ function MecTab({ loggedIn, t }) {
         <div className="mec-summary">
           <span>{tr("mec.inTable")} <b className="mono">{fmtCount(data.used)}</b>
             <span className="dim"> / {fmtCount(data.capacity)}</span></span>
+          <button className={"ex-fold mec-ids-toggle" + (showIds ? " on" : "")} aria-expanded={showIds} onClick={toggleIds}>
+            <span className="ex-fold-caret" aria-hidden="true">{showIds ? "▾" : "▸"}</span>
+            {tr(showIds ? "mec.hideIds" : "mec.showIds")}</button>
         </div>
       )}
       {/* The firmware fills a 64KB buffer; when that ends the page rather than
@@ -10229,23 +10248,25 @@ function MecTab({ loggedIn, t }) {
               both. The request/response E-RAB pair is the uplink and downlink
               GTP tunnel respectively. */}
           <thead><tr>
-            <th>{tr("mec.mmeUeId")}</th>
-            <th>{tr("mec.ranUeId")}</th>
+            {showIds && <th>{tr("mec.mmeUeId")}</th>}
+            {showIds && <th>{tr("mec.ranUeId")}</th>}
             <th>{tr("mec.plmnId")}</th>
             <th>{tr("mec.cellId")}</th>
             <th>{tr("mec.spid")}</th>
-            <th>{tr("mec.ulTeid")}</th>
+            {showIds && <th>{tr("mec.ulTeid")}</th>}
             <th>{tr("mec.ulIp")}</th>
-            <th>{tr("mec.dlTeid")}</th>
+            {showIds && <th>{tr("mec.dlTeid")}</th>}
             <th>{tr("mec.dlIp")}</th>
             <th>{tr("mec.ueIp")}</th>
+            <th className="tf-num" title={tr("mec.trafficTip")}>{tr("mec.ulTraffic")}</th>
+            <th className="tf-num" title={tr("mec.trafficTip")}>{tr("mec.dlTraffic")}</th>
             <th>{tr("mec.idle")}</th>
           </tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={`${data.offset}-${i}`}>
-                <td className="mono">{r.mmeid}</td>
-                <td className="mono">{r.enbid}</td>
+                {showIds && <td className="mono">{r.mmeid}</td>}
+                {showIds && <td className="mono">{r.enbid}</td>}
                 {/* verbatim: the firmware prints this decimal when it can
                     decode the PLMN and as raw BCD hex when it cannot, and the
                     two are indistinguishable here */}
@@ -10254,11 +10275,19 @@ function MecTab({ loggedIn, t }) {
                 {/* 0 is a real SPID as far as this table can tell: the field is
                     left at zero when the setup carried none */}
                 <td className="mono">{r.spid}</td>
-                <td className="mono">{r.reqTeid}</td>
+                {showIds && <td className="mono">{r.reqTeid}</td>}
                 <td className="mono">{r.reqIp}</td>
-                <td className="mono">{r.resTeid}</td>
+                {showIds && <td className="mono">{r.resTeid}</td>}
                 <td className="mono">{r.resIp}</td>
                 <td className="mono">{r.ueIp || "—"}</td>
+                {/* counted only once the UE IP is known; "—" before that, and
+                    from a firmware that does not count at all */}
+                <td className="tf-num mono">{r.traffic && r.ueIp
+                  ? <>{fmtBytes(r.traffic.ulBytes)}<span className="dim"> · {fmtNum(r.traffic.ulPackets)} {tr("mec.pkts")}</span></>
+                  : "—"}</td>
+                <td className="tf-num mono">{r.traffic && r.ueIp
+                  ? <>{fmtBytes(r.traffic.dlBytes)}<span className="dim"> · {fmtNum(r.traffic.dlPackets)} {tr("mec.pkts")}</span></>
+                  : "—"}</td>
                 <td className="mono">{fmtIdle(r.idle)}</td>
               </tr>
             ))}

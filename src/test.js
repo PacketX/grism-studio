@@ -2205,6 +2205,8 @@ group("extra running-config files");
   check("sizes read in sensible units", C.formatFileSize(94) === "94 B" &&
     C.formatFileSize(4890).endsWith("KB") && C.formatFileSize(7320705).endsWith("MB"));
   check("a bad size formats to nothing", C.formatFileSize("x") === "" && C.formatFileSize(-1) === "");
+  check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
+    && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
   check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");
   {
     const MB = 1024 * 1024;
@@ -3199,6 +3201,11 @@ group("S1AP item paging");
   /* A device whose firmware predates paging answers without the new fields;
      then what came back is all there was. */
   check("an older firmware still reads", (() => {
+    {
+      const withT = C.parseS1apItems({ ts: 1, s1ap_items: [{ "ue-ipv4": "10.0.0.1", "ul-packets": 3, "ul-bytes": 300, "dl-packets": 5, "dl-bytes": 7000 }] });
+      check("the UE's data-plane counters are read", withT.rows[0].traffic && withT.rows[0].traffic.dlBytes === 7000 && withT.rows[0].traffic.ulPackets === 3);
+      check("a firmware without the counters reads as not counted", C.parseS1apItems({ ts: 1, s1ap_items: [{ "ue-ipv4": "10.0.0.1" }] }).rows[0].traffic === null);
+    }
     const old = C.parseS1apItems({ ts: 1, s1ap_items: [payload.s1ap_items[0]], s1ap_items_count: [1, 1000000] });
     return old.matched === 1 && old.offset === 0 && old.returned === 1 && old.truncated === false;
   })());

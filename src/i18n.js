@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.213.1";
+export const STUDIO_VERSION = "2.216.0";
 
 export const I18N = {
   en: {
@@ -100,6 +100,9 @@ export const I18N = {
     "mec.dlTeid": "DL GTP TEID",
     "mec.dlIp": "DL GTP IPv4",
     "mec.ueIp": "UE IPv4",
+    "mec.ulTraffic": "Uplink", "mec.dlTraffic": "Downlink", "mec.pkts": "pkts",
+    "mec.showIds": "Show UE IDs and TEIDs", "mec.hideIds": "Hide UE IDs and TEIDs",
+    "mec.trafficTip": "The UE's data-plane traffic, counted once its IP is known: uplink is from the UE IP, downlink to it. Bytes are whole frames as received.",
     "mec.idle": "Idle",
     "mec.empty": "Correlation is on, but the device has no items yet.",
     "mec.showing": "Showing {from}–{to} of {total}",
@@ -991,6 +994,9 @@ export const I18N = {
     "mec.dlTeid": "DL GTP TEID",
     "mec.dlIp": "DL GTP IPv4",
     "mec.ueIp": "UE IPv4",
+    "mec.ulTraffic": "上行流量", "mec.dlTraffic": "下行流量", "mec.pkts": "封包",
+    "mec.showIds": "顯示 UE ID 與 TEID", "mec.hideIds": "隱藏 UE ID 與 TEID",
+    "mec.trafficTip": "UE 的 data plane 流量,取得 UE IP 後才開始統計:上行為來自 UE IP 的封包,下行為送往 UE IP 的封包。位元組為收到的完整封包長度。",
     "mec.idle": "閒置",
     "mec.empty": "關聯已開啟,但裝置目前沒有任何項目。",
     "mec.showing": "顯示第 {from}–{to} 筆,共 {total} 筆",
