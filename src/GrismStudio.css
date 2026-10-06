@@ -2035,6 +2035,12 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .saved-inline .xf-body{padding:0; max-height:none;}
 .saved-inline .xf-note{margin-top:0; font-size:11.5px;}
 .saved-inline .xf-list li{flex-wrap:wrap;}
+/* The export column is a third of the page. A description sharing its row
+   with the size and three buttons got what was left -- a few characters.
+   Give it the first line and let it wrap; size and buttons go under it. */
+.saved-inline .sv-list .sv-desc{flex:1 1 100%; white-space:normal; overflow-wrap:anywhere;}
+.saved-inline .sv-list .xf-size{flex:1 1 auto;}
+.saved-inline .sv-list .sv-desc-input{flex:1 1 100%;}
 /* what is spoken for before anything runs */
 .mem-fixed{margin-top:10px; padding:8px 10px; border-radius:8px; background:var(--panel-2); border:1px solid var(--line-2);}
 .mem-fixed-head{display:flex; justify-content:space-between; gap:10px; font-size:10.5px; letter-spacing:.06em;
