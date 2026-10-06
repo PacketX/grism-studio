@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.212.1";
+export const STUDIO_VERSION = "2.213.0";
 
 export const I18N = {
   en: {
@@ -31,6 +31,9 @@ export const I18N = {
     "in.up": "Up one level", "in.folder": "folder",
     "in.upload": "Upload pcap files…", "in.uploading": "Uploading…",
     "in.uploadHint": "several files can be selected at once",
+    "in.upNoSpace": "Not enough space on this volume: the files need {need}, {free} is free. Delete some files first, or pick another volume.",
+    "in.upTooBig": "{name}: larger than 1 GB, which is the most one upload can carry.",
+    "in.upWriting": "writing…", "in.upNetErr": "the upload was interrupted", "in.upCancelled": "Upload cancelled.",
     "cap.confirmTitle": "Start capturing?",
     "cap.confirmBody": "This is added to the configuration the device is running and takes effect immediately. The added configuration is removed once the capture's seconds to live expire.",
     "cap.confirmDesc": "Runs for the seconds to live, then removes itself",
@@ -919,6 +922,9 @@ export const I18N = {
     "in.up": "上一層", "in.folder": "資料夾",
     "in.upload": "上傳 pcap 檔案…", "in.uploading": "上傳中…",
     "in.uploadHint": "可一次選擇多個檔案",
+    "in.upNoSpace": "空間不足:這些檔案需要 {need},此磁區剩 {free}。請先刪除部分檔案,或改用其他磁區。",
+    "in.upTooBig": "{name}:超過 1 GB,單一檔案上傳上限為 1 GB。",
+    "in.upWriting": "寫入中…", "in.upNetErr": "上傳中斷", "in.upCancelled": "已取消上傳。",
     "cap.confirmTitle": "開始側錄?",
     "cap.confirmBody": "這會附加於裝置執行中的設定並立即套用。側錄的存活秒數結束後,附加的設定會移除。",
     "cap.confirmDesc": "執行至存活秒數結束後自動移除",

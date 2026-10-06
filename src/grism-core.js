@@ -3668,10 +3668,29 @@ export function parseStorages(payload) {
     .filter((s) => s && s.name && s.enable !== false)
     .map((s) => ({
       name: s.name,
-      usage: n_(s.usage ?? s.used, 0),
+      // KB in use. The device sends df's "1%" as usage and the KB as used, so
+      // reading usage first turned every volume into "0 KB used".
+      usage: n_(s.used ?? s.usage, 0),
       available: n_(s.available ?? s.avail ?? s.free, 0),
       dir: s.dir ?? "",
     }));
+}
+
+/* nginx refuses a request body over this (client_max_body_size 1G) before
+   pywww ever sees it, so a bigger file can only end in a bare 413. */
+export const UPLOAD_MAX_BYTES = 1024 * 1024 * 1024;
+
+/* Will these files fit where they are going? availableKB is df's free figure
+   for the volume (null when it is not known, and then the device decides). A
+   file that replaces one of the same name gives that file's bytes back. */
+export function uploadSpaceCheck(files, availableKB, existing = []) {
+  const have = new Map((existing ?? []).filter((f) => !f.isDir).map((f) => [f.name, n_(f.bytes, 0)]));
+  const need = (files ?? []).reduce((s, f) => s + n_(f.size, 0), 0);
+  const tooBig = (files ?? []).filter((f) => n_(f.size, 0) > UPLOAD_MAX_BYTES).map((f) => f.name);
+  if (availableKB === null || availableKB === undefined) return { need, free: null, fits: true, tooBig };
+  const back = (files ?? []).reduce((s, f) => s + (have.get(f.name) ?? 0), 0);
+  const free = n_(availableKB, 0) * 1024 + back;
+  return { need, free, fits: need <= free, tooBig };
 }
 
 /* get_storage_file_list rows are [kind, name, bytes, modified], where kind is 0
@@ -4491,7 +4510,8 @@ export const formatFileSize = (bytes) => {
   if (!Number.isFinite(n) || n < 0) return "";
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
 
 /* One line for a problem from grismXmlProblems. Vocabulary complaints carry no

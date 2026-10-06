@@ -1234,6 +1234,14 @@ tr.port-off .port-desc{opacity:1;}
   border-radius:8px; font-size:11px; line-height:1.6; overflow:auto; max-width:100%; white-space:pre-wrap;}
 
 .storage-upload{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:10px 0 2px; font-size:11.5px;}
+.upload-prog{margin:8px 0 4px; padding:8px 10px; border:1px solid var(--line-2); border-radius:8px; background:var(--panel-2); font-size:11.5px;}
+.upload-prog-row{display:flex; align-items:center; gap:10px;}
+.upload-prog-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--txt);}
+.upload-prog-pct{color:var(--accent); font-weight:600;}
+.upload-prog .copy-btn{padding:2px 9px; font-size:11px;}
+.upload-bar{height:6px; margin:7px 0 5px; border-radius:3px; background:var(--line); overflow:hidden;}
+.upload-bar > div{height:100%; background:var(--accent); transition:width .2s linear;}
+.upload-prog-sub{font-size:11px;}
 
 /* ---- storage navigation ---- */
 .crumbs{display:flex; align-items:center; gap:3px; flex-wrap:wrap; margin:10px 0 6px; font-size:12px;}

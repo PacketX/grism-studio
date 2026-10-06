@@ -2205,6 +2205,21 @@ group("extra running-config files");
   check("sizes read in sensible units", C.formatFileSize(94) === "94 B" &&
     C.formatFileSize(4890).endsWith("KB") && C.formatFileSize(7320705).endsWith("MB"));
   check("a bad size formats to nothing", C.formatFileSize("x") === "" && C.formatFileSize(-1) === "");
+  check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");
+  {
+    const MB = 1024 * 1024;
+    const fit = C.uploadSpaceCheck([{ name: "a.pcap", size: 300 * MB }, { name: "b.pcap", size: 300 * MB }], 700 * 1024);
+    check("two 300 MB files fit in 700 MB", fit.fits && fit.need === 600 * MB && fit.free === 700 * MB);
+    const no = C.uploadSpaceCheck([{ name: "a.pcap", size: 300 * MB }, { name: "b.pcap", size: 300 * MB }], 500 * 1024);
+    check("two 300 MB files do not fit in 500 MB", !no.fits);
+    const repl = C.uploadSpaceCheck([{ name: "a.pcap", size: 300 * MB }], 100 * 1024,
+      [{ name: "a.pcap", bytes: 250 * MB, isDir: false }]);
+    check("a file replacing one of the same name gets its bytes back", repl.fits && repl.free === 350 * MB);
+    check("unknown free space leaves the decision to the device", C.uploadSpaceCheck([{ name: "a", size: 1 }], null).fits);
+    check("a file over 1 GB is named", C.uploadSpaceCheck([{ name: "big.pcap", size: 2 * 1024 ** 3 }], null).tooBig[0] === "big.pcap");
+    check("a volume's used KB is read from used, not the df percentage",
+      C.parseStorages({ storages: [{ name: "H1", enable: true, used: 576, available: 1023424, usage: "1%" }] })[0].usage === 576);
+  }
 }
 
 for (const lang of Object.keys(I18N)) {

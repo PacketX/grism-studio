@@ -28,7 +28,7 @@ import {
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
-  extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize,
+  extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize, uploadSpaceCheck,
   isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError, problemLine,
   parseXsd, validateAgainstXsd, xsdProblemLine,
   countryOptions, mgmtPortNames, PORT_PICKER_FIELDS, portOptionsForField,
@@ -5839,18 +5839,19 @@ function useStorageBrowser(loggedIn, { defaultDir = "" } = {}) {
   const [dir, setDir] = React.useState(defaultDir);
   const [files, setFiles] = React.useState([]);
 
-  React.useEffect(() => {
-    if (!loggedIn) return;
-    (async () => {
-      try {
-        const res = await fetch("/grism/task/get_storages", { credentials: "include" });
-        if (!res.ok) return;
-        const list = parseStorages(await res.json());
-        setStorages(list);
-        setStorage((cur) => cur || list[0]?.name || "");
-      } catch (e) { warnFetch("storage volumes", e); }
-    })();
-  }, [loggedIn]);
+  // Fetched again after every upload and delete, and right before an upload
+  // is checked against it: the free space is what changes under the page.
+  const loadStorages = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_storages", { credentials: "include" });
+      if (!res.ok) return null;
+      const list = parseStorages(await res.json());
+      setStorages(list);
+      setStorage((cur) => cur || list[0]?.name || "");
+      return list;
+    } catch (e) { warnFetch("storage volumes", e); return null; }
+  }, []);
+  React.useEffect(() => { if (loggedIn) loadStorages(); }, [loggedIn, loadStorages]);
 
   const post = React.useCallback(async (fields) => {
     const body = new URLSearchParams();
@@ -5903,12 +5904,12 @@ function useStorageBrowser(loggedIn, { defaultDir = "" } = {}) {
         if (!res.ok) throw new Error("HTTP " + res.status);
       } catch (e) { failed.push(`${name}: ${e.message || e}`); }
     }
-    await listFiles();
+    await listFiles(); loadStorages();
     if (failed.length) throw new Error(failed.join("; "));
-  }, [storage, dir, listFiles]);
+  }, [storage, dir, listFiles, loadStorages]);
   const removeFile = React.useCallback((name) => removeFiles([name]), [removeFiles]);
 
-  return { storages, storage, setStorage, dir, setDir, files, listFiles, removeFile, removeFiles,
+  return { storages, storage, setStorage, dir, setDir, files, listFiles, loadStorages, removeFile, removeFiles,
     enterDir, goUp, crumbs: dirCrumbs(dir),
     volume: storages.find((x) => x.name === storage) };
 }
@@ -6029,24 +6030,61 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
   };
   const allHere = pickable.length > 0 && pickable.every((p) => chosen.includes(p));
 
-  /* Upload one or more pcaps into the selected volume and directory. */
+  /* Upload one or more pcaps into the selected volume and directory. Checked
+     against the volume's free space first -- H1 is a 1000M tmpfs, and a file
+     that does not fit used to be written until the volume was full and then
+     left there half-written. Sent with XHR, which reports upload progress;
+     fetch does not. */
+  const [prog, setProg] = React.useState(null);  // { i, n, name, sent, total, writing, t0 }
+  const xhrRef = React.useRef(null);
   const upload = async (list) => {
     const files = [...(list ?? [])];
     if (!files.length || !br.storage || !br.dir) return;
     setBusy(true); setErr("");
     try {
-      for (const f of files) {
+      const vols = await br.loadStorages();
+      const vol = vols?.find((x) => x.name === br.storage);
+      const chk = uploadSpaceCheck(files, vol ? vol.available : null, br.files);
+      if (chk.tooBig.length) throw new Error(tr("in.upTooBig").replace("{name}", chk.tooBig.join(", ")));
+      if (!chk.fits) throw new Error(tr("in.upNoSpace")
+        .replace("{need}", formatFileSize(chk.need)).replace("{free}", formatFileSize(chk.free)));
+      const total = chk.need;
+      let done = 0;
+      const t0 = Date.now();
+      for (const [i, f] of files.entries()) {
         const fd = new FormData();
         fd.append("storage", br.storage);
         fd.append("dir", br.dir);
         fd.append("file", f, f.name);
-        const res = await fetch("/grism/task/upload_pcap_file", { method: "POST", credentials: "include", body: fd });
-        if (!res.ok) throw new Error(`${f.name}: HTTP ${res.status}`);
+        const base = { i: i + 1, n: files.length, name: f.name, total, t0 };
+        setProg({ ...base, sent: done, writing: false });
+        const res = await new Promise((resolve, reject) => {
+          const x = new XMLHttpRequest();
+          xhrRef.current = x;
+          x.open("POST", "/grism/task/upload_pcap_file");
+          x.withCredentials = true;
+          // e.loaded counts the multipart framing too, so hold it to the file
+          x.upload.onprogress = (e) => setProg({ ...base, sent: done + Math.min(e.loaded, f.size),
+            writing: e.loaded >= e.total });
+          x.onload = () => resolve(x);
+          x.onerror = () => reject(new Error(`${f.name}: ${tr("in.upNetErr")}`));
+          x.onabort = () => reject(new Error(tr("in.upCancelled")));
+          x.send(fd);
+        });
+        if (res.status < 200 || res.status >= 300) {
+          const why = (res.responseText || "").trim().slice(0, 200);
+          throw new Error(`${f.name}: ${res.status === 413 ? tr("in.upTooBig").replace("{name}", f.name) : why || "HTTP " + res.status}`);
+        }
+        done += f.size;
       }
-      await br.listFiles();
     } catch (e) { setErr(String(e.message || e)); }
-    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
+    finally {
+      xhrRef.current = null; setProg(null); setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+      br.listFiles(); br.loadStorages();
+    }
   };
+  React.useEffect(() => () => xhrRef.current?.abort(), []);
 
   const remove = async (names) => {
     setErr("");
@@ -6080,6 +6118,25 @@ function StorageFilePicker({ tr, loggedIn, chosen = [], onChange, max = 100 }) {
           {busy ? tr("in.uploading") : tr("in.upload")}</button>
         <span className="dim">{tr("in.uploadHint")}</span>
       </div>
+      {prog && (() => {
+        const p = prog.total > 0 ? Math.min(100, Math.floor((prog.sent / prog.total) * 100)) : 0;
+        const secs = (Date.now() - prog.t0) / 1000;
+        const rate = secs > 1 ? prog.sent / secs : 0;
+        return (
+          <div className="upload-prog">
+            <div className="upload-prog-row">
+              <span className="mono upload-prog-name">{prog.name}</span>
+              {prog.n > 1 && <span className="dim">{prog.i}/{prog.n}</span>}
+              <span className="upload-prog-pct mono">{prog.writing ? tr("in.upWriting") : p + "%"}</span>
+              <button className="copy-btn" onClick={() => xhrRef.current?.abort()}>{tr("xf.cancel")}</button>
+            </div>
+            <div className="upload-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={p}>
+              <div style={{ width: p + "%" }} /></div>
+            <div className="dim mono upload-prog-sub">{formatFileSize(prog.sent)} / {formatFileSize(prog.total)}
+              {rate > 0 && <> · {formatFileSize(Math.round(rate))}/s</>}</div>
+          </div>
+        );
+      })()}
       {err && <div className="sys-err">{err}</div>}
 
       <StorageCrumbs br={br} tr={tr} />
