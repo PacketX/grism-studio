@@ -2378,6 +2378,26 @@ export function extractUsername(payload) {
    full access: that is how it behaved before this existed. */
 export const PRIV_READONLY = 1;
 
+/* Account levels: four points on the TACACS+ priv-lvl scale, the numbers
+   pywww keeps. view reads everything and changes nothing; operator also runs
+   the packet path -- filters, chains, replays, clears, bypass; config also
+   changes the device's settings; admin also manages accounts, sign-in
+   servers, management access, firmware, backup and restore, and the power. */
+export const PRIV = { VIEW: 1, OPERATOR: 5, CONFIG: 10, ADMIN: 15 };
+export const PRIV_ROLES = [["view", PRIV.VIEW], ["operator", PRIV.OPERATOR], ["config", PRIV.CONFIG], ["admin", PRIV.ADMIN]];
+/* The level at or below a number; an unknown value is an administrator, which
+   is what every account was before there were levels. */
+export function privLevel(priv, fallback = PRIV.ADMIN) {
+  const n = Number(priv);
+  if (priv == null || String(priv).trim() === "" || !Number.isFinite(n)) return fallback;
+  let level = PRIV.VIEW;
+  for (const [, p] of PRIV_ROLES) if (n >= p) level = p;
+  return level;
+}
+export const privRole = (priv) => (PRIV_ROLES.find(([, p]) => p === privLevel(priv)) ?? PRIV_ROLES[3])[0];
+export const roleToPriv = (role) => (PRIV_ROLES.find(([r]) => r === String(role ?? "").trim().toLowerCase()) ?? PRIV_ROLES[3])[1];
+export const privAtLeast = (priv, need) => privLevel(priv) >= need;
+
 export function extractPriv(payload) {
   if (payload == null) return null;
   if (typeof payload === "string") {
@@ -2419,8 +2439,31 @@ const WRITE_PATHS = [
   /^\/grism\/task\/reboot/, /^\/grism\/task\/halt/,
   /^\/grism\/task\/upload/, /^\/grism\/task\/update_download/,
   /^\/grism\/task\/(create|delete|change|add|remove|clear|reset|start|stop)_/,
-  /^\/create_user/, /^\/delete_user/,
+  /^\/create_user/, /^\/delete_user/, /^\/set_user_priv/,
+  /* the timezone and the SNMP community are set outside /grism/task/ */
+  /^\/grism\/set_/,
 ];
+
+/* The level a request needs, by path -- what pywww enforces, so the page can
+   refuse with a reason instead of relaying a bare 401. 0 is anyone signed in. */
+const ADMIN_PATHS = [
+  /^\/(list_user|create_user|delete_user|set_user_priv)/,
+  /^\/grism\/task\/(update|upload_component|halt|backup|download_backup|restore|get_mgmt_access|set_mgmt_access)/,
+];
+const CONFIG_PATHS = [
+  /^\/grism\/task\/submit_config/, /^\/grism\/set_/,
+  /^\/grism\/task\/set_(alert_rules|service_state|im_speed|t12s_speed|debug_core)/,
+  /^\/grism\/task\/(reboot|clear_log|restart_grism|test_alert_trap|get_core_file|del_core_file)/,
+  /^\/grism\/task\/(set|submit)_(switch_interface|cpss_)/,       // the Q16's switch
+];
+export function minPrivForRequest(url, method = "GET") {
+  let path = String(url ?? "");
+  try { path = new URL(path, "http://d/").pathname; } catch { /* keep it as given */ }
+  if (path === "/direct_login" || path === "/logout" || path === "/change_password") return 0;
+  if (ADMIN_PATHS.some((re) => re.test(path))) return PRIV.ADMIN;
+  if (CONFIG_PATHS.some((re) => re.test(path))) return PRIV.CONFIG;
+  return isWriteRequest(url, method) ? PRIV.OPERATOR : 0;
+}
 
 export function isWriteRequest(url, method = "GET") {
   let path = String(url ?? "");
@@ -3465,8 +3508,15 @@ export function parseUserList(payload) {
   if (!Array.isArray(rows)) return [];
   return rows
     .filter((r) => Array.isArray(r) && typeof r[0] === "string" && r[0].trim())
-    .map((r) => ({ name: r[0].trim(), role: typeof r[1] === "string" ? r[1] : "" }));
+    .map((r) => {
+      const role = typeof r[1] === "string" ? r[1] : "";
+      // the level is the third column; a pywww from before levels sends two
+      return { name: r[0].trim(), role, priv: r.length > 2 ? privLevel(r[2]) : roleToPriv(role) };
+    });
 }
+/* Accounts whose level is fixed: the device's own stays an administrator,
+   guest stays read-only, and one's own cannot be changed from here. */
+export const userLevelFixed = (name, me) => name === UNDELETABLE_USER || name === "guest" || (!!me && name === me);
 
 /* Why a new account cannot be created, or null when it can. Checked here so the
    button can stay disabled instead of relying on the server to say no. */

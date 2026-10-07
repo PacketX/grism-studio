@@ -30,6 +30,7 @@ import {
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
+  PRIV, PRIV_ROLES, minPrivForRequest, privAtLeast, privLevel, privRole, userLevelFixed,
   extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize, uploadSpaceCheck, storageLocationOf, parseAllowList, allowListCovers,
   isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError, problemLine,
   parseXsd, validateAgainstXsd, xsdProblemLine,
@@ -341,7 +342,7 @@ export default function GrismStudio() {
   useEffect(() => { writePref("lang", lang); }, [lang]);
   const t = useMemo(() => makeT(lang), [lang]);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null, ro: false });
+  const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null, ro: false, priv: null });
   /* The device's alerts, read here once for every place that shows them --
      the bell in the topbar and the System status page. */
   const [alerts, setAlerts] = useState(null);
@@ -678,8 +679,8 @@ export default function GrismStudio() {
          cookie, so the read-only badge is up before the first page loads. */
       const priv = extractPriv({ priv: res.headers.get("X-PacketX-Userpriv") });
       setLogin((l) => ({ ...l, busy: false, ok: true, pass: "", open: false, who: username,
-                         ro: isReadOnlyPriv(priv) }));
-      if (priv == null) fetchCurrentUser().then(({ priv: p }) => setLogin((l) => ({ ...l, ro: isReadOnlyPriv(p) })));
+                         ro: isReadOnlyPriv(priv), priv }));
+      if (priv == null) fetchCurrentUser().then(({ priv: p }) => setLogin((l) => ({ ...l, ro: isReadOnlyPriv(p), priv: p })));
       setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
       loadDevicePorts();   // interface/port list for the pickers
       // loadRunning() replaces the document and sets the baseline itself. It only
@@ -712,7 +713,7 @@ export default function GrismStudio() {
         loadDevicePorts(cfg);
         fetchCurrentUser().then(({ name, priv }) => {
           if (cancelled) return;
-          setLogin((l) => (l.who ? { ...l, who: name || l.who, ro: isReadOnlyPriv(priv) } : l));
+          setLogin((l) => (l.who ? { ...l, who: name || l.who, ro: isReadOnlyPriv(priv), priv } : l));
         });
         doLoadRunning();   // loads the running config AND sets the sync baseline
       } catch { /* offline or not authed — stay logged out */ }
@@ -730,7 +731,7 @@ export default function GrismStudio() {
     setDeviceStorages([]);
     setLoopPorts([]);
     setL2greOn(false); setL2gre(null); setDeviceModel("");
-    setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "", ro: false }));
+    setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "", ro: false, priv: null }));
     /* The open document may be the device's running config, which is no longer
        ours to show and can no longer be reloaded. Go back to the overview on the
        starter template, so what is on screen matches what we still have. */
@@ -762,8 +763,8 @@ export default function GrismStudio() {
 
      And a read-only account gets its writes stopped here rather than one
      refusal at a time from the device. */
-  const authRef = React.useRef({ who: null, ro: false });
-  authRef.current = { who: login.who, ro: login.ro };
+  const authRef = React.useRef({ who: null, ro: false, priv: null });
+  authRef.current = { who: login.who, ro: login.ro, priv: login.priv };
   const sessionProbe = React.useRef({ at: 0, busy: false });
   useEffect(() => {
     const real = window.fetch.bind(window);
@@ -783,6 +784,13 @@ export default function GrismStudio() {
       const method = init?.method ?? (typeof input === "object" ? input?.method : "") ?? "GET";
       if (authRef.current.ro && isWriteRequest(url, method)) {
         return new Response(READ_ONLY_BODY, { status: 403, statusText: "read-only account" });
+      }
+      /* The other levels the same way: refused here with the level named,
+         rather than one bare 401 at a time from the device. */
+      const need = minPrivForRequest(url, method);
+      if (need > PRIV.VIEW && authRef.current.who && authRef.current.priv != null && privLevel(authRef.current.priv) < need) {
+        return new Response(t("login.levelRefused").replace("{role}", t("role." + privRole(authRef.current.priv))).replace("{need}", t("role." + privRole(need))),
+          { status: 403, statusText: "insufficient level" });
       }
       const res = await real(input, init);
       if (res.status === 404 && authRef.current.who && /^\/(grism|change_password|create_user|delete_user)/.test(
@@ -1016,7 +1024,7 @@ export default function GrismStudio() {
             <button className="undo-btn" onClick={doRedo} disabled={!canRedo} title={t("undo.redo")} aria-label={t("undo.redo")}>↷</button>
           </div>
         )}
-        {login.who && <AlertBell alerts={alerts} t={t} canAck={!login.ro} onAck={ackAlert} />}
+        {login.who && <AlertBell alerts={alerts} t={t} canAck={privAtLeast(login.priv, PRIV.OPERATOR)} onAck={ackAlert} />}
         {/* Account menu: session, language and theme live behind one control so the
             topbar stays focused on the work rather than on settings. */}
         <div className="acct-wrap">
@@ -1036,7 +1044,8 @@ export default function GrismStudio() {
                       <div className="acct-user">
                         <span className="acct-user-k">{t("user.signedIn")}</span>
                         <span className="acct-user-v">{login.who}
-                          {login.ro && <span className="ro-badge" title={t("login.readOnlyTip")}>{t("login.readOnly")}</span>}
+                          {login.who && privLevel(login.priv) < PRIV.ADMIN &&
+                            <span className="ro-badge" title={t("role." + privRole(login.priv) + ".tip")}>{t("role." + privRole(login.priv))}</span>}
                         </span>
                       </div>
                       <button className="acct-item" onClick={() => { setAcctOpen(false); doLogout(); }}>
@@ -1160,13 +1169,13 @@ export default function GrismStudio() {
             onGoto={goTab} />
         )}
         {tab === "status" && (
-          <SystemStatusTab loggedIn={!!login.who} t={t} alerts={alerts} canAck={!login.ro} onAck={ackAlert} />
+          <SystemStatusTab loggedIn={!!login.who} t={t} alerts={alerts} canAck={privAtLeast(login.priv, PRIV.OPERATOR)} onAck={ackAlert} />
         )}
         {tab === "syslog" && (
           <SystemLogTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "settings" && (
-          <SettingsTab loggedIn={!!login.who} readOnly={login.ro} t={t} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
+          <SettingsTab loggedIn={!!login.who} readOnly={login.ro} priv={login.priv} t={t} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
             onUseTemplate={(id) => applyTemplate(TEMPLATES.find((x) => x.id === id), "chain")}
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
@@ -2182,8 +2191,15 @@ function DebugCard({ tr, onReboot }) {
   );
 }
 
-function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
+function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
   const tr = t || ((k) => k);
+  /* What this account may do here. Below config the page is the one card
+     everyone gets, changing their own password -- an operator's work is on
+     the other tabs. Only an administrator sees accounts, the sign-in servers,
+     management access, backup and restore, and firmware. */
+  const level = privLevel(priv);
+  const isAdmin = level >= PRIV.ADMIN;
+  const readOnly = roProp || level < PRIV.CONFIG;
   const [raw, setRaw] = React.useState("");
   const [ifaces, setIfaces] = React.useState([]);
   const [state, setState] = React.useState("idle");     // idle | loading | ok | error
@@ -2501,8 +2517,8 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
       const res = await fetch("/grism/get_snmp_read_community", { credentials: "include" });
       if (res.ok) { const v = (await res.text()).trim(); setCommunity(v); setCommunityBase(v); }
     } catch (e) { warnFetch("SNMP community", e); }
-    loadMgmt();
-  }, [loadMgmt]);
+    if (isAdmin) loadMgmt();          // the allow list is an administrator's
+  }, [loadMgmt, isAdmin]);
   React.useEffect(() => {
     if (!loggedIn) return;
     if ((section === "system" || section === "packet") && !sys) loadSys();
@@ -2660,7 +2676,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
       setViewsBase(parsed); setViews(parsed);
     } catch (e) { warnFetch("login authentication", e); }
   }, [getConfig]);
-  React.useEffect(() => { if (loggedIn && !readOnly && section === "auth" && !views) loadViews(); }, [loggedIn, readOnly, section, views, loadViews]);
+  React.useEffect(() => { if (loggedIn && isAdmin && section === "auth" && !views) loadViews(); }, [loggedIn, isAdmin, section, views, loadViews]);
 
   const loadHeartbeat = React.useCallback(async () => {
     try {
@@ -2750,7 +2766,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
   const [users, setUsers] = React.useState(null);          // null = not loaded yet
   const [acctErr, setAcctErr] = React.useState("");
   const [acctOk, setAcctOk] = React.useState("");
-  const [newUser, setNewUser] = React.useState({ name: "", pass: "", confirm: "" });
+  const [newUser, setNewUser] = React.useState({ name: "", pass: "", confirm: "", priv: PRIV.VIEW });
   const [pw, setPw] = React.useState({ old: "", next: "", confirm: "" });
   const [acctBusy, setAcctBusy] = React.useState(false);
   /* Who the device says we are. The X-PacketX-Username cookie is HttpOnly, so
@@ -2848,8 +2864,10 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
      already on stays on screen. */
   React.useEffect(() => { if (readOnly && section !== "auth") setSection("auth"); }, [readOnly, section]);
   // /list_user is not shown to a read-only account, and 404s on current firmware anyway
-  React.useEffect(() => { if (loggedIn && !readOnly && section === "auth" && users === null) loadUsers(); },
-    [loggedIn, readOnly, section, users, loadUsers]);
+  React.useEffect(() => { if (loggedIn && isAdmin && section === "auth" && users === null) loadUsers(); },
+    [loggedIn, isAdmin, section, users, loadUsers]);
+  // the administrator's sections are not offered below that level
+  React.useEffect(() => { if (!isAdmin && (section === "backup" || section === "firmware")) setSection("system"); }, [isAdmin, section]);
   React.useEffect(() => { if (loggedIn && section === "auth" && me === null) loadMe(); },
     [loggedIn, section, me, loadMe]);
 
@@ -3321,8 +3339,8 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
             <button className={section === "logging" ? "on" : ""} onClick={() => setSection("logging")}>{tr("set.logging")}</button>
             <button className={section === "services" ? "on" : ""} onClick={() => setSection("services")}>{tr("set.services")}</button>
             <button className={section === "alerts" ? "on" : ""} onClick={() => setSection("alerts")}>{tr("set.alerts")}</button>
-            <button className={section === "backup" ? "on" : ""} onClick={() => setSection("backup")}>{tr("set.backup")}</button>
-            <button className={section === "firmware" ? "on" : ""} onClick={() => setSection("firmware")}>{tr("set.firmware")}</button>
+            {isAdmin && <button className={section === "backup" ? "on" : ""} onClick={() => setSection("backup")}>{tr("set.backup")}</button>}
+            {isAdmin && <button className={section === "firmware" ? "on" : ""} onClick={() => setSection("firmware")}>{tr("set.firmware")}</button>}
             <button className={section === "raw" ? "on" : ""} onClick={() => setSection("raw")}>{tr("set.rawXml")}</button>
           </div>
           )}
@@ -4385,7 +4403,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
               account list, not the remote-auth servers, not even the note that
               introduces them: none of it is theirs to change, and showing it
               greyed out only invites the question of how to un-grey it. */}
-          {readOnly ? changePwCard : !views ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
+          {!isAdmin ? changePwCard : !views ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>
             <p className="page-note">{tr("set.authNote")}</p>
 
           <section className="sys-card">
@@ -4404,7 +4422,14 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                     {users.map((u) => (
                       <tr key={u.name}>
                         <td className="mono">{u.name}</td>
-                        <td>{u.role}</td>
+                        {/* the level, changeable in place except where it is fixed:
+                            the device's own account, guest, and oneself */}
+                        <td>{userLevelFixed(u.name, me)
+                          ? <span title={tr("role." + privRole(u.priv) + ".tip")}>{tr("role." + privRole(u.priv))}</span>
+                          : <select className="acct-level" value={privLevel(u.priv)} disabled={acctBusy} title={tr("role." + privRole(u.priv) + ".tip")}
+                              onChange={(e) => acctPost("/set_user_priv", { Username: u.name, Priv: Number(e.target.value) }, "set.acctLevelChanged")}>
+                              {PRIV_ROLES.map(([role, p]) => <option key={role} value={p}>{tr("role." + role)}</option>)}
+                            </select>}</td>
                         <td className="acct-act">
                           {u.name === UNDELETABLE_USER
                             ? <span className="dim">{tr("set.acctNoDelete")}</span>
@@ -4427,14 +4452,20 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                 <label className="set-field"><span>{tr("set.acctConfirm")}</span>
                   <input type="password" value={newUser.confirm} autoComplete="new-password"
                     onChange={(e) => setNewUser((o) => ({ ...o, confirm: e.target.value }))} /></label>
+                <label className="set-field"><span>{tr("set.acctRole")}</span>
+                  <select className="acct-level" value={newUser.priv} title={tr("role." + privRole(newUser.priv) + ".tip")}
+                    onChange={(e) => setNewUser((o) => ({ ...o, priv: Number(e.target.value) }))}>
+                    {PRIV_ROLES.map(([role, p]) => <option key={role} value={p}>{tr("role." + role)}</option>)}
+                  </select></label>
               </div>
+              <p className="set-hint">{tr("role." + privRole(newUser.priv) + ".tip")}</p>
               <div className="set-actions">
                 <button className="sys-refresh"
                   disabled={acctBusy || !!newUserProblem(newUser.name, newUser.pass, newUser.confirm, users ?? [])}
                   onClick={async () => {
                     if (await acctPost("/create_user",
-                      { Username: newUser.name.trim(), PasswordHash: await sha256Hex(newUser.pass) }, "set.acctCreated"))
-                      setNewUser({ name: "", pass: "", confirm: "" });
+                      { Username: newUser.name.trim(), PasswordHash: await sha256Hex(newUser.pass), Priv: newUser.priv }, "set.acctCreated"))
+                      setNewUser({ name: "", pass: "", confirm: "", priv: PRIV.VIEW });
                   }}>{tr("set.acctAdd")}</button>
               </div>
             </section>
@@ -4798,7 +4829,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                 firmware image, uploaded on its own. Kept beside the services
                 it updates rather than on the firmware page, which is about the
                 whole image. */}
-            <section className="sys-card">
+            {isAdmin && <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.upTitle")}</h3>
               <p className="set-hint">{tr("set.upNote")}</p>
               <div className="set-grid">
@@ -4840,7 +4871,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                   onClick={() => setConfirm({ kind: "upload", target: upload.target, name: upload.file?.name ?? "" })}>
                   {upload.state === "sending" ? tr("set.upSending") : tr("set.upGo")}</button>
               </div>
-            </section>
+            </section>}
 
             {extras && (
             <section className="sys-card">
@@ -4870,7 +4901,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
             </section>
             )}
 
-            {mgmt && (() => {
+            {mgmt && isAdmin && (() => {
               const parsed = parseAllowList(mgmtText);
               const base = (mgmt.allow ?? []).join("\n");
               const changed = parsed.entries.join("\n") !== base;

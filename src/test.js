@@ -2290,6 +2290,24 @@ group("extra running-config files");
     check("trap targets: the payload trims and numbers", JSON.stringify(C.trapTargetsPayload([{ enable: 1, host: " 1.2.3.4 ", port: "1162", community: "x" }]))
       === JSON.stringify([{ enable: true, host: "1.2.3.4", port: 1162, community: "x" }]));
   }
+  {
+    check("levels: the four points, and anything else at or below", C.privLevel(15) === 15 && C.privLevel("10") === 10 && C.privLevel(7) === 5
+      && C.privLevel(1) === 1 && C.privLevel(0) === 1 && C.privLevel(14) === 10);
+    check("levels: unknown is an administrator, as every account was", C.privLevel(null) === 15 && C.privLevel("") === 15 && C.privLevel("x") === 15);
+    check("levels: role names", C.privRole(5) === "operator" && C.privRole(null) === "admin" && C.roleToPriv("view") === 1 && C.roleToPriv("nope") === 15);
+    check("levels: a request's level", C.minPrivForRequest("/grism/task/submit_config", "POST") === C.PRIV.CONFIG
+      && C.minPrivForRequest("/grism/task/submitxml", "POST") === C.PRIV.OPERATOR
+      && C.minPrivForRequest("/grism/task/clear_counters") === C.PRIV.OPERATOR
+      && C.minPrivForRequest("/grism/set_time_zone", "POST") === C.PRIV.CONFIG
+      && C.minPrivForRequest("/create_user", "POST") === C.PRIV.ADMIN && C.minPrivForRequest("/set_user_priv", "POST") === C.PRIV.ADMIN
+      && C.minPrivForRequest("/grism/task/halt") === C.PRIV.ADMIN && C.minPrivForRequest("/grism/task/restore_from_file", "POST") === C.PRIV.ADMIN
+      && C.minPrivForRequest("/grism/task/get_config") === 0 && C.minPrivForRequest("/change_password", "POST") === 0
+      && C.minPrivForRequest("/direct_login", "POST") === 0);
+    check("levels: the timezone and community are writes", C.isWriteRequest("/grism/set_time_zone", "POST") && !C.isWriteRequest("/grism/get_time_zone"));
+    const U = C.parseUserList({ user_list: [["packetx", "admin", 15], ["guest", "view", 1], ["op", "operator", 5], ["old", "admin"]] });
+    check("accounts: the level column, or the role before it existed", U.map((u) => u.priv).join() === "15,1,5,15");
+    check("accounts: fixed levels", C.userLevelFixed("packetx", "me") && C.userLevelFixed("guest", "me") && C.userLevelFixed("me", "me") && !C.userLevelFixed("op", "me"));
+  }
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
   check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");

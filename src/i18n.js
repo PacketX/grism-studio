@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.225.0";
+export const STUDIO_VERSION = "2.226.0";
 
 export const I18N = {
   en: {
@@ -790,7 +790,14 @@ export const I18N = {
     "dbg.rebootBody": "On this platform the engine can only be started once per boot, so recovery is a reboot. ftproot lives in memory: collected core dumps are LOST on reboot — download them first.",
     "dbg.delTitle": "Delete this core dump?", "dbg.delBody": "It cannot be recovered.",
     "login.expired": "The device session has ended. Sign in again to continue.",
-    "login.readOnly": "read-only", "login.readOnlyTip": "This account may look at everything and change nothing.",
+    "login.readOnly": "read-only",
+    "role.view": "read-only", "role.operator": "operator", "role.config": "config", "role.admin": "administrator",
+    "role.view.tip": "May look at everything and change nothing.",
+    "role.operator.tip": "May also run the packet path: filters, chains, replays, clearing counters and tables, bypass.",
+    "role.config.tip": "May also change the device's settings -- but not accounts, sign-in servers, management access, firmware, backup and restore, or the power.",
+    "role.admin.tip": "May do everything.",
+    "login.levelRefused": "{role} account: this needs the {need} level",
+    "set.acctLevelChanged": "Level changed.", "login.readOnlyTip": "This account may look at everything and change nothing.",
     "login.readOnlyBanner": "Signed in as a read-only account — the configuration can be read but not submitted.",
     "confirm.discardTitle": "Discard current edits?",
     "common.delete": "Delete", "common.cancel": "Cancel", "common.optional": "optional",
@@ -1720,7 +1727,14 @@ export const I18N = {
     "dbg.rebootBody": "此平台的引擎每次開機只能啟動一次,恢復方式是重新開機。注意:ftproot 位於記憶體,已收集的 core dump 會在重開機時刪除,請先下載。",
     "dbg.delTitle": "刪除這份 core dump?", "dbg.delBody": "刪除後無法復原。",
     "login.expired": "裝置連線階段已結束,請重新登入。",
-    "login.readOnly": "唯讀", "login.readOnlyTip": "這個帳號可以看所有內容,但不能變更任何設定。",
+    "login.readOnly": "唯讀",
+    "role.view": "唯讀", "role.operator": "操作員", "role.config": "設定管理", "role.admin": "系統管理員",
+    "role.view.tip": "可以看所有內容,但不能變更任何設定。",
+    "role.operator.tip": "另外可以操作封包處理:篩選器、鏈結、重播、清除計數與表格、bypass。",
+    "role.config.tip": "另外可以變更裝置設定;但不能管理帳號、登入伺服器、管理存取、韌體、備份與還原、關機。",
+    "role.admin.tip": "可以執行所有操作。",
+    "login.levelRefused": "{role}帳號無法執行此操作,需要「{need}」權限",
+    "set.acctLevelChanged": "權限已變更。", "login.readOnlyTip": "這個帳號可以看所有內容,但不能變更任何設定。",
     "login.readOnlyBanner": "目前以唯讀帳號登入 —— 可以讀取設定,但不能提交變更。",
     "confirm.discardTitle": "放棄目前的編輯?",
     "common.delete": "刪除", "common.cancel": "取消", "common.optional": "選填",
