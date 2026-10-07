@@ -3497,6 +3497,9 @@ export function accountsErrorKey(status) {
 
 /* This account is the device's own and the server refuses to delete it; say so
    in the UI rather than offering a button that cannot work. */
+/* No account is special by name any more: the device keeps at least one
+   administrator, and that is the only rule. The constant stays for pages
+   written against the old one. */
 export const UNDELETABLE_USER = "packetx";
 
 /* GET /list_user answers {"user_list":[["packetx","admin"], ...]} — pairs, not
@@ -3514,9 +3517,12 @@ export function parseUserList(payload) {
       return { name: r[0].trim(), role, priv: r.length > 2 ? privLevel(r[2]) : roleToPriv(role) };
     });
 }
-/* Accounts whose level is fixed: the device's own stays an administrator,
-   guest stays read-only, and one's own cannot be changed from here. */
-export const userLevelFixed = (name, me) => name === UNDELETABLE_USER || name === "guest" || (!!me && name === me);
+/* One's own level is not changed from here -- a slip would lock the page
+   on the spot -- and the last administrator can be neither demoted nor
+   deleted: the device refuses, so the page does not offer it. */
+export const userLevelFixed = (name, me) => !!me && name === me;
+export const isLastAdmin = (user, users) =>
+  privLevel(user?.priv) === PRIV.ADMIN && (users ?? []).filter((u) => privLevel(u.priv) === PRIV.ADMIN).length === 1;
 
 /* Why a new account cannot be created, or null when it can. Checked here so the
    button can stay disabled instead of relying on the server to say no. */

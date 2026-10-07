@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.226.0";
+export const STUDIO_VERSION = "2.227.0";
 
 export const I18N = {
   en: {
@@ -357,7 +357,7 @@ export const I18N = {
     "set.authServer": "Server", "set.authSecret": "Shared secret",
     "set.acct": "Internal accounts", "set.acctNote": "Accounts stored on the device itself.",
     "set.acctUser": "Username", "set.acctRole": "Role", "set.acctPassword": "Password", "set.acctConfirm": "Confirm password",
-    "set.acctAdd": "Add account", "set.acctDelete": "Delete", "set.acctNoDelete": "The device's own account cannot be deleted.",
+    "set.acctAdd": "Add account", "set.acctDelete": "Delete", "set.acctNoDelete": "The last administrator", "set.acctLastAdmin": "The device keeps at least one administrator: this account can be neither deleted nor demoted while it is the only one.", "set.acctSelf": "(you)",
     "set.acctConfirmDeleteTitle": "Delete this account?", "set.acctConfirmDeleteBody": "The account is removed from the device immediately. This cannot be undone.",
     "set.acctChangePw": "Change my password", "set.acctOldPassword": "Current password", "set.acctNewPassword": "New password",
     "set.acctChangedSignOut": "Password changed — the device ended this session, so you have been signed out. Sign in again with the new password.",
@@ -1296,7 +1296,7 @@ export const I18N = {
     "set.authServer": "伺服器", "set.authSecret": "共用密鑰",
     "set.acct": "內部帳號", "set.acctNote": "儲存在裝置本機的帳號。",
     "set.acctUser": "帳號", "set.acctRole": "權限", "set.acctPassword": "密碼", "set.acctConfirm": "確認密碼",
-    "set.acctAdd": "新增帳號", "set.acctDelete": "刪除", "set.acctNoDelete": "裝置本身的帳號無法刪除。",
+    "set.acctAdd": "新增帳號", "set.acctDelete": "刪除", "set.acctNoDelete": "最後一位系統管理員", "set.acctLastAdmin": "裝置至少要保留一位系統管理員:這個帳號是唯一的一位,因此不能刪除或降級。", "set.acctSelf": "(自己)",
     "set.acctConfirmDeleteTitle": "刪除這個帳號?", "set.acctConfirmDeleteBody": "帳號會立即從裝置移除,且無法復原。",
     "set.acctChangePw": "變更我的密碼", "set.acctOldPassword": "目前密碼", "set.acctNewPassword": "新密碼",
     "set.acctChangedSignOut": "密碼已變更 — 裝置已結束這個連線階段,因此已將你登出。請用新密碼重新登入。",

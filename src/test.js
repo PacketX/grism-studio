@@ -2306,7 +2306,11 @@ group("extra running-config files");
     check("levels: the timezone and community are writes", C.isWriteRequest("/grism/set_time_zone", "POST") && !C.isWriteRequest("/grism/get_time_zone"));
     const U = C.parseUserList({ user_list: [["packetx", "admin", 15], ["guest", "view", 1], ["op", "operator", 5], ["old", "admin"]] });
     check("accounts: the level column, or the role before it existed", U.map((u) => u.priv).join() === "15,1,5,15");
-    check("accounts: fixed levels", C.userLevelFixed("packetx", "me") && C.userLevelFixed("guest", "me") && C.userLevelFixed("me", "me") && !C.userLevelFixed("op", "me"));
+    check("accounts: only one's own level is fixed", !C.userLevelFixed("packetx", "me") && !C.userLevelFixed("guest", "me") && C.userLevelFixed("me", "me") && !C.userLevelFixed("op", "me"));
+    // U holds two administrators (packetx and old, whose role says so), so neither is the last
+    const one = U.filter((u) => u.name !== "old");
+    check("accounts: the last administrator", C.isLastAdmin(one[0], one) && !C.isLastAdmin(one[1], one)
+      && !C.isLastAdmin(U[0], U) && !C.isLastAdmin({ name: "y", priv: 5 }, [{ name: "y", priv: 5 }]));
   }
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);

@@ -29,8 +29,8 @@ import {
   branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, advancedInUse, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
-  UNDELETABLE_USER, newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
-  PRIV, PRIV_ROLES, minPrivForRequest, privAtLeast, privLevel, privRole, userLevelFixed,
+  newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
+  PRIV, PRIV_ROLES, isLastAdmin, minPrivForRequest, privAtLeast, privLevel, privRole, userLevelFixed,
   extraRunFilesFrom, extraRunFileHref, freeExtraRunFileNames, formatFileSize, uploadSpaceCheck, storageLocationOf, parseAllowList, allowListCovers,
   isExtraRunFileEditable, newExtraRunFileProblem, grismStructureError, rootElementError, problemLine,
   parseXsd, validateAgainstXsd, xsdProblemLine,
@@ -4424,15 +4424,17 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                         <td className="mono">{u.name}</td>
                         {/* the level, changeable in place except where it is fixed:
                             the device's own account, guest, and oneself */}
-                        <td>{userLevelFixed(u.name, me)
-                          ? <span title={tr("role." + privRole(u.priv) + ".tip")}>{tr("role." + privRole(u.priv))}</span>
+                        <td>{userLevelFixed(u.name, me) || isLastAdmin(u, users)
+                          ? <span title={tr(isLastAdmin(u, users) ? "set.acctLastAdmin" : "role." + privRole(u.priv) + ".tip")}>{tr("role." + privRole(u.priv))}
+                              {userLevelFixed(u.name, me) && <span className="dim"> {tr("set.acctSelf")}</span>}</span>
                           : <select className="acct-level" value={privLevel(u.priv)} disabled={acctBusy} title={tr("role." + privRole(u.priv) + ".tip")}
                               onChange={(e) => acctPost("/set_user_priv", { Username: u.name, Priv: Number(e.target.value) }, "set.acctLevelChanged")}>
                               {PRIV_ROLES.map(([role, p]) => <option key={role} value={p}>{tr("role." + role)}</option>)}
                             </select>}</td>
                         <td className="acct-act">
-                          {u.name === UNDELETABLE_USER
-                            ? <span className="dim">{tr("set.acctNoDelete")}</span>
+                          {isLastAdmin(u, users)
+                            ? <span className="dim" title={tr("set.acctLastAdmin")}>{tr("set.acctNoDelete")}</span>
+                            : userLevelFixed(u.name, me) ? null
                             : <button className="del" disabled={acctBusy}
                                 onClick={() => setConfirm({ kind: "delUser", name: u.name })}>{tr("set.acctDelete")}</button>}
                         </td>
