@@ -4547,7 +4547,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                         <div className="oattr-subhead">{x.type === "system" ? tr("set.lgSystemEvents") : tr("set.lgMatchedFields")}</div>
                         <div className="set-checks">
                           {(x.type === "system" ? SYSLOG_SYSTEM_SUBTYPES : SYSLOG_MATCHED_SUBTYPES).map((k) => (
-                            <label className="set-check" key={k}><input type="checkbox" checked={!!x.subtype?.[k]}
+                            <label className="set-check" key={k} title={k === "alert_device" ? tr("set.lgAlertDeviceTip") : undefined}><input type="checkbox" checked={!!x.subtype?.[k]}
                               onChange={(e) => patch("syslog", i, { subtype: { ...x.subtype, [k]: e.target.checked } })} /> {k}</label>
                           ))}
                         </div>

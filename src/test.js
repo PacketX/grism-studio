@@ -1175,6 +1175,8 @@ group("logging");
   check("netflow target written", xml.includes("<dport>9995</dport>") && xml.includes("<version>9</version>"));
   check("syslog target type written", xml.includes("<type>system</type>") && xml.includes("<type>matched</type>"));
   check("system subtypes written", xml.includes("<alert_power_failure>False</alert_power_failure>"));
+  check("the device-alert subtype is written too", xml.includes("<alert_device>"));
+  check("a new system target asks for device alerts", C.mkSyslogTarget("system").subtype.alert_device === true);
   check("matched subtypes written", xml.includes("<find_content>False</find_content>"));
   check("dns extras written", xml.includes("<response_only>False</response_only>") && xml.includes("<noerror_only>False</noerror_only>"));
   check("tls fingerprints written", xml.includes("<ja3>False</ja3>") && xml.includes("<ja4>True</ja4>"));

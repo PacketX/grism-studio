@@ -2990,7 +2990,9 @@ export function insertHeartbeatTarget(targets, target) {
 const s_ = (v) => String(v ?? "").trim();
 const n_ = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
-export const SYSLOG_SYSTEM_SUBTYPES = ["alert_dropped_packets", "alert_heartbeat_miss", "alert_power_failure", "common"];
+/* alert_device: the alerts the device raises on itself (Settings → Alerts),
+   sent by pywww rather than the engine */
+export const SYSLOG_SYSTEM_SUBTYPES = ["alert_dropped_packets", "alert_heartbeat_miss", "alert_power_failure", "alert_device", "common"];
 export const SYSLOG_MATCHED_SUBTYPES = ["sip", "dip", "sport", "dport", "protocol", "find_id", "find_content"];
 
 const parseTarget = (t) => ({

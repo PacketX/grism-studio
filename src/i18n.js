@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.222.0";
+export const STUDIO_VERSION = "2.223.0";
 
 export const I18N = {
   en: {
@@ -174,6 +174,7 @@ export const I18N = {
     "alert.bellTip": "Alerts on this device", "sys.alertsActive": "Active alerts",
     "set.alerts": "Alerts", "set.alertsNote": "The device checks these every 10 seconds, whether or not anyone has the page open. Raising and clearing an alert are written to the system log.",
     "set.alRule": "Rule", "set.alThreshold": "Threshold", "set.alClear": "Clears below threshold by", "set.alSustain": "Holds for (s)",
+    "set.lgAlertDeviceTip": "The alerts raised under Settings → Alerts: CPU, memory, disk, temperature, fans, services, input drops",
     "set.alMinPps": "At least (drops/s)", "set.alBad": "Check the highlighted values; the clear margin must be smaller than the threshold.", "sys.setTargets": "{n} targets", "sys.enabledServices": "Enabled services",
     "sys.lgSystem": "system events", "sys.lgMatched": "packet matches", "sys.needLogin": "Sign in to the device to view system status.",
     "sys.refresh": "Refresh", "sys.refreshing": "refreshing…", "sys.auto": "Auto-refresh",
@@ -1099,6 +1100,7 @@ export const I18N = {
     "alert.bellTip": "這台裝置的告警", "sys.alertsActive": "目前告警",
     "set.alerts": "告警", "set.alertsNote": "裝置每 10 秒檢查一次,不論是否有人開著網頁。告警的觸發與解除都會寫入系統紀錄。",
     "set.alRule": "規則", "set.alThreshold": "門檻", "set.alClear": "低於門檻多少才解除", "set.alSustain": "持續秒數",
+    "set.lgAlertDeviceTip": "設定 → 告警 裡的告警:CPU、記憶體、磁碟、溫度、風扇、服務、輸入丟包",
     "set.alMinPps": "至少(丟包/秒)", "set.alBad": "請檢查標示的數值;解除差距必須小於門檻。", "sys.setTargets": "{n} 個目標", "sys.enabledServices": "啟用的服務",
     "sys.lgSystem": "系統事件", "sys.lgMatched": "封包命中",
     "sys.refresh": "重新整理", "sys.refreshing": "整理中…", "sys.auto": "自動重整",
