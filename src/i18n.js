@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.218.0";
+export const STUDIO_VERSION = "2.219.0";
 
 export const I18N = {
   en: {
@@ -102,6 +102,9 @@ export const I18N = {
     "mec.ueIp": "UE IPv4",
     "mec.ulTraffic": "Uplink", "mec.dlTraffic": "Downlink", "mec.pkts": "pkts",
     "mec.showIds": "Show UE IDs and TEIDs", "mec.hideIds": "Hide UE IDs and TEIDs",
+    "mec.sortTip": "Order the whole table by this column; click again to reverse",
+    "mec.sortUnsupported": "This firmware cannot order the table; the rows are in the table's own order.",
+    "mec.sortLive": "Idle time and traffic change between refreshes, so rows can move between pages while auto-refresh is on.",
     "mec.trafficTip": "The UE's data-plane traffic, counted once its IP is known: uplink is from the UE IP, downlink to it. Bytes are whole frames as received.",
     "mec.idle": "Idle",
     "mec.empty": "Correlation is on, but the device has no items yet.",
@@ -1011,6 +1014,9 @@ export const I18N = {
     "mec.ueIp": "UE IPv4",
     "mec.ulTraffic": "上行流量", "mec.dlTraffic": "下行流量", "mec.pkts": "封包",
     "mec.showIds": "顯示 UE ID 與 TEID", "mec.hideIds": "隱藏 UE ID 與 TEID",
+    "mec.sortTip": "依此欄排序整張表;再點一次反向",
+    "mec.sortUnsupported": "此韌體不支援排序,表格維持原本的順序。",
+    "mec.sortLive": "閒置時間與流量每次重新整理都會變動,開著自動重新整理時,翻頁可能看到順序改變。",
     "mec.trafficTip": "UE 的 data plane 流量,取得 UE IP 後才開始統計:上行為來自 UE IP 的封包,下行為送往 UE IP 的封包。位元組為收到的完整封包長度。",
     "mec.idle": "閒置",
     "mec.empty": "關聯已開啟,但裝置目前沒有任何項目。",

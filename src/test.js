@@ -2211,6 +2211,15 @@ group("extra running-config files");
     check("a bad allow list entry is named", C.parseAllowList("1.2.3.4 10.1.2.300").bad === "10.1.2.300" && C.parseAllowList("1.2.3.4/33").bad === "1.2.3.4/33");
     check("an allow list covers an address inside a network", C.allowListCovers(["10.0.0.0/8"], "10.9.8.7") && !C.allowListCovers(["10.0.0.0/8"], "11.0.0.1") && C.allowListCovers(["0.0.0.0/0"], "1.2.3.4"));
   }
+  {
+    const q = new URLSearchParams(C.s1apQuery({ page: 2, size: 50, sort: { key: "dl-bytes", order: "desc" } }));
+    check("an order rides on the MEC query", q.get("sort") === "dl-bytes" && q.get("order") === "desc" && q.get("offset") === "50");
+    check("no order, no sort parameter", !new URLSearchParams(C.s1apQuery({})).has("sort"));
+    check("a new column starts the useful way", C.s1apNextSort(null, "idle").order === "desc" && C.s1apNextSort(null, "ue-ipv4").order === "asc");
+    check("the same column flips", C.s1apNextSort({ key: "idle", order: "desc" }, "idle").order === "asc");
+    check("the applied order is read back", C.parseS1apItems({ s1ap_items: [], s1ap_items_sort: ["ul-bytes", "desc"] }).sort.key === "ul-bytes"
+      && C.parseS1apItems({ s1ap_items: [] }).sort === null);
+  }
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
   check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");

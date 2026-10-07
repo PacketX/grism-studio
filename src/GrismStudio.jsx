@@ -52,7 +52,7 @@ import {
   SWITCH_MODES, SWITCH_RESTART_SECONDS,
   parseS1apItems, s1apPageCount, s1apClampPage, s1apWindow, s1apPageList, s1apParsePage, fmtIdle,
   s1apQuery, s1apUeFilterProblem, s1apIdleProblem, fmtCount,
-  S1AP_PAGE_SIZES, S1AP_PAGE_DEFAULT,
+  S1AP_PAGE_SIZES, S1AP_PAGE_DEFAULT, s1apNextSort,
   outputIndex, destLabel,
   parseL2greCorrelation,
   suggestName,
@@ -10180,8 +10180,25 @@ function MecTab({ loggedIn, t }) {
   const [confirm, setConfirm] = React.useState(null);   // { kind: "idle" | "all" }
   const [cleared, setCleared] = React.useState("");
   const seq = React.useRef(0);
-  const filters = React.useRef({ ue: "", all: false, idleOp: "le", idleSecs: "3600" });
-  filters.current = { ue, all, idleOp, idleSecs };
+  /* Column order, applied by the device over every matching row; null keeps
+     the table's own order. */
+  const [sort, setSort] = React.useState(null);
+  const filters = React.useRef({ ue: "", all: false, idleOp: "le", idleSecs: "3600", sort: null });
+  filters.current = { ue, all, idleOp, idleSecs, sort };
+  const sortBy = (key) => {
+    const next = s1apNextSort(sort, key);
+    setSort(next); filters.current = { ...filters.current, sort: next };
+    setPage(1); read(1, size);
+  };
+  const sortHead = (key, label, extra = "") => {
+    const on = data?.sort?.key === key;
+    return (
+      <th className={"mec-sortable" + (extra ? " " + extra : "") + (on ? " on" : "")} aria-sort={on ? (data.sort.order === "asc" ? "ascending" : "descending") : "none"}
+        title={tr("mec.sortTip")} onClick={() => sortBy(key)}>
+        {label}<span className="mec-sort-arrow" aria-hidden="true">{on ? (data.sort.order === "asc" ? " ▲" : " ▼") : " ↕"}</span>
+      </th>
+    );
+  };
 
   const read = React.useCallback(async (wantPage, wantSize) => {
     const mine = ++seq.current;
@@ -10212,7 +10229,7 @@ function MecTab({ loggedIn, t }) {
   const applyFilters = () => { setPage(1); read(1, size); };
   const clearFilters = () => {
     setUe(""); setAll(false); setIdleOp("le"); setIdleSecs("3600");
-    filters.current = { ue: "", all: false, idleOp: "le", idleSecs: "3600" };
+    filters.current = { ue: "", all: false, idleOp: "le", idleSecs: "3600", sort };
     setPage(1); read(1, size);
   };
   const filtered = !!String(ue).trim() || all || String(idleSecs).trim() !== "3600" || idleOp !== "le";
@@ -10329,6 +10346,10 @@ function MecTab({ loggedIn, t }) {
       {data?.truncated && <p className="set-hint warn">{tr("mec.truncated")}</p>}
 
       {data && rows.length === 0 && <p className="sys-note dim">{tr("mec.empty")}</p>}
+      {sort && data && !data.sort && <p className="set-hint warn">{tr("mec.sortUnsupported")}</p>}
+      {/* idle time and traffic move between refreshes, so rows can change
+          places -- and pages -- under a reader paging through them */}
+      {data?.sort && data.sort.key !== "ue-ipv4" && auto && data.matched > size && <p className="set-hint">{tr("mec.sortLive")}</p>}
 
       {rows.length > 0 && <div className="tf-table-wrap">
         <table className="tf-table">
@@ -10346,10 +10367,10 @@ function MecTab({ loggedIn, t }) {
             <th>{tr("mec.ulIp")}</th>
             {showIds && <th>{tr("mec.dlTeid")}</th>}
             <th>{tr("mec.dlIp")}</th>
-            <th>{tr("mec.ueIp")}</th>
-            <th className="tf-num" title={tr("mec.trafficTip")}>{tr("mec.ulTraffic")}</th>
-            <th className="tf-num" title={tr("mec.trafficTip")}>{tr("mec.dlTraffic")}</th>
-            <th>{tr("mec.idle")}</th>
+            {sortHead("ue-ipv4", tr("mec.ueIp"))}
+            {sortHead("ul-bytes", tr("mec.ulTraffic"), "tf-num")}
+            {sortHead("dl-bytes", tr("mec.dlTraffic"), "tf-num")}
+            {sortHead("idle", tr("mec.idle"))}
           </tr></thead>
           <tbody>
             {rows.map((r, i) => (

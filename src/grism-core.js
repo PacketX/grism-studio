@@ -5442,7 +5442,7 @@ export const s1apIdleProblem = (text) => {
 /* The query the page sends. Built here so the filters, the window and the
    "all" default are one testable thing rather than string concatenation
    spread through the component. */
-export function s1apQuery({ page = 1, size = S1AP_PAGE_DEFAULT, ue = "", all = false, idleOp = "le", idleSecs = "" } = {}) {
+export function s1apQuery({ page = 1, size = S1AP_PAGE_DEFAULT, ue = "", all = false, idleOp = "le", idleSecs = "", sort = null } = {}) {
   const { offset, limit } = s1apWindow(page, size);
   const q = new URLSearchParams();
   /* Three states, and the firmware spells them differently: a filter is the
@@ -5461,7 +5461,23 @@ export function s1apQuery({ page = 1, size = S1AP_PAGE_DEFAULT, ue = "", all = f
   }
   q.set("offset", String(offset));
   q.set("limit", String(limit));
+  // ordered by the device, over every matching row, before the page is cut
+  if (sort && S1AP_SORT_KEYS.includes(sort.key)) {
+    q.set("sort", sort.key);
+    q.set("order", sort.order === "desc" ? "desc" : "asc");
+  }
   return q.toString();
+}
+
+/* What the MEC table can be ordered by (statistics.c spells them the same). */
+export const S1AP_SORT_KEYS = ["ue-ipv4", "idle", "ul-bytes", "dl-bytes"];
+
+/* A click on a column header: the same column flips its direction, another
+   one starts the way it is most often wanted -- addresses up, idle time and
+   traffic down (longest idle, busiest first). */
+export function s1apNextSort(current, key) {
+  if (current?.key === key) return { key, order: current.order === "asc" ? "desc" : "asc" };
+  return { key, order: key === "ue-ipv4" ? "asc" : "desc" };
 }
 
 /* Seconds since a row was last touched, in a form that reads at a glance:
@@ -5515,6 +5531,10 @@ export function parseS1apItems(payload) {
     capacity: pair(p.s1ap_items_count)[1],
     teid: pair(p.s1ap_items_teid_count),
     sip: pair(p.s1ap_items_sip_count),
+    /* the order the device actually applied; null when it did not -- no
+       order asked for, or a firmware from before ordering */
+    sort: Array.isArray(p.s1ap_items_sort) && p.s1ap_items_sort[0]
+      ? { key: String(p.s1ap_items_sort[0]), order: p.s1ap_items_sort[1] === "desc" ? "desc" : "asc" } : null,
   };
 }
 
