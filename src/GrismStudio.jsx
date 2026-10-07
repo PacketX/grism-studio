@@ -1447,45 +1447,49 @@ function SystemStatusTab({ loggedIn, t }) {
   /* What the device is set to do: how it is reached, the servers it uses, and
      of the packet handling, the log outputs and the services only what is on.
      It sits below the host row, so it moves there once the status has loaded. */
+  /* A row only for what is there: a setting left empty, an output with no
+     collector or a login that is not handed to a server says nothing about
+     the device. */
+  const setRow = (label, value) => value && (<React.Fragment key={label}>
+    <span className="sys-set-k">{label}</span><span className="sys-set-v">{value}</span>
+  </React.Fragment>);
   const settingsCard = settings && (
       <section className="sys-card wide sys-settings">
         <h3 className="sys-card-title">{tr("sys.settings")}</h3>
         <div className="sys-set-grid">
-          <span className="sys-set-k">{tr("sys.mgmtIp")}</span>
-          <span className="sys-set-v">{settings.management.length === 0 ? <em className="dim">{tr("sys.setNone")}</em> :
+          {setRow(tr("sys.mgmtIp"), settings.management.length > 0 &&
             <span className="sys-set-lines">{settings.management.map((m) => (
               <span className="sys-set-line" key={m.name || m.ip}>
                 {m.name && <span className="sys-set-tag">{m.name}</span>}
                 <span className="mono">{m.ip}{m.netmask && " / " + m.netmask}</span>
                 {m.gateway && <em className="dim">{tr("sys.gateway")} <span className="mono">{m.gateway}</span></em>}
               </span>
-            ))}</span>}</span>
-          <span className="sys-set-k">{tr("set.timeServers")}</span>
-          <span className="sys-set-v mono">{settings.timeServers.length ? settings.timeServers.join(", ") : <em className="dim">{tr("sys.setNone")}</em>}</span>
-          <span className="sys-set-k">{tr("set.timezone")}</span>
-          <span className="sys-set-v">{settings.zone || <em className="dim">{tr("sys.setNone")}</em>}</span>
-          <span className="sys-set-k">{tr("set.nameServers")}</span>
-          <span className="sys-set-v mono">{settings.nameServers.length ? settings.nameServers.join(", ") : <em className="dim">{tr("sys.setNone")}</em>}</span>
-          <span className="sys-set-k">{tr("set.packet")}</span>
-          <span className="sys-set-v">{settings.packet.length === 0 ? <em className="dim">{tr("sys.setAllOff")}</em> :
+            ))}</span>)}
+          {setRow(tr("sys.loginAuth"), settings.auth &&
+            <span className="sys-set-line"><span className="sys-set-tag">{settings.auth.type}</span>
+              <span className="mono">{settings.auth.host}:{settings.auth.port}</span></span>)}
+          {setRow(tr("set.timeServers"), settings.timeServers.length > 0 &&
+            <span className="mono">{settings.timeServers.join(", ")}</span>)}
+          {setRow(tr("set.timezone"), settings.zone)}
+          {setRow(tr("set.nameServers"), settings.nameServers.length > 0 &&
+            <span className="mono">{settings.nameServers.join(", ")}</span>)}
+          {setRow(tr("set.packet"), settings.packet.length > 0 &&
             <span className="sys-set-tags">{settings.packet.map((x) => (
               <span className="sys-set-tag" key={x.key}>{tr(x.key)}
                 {x.all && <em> · {tr("set.dedupAllPorts")}</em>}
                 {x.detail && <em className="mono"> · {x.detail}</em>}
                 {x.count != null && <em> · {tr("sys.setTargets").replace("{n}", x.count)}</em>}</span>
-            ))}</span>}</span>
-          <span className="sys-set-k">{tr("set.logging")}</span>
-          <span className="sys-set-v">{settings.logging.length === 0 ? <em className="dim">{tr("sys.setAllOff")}</em> :
+            ))}</span>)}
+          {setRow(tr("set.logging"), settings.logging.length > 0 &&
             <span className="sys-set-lines">{settings.logging.map((x) => (
               <span className="sys-set-line" key={x.key || x.label}>
                 <span className="sys-set-tag">{x.key ? tr(x.key) : x.label}</span>
                 <span className="mono">{x.targets.map((t) => (typeof t === "string" ? t
                   : `${t.dest} (${tr(t.type === "system" ? "sys.lgSystem" : "sys.lgMatched")})`)).join(", ")}</span>
               </span>
-            ))}</span>}</span>
-          <span className="sys-set-k">{tr("sys.enabledServices")}</span>
-          <span className="sys-set-v">{settings.services.length === 0 ? <em className="dim">{tr("sys.setAllOff")}</em> :
-            <span className="sys-set-tags">{settings.services.map((n) => <span className="sys-set-tag mono" key={n}>{n}</span>)}</span>}</span>
+            ))}</span>)}
+          {setRow(tr("sys.enabledServices"), settings.services.length > 0 &&
+            <span className="sys-set-tags">{settings.services.map((n) => <span className="sys-set-tag mono" key={n}>{n}</span>)}</span>)}
         </div>
       </section>
   );
@@ -3212,6 +3216,18 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
       {state === "error" && <div className="sys-err">{tr("set.loadFailed")}: {errMsg}</div>}
       {submit.state === "error" && <div className="sys-err">{tr("set.submitFailed")}: {submit.msg}</div>}
       {submit.state === "ok" && <div className="set-ok-banner">{tr("set.applied")}</div>}
+      {/* The same state where it is seen: the Apply buttons sit on cards far
+          down the page, and the banner above is out of view from there. The
+          device takes a few seconds over a configuration, and nothing on the
+          page moved while it did. */}
+      {submit.state !== "idle" && (
+        <div className={"set-toast " + submit.state} role="status" aria-live="polite">
+          {submit.state === "sending" && <><Spinner inline label={tr("set.applying")} /> {tr("set.applying")}</>}
+          {submit.state === "ok" && tr("set.applied")}
+          {submit.state === "error" && <>{tr("set.submitFailed")}: {submit.msg}
+            <button className="set-toast-x" aria-label="close" onClick={() => setSubmit({ state: "idle", msg: "" })}>×</button></>}
+        </div>
+      )}
 
       {section === "switchif" && (
         <div className="set-forms">

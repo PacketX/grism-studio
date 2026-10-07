@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.220.1";
+export const STUDIO_VERSION = "2.221.0";
 
 export const I18N = {
   en: {
@@ -164,7 +164,7 @@ export const I18N = {
     "sys.loadingStatus": "Reading the device status…",
     "sys.title": "System status",
     "sys.settings": "Current settings", "sys.setNone": "not set", "sys.setAllOff": "nothing enabled",
-    "sys.mgmtIp": "Management IP", "sys.gateway": "gateway", "sys.setTargets": "{n} targets", "sys.enabledServices": "Enabled services",
+    "sys.mgmtIp": "Management IP", "sys.gateway": "gateway", "sys.loginAuth": "Login authentication", "sys.setTargets": "{n} targets", "sys.enabledServices": "Enabled services",
     "sys.lgSystem": "system events", "sys.lgMatched": "packet matches", "sys.needLogin": "Sign in to the device to view system status.",
     "sys.refresh": "Refresh", "sys.refreshing": "refreshing…", "sys.auto": "Auto-refresh",
     "sys.lastUpdated": "Updated", "sys.loadFailed": "Couldn't load system status",
@@ -1079,7 +1079,7 @@ export const I18N = {
     "sys.loadingStatus": "正在讀取裝置狀態…",
     "sys.title": "系統狀態", "sys.needLogin": "登入裝置以檢視系統狀態。",
     "sys.settings": "目前設定", "sys.setNone": "未設定", "sys.setAllOff": "沒有啟用的項目",
-    "sys.mgmtIp": "管理 IP", "sys.gateway": "閘道", "sys.setTargets": "{n} 個目標", "sys.enabledServices": "啟用的服務",
+    "sys.mgmtIp": "管理 IP", "sys.gateway": "閘道", "sys.loginAuth": "登入驗證", "sys.setTargets": "{n} 個目標", "sys.enabledServices": "啟用的服務",
     "sys.lgSystem": "系統事件", "sys.lgMatched": "封包命中",
     "sys.refresh": "重新整理", "sys.refreshing": "整理中…", "sys.auto": "自動重整",
     "sys.lastUpdated": "更新於", "sys.loadFailed": "無法載入系統狀態",

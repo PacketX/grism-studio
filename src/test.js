@@ -2251,6 +2251,11 @@ group("extra running-config files");
       && S.logging[0].targets[1].dest === "10.0.0.7:1514" && S.logging[0].targets[1].type === "matched");
     check("settings: an enabled output with no collector is left out", !S.logging.some((x) => x.key === "set.lgTls"));
     check("settings: enabled services, hidden ones left out", S.services.join() === "sshd,nginx");
+    check("settings: no login server, no auth", S.auth === null);
+    check("settings: a TACACS+ login", JSON.stringify(C.summarizeSettings({ views: { tacacsLogin: true, tacacsHost: "192.168.1.12", tacacsPort: 49 } }).auth)
+      === JSON.stringify({ type: "TACACS+", host: "192.168.1.12", port: 49 }));
+    check("settings: a RADIUS login, default port", C.summarizeSettings({ views: { radiusLogin: true, radiusHost: "10.0.0.2" } }).auth.port === 1812);
+    check("settings: switched on with no server is not a login server", C.summarizeSettings({ views: { tacacsLogin: true, tacacsHost: "" } }).auth === null);
     check("settings: only the management interfaces that are up", S.management.length === 1 && S.management[0].name === "M0"
       && S.management[0].ip === "192.168.1.150" && S.management[0].netmask === "255.255.255.0" && S.management[0].gateway === "192.168.1.1");
     const E = C.summarizeSettings({}, "");

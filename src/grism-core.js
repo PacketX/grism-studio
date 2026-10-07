@@ -3097,8 +3097,14 @@ export function summarizeSettings(cfg, zone = "") {
     .filter((f) => /^management/i.test(f?.role ?? "") && f.enable === true && s_(f.ip))
     .map((f) => ({ name: s_(f.name), ip: s_(f.ip), netmask: s_(f.netmask), gateway: s_(f.gateway) }));
 
+  /* the login server, when one is in use (the device uses one at a time) */
+  const v = parseViews(cfg);
+  const auth = v.tacacsLogin && v.tacacsHost ? { type: "TACACS+", host: v.tacacsHost, port: v.tacacsPort }
+    : v.radiusLogin && v.radiusHost ? { type: "RADIUS", host: v.radiusHost, port: v.radiusPort } : null;
+
   return {
     management,
+    auth,
     timeServers: list(a.timeServer, a.timeServer2),
     zone: s_(zone),
     nameServers: list(a.resolveNameServer, a.resolveNameServer2),

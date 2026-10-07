@@ -2129,3 +2129,11 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 @media (max-width: 640px) { .sys-set-grid { grid-template-columns: 1fr; gap: 2px; } .sys-set-k { margin-top: 6px; } }
 .sys-set-v em { font-style: normal; }
 .sys-settings { margin-bottom: 16px; }
+/* Settings: what an Apply is doing, wherever on the page it was pressed */
+.set-toast { position: fixed; right: 20px; bottom: 20px; z-index: 50; display: flex; align-items: center; gap: 8px;
+  max-width: min(480px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 10px; font-size: 13px;
+  background: var(--panel-2); border: 1px solid var(--line-2); color: var(--txt); box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+.set-toast.ok { border-color: rgba(52,211,153,.5); color: var(--match); }
+.set-toast.error { border-color: var(--notmatch); color: var(--notmatch); }
+.set-toast-x { margin-left: 6px; background: none; border: 0; color: inherit; font-size: 16px; cursor: pointer; line-height: 1; }
+@media (max-width: 640px) { .set-toast { left: 16px; right: 16px; bottom: 16px; } }
