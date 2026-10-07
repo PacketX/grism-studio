@@ -2280,6 +2280,16 @@ group("extra running-config files");
       && C.alertValueText({ rule: "temperature", value: 88 }) === "88 °C" && C.alertValueText({ rule: "fan", value: 1 }) === "");
     check("alerts: a sampler that is not running says so", C.parseAlerts({ running: false }).running === false);
   }
+  {
+    const T = C.parseTrapTargets({ trap_targets: [{ enable: true, host: "192.168.1.56", port: 162, community: "public" }, { host: "10.0.0.1" }] });
+    check("trap targets: parsed, defaults filled", T.length === 2 && T[1].port === 162 && T[1].community === "public" && T[1].enable === false);
+    check("trap targets: valid ones pass", C.trapTargetsProblems(T).length === 0);
+    check("trap targets: a bad address, port and community are caught",
+      ["host", "port", "community"].every((f) => C.trapTargetsProblems([{ host: "a b", port: 0, community: "" }]).some((p) => p.field === f)));
+    check("trap targets: at most eight", C.trapTargetsProblems(Array.from({ length: 9 }, () => C.mkTrapTarget()).map((t) => ({ ...t, host: "1.2.3.4" }))).some((p) => p.field === "count"));
+    check("trap targets: the payload trims and numbers", JSON.stringify(C.trapTargetsPayload([{ enable: 1, host: " 1.2.3.4 ", port: "1162", community: "x" }]))
+      === JSON.stringify([{ enable: true, host: "1.2.3.4", port: 1162, community: "x" }]));
+  }
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
   check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");

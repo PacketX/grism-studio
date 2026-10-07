@@ -16,6 +16,7 @@ import {
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
   mkSyslogTarget, parseHeartbeat, parseLogging, summarizeSettings,
   ALERT_RULE_META, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
+  MAX_TRAP_TARGETS, mkTrapTarget, parseTrapTargets, trapTargetsPayload, trapTargetsProblems,
   parseHeartbeatStatus, parseServiceExtras,
   parseServices, parseTimezones, tokenizeXml,
   mergePortStats, parseInterfacePorts, cloneForDup, collectRefs, describeDoc, filterProblems,
@@ -2355,6 +2356,9 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
   const [views, setViews] = React.useState(null);     // RADIUS / TACACS+ login
   const [alRules, setAlRules] = React.useState(null); // alert rules, as edited
   const [alBase, setAlBase] = React.useState(null);   // ... and as the device has them
+  const [trapTargets, setTrapTargets] = React.useState([]);
+  const [trapBase, setTrapBase] = React.useState([]);
+  const [trapTest, setTrapTest] = React.useState(null); // { busy } | { results } | { error }
   const [viewsBase, setViewsBase] = React.useState(null);
   const [fsList, setFsList] = React.useState(null);   // traffic service catalogue
   const [copied, setCopied] = React.useState(false);
@@ -2621,8 +2625,9 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
     try {
       const res = await fetch("/grism/task/get_alert_rules", { credentials: "include" });
       if (!res.ok) throw new Error("HTTP " + res.status);
-      const parsed = parseAlertRules(await res.json());
-      setAlBase(parsed); setAlRules(parsed);
+      const payload = await res.json();
+      const parsed = parseAlertRules(payload), traps = parseTrapTargets(payload);
+      setAlBase(parsed); setAlRules(parsed); setTrapBase(traps); setTrapTargets(traps);
     } catch (e) { warnFetch("alert rules", e); setAlBase([]); setAlRules([]); }
   }, []);
   React.useEffect(() => { if (loggedIn && section === "alerts" && !alRules) loadAlertRules(); }, [loggedIn, section, alRules, loadAlertRules]);
@@ -2630,13 +2635,24 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
     setSubmit({ state: "sending", msg: "" });
     try {
       const res = await fetch("/grism/task/set_alert_rules", { method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(alertRulesPayload(alRules)) });
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...alertRulesPayload(alRules), trap_targets: trapTargetsPayload(trapTargets) }) });
       if (!res.ok) throw new Error((await res.text()).trim() || "HTTP " + res.status);
-      const parsed = parseAlertRules(await res.json());
-      setAlBase(parsed); setAlRules(parsed);
+      const payload = await res.json();
+      const parsed = parseAlertRules(payload), traps = parseTrapTargets(payload);
+      setAlBase(parsed); setAlRules(parsed); setTrapBase(traps); setTrapTargets(traps);
       setSubmit({ state: "ok", msg: "" });
       setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+  const testTraps = async () => {
+    setTrapTest({ busy: true });
+    try {
+      const res = await fetch("/grism/task/test_alert_trap", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trap_targets: trapTargetsPayload(trapTargets) }) });
+      if (!res.ok) throw new Error((await res.text()).trim() || "HTTP " + res.status);
+      setTrapTest({ results: (await res.json()).results ?? [] });
+    } catch (e) { setTrapTest({ error: String(e.message || e) }); }
   };
   const loadViews = React.useCallback(async () => {
     try {
@@ -4618,11 +4634,13 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
             const problems = alertRulesProblems(alRules);
             const bad = (id, f) => problems.some((p) => p.id === id && p.field === f);
             const patch = (id, p) => setAlRules((rs) => rs.map((r) => (r.id === id ? { ...r, ...p } : r)));
-            const dirty = JSON.stringify(alRules) !== JSON.stringify(alBase);
+            const trapProblems = trapTargetsProblems(trapTargets);
+            const dirty = JSON.stringify(alRules) !== JSON.stringify(alBase) || JSON.stringify(trapTargets) !== JSON.stringify(trapBase);
             const num = (r, f, step) => !ALERT_RULE_META[r.id].fields.includes(f) ? <span className="dim">—</span> : (
               <input type="number" min="0" step={step} className={"al-num" + (bad(r.id, f) ? " bad" : "")} value={r[f]}
                 disabled={!r.enable} onChange={(e) => patch(r.id, { [f]: e.target.value })} />);
             return (
+              <>
               <section className="sys-card">
                 <h3 className="sys-card-title">{tr("set.alerts")}</h3>
                 <p className="set-hint">{tr("set.alertsNote")}</p>
@@ -4646,12 +4664,61 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                   </table>
                 </div>
                 {problems.length > 0 && <p className="set-hint warn">{tr("set.alBad")}</p>}
-                <div className="set-actions">
-                  <button className="copy-btn" disabled={!dirty} onClick={() => setAlRules(alBase)}>{tr("set.revert")}</button>
-                  <button className="sys-refresh" disabled={submit.state === "sending" || !dirty || problems.length > 0}
-                    onClick={submitAlertRules}>{tr("set.apply")}</button>
-                </div>
               </section>
+              <section className="sys-card">
+                <h3 className="sys-card-title">{tr("set.trapTitle")}</h3>
+                <p className="set-hint">{tr("set.trapNote")}</p>
+                {trapTargets.length === 0 && <p className="sys-note dim">{tr("set.trapNone")}</p>}
+                {trapTargets.length > 0 && (
+                  <div className="al-table-wrap">
+                    <table className="al-table">
+                      <thead><tr><th>{tr("set.enabled")}</th><th>{tr("set.trapHost")}</th><th>{tr("set.bkPort")}</th>
+                        <th>{tr("set.trapCommunity")}</th><th /></tr></thead>
+                      <tbody>
+                        {trapTargets.map((t, i) => {
+                          const tbad = (f) => trapProblems.some((p) => p.row === i && p.field === f);
+                          const tpatch = (p) => setTrapTargets((ts) => ts.map((x, j) => (j === i ? { ...x, ...p } : x)));
+                          return (
+                            <tr key={i} className={t.enable ? "" : "port-off"}>
+                              <td><input type="checkbox" checked={t.enable} onChange={(e) => tpatch({ enable: e.target.checked })} /></td>
+                              <td><input className={"al-host" + (tbad("host") ? " bad" : "")} value={t.host} placeholder="192.168.1.10"
+                                onChange={(e) => tpatch({ host: e.target.value })} /></td>
+                              <td><input type="number" min="1" max="65535" className={"al-num" + (tbad("port") ? " bad" : "")} value={t.port}
+                                onChange={(e) => tpatch({ port: e.target.value })} /></td>
+                              <td><input className={"al-host" + (tbad("community") ? " bad" : "")} value={t.community}
+                                onChange={(e) => tpatch({ community: e.target.value })} /></td>
+                              <td><button className="copy-btn" onClick={() => setTrapTargets((ts) => ts.filter((_, j) => j !== i))}>{tr("set.trapRemove")}</button></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <div className="add-row">
+                  <button className="add-btn" disabled={trapTargets.length >= MAX_TRAP_TARGETS}
+                    onClick={() => setTrapTargets((ts) => [...ts, mkTrapTarget()])}>{tr("set.trapAdd")}</button>
+                  <button className="copy-btn" disabled={trapTest?.busy || trapProblems.length > 0 || !trapTargets.some((t) => t.enable)}
+                    onClick={testTraps}>{trapTest?.busy ? tr("set.trapTesting") : tr("set.trapTest")}</button>
+                </div>
+                {trapProblems.length > 0 && <p className="set-hint warn">{tr("set.trapBad")}</p>}
+                {trapTest?.error && <p className="set-hint warn">{trapTest.error}</p>}
+                {trapTest?.results && (
+                  <ul className="trap-results">
+                    {trapTest.results.map((r, i) => (
+                      <li key={i} className={r.ok ? "ok" : "bad"}><span className="mono">{r.target}</span>{" "}
+                        {r.ok ? tr("set.trapSent") : tr("set.trapFailed") + (r.error ? ": " + r.error : "")}</li>
+                    ))}
+                    <li className="dim">{tr("set.trapSentNote")}</li>
+                  </ul>
+                )}
+              </section>
+              <div className="set-actions">
+                <button className="copy-btn" disabled={!dirty} onClick={() => { setAlRules(alBase); setTrapTargets(trapBase); }}>{tr("set.revert")}</button>
+                <button className="sys-refresh" disabled={submit.state === "sending" || !dirty || problems.length > 0 || trapProblems.length > 0}
+                  onClick={submitAlertRules}>{tr("set.apply")}</button>
+              </div>
+              </>
             );
           })()}
         </div>

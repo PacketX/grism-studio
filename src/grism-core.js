@@ -6543,6 +6543,28 @@ export function alertRulesProblems(rules) {
   return out;
 }
 
+/* SNMP trap targets (SNMPv2c): where the alerts, and the system traps of
+   packetx_trap_dispatcher, are sent. */
+export const MAX_TRAP_TARGETS = 8;
+export const mkTrapTarget = () => ({ enable: true, host: "", port: 162, community: "public" });
+export const parseTrapTargets = (payload) => (payload?.trap_targets ?? []).map((t) => ({
+  enable: t?.enable === true, host: s_(t?.host), port: n_(t?.port, 162), community: s_(t?.community) || "public",
+}));
+export function trapTargetsProblems(targets) {
+  const out = [];
+  (targets ?? []).forEach((t, i) => {
+    if (!/^[A-Za-z0-9.:_-]{1,253}$/.test(String(t.host ?? "").trim())) out.push({ row: i, field: "host" });
+    const p = Number(t.port);
+    if (String(t.port ?? "").trim() === "" || !Number.isInteger(p) || p < 1 || p > 65535) out.push({ row: i, field: "port" });
+    if (!/^[\x21-\x7e]{1,64}$/.test(String(t.community ?? ""))) out.push({ row: i, field: "community" });
+  });
+  if ((targets ?? []).length > MAX_TRAP_TARGETS) out.push({ row: -1, field: "count" });
+  return out;
+}
+export const trapTargetsPayload = (targets) => (targets ?? []).map((t) => ({
+  enable: !!t.enable, host: String(t.host ?? "").trim(), port: Number(t.port), community: String(t.community ?? ""),
+}));
+
 export const alertRulesPayload = (rules) => ({
   rules: (rules ?? []).map((r) => {
     const out = { id: r.id, enable: !!r.enable };

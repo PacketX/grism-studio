@@ -2167,3 +2167,8 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .al-table td{padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap;}
 .al-num{width:90px;}
 .al-num.bad{border-color:var(--notmatch);}
+.al-host{width:170px;}
+.al-host.bad{border-color:var(--notmatch);}
+.trap-results{list-style:none; margin:10px 0 0; padding:0; font-size:12.5px; display:flex; flex-direction:column; gap:4px;}
+.trap-results li.ok{color:var(--match);}
+.trap-results li.bad{color:var(--notmatch);}
