@@ -1743,6 +1743,8 @@ function SystemLogTab({ loggedIn, t }) {
   const [updatedAt, setUpdatedAt] = React.useState(null);
   const [follow, setFollow] = React.useState(true);
   const boxRef = React.useRef(null);
+  const [confirmClear, setConfirmClear] = React.useState(false);
+  const [clearErr, setClearErr] = React.useState("");
 
   const load = React.useCallback(async () => {
     setState((p) => (p === "ok" ? "ok" : "loading"));
@@ -1757,6 +1759,16 @@ function SystemLogTab({ loggedIn, t }) {
   React.useLayoutEffect(() => {
     if (follow && boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
   }, [text, follow]);
+  /* Empties log.txt and the rotated files behind it; the device then writes
+     who did it as the first line, which the reload below shows. */
+  const clearLog = async () => {
+    setConfirmClear(false); setClearErr("");
+    try {
+      const res = await fetch("/grism/task/clear_log", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error(res.status === 401 ? tr("log.clearDenied") : "HTTP " + res.status);
+      await load();
+    } catch (e) { setClearErr(String(e.message || e)); }
+  };
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
   const lines = text ? text.replace(/\s+$/, "").split("\n") : [];
@@ -1771,9 +1783,21 @@ function SystemLogTab({ loggedIn, t }) {
             onChange={(e) => setFollow(e.target.checked)} /> {tr("log.follow")}</label>
           <button className="sys-refresh" onClick={load} disabled={state === "loading"}>
             {state === "loading" ? tr("sys.refreshing") : tr("sys.refresh")}</button>
+          <button className="del" onClick={() => setConfirmClear(true)}>{tr("log.clear")}</button>
         </div>
       </div>
       {state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {errMsg}</div>}
+      {clearErr && <div className="sys-err">{tr("log.clearFailed")}: {clearErr}</div>}
+      {confirmClear && (
+        <div className="modal-scrim" onClick={() => setConfirmClear(false)}>
+          <div className="modal modal-warn" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">{tr("log.clearTitle")}</div>
+            <p className="modal-body">{tr("log.clearBody")}</p>
+            <button className="opt drop" onClick={clearLog}><span className="opt-name">{tr("log.clear")}</span></button>
+            <button className="opt-cancel" onClick={() => setConfirmClear(false)}>{tr("common.cancel")}</button>
+          </div>
+        </div>
+      )}
       <pre className="syslog-box" ref={boxRef}
         onScroll={(e) => {
           const el = e.currentTarget;

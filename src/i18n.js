@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.217.0";
+export const STUDIO_VERSION = "2.218.0";
 
 export const I18N = {
   en: {
@@ -235,6 +235,9 @@ export const I18N = {
     "set.nameServers": "Name servers (DNS)",
     "tab.syslog": "System log",
     "log.title": "System log", "log.follow": "follow", "log.empty": "The log is empty.",
+    "log.clear": "Clear log", "log.clearTitle": "Clear the system log?",
+    "log.clearBody": "Every line on the device is removed, the rotated older files included, and cannot be brought back. The device then notes who cleared it.",
+    "log.clearFailed": "Could not clear the log", "log.clearDenied": "only an administrator can clear the log",
     "set.backup": "Backup & restore", "set.firmware": "Firmware",
     "set.backupNote": "Take a copy of the device's configuration before making large changes, and restore it if something goes wrong.",
     "set.bkTake": "Backup", "set.bkTakeNote": "Package the current configuration into an archive you can download and keep.",
@@ -1141,6 +1144,9 @@ export const I18N = {
     "set.nameServers": "名稱伺服器 (DNS)",
     "tab.syslog": "系統紀錄",
     "log.title": "系統紀錄", "log.follow": "自動捲動", "log.empty": "紀錄是空的。",
+    "log.clear": "清空紀錄", "log.clearTitle": "要清空系統紀錄嗎?",
+    "log.clearBody": "設備上的所有紀錄都會刪除,包含輪替保存的舊紀錄,且無法復原。清空後設備會記下是誰執行的。",
+    "log.clearFailed": "無法清空紀錄", "log.clearDenied": "只有管理員可以清空紀錄",
     "set.backup": "備份與還原", "set.firmware": "韌體",
     "set.backupNote": "在進行大幅變更前先備份裝置設定,萬一出問題可以還原回來。",
     "set.bkTake": "備份", "set.bkTakeNote": "將目前設定打包成可下載保存的封存檔。",
