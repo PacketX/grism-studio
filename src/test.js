@@ -830,7 +830,7 @@ group("settings builders");
   const withHidden = C.parseServices({ services: [{ name: "grism" }, { name: "bsem_wd_feed" },
     { name: "telnetd" }, { name: "sshd" }, { name: "ftpd" },
     { name: "packetx_trap_dispatcher" }, { name: "statistics_backup" }] });
-  check("internal services hidden", withHidden.map((x) => x.name).join() === "grism,sshd");
+  check("internal services hidden", withHidden.map((x) => x.name).join() === "grism,sshd,packetx_trap_dispatcher");
   check("service enable read", svc[0].enable === true && svc[1].enable === false);
   check("description read", svc[0].description === "SSHD Service");
   const toggled = svc.map((x) => x.name === "lldpd" ? { ...x, enable: true } : x);

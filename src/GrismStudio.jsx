@@ -4769,7 +4769,10 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                             {behind && <span className="svc-ver-2" title={"pywww " + behind}>pywww {behind}</span>}
                           </>);
                         })()}</td>
-                        <td className="dim">{x.description || "—"}</td>
+                        {/* a few configurations describe a service wrongly (the trap
+                            dispatcher calls itself a listener); a description of
+                            our own wins where there is one */}
+                        <td className="dim">{(tr("svcDesc." + x.name) !== "svcDesc." + x.name ? tr("svcDesc." + x.name) : x.description) || "—"}</td>
                         {/* The packet application has no switch: a device with
                             it off forwards nothing, which is not a configuration
                             anyone means to make. */}

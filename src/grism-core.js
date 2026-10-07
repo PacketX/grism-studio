@@ -2550,7 +2550,7 @@ export function buildServicesConfigSet(services) {
 /* Internal daemons the operator has no reason to toggle from here — they're
    either managed by the platform or would cut off the very session being used. */
 export const HIDDEN_SERVICES = new Set([
-  "bsem_wd_feed", "telnetd", "ftpd", "packetx_trap_dispatcher", "statistics_backup",
+  "bsem_wd_feed", "telnetd", "ftpd", "statistics_backup",
   // xmlrpc is not a service of its own: it is the interface grism itself
   // listens on, so a row for it would be a second row for grism.
   "xmlrpc",
