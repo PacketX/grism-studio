@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.221.0";
+export const STUDIO_VERSION = "2.221.1";
 
 export const I18N = {
   en: {
@@ -352,7 +352,7 @@ export const I18N = {
     "set.acctWhoUnknown": "Cannot tell which account is signed in, so the password cannot be changed from here.",
     "set.acctSignIn": "Could not read the account list — sign in to the device again.",
     "set.acctFallbackOnly": "These accounts can only be used while the authentication server is unreachable.",
-    "set.authNote": "Check credentials against an external server when signing in to the device. Local accounts keep working either way.",
+    "set.authNote": "Check credentials against an external server when signing in to the device. While it is enabled, local accounts can sign in only when the server cannot be reached.",
     "set.liveUpdate": "Live filter updates",
     "set.liveUpdateOn": "Apply filter changes without interrupting traffic",
     "set.liveUpdateNote": "Rebuilds filters in the background when they change, so large IP, DNS name, HTTP host or TLS server-name blocklists can be updated without dropping traffic or restarting the engine.",
@@ -1267,7 +1267,7 @@ export const I18N = {
     "set.acctWhoUnknown": "無法判斷目前登入的帳號,因此無法在此變更密碼。",
     "set.acctSignIn": "無法讀取帳號列表 — 請重新登入裝置。",
     "set.acctFallbackOnly": "這些帳號只有在伺服器斷線時才能使用。",
-    "set.authNote": "登入裝置時改向外部伺服器驗證帳密。無論是否啟用,本機帳號都仍可使用。",
+    "set.authNote": "登入裝置時改向外部伺服器驗證帳密。啟用後,本機帳號只有在伺服器無法連線時才能登入。",
     "set.liveUpdate": "篩選器即時更新",
     "set.liveUpdateOn": "更新篩選器時不中斷流量",
     "set.liveUpdateNote": "篩選器變更時在背景重建,讓 IP、DNS 名稱、HTTP host、TLS server name 等大量黑名單更新時不丟封包、也不需要重啟引擎。",
