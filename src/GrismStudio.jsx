@@ -15,6 +15,7 @@ import {
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
   mkSyslogTarget, parseHeartbeat, parseLogging, summarizeSettings,
+  ALERT_RULE_META, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
   parseHeartbeatStatus, parseServiceExtras,
   parseServices, parseTimezones, tokenizeXml,
   mergePortStats, parseInterfacePorts, cloneForDup, collectRefs, describeDoc, filterProblems,
@@ -340,6 +341,28 @@ export default function GrismStudio() {
   const t = useMemo(() => makeT(lang), [lang]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [login, setLogin] = useState({ open: false, user: "", pass: "", busy: false, err: "", ok: false, who: null, ro: false });
+  /* The device's alerts, read here once for every place that shows them --
+     the bell in the topbar and the System status page. */
+  const [alerts, setAlerts] = useState(null);
+  const loadAlerts = useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_alerts", { credentials: "include" });
+      if (res.ok) setAlerts(parseAlerts(await res.json()));
+    } catch { /* the bell keeps what it last had */ }
+  }, []);
+  useEffect(() => {
+    if (!login.who) { setAlerts(null); return; }
+    loadAlerts();
+    const id = setInterval(loadAlerts, 10000);
+    return () => clearInterval(id);
+  }, [login.who, loadAlerts]);
+  const ackAlert = useCallback(async (key) => {
+    try {
+      await fetch("/grism/task/ack_alert", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) });
+    } catch (e) { warnFetch("acknowledge alert", e); }
+    loadAlerts();
+  }, [loadAlerts]);
 
   /* The L2GRE correlation table only exists on a device that is decapsulating
      L2GRE, so its page appears only when the device has rows to show. Read once
@@ -992,6 +1015,7 @@ export default function GrismStudio() {
             <button className="undo-btn" onClick={doRedo} disabled={!canRedo} title={t("undo.redo")} aria-label={t("undo.redo")}>↷</button>
           </div>
         )}
+        {login.who && <AlertBell alerts={alerts} t={t} canAck={!login.ro} onAck={ackAlert} />}
         {/* Account menu: session, language and theme live behind one control so the
             topbar stays focused on the work rather than on settings. */}
         <div className="acct-wrap">
@@ -1135,7 +1159,7 @@ export default function GrismStudio() {
             onGoto={goTab} />
         )}
         {tab === "status" && (
-          <SystemStatusTab loggedIn={!!login.who} t={t} />
+          <SystemStatusTab loggedIn={!!login.who} t={t} alerts={alerts} canAck={!login.ro} onAck={ackAlert} />
         )}
         {tab === "syslog" && (
           <SystemLogTab loggedIn={!!login.who} t={t} />
@@ -1353,7 +1377,77 @@ function OverviewTab({ doc, docSource, templateName, onGoto, lang, t, loggedIn, 
 }
 // Pick a template field in the requested language, falling back to the base field.
 // e.g. tmplText(tpl, "detail", "zh-TW") → tpl.detail_zh || tpl.detail.
-function SystemStatusTab({ loggedIn, t }) {
+/* The topbar's alert bell: how many are up, and a panel listing them. Red
+   while any is unacknowledged; acknowledging only quiets the bell -- the
+   alert stays until the device clears it. */
+function fmtAlertTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000), today = new Date();
+  return d.toDateString() === today.toDateString() ? d.toLocaleTimeString() : d.toLocaleString();
+}
+function alertTitle(a, tr) {
+  return tr("alert.r." + a.rule) + (a.subject && a.rule !== "grism_zombie" ? " · " + a.subject : "");
+}
+function AlertList({ alerts, tr, canAck, onAck }) {
+  const active = alerts?.active ?? [];
+  if (!active.length) return <p className="sys-note dim">{tr("alert.none")}</p>;
+  return (
+    <ul className="alert-list">
+      {active.map((a) => (
+        <li key={a.key} className={"alert-row" + (a.acked ? " acked" : "")}>
+          <span className="alert-dot" aria-hidden="true" />
+          <span className="alert-what">{alertTitle(a, tr)}
+            {alertValueText(a) && <span className="alert-val mono"> {alertValueText(a)}</span>}</span>
+          <span className="alert-when dim">{tr("alert.since")} {fmtAlertTime(a.fired)}</span>
+          {a.acked ? <span className="alert-acked dim">{tr("alert.acked")}</span>
+            : canAck && <button className="copy-btn alert-ack" onClick={() => onAck(a.key)}>{tr("alert.ack")}</button>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+function AlertBell({ alerts, t, canAck, onAck }) {
+  const tr = t || ((k) => k);
+  const [open, setOpen] = React.useState(false);
+  const btnRef = React.useRef(null);
+  const pos = useAnchoredPos(open, btnRef, 380);
+  const count = alerts?.active?.length ?? 0;
+  const unacked = alertUnacked(alerts);
+  return (
+    <div className="acct-wrap alert-wrap">
+      <button ref={btnRef} className={"acct-btn alert-btn" + (unacked ? " hot" : count ? " warm" : "") + (open ? " on" : "")}
+        onClick={() => setOpen((v) => !v)} title={tr("alert.bellTip")} aria-label={tr("alert.bellTip")} aria-expanded={open}>
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+        {count > 0 && <span className="alert-count">{count}</span>}
+      </button>
+      {open && (<>
+        <div className="acct-scrim" onClick={() => setOpen(false)} />
+        <div className="acct-menu alert-panel" style={pos ? { top: pos.top, left: pos.left, width: pos.width } : undefined}>
+          <div className="alert-head">
+            <strong>{tr("alert.title")}</strong>
+            {canAck && unacked > 1 && <button className="copy-btn" onClick={() => onAck("*")}>{tr("alert.ackAll")}</button>}
+          </div>
+          {alerts && !alerts.running && <p className="set-hint warn">{tr("alert.notRunning")}</p>}
+          <AlertList alerts={alerts} tr={tr} canAck={canAck} onAck={onAck} />
+          {(alerts?.events?.length ?? 0) > 0 && (<>
+            <div className="alert-sub">{tr("alert.recent")}</div>
+            <ul className="alert-events">
+              {alerts.events.slice(0, 10).map((e, i) => (
+                <li key={i}><span className={"alert-kind " + e.kind}>{tr(e.kind === "fired" ? "alert.fired" : "alert.cleared")}</span>
+                  <span>{alertTitle(e, tr)}</span>
+                  {alertValueText(e) && <span className="mono dim">{alertValueText(e)}</span>}
+                  <span className="dim">{fmtAlertTime(e.ts)}</span></li>
+              ))}
+            </ul>
+          </>)}
+        </div>
+      </>)}
+    </div>
+  );
+}
+
+function SystemStatusTab({ loggedIn, t, alerts = null, canAck = false, onAck }) {
   const tr = t || ((k) => k);
   const [status, setStatus] = React.useState(null);
   const [state, setState] = React.useState("idle"); // idle | loading | ok | error
@@ -1512,6 +1606,13 @@ function SystemStatusTab({ loggedIn, t }) {
       </div>
 
       {state === "error" && <div className="sys-err">{tr("sys.loadFailed")}: {errMsg}</div>}
+
+      {(alerts?.active?.length ?? 0) > 0 && (
+        <section className="sys-card wide alert-banner">
+          <h3 className="sys-card-title">{tr("sys.alertsActive")} <span className="sys-card-metric">{alerts.active.length}</span></h3>
+          <AlertList alerts={alerts} tr={tr} canAck={canAck} onAck={onAck} />
+        </section>
+      )}
 
       {/* the first read, with nothing on the page behind it yet */}
       {state === "loading" && !status && <Spinner label={tr("sys.loadingStatus")} />}
@@ -2252,6 +2353,8 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
     } finally { setBypassBusy(0); }
   };
   const [views, setViews] = React.useState(null);     // RADIUS / TACACS+ login
+  const [alRules, setAlRules] = React.useState(null); // alert rules, as edited
+  const [alBase, setAlBase] = React.useState(null);   // ... and as the device has them
   const [viewsBase, setViewsBase] = React.useState(null);
   const [fsList, setFsList] = React.useState(null);   // traffic service catalogue
   const [copied, setCopied] = React.useState(false);
@@ -2514,6 +2617,27 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
     return () => { alive = false; clearInterval(id); };
   }, [dlActive]);
 
+  const loadAlertRules = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_alert_rules", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const parsed = parseAlertRules(await res.json());
+      setAlBase(parsed); setAlRules(parsed);
+    } catch (e) { warnFetch("alert rules", e); setAlBase([]); setAlRules([]); }
+  }, []);
+  React.useEffect(() => { if (loggedIn && section === "alerts" && !alRules) loadAlertRules(); }, [loggedIn, section, alRules, loadAlertRules]);
+  const submitAlertRules = async () => {
+    setSubmit({ state: "sending", msg: "" });
+    try {
+      const res = await fetch("/grism/task/set_alert_rules", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(alertRulesPayload(alRules)) });
+      if (!res.ok) throw new Error((await res.text()).trim() || "HTTP " + res.status);
+      const parsed = parseAlertRules(await res.json());
+      setAlBase(parsed); setAlRules(parsed);
+      setSubmit({ state: "ok", msg: "" });
+      setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
   const loadViews = React.useCallback(async () => {
     try {
       const parsed = parseViews(await getConfig());
@@ -3180,6 +3304,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
             <button className={section === "auth" ? "on" : ""} onClick={() => setSection("auth")}>{tr("set.auth")}</button>
             <button className={section === "logging" ? "on" : ""} onClick={() => setSection("logging")}>{tr("set.logging")}</button>
             <button className={section === "services" ? "on" : ""} onClick={() => setSection("services")}>{tr("set.services")}</button>
+            <button className={section === "alerts" ? "on" : ""} onClick={() => setSection("alerts")}>{tr("set.alerts")}</button>
             <button className={section === "backup" ? "on" : ""} onClick={() => setSection("backup")}>{tr("set.backup")}</button>
             <button className={section === "firmware" ? "on" : ""} onClick={() => setSection("firmware")}>{tr("set.firmware")}</button>
             <button className={section === "raw" ? "on" : ""} onClick={() => setSection("raw")}>{tr("set.rawXml")}</button>
@@ -3202,6 +3327,7 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
               else if (section === "services") { setSvc(null); loadServices(); }
               else if (section === "logging") { setLg(null); loadLogging(); }
               else if (section === "auth") { setViews(null); loadViews(); }
+              else if (section === "alerts") { setAlRules(null); loadAlertRules(); }
               else { setEditingRaw(false); load(); }
             }}>
             {state === "loading" ? tr("set.loading") : tr("set.load")}</button>
@@ -4482,6 +4608,51 @@ function SettingsTab({ loggedIn, readOnly = false, t, portOptions = DEFAULT_PORT
                   onClick={() => setConfirm({ kind: "logging" })}>{tr("set.apply")}</button>
               </div>
             </>);
+          })()}
+        </div>
+      )}
+
+      {section === "alerts" && (
+        <div className="set-forms">
+          {!alRules ? <p className="sys-note dim">{tr("set.loading")}</p> : (() => {
+            const problems = alertRulesProblems(alRules);
+            const bad = (id, f) => problems.some((p) => p.id === id && p.field === f);
+            const patch = (id, p) => setAlRules((rs) => rs.map((r) => (r.id === id ? { ...r, ...p } : r)));
+            const dirty = JSON.stringify(alRules) !== JSON.stringify(alBase);
+            const num = (r, f, step) => !ALERT_RULE_META[r.id].fields.includes(f) ? <span className="dim">—</span> : (
+              <input type="number" min="0" step={step} className={"al-num" + (bad(r.id, f) ? " bad" : "")} value={r[f]}
+                disabled={!r.enable} onChange={(e) => patch(r.id, { [f]: e.target.value })} />);
+            return (
+              <section className="sys-card">
+                <h3 className="sys-card-title">{tr("set.alerts")}</h3>
+                <p className="set-hint">{tr("set.alertsNote")}</p>
+                <div className="al-table-wrap">
+                  <table className="al-table">
+                    <thead><tr><th>{tr("set.alRule")}</th><th>{tr("set.enabled")}</th><th>{tr("set.alThreshold")}</th>
+                      <th>{tr("set.alClear")}</th><th>{tr("set.alMinPps")}</th><th>{tr("set.alSustain")}</th></tr></thead>
+                    <tbody>
+                      {alRules.map((r) => (
+                        <tr key={r.id} className={r.enable ? "" : "port-off"}>
+                          <td>{tr("alert.r." + r.id)}</td>
+                          <td><input type="checkbox" checked={r.enable} onChange={(e) => patch(r.id, { enable: e.target.checked })} /></td>
+                          <td>{num(r, "threshold", "any")}{ALERT_RULE_META[r.id].unit && ALERT_RULE_META[r.id].fields.includes("threshold") &&
+                            <span className="dim"> {ALERT_RULE_META[r.id].unit}</span>}</td>
+                          <td>{num(r, "clear", "any")}</td>
+                          <td>{num(r, "min_pps", "1")}</td>
+                          <td>{num(r, "sustain", "1")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {problems.length > 0 && <p className="set-hint warn">{tr("set.alBad")}</p>}
+                <div className="set-actions">
+                  <button className="copy-btn" disabled={!dirty} onClick={() => setAlRules(alBase)}>{tr("set.revert")}</button>
+                  <button className="sys-refresh" disabled={submit.state === "sending" || !dirty || problems.length > 0}
+                    onClick={submitAlertRules}>{tr("set.apply")}</button>
+                </div>
+              </section>
+            );
           })()}
         </div>
       )}

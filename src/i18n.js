@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.221.1";
+export const STUDIO_VERSION = "2.222.0";
 
 export const I18N = {
   en: {
@@ -164,7 +164,17 @@ export const I18N = {
     "sys.loadingStatus": "Reading the device status…",
     "sys.title": "System status",
     "sys.settings": "Current settings", "sys.setNone": "not set", "sys.setAllOff": "nothing enabled",
-    "sys.mgmtIp": "Management IP", "sys.gateway": "gateway", "sys.loginAuth": "Login authentication", "sys.setTargets": "{n} targets", "sys.enabledServices": "Enabled services",
+    "sys.mgmtIp": "Management IP", "sys.gateway": "gateway", "sys.loginAuth": "Login authentication",
+    "alert.r.cpu": "CPU (excluding the packet engine)", "alert.r.memory": "Memory", "alert.r.disk": "Disk",
+    "alert.r.temperature": "Temperature", "alert.r.fan": "Fan fault", "alert.r.grism_zombie": "Packet engine zombie (Z)",
+    "alert.r.service_down": "Service not running", "alert.r.in_drops": "Input drops",
+    "alert.title": "Alerts", "alert.none": "No alerts.", "alert.since": "since", "alert.ack": "Acknowledge",
+    "alert.ackAll": "Acknowledge all", "alert.acked": "acknowledged", "alert.recent": "Recent events",
+    "alert.fired": "raised", "alert.cleared": "cleared", "alert.notRunning": "The device is not sampling alerts.",
+    "alert.bellTip": "Alerts on this device", "sys.alertsActive": "Active alerts",
+    "set.alerts": "Alerts", "set.alertsNote": "The device checks these every 10 seconds, whether or not anyone has the page open. Raising and clearing an alert are written to the system log.",
+    "set.alRule": "Rule", "set.alThreshold": "Threshold", "set.alClear": "Clears below threshold by", "set.alSustain": "Holds for (s)",
+    "set.alMinPps": "At least (drops/s)", "set.alBad": "Check the highlighted values; the clear margin must be smaller than the threshold.", "sys.setTargets": "{n} targets", "sys.enabledServices": "Enabled services",
     "sys.lgSystem": "system events", "sys.lgMatched": "packet matches", "sys.needLogin": "Sign in to the device to view system status.",
     "sys.refresh": "Refresh", "sys.refreshing": "refreshing…", "sys.auto": "Auto-refresh",
     "sys.lastUpdated": "Updated", "sys.loadFailed": "Couldn't load system status",
@@ -1079,7 +1089,17 @@ export const I18N = {
     "sys.loadingStatus": "正在讀取裝置狀態…",
     "sys.title": "系統狀態", "sys.needLogin": "登入裝置以檢視系統狀態。",
     "sys.settings": "目前設定", "sys.setNone": "未設定", "sys.setAllOff": "沒有啟用的項目",
-    "sys.mgmtIp": "管理 IP", "sys.gateway": "閘道", "sys.loginAuth": "登入驗證", "sys.setTargets": "{n} 個目標", "sys.enabledServices": "啟用的服務",
+    "sys.mgmtIp": "管理 IP", "sys.gateway": "閘道", "sys.loginAuth": "登入驗證",
+    "alert.r.cpu": "CPU(不含封包引擎)", "alert.r.memory": "記憶體", "alert.r.disk": "磁碟",
+    "alert.r.temperature": "溫度", "alert.r.fan": "風扇故障", "alert.r.grism_zombie": "封包引擎殭屍行程 (Z)",
+    "alert.r.service_down": "服務未執行", "alert.r.in_drops": "輸入丟包",
+    "alert.title": "告警", "alert.none": "目前沒有告警。", "alert.since": "開始於", "alert.ack": "確認",
+    "alert.ackAll": "全部確認", "alert.acked": "已確認", "alert.recent": "最近事件",
+    "alert.fired": "觸發", "alert.cleared": "解除", "alert.notRunning": "裝置目前沒有在檢查告警。",
+    "alert.bellTip": "這台裝置的告警", "sys.alertsActive": "目前告警",
+    "set.alerts": "告警", "set.alertsNote": "裝置每 10 秒檢查一次,不論是否有人開著網頁。告警的觸發與解除都會寫入系統紀錄。",
+    "set.alRule": "規則", "set.alThreshold": "門檻", "set.alClear": "低於門檻多少才解除", "set.alSustain": "持續秒數",
+    "set.alMinPps": "至少(丟包/秒)", "set.alBad": "請檢查標示的數值;解除差距必須小於門檻。", "sys.setTargets": "{n} 個目標", "sys.enabledServices": "啟用的服務",
     "sys.lgSystem": "系統事件", "sys.lgMatched": "封包命中",
     "sys.refresh": "重新整理", "sys.refreshing": "整理中…", "sys.auto": "自動重整",
     "sys.lastUpdated": "更新於", "sys.loadFailed": "無法載入系統狀態",

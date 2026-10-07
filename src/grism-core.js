@@ -6494,3 +6494,86 @@ export const panelStates = (stats, model) => {
   const by = new Map((stats ?? []).filter((s) => s && s.name).map((s) => [String(s.name), s]));
   return Object.fromEntries(panelLayout(model).cages.map((c) => [c.name, panelPortState(by.get(c.name))]));
 };
+
+
+/* ===================== alerts ===================== */
+/* The device samples itself (pywww alerts.py) and holds the alerts that are
+   up; these describe its rules for the page. Every rule has enable and
+   sustain (seconds the condition must hold); the measured ones also have a
+   threshold and a clear margin -- how far below the threshold the value has
+   to fall before the alert clears -- and in drops a floor in drops/s. */
+export const ALERT_RULE_META = {
+  cpu: { unit: "%", fields: ["threshold", "clear", "sustain"] },
+  memory: { unit: "%", fields: ["threshold", "clear", "sustain"] },
+  disk: { unit: "%", fields: ["threshold", "clear", "sustain"] },
+  temperature: { unit: "°C", fields: ["threshold", "clear", "sustain"] },
+  fan: { fields: ["sustain"] },
+  grism_zombie: { fields: ["sustain"] },
+  service_down: { fields: ["sustain"] },
+  in_drops: { unit: "%", fields: ["threshold", "clear", "min_pps", "sustain"] },
+};
+export const ALERT_RULE_ORDER = Object.keys(ALERT_RULE_META);
+const ALERT_LIMITS = { threshold: [0, 1000], clear: [0, 1000], sustain: [0, 86400], min_pps: [0, 100000000] };
+
+export function parseAlertRules(payload) {
+  const byId = new Map((payload?.rules ?? []).map((r) => [r.id, r]));
+  return ALERT_RULE_ORDER.filter((id) => byId.has(id)).map((id) => {
+    const r = byId.get(id), out = { id, enable: r.enable === true };
+    for (const f of ALERT_RULE_META[id].fields) out[f] = r[f] ?? "";
+    return out;
+  });
+}
+
+/* What stops a save: the field of the rule that is wrong. */
+export function alertRulesProblems(rules) {
+  const out = [];
+  for (const r of rules ?? []) {
+    for (const f of ALERT_RULE_META[r.id]?.fields ?? []) {
+      const raw = String(r[f] ?? "").trim(), v = Number(raw), [lo, hi] = ALERT_LIMITS[f];
+      const whole = f === "sustain" || f === "min_pps";
+      if (raw === "" || !Number.isFinite(v) || v < lo || v > hi || (whole && !Number.isInteger(v)))
+        out.push({ id: r.id, field: f });
+    }
+    if (!out.some((p) => p.id === r.id) && ALERT_RULE_META[r.id]?.fields.includes("clear")
+        && Number(r.clear) >= Number(r.threshold))
+      out.push({ id: r.id, field: "clear" });
+  }
+  return out;
+}
+
+export const alertRulesPayload = (rules) => ({
+  rules: (rules ?? []).map((r) => {
+    const out = { id: r.id, enable: !!r.enable };
+    for (const f of ALERT_RULE_META[r.id]?.fields ?? []) out[f] = Number(r[f]);
+    return out;
+  }),
+});
+
+export function parseAlerts(payload) {
+  const one = (a) => ({
+    key: s_(a?.key), rule: s_(a?.rule), subject: s_(a?.subject), value: a?.value ?? null,
+    detail: a?.detail ?? null, threshold: a?.threshold ?? null,
+    since: Number(a?.since) || 0, fired: Number(a?.fired) || 0, ts: Number(a?.ts) || 0,
+    kind: s_(a?.kind), acked: a?.acked === true,
+  });
+  return {
+    active: (payload?.active ?? []).map(one),
+    events: (payload?.events ?? []).map(one),
+    updated: Number(payload?.updated) || 0,
+    running: payload?.running !== false,
+  };
+}
+
+/* The figure an alert is about, as it reads beside its title. */
+export function alertValueText(a) {
+  if (a == null || a.value == null) return "";
+  switch (a.rule) {
+    case "cpu": case "memory": case "disk": return `${a.value}%`;
+    case "temperature": return `${a.value} °C`;
+    case "in_drops": return `${a.value}%` + (a.detail != null && a.detail !== "" ? ` · ${a.detail}/s` : "");
+    case "grism_zombie": return a.detail ? `Z: ${a.detail}` : "";
+    default: return "";
+  }
+}
+
+export const alertUnacked = (alerts) => (alerts?.active ?? []).filter((a) => !a.acked).length;

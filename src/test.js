@@ -2261,6 +2261,23 @@ group("extra running-config files");
     const E = C.summarizeSettings({}, "");
     check("settings: an empty config", E.management.length === 0 && E.timeServers.length === 0 && E.packet.length === 0 && E.logging.length === 0 && E.services.length === 0);
   }
+  {
+    const rules = C.parseAlertRules({ rules: [{ id: "cpu", enable: true, threshold: 95, sustain: 60, clear: 5 },
+      { id: "fan", enable: true, sustain: 10 }, { id: "in_drops", enable: false, threshold: 1, clear: 0.5, min_pps: 100, sustain: 30 }, { id: "bogus" }] });
+    check("alert rules: known ones, in order", rules.map((r) => r.id).join() === "cpu,fan,in_drops");
+    check("alert rules: valid ones pass", C.alertRulesProblems(rules).length === 0);
+    check("alert rules: an empty threshold is a problem", C.alertRulesProblems([{ ...rules[0], threshold: "" }]).some((p) => p.field === "threshold"));
+    check("alert rules: a clear margin as big as the threshold is a problem", C.alertRulesProblems([{ ...rules[0], clear: 95 }]).some((p) => p.field === "clear"));
+    check("alert rules: sustain is whole seconds", C.alertRulesProblems([{ ...rules[1], sustain: 1.5 }]).some((p) => p.field === "sustain"));
+    check("alert rules: the payload is numbers", JSON.stringify(C.alertRulesPayload([{ ...rules[0], threshold: "90" }]).rules[0])
+      === JSON.stringify({ id: "cpu", enable: true, threshold: 90, clear: 5, sustain: 60 }));
+    const A = C.parseAlerts({ active: [{ key: "disk:/", rule: "disk", subject: "/", value: 96.2, fired: 100, acked: false },
+      { key: "in_drops:P6", rule: "in_drops", subject: "P6", value: 100, detail: 8000, fired: 90, acked: true }], events: [], running: true });
+    check("alerts: unacknowledged count", C.alertUnacked(A) === 1);
+    check("alerts: value text", C.alertValueText(A.active[0]) === "96.2%" && C.alertValueText(A.active[1]) === "100% · 8000/s"
+      && C.alertValueText({ rule: "temperature", value: 88 }) === "88 °C" && C.alertValueText({ rule: "fan", value: 1 }) === "");
+    check("alerts: a sampler that is not running says so", C.parseAlerts({ running: false }).running === false);
+  }
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
   check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");
