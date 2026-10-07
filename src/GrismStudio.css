@@ -2128,3 +2128,4 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .sys-set-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 @media (max-width: 640px) { .sys-set-grid { grid-template-columns: 1fr; gap: 2px; } .sys-set-k { margin-top: 6px; } }
 .sys-set-v em { font-style: normal; }
+.sys-settings { margin-bottom: 16px; }

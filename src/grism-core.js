@@ -3082,15 +3082,23 @@ export function summarizeSettings(cfg, zone = "") {
   const lg = parseLogging(cfg);
   const dest = (t) => (t.dport ? `${t.dip}:${t.dport}` : t.dip);
   const live = (targets) => (targets ?? []).filter((t) => t.enable && t.dip);
-  const logging = [];
+  let logging = [];
   if (lg.enable) logging.push({ label: "NetFlow", targets: live(lg.netflow.targets).map((t) => `${dest(t)} v${t.version}`) });
   if (lg.syslog.enable) logging.push({ key: "set.lgSyslogTitle",
     targets: live(lg.syslog.targets).map((t) => ({ dest: dest(t), type: t.type === "system" ? "system" : "matched" })) });
   [["dns", "set.lgDns"], ["http", "set.lgHttp"], ["ssl", "set.lgTls"]].forEach(([k, key]) => {
     if (lg[k].enable) logging.push({ key, targets: live(lg[k].targets).map(dest) });
   });
+  // an output switched on with nowhere to send sends nothing: not worth a line
+  logging = logging.filter((x) => x.targets.length > 0);
+
+  /* the management interfaces that are up, as the settings page names them */
+  const management = (cfg?.ifcfgs ?? [])
+    .filter((f) => /^management/i.test(f?.role ?? "") && f.enable === true && s_(f.ip))
+    .map((f) => ({ name: s_(f.name), ip: s_(f.ip), netmask: s_(f.netmask), gateway: s_(f.gateway) }));
 
   return {
+    management,
     timeServers: list(a.timeServer, a.timeServer2),
     zone: s_(zone),
     nameServers: list(a.resolveNameServer, a.resolveNameServer2),

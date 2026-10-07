@@ -2233,6 +2233,8 @@ group("extra running-config files");
           { enable: false, dip: "10.0.0.6", dport: 514, type: "matched" }, { enable: true, dip: "10.0.0.7", dport: 1514, type: "matched" }] } },
       dpissllog: { enable: true, syslog: { target: [] } },
       services: [{ name: "sshd", enable: true }, { name: "snmpd", enable: false }, { name: "telnetd", enable: true }, { name: "nginx", enable: true }],
+      ifcfgs: [{ role: "management", enable: true, name: "M0", ip: "192.168.1.150", netmask: "255.255.255.0", gateway: "192.168.1.1" },
+        { role: "management1", enable: false, name: "M1", ip: "10.1.1.1" }, { role: "data", enable: true, name: "D0", ip: "10.2.2.2" }],
     };
     const S = C.summarizeSettings(cfg, "Asia/Taipei");
     check("settings: time servers skip the empty second one", S.timeServers.join() === "pool.ntp.org");
@@ -2243,14 +2245,16 @@ group("extra running-config files");
     check("settings: dedup on every port, tunnels, sd-wan, heartbeat targets",
       pk["set.dedup"].all === true && pk["set.inTunnels"].detail === "GTP, VXLAN" && pk["set.sdwan"].detail === "VXLAN"
       && pk["set.heartbeat"].count === 1);
-    check("settings: netflow off is not listed, syslog lists its live targets", S.logging.length === 2
+    check("settings: netflow off is not listed, syslog lists its live targets", S.logging.length === 1
       && S.logging[0].key === "set.lgSyslogTitle" && S.logging[0].targets.length === 2
       && S.logging[0].targets[0].dest === "10.0.0.5:514" && S.logging[0].targets[0].type === "system"
       && S.logging[0].targets[1].dest === "10.0.0.7:1514" && S.logging[0].targets[1].type === "matched");
-    check("settings: an enabled output with no collector still shows", S.logging[1].key === "set.lgTls" && S.logging[1].targets.length === 0);
+    check("settings: an enabled output with no collector is left out", !S.logging.some((x) => x.key === "set.lgTls"));
     check("settings: enabled services, hidden ones left out", S.services.join() === "sshd,nginx");
+    check("settings: only the management interfaces that are up", S.management.length === 1 && S.management[0].name === "M0"
+      && S.management[0].ip === "192.168.1.150" && S.management[0].netmask === "255.255.255.0" && S.management[0].gateway === "192.168.1.1");
     const E = C.summarizeSettings({}, "");
-    check("settings: an empty config", E.timeServers.length === 0 && E.packet.length === 0 && E.logging.length === 0 && E.services.length === 0);
+    check("settings: an empty config", E.management.length === 0 && E.timeServers.length === 0 && E.packet.length === 0 && E.logging.length === 0 && E.services.length === 0);
   }
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
