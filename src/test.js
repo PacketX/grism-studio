@@ -2221,6 +2221,37 @@ group("extra running-config files");
     check("the applied order is read back", C.parseS1apItems({ s1ap_items: [], s1ap_items_sort: ["ul-bytes", "desc"] }).sort.key === "ul-bytes"
       && C.parseS1apItems({ s1ap_items: [] }).sort === null);
   }
+  {
+    const cfg = {
+      args: { timeServer: "pool.ntp.org", timeServer2: "", resolveNameServer: "8.8.8.8", resolveNameServer2: "1.1.1.1",
+        deduplication: true, deduplicationPorts: "", tcpSegmentDataReassemble: true, quicInitialReassemble: false,
+        s1cCorrelation: true, vxlanCorrelation: true, tryRunXmltoGdp: false },
+      filters: { "in-tunnels": { GTP: true, GRE: false, VXLAN: true } },
+      heartbeat: { enable: true, target: [{ enable: true }, { enable: false }] },
+      log: { enable: false, type: "netflow", netflow: { target: [{ enable: true, dip: "10.0.0.9", dport: 9995 }] },
+        syslog: { enable: true, target: [{ enable: true, dip: "10.0.0.5", dport: 514, type: "system" },
+          { enable: false, dip: "10.0.0.6", dport: 514, type: "matched" }, { enable: true, dip: "10.0.0.7", dport: 1514, type: "matched" }] } },
+      dpissllog: { enable: true, syslog: { target: [] } },
+      services: [{ name: "sshd", enable: true }, { name: "snmpd", enable: false }, { name: "telnetd", enable: true }, { name: "nginx", enable: true }],
+    };
+    const S = C.summarizeSettings(cfg, "Asia/Taipei");
+    check("settings: time servers skip the empty second one", S.timeServers.join() === "pool.ntp.org");
+    check("settings: timezone and name servers", S.zone === "Asia/Taipei" && S.nameServers.join() === "8.8.8.8,1.1.1.1");
+    const pk = Object.fromEntries(S.packet.map((x) => [x.key, x]));
+    check("settings: only the packet switches that are on", Object.keys(pk).join() ===
+      "set.dedup,set.tcpSeg,set.inTunnels,set.mec,set.sdwan,set.heartbeat");
+    check("settings: dedup on every port, tunnels, sd-wan, heartbeat targets",
+      pk["set.dedup"].all === true && pk["set.inTunnels"].detail === "GTP, VXLAN" && pk["set.sdwan"].detail === "VXLAN"
+      && pk["set.heartbeat"].count === 1);
+    check("settings: netflow off is not listed, syslog lists its live targets", S.logging.length === 2
+      && S.logging[0].key === "set.lgSyslogTitle" && S.logging[0].targets.length === 2
+      && S.logging[0].targets[0].dest === "10.0.0.5:514" && S.logging[0].targets[0].type === "system"
+      && S.logging[0].targets[1].dest === "10.0.0.7:1514" && S.logging[0].targets[1].type === "matched");
+    check("settings: an enabled output with no collector still shows", S.logging[1].key === "set.lgTls" && S.logging[1].targets.length === 0);
+    check("settings: enabled services, hidden ones left out", S.services.join() === "sshd,nginx");
+    const E = C.summarizeSettings({}, "");
+    check("settings: an empty config", E.timeServers.length === 0 && E.packet.length === 0 && E.logging.length === 0 && E.services.length === 0);
+  }
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
   check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");

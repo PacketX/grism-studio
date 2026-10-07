@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.219.1";
+export const STUDIO_VERSION = "2.220.0";
 
 export const I18N = {
   en: {
@@ -162,7 +162,10 @@ export const I18N = {
     "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System",
     // system status page
     "sys.loadingStatus": "Reading the device status…",
-    "sys.title": "System status", "sys.needLogin": "Sign in to the device to view system status.",
+    "sys.title": "System status",
+    "sys.settings": "Current settings", "sys.setNone": "not set", "sys.setAllOff": "nothing enabled",
+    "sys.setNoTargets": "no collectors", "sys.setTargets": "{n} targets", "sys.enabledServices": "Enabled services",
+    "sys.lgSystem": "system events", "sys.lgMatched": "packet matches", "sys.needLogin": "Sign in to the device to view system status.",
     "sys.refresh": "Refresh", "sys.refreshing": "refreshing…", "sys.auto": "Auto-refresh",
     "sys.lastUpdated": "Updated", "sys.loadFailed": "Couldn't load system status",
     "sys.host": "Host", "sys.uptime": "Uptime", "sys.datetime": "Device time", "sys.loadavg": "Load average",
@@ -1075,6 +1078,9 @@ export const I18N = {
     // system status page
     "sys.loadingStatus": "正在讀取裝置狀態…",
     "sys.title": "系統狀態", "sys.needLogin": "登入裝置以檢視系統狀態。",
+    "sys.settings": "目前設定", "sys.setNone": "未設定", "sys.setAllOff": "沒有啟用的項目",
+    "sys.setNoTargets": "沒有收集器", "sys.setTargets": "{n} 個目標", "sys.enabledServices": "啟用的服務",
+    "sys.lgSystem": "系統事件", "sys.lgMatched": "封包命中",
     "sys.refresh": "重新整理", "sys.refreshing": "整理中…", "sys.auto": "自動重整",
     "sys.lastUpdated": "更新於", "sys.loadFailed": "無法載入系統狀態",
     "sys.host": "主機", "sys.uptime": "運行時間", "sys.datetime": "裝置時間", "sys.loadavg": "負載平均",

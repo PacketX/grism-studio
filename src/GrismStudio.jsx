@@ -14,7 +14,7 @@ import {
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
-  mkSyslogTarget, parseHeartbeat, parseLogging,
+  mkSyslogTarget, parseHeartbeat, parseLogging, summarizeSettings,
   parseHeartbeatStatus, parseServiceExtras,
   parseServices, parseTimezones, tokenizeXml,
   mergePortStats, parseInterfacePorts, cloneForDup, collectRefs, describeDoc, filterProblems,
@@ -1419,22 +1419,30 @@ function SystemStatusTab({ loggedIn, t }) {
      the status poll is already the expensive one on these devices. */
   const [memStats, setMemStats] = React.useState(null);
   const [memArgs, setMemArgs] = React.useState(null);
+  // the configuration itself, for the current-settings card, and the timezone
+  const [cfg, setCfg] = React.useState(null);
+  const [zone, setZone] = React.useState("");
   React.useEffect(() => {
-    if (!loggedIn) return;
+    if (!loggedIn) { setCfg(null); setZone(""); return; }
     let alive = true;
     (async () => {
       try {
-        const [st, cfg] = await Promise.all([
+        const [st, c] = await Promise.all([
           fetch("/grism/task/get_statistics_json", { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
           fetch("/grism/task/get_config", { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
         ]);
         if (!alive) return;
-        setMemStats(st); setMemArgs(cfg?.args ?? null);
+        setMemStats(st); setMemArgs(c?.args ?? null); setCfg(c);
       } catch { /* the card falls back to the plain total */ }
+      try {
+        const r = await fetch("/grism/get_time_zone", { credentials: "include" });
+        if (r.ok && alive) setZone(currentTimezone(await r.json()));
+      } catch (e) { warnFetch("timezone", e); }
     })();
     return () => { alive = false; };
   }, [loggedIn]);
   const fixed = useMemo(() => fixedMemory(info, memStats, memArgs), [info, memStats, memArgs]);
+  const settings = useMemo(() => (cfg ? summarizeSettings(cfg, zone) : null), [cfg, zone]);
 
   if (!loggedIn) return (
     <div className="sys-wrap"><div className="sys-need-login">{tr("sys.needLogin")}</div></div>
@@ -1465,6 +1473,43 @@ function SystemStatusTab({ loggedIn, t }) {
           {dev.serial && <div className="sys-kv"><span className="sys-k">{tr("sys.serial")}</span><span className="sys-v mono">{dev.serial}</span></div>}
           {dev.machineId && <div className="sys-kv"><span className="sys-k">{tr("sys.machineId")}</span><span className="sys-v mono sys-mid">{dev.machineId}</span></div>}
         </div>
+      )}
+
+      {/* What the device is set to do: the servers it uses, and of the packet
+          handling, the log outputs and the services only what is on. */}
+      {settings && (
+        <section className="sys-card wide sys-settings">
+          <h3 className="sys-card-title">{tr("sys.settings")}</h3>
+          <div className="sys-set-grid">
+            <span className="sys-set-k">{tr("set.timeServers")}</span>
+            <span className="sys-set-v mono">{settings.timeServers.length ? settings.timeServers.join(", ") : <em className="dim">{tr("sys.setNone")}</em>}</span>
+            <span className="sys-set-k">{tr("set.timezone")}</span>
+            <span className="sys-set-v">{settings.zone || <em className="dim">{tr("sys.setNone")}</em>}</span>
+            <span className="sys-set-k">{tr("set.nameServers")}</span>
+            <span className="sys-set-v mono">{settings.nameServers.length ? settings.nameServers.join(", ") : <em className="dim">{tr("sys.setNone")}</em>}</span>
+            <span className="sys-set-k">{tr("set.packet")}</span>
+            <span className="sys-set-v">{settings.packet.length === 0 ? <em className="dim">{tr("sys.setAllOff")}</em> :
+              <span className="sys-set-tags">{settings.packet.map((x) => (
+                <span className="sys-set-tag" key={x.key}>{tr(x.key)}
+                  {x.all && <em> · {tr("set.dedupAllPorts")}</em>}
+                  {x.detail && <em className="mono"> · {x.detail}</em>}
+                  {x.count != null && <em> · {tr("sys.setTargets").replace("{n}", x.count)}</em>}</span>
+              ))}</span>}</span>
+            <span className="sys-set-k">{tr("set.logging")}</span>
+            <span className="sys-set-v">{settings.logging.length === 0 ? <em className="dim">{tr("sys.setAllOff")}</em> :
+              <span className="sys-set-lines">{settings.logging.map((x) => (
+                <span className="sys-set-line" key={x.key || x.label}>
+                  <span className="sys-set-tag">{x.key ? tr(x.key) : x.label}</span>
+                  {x.targets.length === 0 ? <em className="dim">{tr("sys.setNoTargets")}</em> :
+                    <span className="mono">{x.targets.map((t) => (typeof t === "string" ? t
+                      : `${t.dest} (${tr(t.type === "system" ? "sys.lgSystem" : "sys.lgMatched")})`)).join(", ")}</span>}
+                </span>
+              ))}</span>}</span>
+            <span className="sys-set-k">{tr("sys.enabledServices")}</span>
+            <span className="sys-set-v">{settings.services.length === 0 ? <em className="dim">{tr("sys.setAllOff")}</em> :
+              <span className="sys-set-tags">{settings.services.map((n) => <span className="sys-set-tag mono" key={n}>{n}</span>)}</span>}</span>
+          </div>
+        </section>
       )}
 
       {info && <>

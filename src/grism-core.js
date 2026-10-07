@@ -3048,6 +3048,58 @@ export function parseLogging(cfg) {
   };
 }
 
+/* What the device is set to do, for the system status page: the time and
+   name servers, the timezone, and -- of the packet handling, the log outputs
+   and the services -- only what is switched on. A switch that is off says
+   nothing about the device, and listing every one of them would bury the few
+   that are on.
+
+   `zone` comes from get_time_zone, everything else from get_config. Labels
+   are i18n keys (or plain names where the settings page shows a plain name),
+   so the page translates them the same way the settings page does. */
+export const SETTINGS_TUNNELS = ["GTP", "GRE", "IPV4", "VXLAN", "MPLS_IN_UDP", "MPLS_IN_GRE", "L2MPLS_IN_UDP", "L2MPLS_IN_GRE"];
+export function summarizeSettings(cfg, zone = "") {
+  const a = cfg?.args ?? {};
+  const list = (...v) => v.map(s_).filter(Boolean);
+  const on = (k) => a[k] === true;
+
+  const packet = [];
+  if (on("deduplication")) packet.push({ key: "set.dedup", detail: s_(a.deduplicationPorts), all: !s_(a.deduplicationPorts) });
+  [["ipFragmentCorrelation", "set.ipFrag"], ["tcpSegmentDataReassemble", "set.tcpSeg"],
+    ["quicInitialReassemble", "set.quicInit"], ["sctpDataChunkReconstruct", "set.sctpChunk"],
+    ["tryRunXmltoGdp", "set.liveUpdate"]].forEach(([k, key]) => { if (on(k)) packet.push({ key }); });
+  const tun = cfg?.filters?.["in-tunnels"] ?? {};
+  const tunnels = SETTINGS_TUNNELS.filter((k) => tun[k] === true);
+  if (tunnels.length) packet.push({ key: "set.inTunnels", detail: tunnels.join(", ") });
+  if (on("s1cCorrelation")) packet.push({ key: "set.mec" });
+  const sdwan = [on("grel2Correlation") && "GRE", on("vxlanCorrelation") && "VXLAN"].filter(Boolean);
+  if (sdwan.length) packet.push({ key: "set.sdwan", detail: sdwan.join(", ") });
+  if (on("encapsulationEncrypt")) packet.push({ key: "set.sdwanEncrypt" });
+  const hb = parseHeartbeat(cfg);
+  if (hb.enable) packet.push({ key: "set.heartbeat", count: hb.targets.filter((t) => t.enable).length });
+
+  /* each output with the collectors it actually sends to */
+  const lg = parseLogging(cfg);
+  const dest = (t) => (t.dport ? `${t.dip}:${t.dport}` : t.dip);
+  const live = (targets) => (targets ?? []).filter((t) => t.enable && t.dip);
+  const logging = [];
+  if (lg.enable) logging.push({ label: "NetFlow", targets: live(lg.netflow.targets).map((t) => `${dest(t)} v${t.version}`) });
+  if (lg.syslog.enable) logging.push({ key: "set.lgSyslogTitle",
+    targets: live(lg.syslog.targets).map((t) => ({ dest: dest(t), type: t.type === "system" ? "system" : "matched" })) });
+  [["dns", "set.lgDns"], ["http", "set.lgHttp"], ["ssl", "set.lgTls"]].forEach(([k, key]) => {
+    if (lg[k].enable) logging.push({ key, targets: live(lg[k].targets).map(dest) });
+  });
+
+  return {
+    timeServers: list(a.timeServer, a.timeServer2),
+    zone: s_(zone),
+    nameServers: list(a.resolveNameServer, a.resolveNameServer2),
+    packet,
+    logging,
+    services: parseServices(cfg).filter((x) => x.enable).map((x) => x.name),
+  };
+}
+
 const bool_ = (v) => (v ? "True" : "False");
 const tagsFor = (t, pad) =>
   `${pad}<enable>${bool_(t.enable)}</enable>\n` +
