@@ -5473,11 +5473,11 @@ export function s1apQuery({ page = 1, size = S1AP_PAGE_DEFAULT, ue = "", all = f
 export const S1AP_SORT_KEYS = ["ue-ipv4", "idle", "ul-bytes", "dl-bytes"];
 
 /* A click on a column header: the same column flips its direction, another
-   one starts the way it is most often wanted -- addresses up, idle time and
-   traffic down (longest idle, busiest first). */
+   one starts the way it is most often wanted -- addresses and idle time up
+   (most recently active first), traffic down (busiest first). */
 export function s1apNextSort(current, key) {
   if (current?.key === key) return { key, order: current.order === "asc" ? "desc" : "asc" };
-  return { key, order: key === "ue-ipv4" ? "asc" : "desc" };
+  return { key, order: key === "ue-ipv4" || key === "idle" ? "asc" : "desc" };
 }
 
 /* Seconds since a row was last touched, in a form that reads at a glance:

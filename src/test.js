@@ -2215,8 +2215,9 @@ group("extra running-config files");
     const q = new URLSearchParams(C.s1apQuery({ page: 2, size: 50, sort: { key: "dl-bytes", order: "desc" } }));
     check("an order rides on the MEC query", q.get("sort") === "dl-bytes" && q.get("order") === "desc" && q.get("offset") === "50");
     check("no order, no sort parameter", !new URLSearchParams(C.s1apQuery({})).has("sort"));
-    check("a new column starts the useful way", C.s1apNextSort(null, "idle").order === "desc" && C.s1apNextSort(null, "ue-ipv4").order === "asc");
-    check("the same column flips", C.s1apNextSort({ key: "idle", order: "desc" }, "idle").order === "asc");
+    check("a new column starts the useful way", C.s1apNextSort(null, "idle").order === "asc" && C.s1apNextSort(null, "ue-ipv4").order === "asc"
+      && C.s1apNextSort(null, "dl-bytes").order === "desc" && C.s1apNextSort({ key: "ul-bytes", order: "desc" }, "idle").order === "asc");
+    check("the same column flips", C.s1apNextSort({ key: "idle", order: "asc" }, "idle").order === "desc");
     check("the applied order is read back", C.parseS1apItems({ s1ap_items: [], s1ap_items_sort: ["ul-bytes", "desc"] }).sort.key === "ul-bytes"
       && C.parseS1apItems({ s1ap_items: [] }).sort === null);
   }
