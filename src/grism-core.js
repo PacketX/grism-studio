@@ -1011,6 +1011,64 @@ export const PCAP_REPLAY_XML = `<run>
   </input>
 </run>`;
 
+/* 4G/5G Mobile Edge Computing breakout. P5 is the edge, P6 the eNB, P7 the
+   core. Downstream from the core passes straight to the eNB. Upstream from the
+   eNB, user traffic from the UE range (F1, together with F3) leaves its GTP
+   behind at O1 and goes to the edge on P5, its destination MAC learned by ARP
+   through the gateway; the rest carries on to the core. At the edge, ARP for
+   a UE address is answered with the default MAC (O3), and what the edge sends
+   back is put into GTP again (O2) towards the eNB. */
+export const MEC_BREAKOUT_XML = `<run>
+  <filter id="1" name="UE addresses" sessionBase="no">
+    <or>
+      <find name="ip.src" relation="==" content="192.168.1.0/24"/>
+    </or>
+  </filter>
+  <filter id="2" name="ARP for a UE" sessionBase="no">
+    <and>
+      <find name="arp.request.target.ip" relation="==" content="192.168.1.0/24"/>
+      <find name="arp.request.target.ip" relation="!=" content="192.168.1.252"/>
+    </and>
+  </filter>
+  <filter id="3" name="more conditions" sessionBase="no">
+    <or>
+    </or>
+  </filter>
+  <output id="1" name="to edge, GTP removed" arp_dstip_mac="yes">
+    <port>P5</port>
+    <stripping>gtp</stripping>
+    <gateway>192.168.1.252</gateway>
+  </output>
+  <output id="2" name="back to eNB in GTP">
+    <port>P6</port>
+    <tagging>gtp2</tagging>
+  </output>
+  <output id="3" name="ARP reply">
+    <port>P5</port>
+    <arp_reply_default_mac/>
+  </output>
+  <chain>
+    <in>P7</in>
+    <out>P6</out>
+  </chain>
+  <chain>
+    <in>P6</in>
+    <fid type="and">F1,F3</fid>
+    <out>O1</out>
+    <next type="notmatch">
+      <out>P7</out>
+    </next>
+  </chain>
+  <chain>
+    <in>P5</in>
+    <fid>F2</fid>
+    <out>O3</out>
+    <next type="notmatch">
+      <out>O2</out>
+    </next>
+  </chain>
+</run>`;
+
 export const SDWAN_TEMPLATE_XML = {
   l2gre: sdwanRun("L2GRE", "gre", "gre", "l2gre"),
   vxlan: sdwanRun("VXLAN", "vxlan", "vxlan", "vxlan"),
@@ -1149,6 +1207,11 @@ export const TEMPLATES = [
     blurb: "The same shape for VXLAN: P1 receives, matched traffic is decapsulated out P0, and the return path re-tags from P0 back onto P1.",
     blurb_zh: "VXLAN 版本的相同結構:P1 收,符合的流量解封裝後從 P0 送出,回程從 P0 重新封裝回 P1。",
     make: () => parseRun(SDWAN_TEMPLATE_XML.vxlan).doc },
+  { id: "mec-breakout", title: "4G/5G Mobile Edge Computing breakout", tag: "MEC",
+    title_zh: "4G/5G 行動邊緣運算分流", tag_zh: "MEC",
+    blurb: "P5: Edge · P6: eNB · P7: Core. User traffic from the UEs leaves GTP and goes to the edge; the rest continues to the core, and what the edge answers is put back into GTP towards the eNB. ARP for UE addresses on the edge side is answered with the default MAC.",
+    blurb_zh: "P5:Edge · P6:eNB · P7:Core。UE 的使用者流量解除 GTP 後分流到 Edge,其餘繼續送往 Core;Edge 回應的流量重新封裝成 GTP 送回 eNB。Edge 端查詢 UE 位址的 ARP 以預設 MAC 回應。",
+    make: () => parseRun(MEC_BREAKOUT_XML).doc },
   { id: "geo-recursive", title: "Geo + protocol, whitelisted", tag: "Recursive",
     title_zh: "地理 + 協定,含白名單", tag_zh: "遞迴",
     blurb: "Recursive filter: geo AND (443 or 53) AND NOT whitelist.",

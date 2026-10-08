@@ -4188,6 +4188,16 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                   <p className="set-hint">{tr("set.mecEnableNote")}{" "}
                     <code>s1cCorrelation</code>, <code>in-tunnels/GTP</code>, <code>flowExtensionGtpTunnelhdr</code></p>
                   {mecMixed && <p className="set-hint warn">{tr("set.mecMixed")}</p>}
+                  {/* the switches correlate; the breakout itself is a pipeline */}
+                  {onUseTemplate && (
+                    <p className="sdw-tpl">
+                      <button className="link-btn"
+                        onClick={() => setConfirm({ kind: "template", tpl: "mec-breakout", label: tr("set.mecTemplateLabel") })}>
+                        {tr("set.sdwanTemplate")}
+                      </button>
+                      <span className="dim"> {tr("set.mecTemplateNote")}</span>
+                    </p>
+                  )}
 
                   <div className="oattr-subhead">{tr("set.mecSweep")}</div>
                   <p className="set-hint">{tr("set.mecSweepNote")}</p>
