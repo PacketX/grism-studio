@@ -15,7 +15,7 @@ import {
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
   mkSyslogTarget, parseHeartbeat, parseLogging, summarizeSettings,
-  ALERT_RULE_META, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
+  ALERT_RULE_META, trapDispatcherEnabled, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
   MAX_TRAP_TARGETS, mkTrapTarget, parseTrapTargets, trapTargetsPayload, trapTargetsProblems,
   parseHeartbeatStatus, parseServiceExtras,
   parseServices, parseTimezones, tokenizeXml,
@@ -2375,6 +2375,8 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
   const [trapTargets, setTrapTargets] = React.useState([]);
   const [trapBase, setTrapBase] = React.useState([]);
   const [trapTest, setTrapTest] = React.useState(null); // { busy } | { results } | { error }
+  // whether the service that sends the system traps is switched on; null unknown
+  const [trapSvcOn, setTrapSvcOn] = React.useState(null);
   const [viewsBase, setViewsBase] = React.useState(null);
   const [fsList, setFsList] = React.useState(null);   // traffic service catalogue
   const [copied, setCopied] = React.useState(false);
@@ -2645,7 +2647,9 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
       const parsed = parseAlertRules(payload), traps = parseTrapTargets(payload);
       setAlBase(parsed); setAlRules(parsed); setTrapBase(traps); setTrapTargets(traps);
     } catch (e) { warnFetch("alert rules", e); setAlBase([]); setAlRules([]); }
-  }, []);
+    // read fresh: the switch may have just been flipped on the services page
+    try { setTrapSvcOn(trapDispatcherEnabled(await getConfig(true))); } catch { setTrapSvcOn(null); }
+  }, [getConfig]);
   React.useEffect(() => { if (loggedIn && section === "alerts" && !alRules) loadAlertRules(); }, [loggedIn, section, alRules, loadAlertRules]);
   const submitAlertRules = async () => {
     setSubmit({ state: "sending", msg: "" });
@@ -4701,6 +4705,13 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
               <section className="sys-card">
                 <h3 className="sys-card-title">{tr("set.trapTitle")}</h3>
                 <p className="set-hint">{tr("set.trapNote")}</p>
+                {/* The alert traps are sent by the web API and need nothing more;
+                    the system ones -- boot, shutdown, power -- come from
+                    packetx_trap_dispatcher, which ships switched off. */}
+                {trapSvcOn === false && (
+                  <p className="set-hint warn">{tr("set.trapSvcOff")}{" "}
+                    <button className="copy-btn" onClick={() => setSection("services")}>{tr("set.trapSvcGo")}</button></p>
+                )}
                 {trapTargets.length === 0 && <p className="sys-note dim">{tr("set.trapNone")}</p>}
                 {trapTargets.length > 0 && (
                   <div className="al-table-wrap">

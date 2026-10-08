@@ -2312,6 +2312,9 @@ group("extra running-config files");
     check("accounts: the last administrator", C.isLastAdmin(one[0], one) && !C.isLastAdmin(one[1], one)
       && !C.isLastAdmin(U[0], U) && !C.isLastAdmin({ name: "y", priv: 5 }, [{ name: "y", priv: 5 }]));
   }
+  check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
+    && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false
+    && C.trapDispatcherEnabled({ services: [{ name: "sshd", enable: true }] }) === null);
   check("a stored path's volume and directory", JSON.stringify(C.storageLocationOf("H1/sda1/raw_1.pcap")) === '{"storage":"H1","dir":"sda1"}'
     && JSON.stringify(C.storageLocationOf("H1/x.pcap")) === '{"storage":"H1","dir":""}' && C.storageLocationOf("") === null);
   check("gigabytes read as GB", C.formatFileSize(1.5 * 1024 ** 3) === "1.50 GB");

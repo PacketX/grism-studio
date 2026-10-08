@@ -6602,6 +6602,12 @@ export function alertRulesProblems(rules) {
 /* SNMP trap targets (SNMPv2c): where the alerts, and the system traps of
    packetx_trap_dispatcher, are sent. */
 export const MAX_TRAP_TARGETS = 8;
+/* Whether packetx_trap_dispatcher -- the boot / shutdown / power traps -- is
+   switched on; null when the configuration does not list it at all. */
+export function trapDispatcherEnabled(cfg) {
+  const s = (cfg?.services ?? []).find((x) => x?.name === "packetx_trap_dispatcher");
+  return s ? s.enable === true : null;
+}
 export const mkTrapTarget = () => ({ enable: true, host: "", port: 162, community: "public" });
 export const parseTrapTargets = (payload) => (payload?.trap_targets ?? []).map((t) => ({
   enable: t?.enable === true, host: s_(t?.host), port: n_(t?.port, 162), community: s_(t?.community) || "public",

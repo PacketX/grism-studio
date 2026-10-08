@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.227.0";
+export const STUDIO_VERSION = "2.228.0";
 
 export const I18N = {
   en: {
@@ -177,6 +177,8 @@ export const I18N = {
     "set.lgAlertDeviceTip": "The alerts raised under Settings → Alerts: CPU, memory, disk, temperature, fans, services, input drops",
     "svcDesc.packetx_trap_dispatcher": "Sends the system SNMP traps (boot, shutdown, power) to the targets under Settings → Alerts",
     "set.trapTitle": "SNMP trap targets", "set.trapNote": "SNMPv2c traps for every alert raised and cleared, and for the system notifications (boot, shutdown, power). PACKETX-MIB: grismAlertNotifications.",
+    "set.trapSvcOff": "The packetx_trap_dispatcher service is off, so the system notifications (boot, shutdown, power) are not sent. The alert traps are not affected.",
+    "set.trapSvcGo": "Go to Services",
     "set.trapNone": "No trap targets.", "set.trapHost": "Address", "set.trapCommunity": "Community", "set.trapRemove": "Remove",
     "set.trapAdd": "Add target", "set.trapTest": "Send a test trap", "set.trapTesting": "Sending…",
     "set.trapBad": "Check the highlighted fields.", "set.trapSent": "sent", "set.trapFailed": "failed",
@@ -1116,6 +1118,8 @@ export const I18N = {
     "set.lgAlertDeviceTip": "設定 → 告警 裡的告警:CPU、記憶體、磁碟、溫度、風扇、服務、輸入丟包",
     "svcDesc.packetx_trap_dispatcher": "送出系統 SNMP trap(開機、關機、電源),目標在 設定 → 告警",
     "set.trapTitle": "SNMP trap 目標", "set.trapNote": "每個告警的觸發與解除,以及系統通知(開機、關機、電源)都會以 SNMPv2c trap 送出。PACKETX-MIB:grismAlertNotifications。",
+    "set.trapSvcOff": "packetx_trap_dispatcher 服務未啟用,系統通知(開機、關機、電源)的 trap 不會送出;告警的 trap 不受影響。",
+    "set.trapSvcGo": "前往服務設定",
     "set.trapNone": "尚未設定 trap 目標。", "set.trapHost": "位址", "set.trapCommunity": "社群字串", "set.trapRemove": "移除",
     "set.trapAdd": "新增目標", "set.trapTest": "送出測試 trap", "set.trapTesting": "送出中…",
     "set.trapBad": "請檢查標示的欄位。", "set.trapSent": "已送出", "set.trapFailed": "失敗",
