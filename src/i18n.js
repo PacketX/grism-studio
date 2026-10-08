@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.230.0";
+export const STUDIO_VERSION = "2.231.0";
 
 export const I18N = {
   en: {
@@ -420,6 +420,16 @@ export const I18N = {
     "set.mecCronRange": "Out of range:",
     "set.mecCronSyntax": "Only * or a single number is supported:",
     "set.mecIdleMaxBad": "Must be a whole number of seconds.",
+    "set.mecCronMeans": "→ {when}: S1AP/NGAP table entries idle for more than {idle} are cleared (device time).",
+    "set.mecCronMeansNoMax": "→ {when}: idle S1AP/NGAP table entries are cleared (device time).",
+    "cron.when": "{date}, {time}", "cron.at": "at {t}", "cron.hourly": "every hour at minute {m}",
+    "cron.inHour": "every minute from {h}:00 to {h}:59", "cron.everyMinute": "every minute",
+    "cron.everyDay": "Every day", "cron.weekly": "Every {wd}", "cron.monthly": "On day {d} of every month",
+    "cron.inMonth": "Every day in {mon}", "cron.yearly": "Every year on {mon} {d}",
+    "cron.andWeekday": ", only when that day is a {wd}",
+    "cron.wdNames": "Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday",
+    "cron.moNames": "January,February,March,April,May,June,July,August,September,October,November,December",
+    "dur.units": "week,day,hour,minute,second", "dur.plural": "s", "dur.about": "about", "dur.months": "{n} month{s}", "dur.with": "{main} ({also})",
     "set.mecSweepOff": "The sweep only runs while S1AP/NGAP correlation is on.",
     "set.sdwanPorts": "Arrives on",
     "set.sdwanPickPorts": "choose ports",
@@ -1365,6 +1375,16 @@ export const I18N = {
     "set.mecCronRange": "超出範圍:",
     "set.mecCronSyntax": "只支援 * 或單一數字:",
     "set.mecIdleMaxBad": "必須是整數秒。",
+    "set.mecCronMeans": "→ {when},清除閒置超過 {idle}的 S1AP/NGAP 對應項目(依裝置時間)。",
+    "set.mecCronMeansNoMax": "→ {when},清除閒置的 S1AP/NGAP 對應項目(依裝置時間)。",
+    "cron.when": "{date} {time}", "cron.at": "{t}", "cron.hourly": "每小時的第 {m} 分",
+    "cron.inHour": "{h}:00 到 {h}:59 的每一分鐘", "cron.everyMinute": "每分鐘",
+    "cron.everyDay": "每天", "cron.weekly": "每週{wd}", "cron.monthly": "每月 {d} 日",
+    "cron.inMonth": "每年 {mon}的每一天", "cron.yearly": "每年 {mon} {d} 日",
+    "cron.andWeekday": ",且當天是星期{wd}",
+    "cron.wdNames": "日,一,二,三,四,五,六",
+    "cron.moNames": "1 月,2 月,3 月,4 月,5 月,6 月,7 月,8 月,9 月,10 月,11 月,12 月",
+    "dur.units": "週,天,小時,分,秒", "dur.plural": "none", "dur.about": "約", "dur.months": "{n} 個月", "dur.with": "{main}({also})",
     "set.mecSweepOff": "只有在 S1AP/NGAP 關聯開啟時才會執行清除。",
     "set.sdwanPorts": "進入埠",
     "set.sdwanPickPorts": "選擇進入埠",

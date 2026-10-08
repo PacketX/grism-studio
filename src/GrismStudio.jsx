@@ -15,7 +15,7 @@ import {
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
   mkSyslogTarget, parseHeartbeat, parseLogging, summarizeSettings,
-  ALERT_RULE_META, trapDispatcherEnabled, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
+  ALERT_RULE_META, trapDispatcherEnabled, describeCron, fmtDuration, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
   MAX_TRAP_TARGETS, mkTrapTarget, parseTrapTargets, trapTargetsPayload, trapTargetsProblems,
   parseHeartbeatStatus, parseServiceExtras,
   parseServices, parseTimezones, tokenizeXml,
@@ -4172,6 +4172,8 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                 const cronErr = problems.find((x) => x.scope === "cron");
                 const maxErr = problems.find((x) => x.scope === "max");
                 const cronText = String(sys.s1apItemsClearIdleCron ?? "").trim();
+                const idleText = String(sys.s1apItemsClearIdleMax ?? "").trim();
+                const cronMeans = cronText ? describeCron(cronText, tr) : null;
                 return (<>
                   {/* One decision, three parameters. On their own they are not
                       independent -- correlating without decapsulating GTP
@@ -4209,8 +4211,14 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                     <label className="ml"><span>{tr("set.mecIdleMax")}</span>
                       <input type="text" inputMode="numeric" value={sys.s1apItemsClearIdleMax ?? ""}
                         placeholder="604800"
-                        onChange={(e) => setSysField("s1apItemsClearIdleMax", e.target.value)} /></label>
+                        onChange={(e) => setSysField("s1apItemsClearIdleMax", e.target.value)} />
+                      {!maxErr && idleText && <small className="dim">= {fmtDuration(idleText, tr)}</small>}</label>
                   </div>
+                  {/* what the two fields add up to, in words -- the firmware's
+                      cron is not the cron people know, so say what it will do */}
+                  {cronMeans && <p className="set-hint ok">{idleText && !maxErr
+                    ? tr("set.mecCronMeans").replace("{when}", cronMeans).replace("{idle}", fmtDuration(idleText, tr))
+                    : tr("set.mecCronMeansNoMax").replace("{when}", cronMeans)}</p>}
                   {/* the firmware's cron is a restricted dialect and its month
                       field is tm_mon, which surprises everyone once */}
                   <p className="set-hint">{tr("set.mecCronHelp")}</p>

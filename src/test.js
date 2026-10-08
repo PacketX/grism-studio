@@ -2312,6 +2312,28 @@ group("extra running-config files");
     check("accounts: the last administrator", C.isLastAdmin(one[0], one) && !C.isLastAdmin(one[1], one)
       && !C.isLastAdmin(U[0], U) && !C.isLastAdmin({ name: "y", priv: 5 }, [{ name: "y", priv: 5 }]));
   }
+  {
+    const { makeT } = await import("./i18n.js");
+    const zhT = makeT("zh-TW"), enT = makeT("en");
+    const cases = [
+      ["0 2 * * 1", "每週一 02:00", "Every Monday, at 02:00"],
+      ["30 * * * *", "每天 每小時的第 30 分", "Every day, every hour at minute 30"],
+      ["* 3 * * *", "每天 03:00 到 03:59 的每一分鐘", "Every day, every minute from 03:00 to 03:59"],
+      ["0 0 1 * *", "每月 1 日 00:00", "On day 1 of every month, at 00:00"],
+      ["15 4 25 11 *", "每年 12 月 25 日 04:15", "Every year on December 25, at 04:15"],
+      ["0 6 1 * 1", "每月 1 日,且當天是星期一 06:00", "On day 1 of every month, only when that day is a Monday, at 06:00"],
+      ["0 2 * 0 *", "每年 1 月的每一天 02:00", "Every day in January, at 02:00"],
+    ];
+    for (const [c, zh, en] of cases) {
+      check("cron in words: " + c, C.describeCron(c, zhT) === zh && C.describeCron(c, enT) === en,
+        C.describeCron(c, zhT) + " | " + C.describeCron(c, enT));
+    }
+    check("cron in words: not a cron the firmware takes", C.describeCron("*/5 * * * *", zhT) === null && C.describeCron("", zhT) === null);
+    const dur = [[604800, "7 天(1 週)", "7 days (1 week)"], [86400, "1 天", "1 day"], [90061, "1 天 1 小時 1 分 1 秒", "1 day 1 hour 1 minute 1 second"],
+      [2592000, "30 天(1 個月)", "30 days (1 month)"], [864000, "10 天(約 1.4 週)", "10 days (about 1.4 weeks)"],
+      [7776000, "90 天(3 個月)", "90 days (3 months)"], [3888000, "45 天(約 1.5 個月)", "45 days (about 1.5 months)"], [0, "0 秒", "0 seconds"]];
+    for (const [n, zh, en] of dur) check("duration " + n, C.fmtDuration(n, zhT) === zh && C.fmtDuration(n, enT) === en, C.fmtDuration(n, zhT) + " | " + C.fmtDuration(n, enT));
+  }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false
     && C.trapDispatcherEnabled({ services: [{ name: "sshd", enable: true }] }) === null);

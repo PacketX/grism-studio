@@ -5803,6 +5803,60 @@ export function cronProblem(text) {
   return null;
 }
 
+/* The MEC sweep's cron in words. The firmware's reading is not cron's: every
+   field that is not * has to match (main.c grism_s1ap_items_clear_idle), so a
+   day of the month and a weekday together mean both, not either; the month
+   counts from 0; and the time is the device's own. null when the text is not
+   a cron the firmware would take. `tr` supplies the phrases. */
+export function describeCron(text, tr) {
+  if (cronProblem(text)) return null;
+  const [mi, ho, da, mo, wd] = String(text).trim().split(/\s+/).map((v) => (v === "*" ? null : +v));
+  const pad = (n) => String(n).padStart(2, "0");
+  const fill = (k, vars) => Object.entries(vars).reduce((s, [a, b]) => s.split("{" + a + "}").join(b), tr(k));
+  const wdName = (n) => tr("cron.wdNames").split(",")[n];
+  const moName = (n) => tr("cron.moNames").split(",")[n];
+  const time = mi !== null && ho !== null ? fill("cron.at", { t: pad(ho) + ":" + pad(mi) })
+    : mi !== null ? fill("cron.hourly", { m: pad(mi) })
+      : ho !== null ? fill("cron.inHour", { h: pad(ho) })
+        : tr("cron.everyMinute");
+  let date;
+  if (mo !== null && da !== null) date = fill("cron.yearly", { mon: moName(mo), d: da });
+  else if (mo !== null) date = fill("cron.inMonth", { mon: moName(mo) });
+  else if (da !== null) date = fill("cron.monthly", { d: da });
+  else if (wd !== null) date = fill("cron.weekly", { wd: wdName(wd) });
+  else date = tr("cron.everyDay");
+  if (wd !== null && (mo !== null || da !== null)) date += fill("cron.andWeekday", { wd: wdName(wd) });
+  return fill("cron.when", { date, time });
+}
+
+/* Seconds as days, hours, minutes and seconds, with the weeks or months that
+   comes to once it is a week or more: 604800 -> "7 days (1 week)". */
+export function fmtDuration(sec, tr) {
+  const s = Math.floor(Number(sec));
+  if (!Number.isFinite(s) || s < 0) return "";
+  const [wk, dy, hr, mn, sc] = tr("dur.units").split(",");
+  // "none" rather than "": an empty translation falls back to the English one
+  const pl = tr("dur.plural") === "none" ? "" : tr("dur.plural");
+  const unit = (n, u) => n + " " + u + (n === 1 ? "" : pl);
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const parts = [[d, dy], [h, hr], [m, mn], [r, sc]].filter(([n]) => n > 0).map(([n, u]) => unit(n, u));
+  const main = parts.length ? parts.join(" ") : unit(0, sc);
+  const days = s / 86400;
+  const approx = (n) => Math.round(n * 10) / 10;
+  let also = "";
+  if (days >= 28) {
+    const mths = approx(days / 30);
+    also = (Number.isInteger(days / 30) ? "" : tr("dur.about") + " ") + fill2(tr("dur.months"), mths, pl);
+  } else if (days >= 7) {
+    const w = days / 7;
+    also = Number.isInteger(w) ? unit(w, wk) : tr("dur.about") + " " + approx(w) + " " + wk + pl;
+  }
+  return also ? tr("dur.with").split("{main}").join(main).split("{also}").join(also) : main;
+}
+function fill2(pattern, n, pl) {
+  return pattern.split("{n}").join(n).split("{s}").join(n === 1 ? "" : pl);
+}
+
 /* What stops a MEC submit. */
 export function mecProblems(v) {
   const out = [];
