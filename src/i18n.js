@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.228.0";
+export const STUDIO_VERSION = "2.229.0";
 
 export const I18N = {
   en: {
@@ -576,7 +576,9 @@ export const I18N = {
     "tf.errors": "Errors", "tf.pps": "pps",
     "tf.desc": "Description", "tf.showAll": "show all", "tf.showLess": "show less", "tf.flowV4": "IPv4 flow", "tf.flowV6": "IPv6 flow",
     "tf.total": "Total", "tf.concurrent": "Concurrent",
-    "tf.vports": "Virtual ports", "tf.showPhys": "show physical ports",
+    "tf.vports": "Virtual ports", "tf.showPhys": "show physical ports", "tf.physPorts": "Physical ports",
+    "tf.noneShown": "No ports selected to show.",
+    "tf.disabled": "disabled", "tf.disabledTip": "This port is switched off in the configuration: it neither receives nor sends.",
     "tf.d.inPps": "In pps", "tf.d.outPps": "Out pps", "tf.rateGroup": "Packet rate",
     "tf.inDrops": "In drops", "tf.outDrops": "Out drops", "tf.detail": "detail",
     "tf.detailTitle": "Ingress detail",
@@ -1517,7 +1519,9 @@ export const I18N = {
     "tf.errors": "錯誤", "tf.pps": "pps",
     "tf.desc": "描述", "tf.showAll": "顯示全部", "tf.showLess": "收合", "tf.flowV4": "IPv4 flow", "tf.flowV6": "IPv6 flow",
     "tf.total": "總數", "tf.concurrent": "在線數",
-    "tf.vports": "虛擬埠", "tf.showPhys": "顯示實體埠",
+    "tf.vports": "虛擬埠", "tf.showPhys": "顯示實體埠", "tf.physPorts": "實體埠",
+    "tf.noneShown": "未選擇要顯示的埠。",
+    "tf.disabled": "停用", "tf.disabledTip": "此埠在設定中已停用,不收也不送封包。",
     "tf.d.inPps": "入 pps", "tf.d.outPps": "出 pps", "tf.rateGroup": "封包速率",
     "tf.inDrops": "入丟棄", "tf.outDrops": "出丟棄", "tf.detail": "詳細",
     "tf.detailTitle": "入方向詳細",

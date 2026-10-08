@@ -5565,7 +5565,7 @@ function BreakdownTable({ rows, keyLabel, labelOf, tr, limit = 10 }) {
 /* ============================================================
    T12S front panel — the ports as they sit on the box
    ============================================================ */
-function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, bonds, stale = false, t }) {
+function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, bonds, disabledPorts, stale = false, t }) {
   const tr = t || ((k) => k);
   /* Four cages bonded into one port are drawn as one cage. Four cages of which
      three are permanently dark would be the same picture as a board with three
@@ -5641,7 +5641,8 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, bonds, st
             const labelAbove = c.y === topRow;
             return (
               <g key={c.name} className={"fp-port" + (!blind && s.link ? " up" : "")
-                + (bypassedPorts?.has(c.name) ? " byp" : "")}>
+                + (bypassedPorts?.has(c.name) ? " byp" : "")
+                + (disabledPorts?.has(c.name) ? " off" : "")}>
                 <rect x={c.x} y={c.y} width={c.w} height={c.h} rx="3"
                   className={"fp-cage" + (c.bond ? " bond" : "")} />
                 {c.bond ? (
@@ -5663,7 +5664,7 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, bonds, st
                 <title>{`${c.name}${c.bond ? " · " + fmtSpeed(c.bond) + " (" + c.members.join(", ") + ")" : ""} — ${blind ? tr("panel.unknown")
                   : s.link ? [tr("panel.keyUp"), moving(s.rx) && tr("panel.keyRx"), moving(s.tx) && tr("panel.keyTx")]
                     .filter(Boolean).join(", ")
-                  : tr("panel.keyDown")}${bypassedPorts?.has(c.name) ? " · " + tr("tf.bypass") : ""}`}</title>
+                  : tr("panel.keyDown")}${bypassedPorts?.has(c.name) ? " · " + tr("tf.bypass") : ""}${disabledPorts?.has(c.name) ? " · " + tr("tf.disabled") : ""}`}</title>
                 {/* the link light, as on the front of the box */}
                 <circle cx={c.x + 6} cy={c.y + c.h - 5} r="2.6" className={"fp-led" + (!blind && s.link ? " on" : "")} />
                 {/* in and out, lit only while something is moving */}
@@ -5687,6 +5688,8 @@ function FrontPanel({ model, stats, mgmtStat, bypassed, bypassedPorts, bonds, st
         <span><i className="fp-key-tx" /> {tr("panel.keyTx")}</span>
         {bypassed && (L.lamps ?? []).length > 0 &&
           <span><i className="fp-key-byp" /> {tr("panel.keyBypass")}</span>}
+        {L.cages.some((c) => disabledPorts?.has(c.name)) &&
+          <span><i className="fp-key-off" /> {tr("tf.disabled")}</span>}
       </div>
     </section>
   );
@@ -5704,7 +5707,14 @@ function TrafficTab({ loggedIn, t, model = "" }) {
   const [refreshSec, setRefreshSec] = React.useState(() => readPrefs().refreshSec ?? 5);
   React.useEffect(() => { writePref("refreshSec", refreshSec); }, [refreshSec]);
   const [expanded, setExpanded] = React.useState(null); // idx of the open detail row
-  const [showPhys, setShowPhys] = React.useState(false); // when V-ports exist, also show physical
+  /* With both virtual and physical ports on the device, both are listed, and
+     either can be ticked away; remembered, like the refresh interval. */
+  const [showV, setShowV] = React.useState(() => readPrefs().tfShowV ?? true);
+  const [showP, setShowP] = React.useState(() => readPrefs().tfShowP ?? true);
+  React.useEffect(() => { writePref("tfShowV", showV); }, [showV]);
+  React.useEffect(() => { writePref("tfShowP", showP); }, [showP]);
+  // ports switched off in the configuration (interfaces > ports > enable)
+  const [disabled, setDisabled] = React.useState(new Set());
   /* Which ports sit behind a closed bypass relay. Read once when the page opens
      and not again: a relay only moves when somebody moves it, so polling it
      alongside the counters would be several ssh round trips a second on a T12S
@@ -5764,9 +5774,14 @@ function TrafficTab({ loggedIn, t, model = "" }) {
       const res = await fetch("/grism/task/get_config", { credentials: "include" });
       if (!res.ok) return;
       const json = await res.json();
-      const map = {};
-      (json.interfaces || []).forEach((grp) => (grp.ports || []).forEach((p) => { if (p.name) map[p.name] = p.description || ""; }));
+      const map = {}, off = new Set();
+      (json.interfaces || []).forEach((grp) => (grp.ports || []).forEach((p) => {
+        if (!p.name) return;
+        map[p.name] = p.description || "";
+        if (p.enable === false) off.add(p.name);
+      }));
       setDescs(map);
+      setDisabled(off);
       setDevModel(String((json.args ?? {}).model ?? ""));
       setHb(parseHeartbeat(json));
     } catch (e) { warnFetch("port descriptions", e); }
@@ -5824,16 +5839,17 @@ function TrafficTab({ loggedIn, t, model = "" }) {
     return parts.join(" · ");
   };
 
-  // split V-ports (virtual, name starts with "V") from the rest. When any exist,
-  // show them on their own and let the user reveal the physical ports too.
   // Split virtual (V*) from physical ports once per data refresh rather than on
   // every render — the table re-renders on each poll and can hold many rows.
-  const { vRows, physRows, hasV, shownRows } = React.useMemo(() => {
+  // Only a device with both kinds gets the two ticks; with one kind there is
+  // nothing to choose.
+  const { vRows, physRows, both, shownRows } = React.useMemo(() => {
     const isV = (r) => /^V/i.test(r.name || "");
     const v = rows.filter(isV), p = rows.filter((r) => !isV(r));
-    return { vRows: v, physRows: p, hasV: v.length > 0,
-      shownRows: v.length === 0 ? rows : (showPhys ? [...v, ...p] : v) };
-  }, [rows, showPhys]);
+    const both = v.length > 0 && p.length > 0;
+    return { vRows: v, physRows: p, both,
+      shownRows: !both ? rows : [...(showV ? v : []), ...(showP ? p : [])] };
+  }, [rows, showV, showP]);
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
 
@@ -5858,7 +5874,7 @@ function TrafficTab({ loggedIn, t, model = "" }) {
         <FrontPanel model={model || devModel} stats={rows}
           mgmtStat={rows.find((r) => r.name === "H1")}
           bypassed={bypassedPairs} bypassedPorts={bypassed} bonds={bonds}
-          stale={state === "error"} t={t} />
+          disabledPorts={disabled} stale={state === "error"} t={t} />
       )}
 
       {sessions && (
@@ -5869,12 +5885,13 @@ function TrafficTab({ loggedIn, t, model = "" }) {
         </div>
       )}
 
-      {hasV && (
+      {both && (
         <div className="tf-portfilter">
-          <span className="tf-portfilter-label">{tr("tf.vports")} ({vRows.length})</span>
-          <label className="tf-portfilter-toggle"><input type="checkbox" checked={showPhys} onChange={(e) => setShowPhys(e.target.checked)} /> {tr("tf.showPhys")} ({physRows.length})</label>
+          <label className="tf-portfilter-toggle"><input type="checkbox" checked={showV} onChange={(e) => setShowV(e.target.checked)} /> {tr("tf.vports")} ({vRows.length})</label>
+          <label className="tf-portfilter-toggle"><input type="checkbox" checked={showP} onChange={(e) => setShowP(e.target.checked)} /> {tr("tf.physPorts")} ({physRows.length})</label>
         </div>
       )}
+      {both && shownRows.length === 0 && <p className="sys-note dim">{tr("tf.noneShown")}</p>}
 
       {shownRows.length > 0 && (
         <div className="tf-table-wrap">
@@ -5895,14 +5912,17 @@ function TrafficTab({ loggedIn, t, model = "" }) {
                 const inDrops = (Number(r.inDrops) || 0), outDrops = (Number(r.outDrops) || 0);
                 const open = expanded === r.idx;
                 const bond = bondTag(bonds, r.name);
+                const off = disabled.has(r.name);
                 return (
                   <React.Fragment key={r.idx}>
-                    <tr className={"tf-row" + (open ? " open" : "")} onClick={() => setExpanded(open ? null : r.idx)}>
+                    <tr className={"tf-row" + (open ? " open" : "") + (off ? " off" : "")} onClick={() => setExpanded(open ? null : r.idx)}>
                       <td className="tf-expander"><span className="tf-caret" aria-hidden="true">{open ? "▾" : "▸"}</span></td>
                       <td className="tf-name">{r.name}
                         {moved[r.name] &&
                           <span className={"tf-live" + (beat % 2 ? " a" : " b")} title={tr("tf.movingTip")}
                             aria-label={tr("tf.movingTip")} />}
+                        {off &&
+                          <span className="tf-bypass off" title={tr("tf.disabledTip")}>{tr("tf.disabled")}</span>}
                         {bypassed.has(r.name) &&
                           <span className="tf-bypass" title={tr("tf.bypassTip")}>{tr("tf.bypass")}</span>}
                         {/* bonded away: the counters below are real but will
