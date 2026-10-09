@@ -2405,6 +2405,14 @@ group("extra running-config files");
     check("inline: traffic back that nothing sent", kinds(r).includes("inlineUnsolicited:P7>P6"), kinds(r));
     r = run({ P6: { ...z, out: 1000 }, P7: { ...z, in: 1000, link: false }, P1: { ...z, out: 1000 } });
     check("inline: a side with its link down", kinds(r).includes("linkDown:P7") && r.findings.find((f) => f.kind === "linkDown").roles.some((x) => x.k === "inline" && x.dev === "IPS"), kinds(r));
+    check("inline: taken as really wired, a side down is an error even with nothing lost",
+      r.findings.find((f) => f.kind === "linkDown").sev === "error");
+    check("inline: nothing back is an error", run({ P6: { ...z, out: 1000 } }).findings[0].sev === "error");
+    const noReturnChain = C.liveFindings({ doc: C.normalizeDoc({ chains: [{ cid: "c", ports: "P0", tree: { id: "o", t: "out", ports: "P6", mode: "duplicate", lb: "5thash" } }] }),
+      filters: {}, inlines: ips, portOptions: ["P0", "P6", "P7"],
+      readings: { P0: { ...z, in: 1000 }, P6: { ...z, out: 1000 }, P7: { ...z, in: 1000 } } });
+    check("inline: what comes back on a port with no chain is named as the device's return",
+      kinds(noReturnChain) === "inlineBackNoChain:P7" && noReturnChain.findings[0].dev === "IPS", kinds(noReturnChain));
   }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false

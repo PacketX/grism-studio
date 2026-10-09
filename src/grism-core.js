@@ -2433,8 +2433,16 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
   const consider = (p) => (known.size ? known.has(p) : !mgmt.has(p));
   const activeIn = Object.keys(reads).filter((p) => consider(p) && moving(p, "in"));
 
+  /* The inline devices drawn on the panel are taken as really wired: what
+     comes in on one of their ports is what the device sent back. */
+  const inlineAt = (p) => (inlines ?? []).find((d) => d.portA === p || d.portB === p);
   // in on a port no chain takes
-  activeIn.forEach((p) => { if (!chainsOn(p).length) out.push({ kind: "ingressNoChain", sev: "warn", port: p, n: r(p).in }); });
+  activeIn.forEach((p) => {
+    if (chainsOn(p).length) return;
+    const dev = inlineAt(p);
+    out.push(dev ? { kind: "inlineBackNoChain", sev: "warn", port: p, dev: dev.name || "inline", n: r(p).in }
+      : { kind: "ingressNoChain", sev: "warn", port: p, n: r(p).in });
+  });
 
   // along the chains of every moving ingress
   const expected = new Set();          // ports some path sends to
@@ -2511,7 +2519,7 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
   (inlines ?? []).forEach((d) => { role(d.portA, "inline", d.name || "inline"); role(d.portB, "inline", d.name || "inline"); });
   roles.forEach((list, p) => {
     if (!r(p) || r(p).link !== false) return;
-    out.push({ kind: "linkDown", sev: lostTo.has(p) ? "error" : "warn", port: p, roles: list });
+    out.push({ kind: "linkDown", sev: lostTo.has(p) || list.some((x) => x.k === "inline") ? "error" : "warn", port: p, roles: list });
   });
 
   // the counters that mean trouble whatever the configuration
@@ -2532,7 +2540,7 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
       if (!r(x) || !r(y)) return;
       const sent = r(x).out, got = r(y).in;
       if (sent > 0 && got === 0) {
-        out.push({ kind: "inlineNoReturn", sev: "warn", dev: name, port: x, back: y, n: sent });
+        out.push({ kind: "inlineNoReturn", sev: "error", dev: name, port: x, back: y, n: sent });
       } else if (sent > 0) {
         const missing = sent - got;
         if (missing >= 10 && missing / sent > 0.05) {
