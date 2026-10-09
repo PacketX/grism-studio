@@ -10270,7 +10270,6 @@ function DevicePanel({ portOptions, portDescs = {}, inPortSet, outPortSet, selec
       else if (n.kind === "ips-out") { const j = geo.inlines[n.devId]; if (j && j[n.port]) pts.push({ ...j[n.port], dev: n.devId }); }
       else if (n.kind === "loop") { const o = outsidePt(n.port); if (o) { pts.push({ ...o, loop: true }); if (geo.ports[n.port]) pts.push({ ...geo.ports[n.port], port: n.port }); } }
       else if (n.kind === "fizzle") { const p = geo.ports[n.port]; if (p) pts.push({ x: p.x, y: p.y }); }
-      else if (n.kind === "center") { if (geo.center) pts.push({ ...geo.center }); }   // an input: born inside the device
     }
     const clean = pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
     return clean.length >= 2 ? clean : null;
@@ -10393,6 +10392,20 @@ function DevicePanel({ portOptions, portDescs = {}, inPortSet, outPortSet, selec
     clearAnim();
   };
 
+  /* An input's badge is a play button: pick the input, and send as soon as
+     the route for it is known -- which is the next render, since the route
+     is built from the selection. Picked already: just send. */
+  const pendingPlay = useRef(false);
+  const pickInput = (id) => {
+    if (autoPlay) { onPick(id); return; }        // following the device: nothing to start by hand
+    if (selected === id) { if (playState === "idle") play(); return; }
+    pendingPlay.current = true;
+    onPick(id);
+  };
+  useEffect(() => {
+    if (pendingPlay.current && animPlan && !autoPlay) { pendingPlay.current = false; play(); }
+  }, [animPlan, autoPlay]);
+
   const renderPort = (p) => {
     const role = portRole(p);
     const wired = inlinePorts.has(p);
@@ -10408,7 +10421,19 @@ function DevicePanel({ portOptions, portDescs = {}, inPortSet, outPortSet, selec
         <span className="dev-port-name">{p}</span>
         {isLoop ? <span className="dev-port-role loop">LOOP ↻</span> : role !== "idle" && <span className="dev-port-role">{role === "both" ? "IN/OUT" : role.toUpperCase()}</span>}
         {wired && <span className="dev-port-jack" title={tr("sim.wiredTip")} />}
-        {srcs.length > 0 && <span className="dev-port-input" title={srcs.map((i) => i.id + (i.name ? " · " + i.name : "")).join(", ") + " — " + tr("sim.inputTip")}>{srcs.map((i) => i.id).join(",")} ▲</span>}
+        {srcs.length > 0 && (
+          <span className="dev-port-inputs">
+            {srcs.map((i) => (
+              <span key={i.id} role="button" tabIndex={0}
+                className={"dev-port-input" + (selected === i.id ? " on" : "")}
+                title={i.id + (i.name ? " · " + i.name : "") + " — " + tr("sim.inputPlayTip")}
+                onClick={(e) => { e.stopPropagation(); pickInput(i.id); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); pickInput(i.id); } }}>
+                {i.id} ▲
+              </span>
+            ))}
+          </span>
+        )}
       </button>
     );
   };
@@ -11095,8 +11120,8 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
   // device it loops A-in/B-out and re-enters via the paired port — if THAT port
   // has a chain, it runs again (using the same filter switches), continuing until
   // it reaches a port with no chain (exits to the outside) or hits the hop cap.
-  // An input's packet starts inside the device and leaves by its port the same
-  // way a chain's output does; following the device, every port with ingress
+  // An input's packet starts at its port and leaves by it the same way a
+  // chain's output does; following the device, every port with ingress
   // traffic sends and every input whose port is transmitting sends.
   const animPlan = useMemo(() => {
     const loopSet = new Set(loopPorts);
@@ -11148,7 +11173,7 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
       tokens.forEach((tok) => { continuePort(tok).forEach((rest) => paths.push([...prefix, ...rest])); });
       return paths.length ? paths : [[...prefix, { kind: "port", port: ingress }, { kind: "fizzle", port: ingress, label: "no output" }]];
     };
-    const fromInput = (i) => leaveBy(i.port, [], 0, null).map((rest) => [{ kind: "center" }, ...rest]);
+    const fromInput = (i) => leaveBy(i.port, [], 0, null);
     let paths = [];
     if (live) {
       liveInPorts.forEach((p) => paths.push(...buildFrom(p, 0)));

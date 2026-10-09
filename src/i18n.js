@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.232.0";
+export const STUDIO_VERSION = "2.233.0";
 
 export const I18N = {
   en: {
@@ -785,7 +785,7 @@ export const I18N = {
     "sim.wiredTip": "wired to an inline device",
     "sim.roleBoth": "ingress + output", "sim.roleIn": "ingress", "sim.roleOut": "output", "sim.roleIdle": "unused",
     "sim.selectIngressOpt": "select ingress", "sim.noChain": "no chain",
-    "sim.inputs": "Inputs", "sim.inputTip": "input: transmits out of this port",
+    "sim.inputs": "Inputs", "sim.inputTip": "input: transmits out of this port", "sim.inputPlayTip": "input: transmits out of this port. Click to send.",
     "sim.inputFrom": "{id} transmits out of {port}",
     "sim.inputLeaves": "— {port} is not a LOOP port and nothing brings the traffic back, so the packets leave the device and reach no chain.",
     "sim.inputLoops": "— {port} is a LOOP interface, so the packets come back in on {port}.",
@@ -1750,7 +1750,7 @@ export const I18N = {
     "sim.wiredTip": "已接到 inline 裝置",
     "sim.roleBoth": "入口 + 輸出", "sim.roleIn": "入口", "sim.roleOut": "輸出", "sim.roleIdle": "未使用",
     "sim.selectIngressOpt": "選擇入口埠", "sim.noChain": "無 chain",
-    "sim.inputs": "輸入", "sim.inputTip": "輸入:從此埠送出",
+    "sim.inputs": "輸入", "sim.inputTip": "輸入:從此埠送出", "sim.inputPlayTip": "輸入:從此埠送出。點一下開始送出。",
     "sim.inputFrom": "{id} 從 {port} 送出",
     "sim.inputLeaves": "— {port} 不是 LOOP 介面,也沒有接回來,封包離開裝置,不會進入任何鏈結。",
     "sim.inputLoops": "— {port} 是 LOOP 介面,封包從 {port} 回到裝置。",
