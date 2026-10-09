@@ -11020,6 +11020,7 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
   const check = useMemo(() => (checkReady ? liveFindings({
     doc: simDoc, readings: portReads, filters: liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions,
     hbSendPorts: (hbTargets ?? []).filter((x) => x.enable).map((x) => x.sendPort).filter(Boolean),
+    hbReceivePorts: (hbTargets ?? []).filter((x) => x.enable).map((x) => x.receivePort).filter(Boolean),
     hbPorts: (hbTargets ?? []).filter((x) => x.enable).flatMap((x) => [x.sendPort, x.receivePort]).filter(Boolean),
     inlines,
   }) : null), [checkReady, simDoc, portReads, liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions, hbTargets, inlines]);

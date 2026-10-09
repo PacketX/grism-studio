@@ -2474,7 +2474,7 @@ export function portReadings(prev, rows) {
    sending, and the filter it asks first should have been tried.
    Traffic nothing explains -- out of a port no path reaches, in on a port no
    chain takes, an input whose port is quiet -- is reported as such. */
-export function liveFindings({ doc, readings, filters, loopPorts = [], disabledPorts = [], mgmtPorts = [], portOptions = [], hbSendPorts = [], hbPorts = [], inlines = [] }) {
+export function liveFindings({ doc, readings, filters, loopPorts = [], disabledPorts = [], mgmtPorts = [], portOptions = [], hbSendPorts = [], hbReceivePorts = [], hbPorts = [], inlines = [] }) {
   const out = [];
   const reads = readings ?? {};
   const r = (p) => reads[p];
@@ -2496,9 +2496,11 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
   /* The inline devices drawn on the panel are taken as really wired: what
      comes in on one of their ports is what the device sent back. */
   const inlineAt = (p) => (inlines ?? []).find((d) => d.portA === p || d.portB === p);
-  // in on a port no chain takes
+  // in on a port no chain takes -- bar a heartbeat's receive port, where the
+  // probes coming back are the traffic expected
+  const hbRecv = new Set(hbReceivePorts);
   activeIn.forEach((p) => {
-    if (chainsOn(p).length) return;
+    if (chainsOn(p).length || hbRecv.has(p)) return;
     const dev = inlineAt(p);
     out.push(dev ? { kind: "inlineBackNoChain", sev: "warn", port: p, dev: dev.name || "inline", n: r(p).in }
       : { kind: "ingressNoChain", sev: "warn", port: p, n: r(p).in });

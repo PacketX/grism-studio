@@ -2466,6 +2466,15 @@ group("extra running-config files");
     const pr = C.portReadings(C.portReadings(null, [{ name: "P2", outDrops: 5 }]).next, [{ name: "P2", outDrops: 12 }]);
     check("port readings: out drops", pr.ports.P2.outDrops === 7);
   }
+  {
+    const z = { in: 0, out: 0, inDrops: 0, inErrors: 0, outDrops: 0, link: true };
+    const doc = C.normalizeDoc({});
+    const reads = { P2: { ...z, out: 5 }, P3: { ...z, in: 5 }, P4: { ...z, in: 40 } };
+    const r = C.liveFindings({ doc, readings: reads, filters: {}, portOptions: ["P2", "P3", "P4"], hbSendPorts: ["P2"], hbReceivePorts: ["P3"], hbPorts: ["P2", "P3"] });
+    const k = r.findings.map((f) => f.kind + ":" + f.port).join(" ");
+    check("heartbeat: probes out of the send port and back on the receive port are expected; other traffic is not",
+      k === "ingressNoChain:P4", k);
+  }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false
     && C.trapDispatcherEnabled({ services: [{ name: "sshd", enable: true }] }) === null);
