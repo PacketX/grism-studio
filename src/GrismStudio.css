@@ -652,6 +652,9 @@
 .dev-port-input{font-family:var(--mono); font-size:8px; line-height:1; padding:2px 5px; border-radius:99px; background:var(--panel-2); border:1px solid var(--accent-2); color:var(--accent-2); white-space:nowrap; cursor:pointer;}
 .dev-port-input:hover, .dev-port-input.on{background:var(--accent-2); color:var(--bg);}
 /* following the device: a port whose counters are moving */
+.dev-port.off{opacity:.45; border-style:dashed;}
+.dev-port.off .dev-port-led{background:var(--line-2); box-shadow:none;}
+.dev-port-role.off{color:var(--txt-faint);}
 .dev-port.live{border-color:var(--accent-2);}
 .dev-port.live .dev-port-led{background:var(--accent-2); box-shadow:0 0 8px var(--accent-2);}
 .dev-live{font-family:var(--mono); font-size:11px; color:var(--match); padding:4px 8px; letter-spacing:.06em;}
@@ -712,6 +715,17 @@
 .sim-note{font-size:11.5px; color:var(--txt-dim); line-height:1.5; margin:0;}
 .sim-bulk button:disabled{opacity:.45; cursor:default;}
 .sim-trace.input .sim-trace-body{color:var(--txt-dim); font-size:13px; line-height:1.6;}
+/* the check against the device */
+.sim-check{border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:14px 18px; max-width:560px; display:flex; flex-direction:column; gap:8px;}
+.sim-check-head{display:flex; align-items:center; gap:10px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--txt-dim);}
+.sim-check-note{font-family:var(--mono); font-size:10px; letter-spacing:0; text-transform:none; color:var(--warn); border:1px solid var(--warn); border-radius:99px; padding:2px 7px;}
+.sim-check-ok, .sim-check-agree{margin:0; font-size:12.5px; color:var(--match); line-height:1.6;}
+.sim-finding{display:flex; gap:9px; align-items:flex-start; font-size:12.5px; line-height:1.55; color:var(--txt);}
+.sim-finding-mark{flex:0 0 auto; width:16px; height:16px; border-radius:99px; font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; margin-top:2px; color:var(--bg);}
+.sim-finding.error .sim-finding-mark{background:var(--notmatch);}
+.sim-finding.warn .sim-finding-mark{background:var(--warn);}
+.sim-finding.info .sim-finding-mark{background:var(--txt-dim);}
+.sim-finding.info{color:var(--txt-dim);}
 .sim-chip.out{background:rgba(224,178,74,.12); color:var(--sim-loop); border:1px solid var(--sim-loop);}
 .sim-empty{font-size:12px; color:var(--txt-faint); font-style:italic;}
 .sim-results{overflow:auto; padding:24px; display:flex; flex-direction:column; gap:20px;}

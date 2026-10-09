@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.233.0";
+export const STUDIO_VERSION = "2.234.0";
 
 export const I18N = {
   en: {
@@ -785,6 +785,7 @@ export const I18N = {
     "sim.wiredTip": "wired to an inline device",
     "sim.roleBoth": "ingress + output", "sim.roleIn": "ingress", "sim.roleOut": "output", "sim.roleIdle": "unused",
     "sim.selectIngressOpt": "select ingress", "sim.noChain": "no chain",
+    "sim.portOff": "disabled", "sim.portOffTip": "disabled in the configuration — carries nothing",
     "sim.inputs": "Inputs", "sim.inputTip": "input: transmits out of this port", "sim.inputPlayTip": "input: transmits out of this port. Click to send.",
     "sim.inputFrom": "{id} transmits out of {port}",
     "sim.inputLeaves": "— {port} is not a LOOP port and nothing brings the traffic back, so the packets leave the device and reach no chain.",
@@ -797,6 +798,21 @@ export const I18N = {
     "sim.liveWait": "Waiting for a second reading…",
     "sim.noLiveTraffic": "No ingress port with a chain is carrying traffic right now.",
     "sim.liveInputs": "Transmitting:",
+    "sim.checkTitle": "Against the device", "sim.checkDirty": "unapplied changes", "sim.checkDirtyTip": "The editor holds changes not applied yet; the device is checked against the configuration it runs.",
+    "sim.checkOk": "Everything the device does is what the configuration says.", "sim.checkQuiet": "No port is carrying traffic yet.",
+    "sim.checkAgree": "{n} path(s) as configured:",
+    "sim.f.ingressNoChain": "{port} receives traffic ({n} packets), but no chain ingresses there — the device handles it by default.",
+    "sim.f.filterMissing": "{fid} is on the chain for {port} but the device does not hold it — that condition never matches.",
+    "sim.f.filterNotTried": "{port} carries traffic, yet {fid}, the first filter on its chain, is not being evaluated.",
+    "sim.f.egressSilent": "By the filter results, {from}'s traffic should leave by {port}, but {port} is sending nothing.",
+    "sim.f.egressDisabled": "The chain on {from} sends to {port}, which is disabled.",
+    "sim.f.egressUnexpected": "{port} is sending traffic ({n} packets) that no chain, input or heartbeat accounts for.",
+    "sim.f.inputSilent": "{id} should be transmitting out of {port}, but {port} is sending nothing — replay finished, or the file is missing?",
+    "sim.f.ingressDisabled": "{port} is a chain ingress but is disabled.",
+    "sim.f.ingressLinkDown": "{port} is a chain ingress but its link is down.",
+    "sim.f.drops": "{port} is dropping incoming packets ({n}).",
+    "sim.f.errors": "{port} is counting receive errors ({n}).",
+    "sim.f.filterNoMatch": "{fid} was evaluated {n} times and matched nothing.",
     // shared / common
     "adv.badge": "Advanced",
     "adv.inputs": "Inputs replay pcap files or generate synthetic traffic. Most setups feed traffic from physical ports and won't need this.",
@@ -1750,6 +1766,7 @@ export const I18N = {
     "sim.wiredTip": "已接到 inline 裝置",
     "sim.roleBoth": "入口 + 輸出", "sim.roleIn": "入口", "sim.roleOut": "輸出", "sim.roleIdle": "未使用",
     "sim.selectIngressOpt": "選擇入口埠", "sim.noChain": "無 chain",
+    "sim.portOff": "停用", "sim.portOffTip": "此埠在設定中已停用,不會有流量",
     "sim.inputs": "輸入", "sim.inputTip": "輸入:從此埠送出", "sim.inputPlayTip": "輸入:從此埠送出。點一下開始送出。",
     "sim.inputFrom": "{id} 從 {port} 送出",
     "sim.inputLeaves": "— {port} 不是 LOOP 介面,也沒有接回來,封包離開裝置,不會進入任何鏈結。",
@@ -1762,6 +1779,21 @@ export const I18N = {
     "sim.liveWait": "等待第二次讀取…",
     "sim.noLiveTraffic": "目前沒有任何有鏈結的入口埠有流量。",
     "sim.liveInputs": "送出中:",
+    "sim.checkTitle": "與裝置比對", "sim.checkDirty": "有未套用的修改", "sim.checkDirtyTip": "編輯器裡有尚未套用的修改;比對是依裝置目前執行的設定。",
+    "sim.checkOk": "裝置的行為都和設定一致。", "sim.checkQuiet": "目前沒有任何埠有流量。",
+    "sim.checkAgree": "{n} 條路徑與設定一致:",
+    "sim.f.ingressNoChain": "{port} 有流量進入({n} 個封包),但沒有鏈結以它為入口,依裝置預設處理。",
+    "sim.f.filterMissing": "{fid} 在 {port} 的鏈結上,但裝置沒有這個篩選器,這個條件永遠不會符合。",
+    "sim.f.filterNotTried": "{port} 有流量,但它鏈結的第一個篩選器 {fid} 沒有被比對。",
+    "sim.f.egressSilent": "依篩選結果,{from} 的流量應該從 {port} 送出,但 {port} 沒有送出任何封包。",
+    "sim.f.egressDisabled": "{from} 的鏈結送往 {port},但 {port} 已停用。",
+    "sim.f.egressUnexpected": "{port} 正在送出流量({n} 個封包),但沒有任何鏈結、輸入或 heartbeat 會送到它。",
+    "sim.f.inputSilent": "{id} 應該從 {port} 送出,但 {port} 沒有送出任何封包,重播已結束或檔案不存在?",
+    "sim.f.ingressDisabled": "{port} 是鏈結的入口,但已停用。",
+    "sim.f.ingressLinkDown": "{port} 是鏈結的入口,但連線中斷。",
+    "sim.f.drops": "{port} 正在丟棄進入的封包({n} 個)。",
+    "sim.f.errors": "{port} 有接收錯誤({n} 個)。",
+    "sim.f.filterNoMatch": "{fid} 比對了 {n} 次,沒有任何符合。",
     // shared / common
     "adv.badge": "進階",
     "adv.inputs": "Inputs 重播 pcap 檔或產生合成流量。大多數設定從實體埠餵入流量,不需要用到這個。",

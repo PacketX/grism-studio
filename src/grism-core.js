@@ -837,6 +837,67 @@ export const mkBranch = (fids = "F1") => ({ id: nid(), t: "branch", fids, fidOp:
 export const isUnset = (n) => n && n.t === UNSET;
 export const isDrop = (n) => n && n.t === "out" && n.ports === "0";
 
+/* ===================== walking a chain =====================
+   What the Simulate page does with a set of filter answers, kept here so the
+   check against the device can walk the same way. */
+// collect every filter id referenced anywhere in a chain tree (F-tokens, incl. negated)
+export function chainFilterRefs(tree, into) {
+  (function walk(n) {
+    if (!n) return;
+    if (n.t === "branch" && n.fids) n.fids.split(",").map((s) => s.trim()).filter(Boolean).forEach((tok) => {
+      const id = tok.replace(/^!/, ""); if (/^F\d+$/.test(id)) into.add(id);
+    });
+    ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
+  })(tree);
+  return into;
+}
+// evaluate a branch's fids against the manual filter states
+export function evalFids(fids, fidOp, states) {
+  const toks = String(fids || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!toks.length) return false;
+  const results = toks.map((tok) => {
+    const neg = tok.startsWith("!");
+    const id = tok.replace(/^!/, "");
+    const on = !!states[id]; // default false (not-match)
+    return neg ? !on : on;
+  });
+  return fidOp === "and" ? results.every(Boolean) : results.some(Boolean);
+}
+// walk a chain tree with the given filter states, producing an ordered path + outcome
+export function simulateChain(chain, states, filterAlt) {
+  const steps = [];
+  let node = chain.tree;
+  /* The outcome describes itself with a key rather than a sentence: this runs
+     in a Chinese UI, and prose built here cannot be translated where it is
+     shown. `text` stays for the cases that are already a port list. */
+  let outcome = { kind: "default", key: "sim.noRoute" };
+  let guard = 0;
+  while (node && guard++ < 200) {
+    if (isUnset(node)) { outcome = { kind: "default", key: "sim.unspecified" }; break; }
+    if (node.t === "out") {
+      if (isDrop(node)) outcome = { kind: "drop", key: "sim.dropped" };
+      else outcome = { kind: "out", text: node.ports, mode: node.mode, lb: node.lb };
+      break;
+    }
+    if (node.t === "branch") {
+      const matched = evalFids(node.fids, node.fidOp, states);
+      const alt = node.fids.split(",").map((t) => { const id = t.trim().replace(/^!/, ""); const neg = t.trim().startsWith("!"); return (neg ? "!" : "") + (filterAlt[id] || id); }).join(node.fidOp === "and" ? " AND " : " OR ");
+      // op travels with the step: the hover joins several filters with it
+      steps.push({ id: node.id, fids: node.fids, op: node.fidOp, alt, matched });
+      const nextNode = matched ? node.match : node.notmatch;
+      if (!nextNode || isUnset(nextNode)) {
+        outcome = { kind: "default", key: matched ? "sim.matchUnspec" : "sim.notMatchUnspec" };
+        break;
+      }
+      node = nextNode;
+      continue;
+    }
+    break;
+  }
+  return { steps, outcome };
+}
+
+
 export function cUpdate(node, id, fn) {
   if (!node) return node;
   if (node.id === id) return fn(node);
@@ -2326,6 +2387,124 @@ export function liveFilterStates(prev, list) {
     filters[id] = { state, idle, dTried, dMatched, perSecond, tried, matched };
   });
   return { filters, next };
+}
+
+/* Each port's movement between two readings of get_statistics_json: packets
+   in and out, drops and errors, as deltas (0 on the first sighting, and 0
+   for a counter that went down -- a clear, not traffic), plus the link. */
+export function portReadings(prev, rows) {
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const next = new Map(), ports = {};
+  (rows ?? []).forEach((r) => {
+    const name = String(r?.name ?? "");
+    if (!name) return;
+    const now = { in: num(r.inPackets), out: num(r.outPackets), inDrops: num(r.inDrops), inErrors: num(r.inErrors) };
+    next.set(name, now);
+    const was = prev?.get(name);
+    const d = (k) => (was ? Math.max(0, now[k] - was[k]) : 0);
+    ports[name] = { in: d("in"), out: d("out"), inDrops: d("inDrops"), inErrors: d("inErrors"),
+      link: num(r.linkStatus) === 1, first: !was };
+  });
+  return { ports, next };
+}
+
+/* What the device is doing that the configuration does not account for, and
+   the other way round, from one interval's readings: the ports' movement
+   (portReadings), the filters' (liveFilterStates) and the configuration the
+   device runs. Each finding names what and where; the page puts it in words.
+
+   Expected traffic follows the chains: an ingress port that is moving runs
+   its chain with the filters' measured answers, so the ports it ends at
+   should be sending, and the filter it asks first should have been tried.
+   Traffic nothing explains -- out of a port no path reaches, in on a port no
+   chain takes, an input whose port is quiet -- is reported as such. */
+export function liveFindings({ doc, readings, filters, loopPorts = [], disabledPorts = [], mgmtPorts = [], portOptions = [], hbSendPorts = [] }) {
+  const out = [];
+  const reads = readings ?? {};
+  const r = (p) => reads[p];
+  const moving = (p, dir) => (r(p)?.[dir] ?? 0) > 0;
+  const chains = doc?.chains ?? [];
+  const tokens = (text) => String(text ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  const chainsOn = (p) => chains.filter((c) => tokens(c.ports).includes(p));
+  const states = Object.fromEntries(Object.entries(filters ?? {}).map(([k, v]) => [k, v.state === "match"]));
+  const outPort = new Map((doc?.outputs ?? []).map((o) => ["O" + o.id, String(o.port ?? "").trim()]));
+  const disabled = new Set(disabledPorts), mgmt = new Set(mgmtPorts), known = new Set(portOptions);
+  // the data ports: what the device listed, or failing that everything but management
+  const consider = (p) => (known.size ? known.has(p) : !mgmt.has(p));
+  const activeIn = Object.keys(reads).filter((p) => consider(p) && moving(p, "in"));
+
+  // in on a port no chain takes
+  activeIn.forEach((p) => { if (!chainsOn(p).length) out.push({ kind: "ingressNoChain", sev: "warn", port: p, n: r(p).in }); });
+
+  // along the chains of every moving ingress
+  const expected = new Set();          // ports some path sends to
+  let unknownDest = false;             // a path the device decides itself: no telling where it went
+  const agree = [];
+  activeIn.forEach((p) => chainsOn(p).forEach((chain) => {
+    const { outcome } = simulateChain(chain, states, {});
+    if (chain.tree?.t === "branch") {
+      tokens(chain.tree.fids).map((t) => t.replace(/^!/, "")).forEach((fid) => {
+        if (!(fid in (filters ?? {}))) { out.push({ kind: "filterMissing", sev: "error", port: p, fid }); return; }
+        const f = filters[fid];
+        if (f.dTried === 0 && f.dMatched === 0) out.push({ kind: "filterNotTried", sev: "warn", port: p, fid });
+      });
+    }
+    if (outcome.kind === "out") {
+      const dests = [...new Set(tokens(outcome.text).map((t) => (/^O\d+$/.test(t) ? outPort.get(t) || "" : t)).filter(Boolean))];
+      dests.forEach((d) => expected.add(d));
+      const dead = dests.filter((d) => disabled.has(d));
+      dead.forEach((d) => out.push({ kind: "egressDisabled", sev: "error", port: d, from: p }));
+      const live = dests.filter((d) => !disabled.has(d));
+      const silent = live.filter((d) => !moving(d, "out"));
+      // a load balancer spreads the packets: one of its ports moving is enough
+      if (outcome.mode === "loadBalance" ? (live.length && silent.length === live.length) : silent.length) {
+        silent.forEach((d) => out.push({ kind: "egressSilent", sev: "warn", port: d, from: p }));
+      } else if (live.length) {
+        agree.push({ from: p, to: live });
+      }
+    } else if (outcome.kind !== "drop") {
+      unknownDest = true;
+    }
+  }));
+
+  // out of a port nothing sends to
+  const inputPorts = new Set((doc?.inputs ?? []).map((i) => String(i.port ?? "").trim()).filter(Boolean));
+  const hb = new Set(hbSendPorts);
+  if (!unknownDest) {
+    Object.keys(reads).filter((p) => consider(p) && moving(p, "out") && !expected.has(p) && !inputPorts.has(p) && !hb.has(p))
+      .forEach((p) => out.push({ kind: "egressUnexpected", sev: "info", port: p, n: r(p).out }));
+  }
+
+  // an input whose port is not transmitting
+  (doc?.inputs ?? []).forEach((i) => {
+    const p = String(i.port ?? "").trim();
+    if (p && consider(p) && r(p) && !moving(p, "out")) out.push({ kind: "inputSilent", sev: "warn", port: p, id: "I" + i.id, name: i.name || i.alt || "" });
+  });
+
+  // a chain ingress the device cannot take packets on
+  chains.forEach((c) => tokens(c.ports).forEach((p) => {
+    if (disabled.has(p)) out.push({ kind: "ingressDisabled", sev: "error", port: p });
+    else if (r(p) && r(p).link === false) out.push({ kind: "ingressLinkDown", sev: "warn", port: p });
+  }));
+
+  // the counters that mean trouble whatever the configuration
+  Object.keys(reads).filter(consider).forEach((p) => {
+    if (r(p).inDrops > 0) out.push({ kind: "drops", sev: "warn", port: p, n: r(p).inDrops });
+    if (r(p).inErrors > 0) out.push({ kind: "errors", sev: "warn", port: p, n: r(p).inErrors });
+  });
+
+  // a filter the device keeps asking and never matches: worth a look, not wrong
+  const referenced = new Set();
+  chains.forEach((c) => chainFilterRefs(c.tree, referenced));
+  Object.entries(filters ?? {}).forEach(([fid, f]) => {
+    if (referenced.has(fid) && f.dTried > 0 && f.dMatched === 0) out.push({ kind: "filterNoMatch", sev: "info", fid, n: f.dTried });
+  });
+
+  const rank = { error: 0, warn: 1, info: 2 };
+  const seen = new Set();
+  const findings = out.filter((f) => { const k = [f.kind, f.port, f.from, f.fid, f.id].join("|"); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => rank[a.sev] - rank[b.sev]);
+  return { findings, agree, checked: activeIn.length };
 }
 
 /* Which filter ids the device itself holds, from get_filter_counter, with how

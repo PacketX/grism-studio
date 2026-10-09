@@ -15,7 +15,7 @@ import {
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
   mkSyslogTarget, parseHeartbeat, parseLogging, summarizeSettings,
-  ALERT_RULE_META, trapDispatcherEnabled, describeCron, fmtDuration, liveFilterStates, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
+  ALERT_RULE_META, trapDispatcherEnabled, describeCron, fmtDuration, liveFilterStates, chainFilterRefs, simulateChain, portReadings, liveFindings, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
   MAX_TRAP_TARGETS, mkTrapTarget, parseTrapTargets, trapTargetsPayload, trapTargetsProblems,
   parseHeartbeatStatus, parseServiceExtras,
   parseServices, parseTimezones, tokenizeXml,
@@ -403,6 +403,8 @@ export default function GrismStudio() {
   const [signedOutNotice, setSignedOutNotice] = useState("");
   const [devicePorts, setDevicePorts] = useState(null); // null = use defaults; array = from device
   const [mgmtPorts, setMgmtPorts] = useState([]);       // management interfaces, e.g. M0
+  const [disabledPorts, setDisabledPorts] = useState([]); // data ports with enable=false
+  const [allDataPorts, setAllDataPorts] = useState(null);  // enabled or not, for the device panel
   /* What the operator called each port, keyed by name. Only the chain editor
      uses it: there, a port is picked out of a list of a dozen identical names,
      and "to the IDS" is the part that says which one is right. */
@@ -618,6 +620,10 @@ export default function GrismStudio() {
         .flatMap((i) => i.ports ?? []).filter((p) => p?.enable !== false)
         .map((p) => p.name).filter(Boolean);
       setLoopPorts([...new Set(loops)]);
+      // ports switched off in the configuration: a chain on one carries nothing
+      setDisabledPorts(ifaces.flatMap((i) => i.ports ?? []).filter((p) => p?.enable === false).map((p) => p.name).filter(Boolean));
+      const every = dataPortNames(cfg, { includeLoop: true, enabledOnly: false });
+      setAllDataPorts(every.length ? every : null);
       // whether the device is correlating L2GRE at all -- the table page is only
       // worth showing when it is, or when it still holds rows from when it was
       setL2greOn((cfg.args ?? {}).grel2Correlation === true);
@@ -642,7 +648,7 @@ export default function GrismStudio() {
       // grism.port.linkdown can name a management interface as well as a data
       // port, and those live in ifcfgs rather than interfaces
       setMgmtPorts([...new Set(mgmtPortNames(cfg))]);
-    } catch { setDevicePorts(null); setHbTargets([]); setDeviceFilters([]); setDeviceStorages([]); setLoopPorts([]); setMgmtPorts([]); setPortDescs({}); } // keep defaults
+    } catch { setDevicePorts(null); setHbTargets([]); setDeviceFilters([]); setDeviceStorages([]); setLoopPorts([]); setMgmtPorts([]); setDisabledPorts([]); setAllDataPorts(null); setPortDescs({}); } // keep defaults
   }, []);
 
   // set the sync baseline from the device's running config WITHOUT replacing the
@@ -1232,7 +1238,8 @@ export default function GrismStudio() {
         {tab === "simulate" && (
           <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} portDescs={portDescs} loopPorts={loopPorts} t={t} loggedIn={!!login.who}
             simState={simState} simInPort={simInPort} simInlines={simInlines} simInlineDraft={simInlineDraft} simFlipped={simFlipped}
-            hbTargets={hbTargets} deviceFilters={deviceFilters} />
+            hbTargets={hbTargets} deviceFilters={deviceFilters}
+            deviceDoc={baselineDoc} dirty={dirty} mgmtPorts={mgmtPorts} disabledPorts={disabledPorts} panelPorts={allDataPorts} />
         )}
         {tab === "export" && (
           <ExportTab runXml={runXml} baseline={baseline} problems={allProblems} warnings={allWarnings} docSource={docSource} loggedIn={!!login.who} lang={lang} t={t}
@@ -9983,73 +9990,20 @@ function XmlView({ xml }) {
    Simulate tab — trace a packet from an ingress port through the
    matching chain(s), with each filter's match/not-match set by hand.
    ============================================================ */
-// collect every filter id referenced anywhere in a chain tree (F-tokens, incl. negated)
-function chainFilterRefs(tree, into) {
-  (function walk(n) {
-    if (!n) return;
-    if (n.t === "branch" && n.fids) n.fids.split(",").map((s) => s.trim()).filter(Boolean).forEach((tok) => {
-      const id = tok.replace(/^!/, ""); if (/^F\d+$/.test(id)) into.add(id);
-    });
-    ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
-  })(tree);
-  return into;
-}
-// evaluate a branch's fids against the manual filter states
-function evalFids(fids, fidOp, states) {
-  const toks = String(fids || "").split(",").map((s) => s.trim()).filter(Boolean);
-  if (!toks.length) return false;
-  const results = toks.map((tok) => {
-    const neg = tok.startsWith("!");
-    const id = tok.replace(/^!/, "");
-    const on = !!states[id]; // default false (not-match)
-    return neg ? !on : on;
-  });
-  return fidOp === "and" ? results.every(Boolean) : results.some(Boolean);
-}
-// walk a chain tree with the given filter states, producing an ordered path + outcome
-function simulateChain(chain, states, filterAlt) {
-  const steps = [];
-  let node = chain.tree;
-  /* The outcome describes itself with a key rather than a sentence: this runs
-     in a Chinese UI, and prose built here cannot be translated where it is
-     shown. `text` stays for the cases that are already a port list. */
-  let outcome = { kind: "default", key: "sim.noRoute" };
-  let guard = 0;
-  while (node && guard++ < 200) {
-    if (isUnset(node)) { outcome = { kind: "default", key: "sim.unspecified" }; break; }
-    if (node.t === "out") {
-      if (isDrop(node)) outcome = { kind: "drop", key: "sim.dropped" };
-      else outcome = { kind: "out", text: node.ports, mode: node.mode, lb: node.lb };
-      break;
-    }
-    if (node.t === "branch") {
-      const matched = evalFids(node.fids, node.fidOp, states);
-      const alt = node.fids.split(",").map((t) => { const id = t.trim().replace(/^!/, ""); const neg = t.trim().startsWith("!"); return (neg ? "!" : "") + (filterAlt[id] || id); }).join(node.fidOp === "and" ? " AND " : " OR ");
-      // op travels with the step: the hover joins several filters with it
-      steps.push({ id: node.id, fids: node.fids, op: node.fidOp, alt, matched });
-      const nextNode = matched ? node.match : node.notmatch;
-      if (!nextNode || isUnset(nextNode)) {
-        outcome = { kind: "default", key: matched ? "sim.matchUnspec" : "sim.notMatchUnspec" };
-        break;
-      }
-      node = nextNode;
-      continue;
-    }
-    break;
-  }
-  return { steps, outcome };
-}
 
 /* A stylised front panel of the GRISM device: a row of ports, with those used
    as chain ingress / output highlighted. Clicking a port selects it as the
    simulation ingress. Below, user-added inline devices (e.g. an external IPS)
    are drawn bridging two ports. */
-function DevicePanel({ portOptions, portDescs = {}, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], inputPorts = {}, livePorts = null, autoPlay = false, t }) {
+function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], inputPorts = {}, livePorts = null, autoPlay = false, t }) {
   const tr = t || ((k) => k);
   const portRole = (p) => { const i = inPortSet.has(p), o = outPortSet.has(p); return i && o ? "both" : i ? "in" : o ? "out" : "idle"; };
   const inlinePorts = new Set(inlines.flatMap((x) => [x.portA, x.portB]));
   const [flipped, setFlipped] = flipState; // lifted so row orientation persists across tab switches
   const loopSet = new Set(loopPorts);
+  /* Disabled ports stay on the panel, greyed: a box has its cages whether or
+     not they are switched on, and leaving one out shifts every pair after it. */
+  const offSet = new Set(disabledPorts);
 
   // number extracted from a port name (P0 -> 0); ports without a number get their own column
   const portNum = (p) => { const m = /(\d+)/.exec(p); return m ? +m[1] : null; };
@@ -10413,13 +10367,15 @@ function DevicePanel({ portOptions, portDescs = {}, inPortSet, outPortSet, selec
     const srcs = inputPorts[p] ?? [];
     const picked = selected === p || srcs.some((i) => i.id === selected);
     const liveOn = !!(livePorts && livePorts[p]);
+    const off = offSet.has(p);
     return (
       <button key={p} ref={(el) => { portRefs.current[p] = el; }}
-        className={"dev-port " + role + (picked ? " selected" : "") + (wired ? " wired" : "") + (isLoop ? " loop" : "") + (liveOn ? " live" : "") + (nextPortSet.has(p) ? " next" : prevPortSet.has(p) ? " from" : "")}
-        onClick={() => onPick(p)} title={isLoop ? tr("sim.loopTip") : role === "both" ? tr("sim.roleBoth") : role === "in" ? tr("sim.roleIn") : role === "out" ? tr("sim.roleOut") : tr("sim.roleIdle")}>
+        className={"dev-port " + role + (picked ? " selected" : "") + (wired ? " wired" : "") + (isLoop ? " loop" : "") + (off ? " off" : "") + (liveOn ? " live" : "") + (nextPortSet.has(p) ? " next" : prevPortSet.has(p) ? " from" : "")}
+        onClick={() => onPick(p)} title={off ? tr("sim.portOffTip") : isLoop ? tr("sim.loopTip") : role === "both" ? tr("sim.roleBoth") : role === "in" ? tr("sim.roleIn") : role === "out" ? tr("sim.roleOut") : tr("sim.roleIdle")}>
         <span className="dev-port-led" />
         <span className="dev-port-name">{p}</span>
-        {isLoop ? <span className="dev-port-role loop">LOOP ↻</span> : role !== "idle" && <span className="dev-port-role">{role === "both" ? "IN/OUT" : role.toUpperCase()}</span>}
+        {off ? <span className="dev-port-role off">{tr("sim.portOff")}</span>
+          : isLoop ? <span className="dev-port-role loop">LOOP ↻</span> : role !== "idle" && <span className="dev-port-role">{role === "both" ? "IN/OUT" : role.toUpperCase()}</span>}
         {wired && <span className="dev-port-jack" title={tr("sim.wiredTip")} />}
         {srcs.length > 0 && (
           <span className="dev-port-inputs">
@@ -10967,9 +10923,20 @@ function L2greTab({ data, correlating, onData, t }) {
   );
 }
 
-function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, hbTargets, deviceFilters, loggedIn = false, t }) {
+function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts = [], simState, simInPort, simInlines, simInlineDraft, simFlipped, hbTargets, deviceFilters, loggedIn = false, deviceDoc = null, dirty = false, mgmtPorts = [], disabledPorts = [], panelPorts = null, t }) {
+  /* Following the device: its own counters decide. Which ports are carrying
+     ingress traffic comes from the interface counters moving between two
+     readings, and each filter's match / not-match from its matched count
+     moving -- so the trace shows what the device is doing now, not a guess.
+     The manual switches are kept aside and come back when this is off. */
+  const [sync, setSync] = useState(false);
+  useEffect(() => { if (!loggedIn) setSync(false); }, [loggedIn]);
+  const live = loggedIn && sync;
+  /* While following the device, the configuration it runs is the one to walk:
+     the editor's copy may hold changes not applied yet. */
+  const simDoc = live && deviceDoc ? deviceDoc : doc;
   /* Where each "On" in an outcome actually sends the packet. */
-  const outIdx = React.useMemo(() => outputIndex(doc), [doc.outputs]);
+  const outIdx = React.useMemo(() => outputIndex(simDoc), [simDoc.outputs]);
   const destLines = (text) => String(text ?? "").split(",").map((x) => x.trim()).filter(Boolean)
     .map((tok) => { const d = destLabel(tok, outIdx); return d ? `${tok} → ${d}` : ""; })
     .filter(Boolean);
@@ -10978,25 +10945,25 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
   const outcomeText = (o) => (o.key ? tr(o.key) : o.text);
   // all filter ids to offer as switches: defined here + referenced-but-undefined
   const filterIds = useMemo(() => {
-    const s = new Set(doc.filters.map((f) => "F" + f.id));
-    (doc.chains ?? []).forEach((c) => chainFilterRefs(c.tree, s));
+    const s = new Set(simDoc.filters.map((f) => "F" + f.id));
+    (simDoc.chains ?? []).forEach((c) => chainFilterRefs(c.tree, s));
     return [...s].sort((a, b) => (+a.slice(1)) - (+b.slice(1)));
-  }, [doc.filters, doc.chains]);
-  const filterAlt = useMemo(() => Object.fromEntries(doc.filters.map((f) => ["F" + f.id, f.name || f.alt || ""])), [doc.filters]);
-  const definedSet = useMemo(() => new Set(doc.filters.map((f) => "F" + f.id)), [doc.filters]);
+  }, [simDoc.filters, simDoc.chains]);
+  const filterAlt = useMemo(() => Object.fromEntries(simDoc.filters.map((f) => ["F" + f.id, f.name || f.alt || ""])), [simDoc.filters]);
+  const definedSet = useMemo(() => new Set(simDoc.filters.map((f) => "F" + f.id)), [simDoc.filters]);
 
   const [states, setStates] = simState;      // { F1: true(match)/false(not-match) }, the manual switches
   const [inPort, setInPort] = simInPort;      // chosen ingress port
   const [inlines, setInlines] = simInlines;   // [{ id, name, portA, portB }] — session only, not persisted
   const [inlineDraft, setInlineDraft] = simInlineDraft;
-  const chainForPort = (p) => (doc.chains ?? []).find((c) => (c.ports || "").split(",").map((x) => x.trim()).includes(p));
+  const chainForPort = (p) => (simDoc.chains ?? []).find((c) => (c.ports || "").split(",").map((x) => x.trim()).includes(p));
 
   /* The document's inputs, by the port each transmits out of. An input is a
      packet source, not an ingress: the firmware sends what it generates or
      replays out of the port, and it only meets a chain if the port brings it
      back in (a LOOP port, or a wire to another port). */
-  const inputs = useMemo(() => (doc.inputs ?? []).filter((i) => i.port)
-    .map((i) => ({ id: "I" + i.id, port: String(i.port).trim(), type: i.type, name: i.name || i.alt || "" })), [doc.inputs]);
+  const inputs = useMemo(() => (simDoc.inputs ?? []).filter((i) => i.port)
+    .map((i) => ({ id: "I" + i.id, port: String(i.port).trim(), type: i.type, name: i.name || i.alt || "" })), [simDoc.inputs]);
   const inputPorts = useMemo(() => { const m = {}; inputs.forEach((i) => { (m[i.port] ??= []).push(i); }); return m; }, [inputs]);
   const originInput = useMemo(() => inputs.find((i) => i.id === inPort) ?? null, [inputs, inPort]);
   const inputReentry = useMemo(() => {
@@ -11008,37 +10975,44 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
     return { how: "out" };
   }, [originInput, loopPorts, inlines]);
 
-  /* Following the device: its own counters decide. Which ports are carrying
-     ingress traffic comes from the interface counters moving between two
-     readings, and each filter's match / not-match from its matched count
-     moving -- so the trace shows what the device is doing now, not a guess.
-     The manual switches are kept aside and come back when this is off. */
-  const [sync, setSync] = useState(false);
-  useEffect(() => { if (!loggedIn) setSync(false); }, [loggedIn]);
-  const live = loggedIn && sync;
   const statsPoll = usePolledJson("/grism/task/get_statistics_json", live, { defaultSec: 3, prefKey: "refreshSecSim" });
   const fcPoll = usePolledJson("/grism/task/get_filter_counter", live, { followSec: statsPoll.refreshSec });
   const prevStats = useRef(new Map());
-  const [moved, setMoved] = useState({});
+  const [portReads, setPortReads] = useState({});    // per port: what moved since the last reading
   const [readings, setReadings] = useState(0);
   useEffect(() => {
-    if (!live) { prevStats.current = new Map(); setMoved({}); setReadings(0); return; }
+    if (!live) { prevStats.current = new Map(); setPortReads({}); setReadings(0); return; }
     const rows = statsPoll.data?.statistics;
     if (!Array.isArray(rows)) return;
-    const r = portMovement(prevStats.current, rows);
-    prevStats.current = r.next; setMoved(r.moved); setReadings((n) => n + 1);
+    const r = portReadings(prevStats.current, rows);
+    prevStats.current = r.next; setPortReads(r.ports); setReadings((n) => n + 1);
   }, [live, statsPoll.data]);
+  // the panel's view of it: which ports moved, and which way
+  const moved = useMemo(() => Object.fromEntries(Object.entries(portReads)
+    .filter(([, v]) => v.in > 0 || v.out > 0).map(([p, v]) => [p, { in: v.in > 0, out: v.out > 0 }])), [portReads]);
   const prevFc = useRef(null);
   const [liveFilters, setLiveFilters] = useState({});
+  const [fcReadings, setFcReadings] = useState(0);
   useEffect(() => {
-    if (!live) { prevFc.current = null; setLiveFilters({}); return; }
+    if (!live) { prevFc.current = null; setLiveFilters({}); setFcReadings(0); return; }
     const list = fcPoll.data?.filter_counter;
     if (!Array.isArray(list)) return;
     const r = liveFilterStates(prevFc.current, list);
-    prevFc.current = r.next; setLiveFilters(r.filters);
+    prevFc.current = r.next; setLiveFilters(r.filters); setFcReadings((n) => n + 1);
   }, [live, fcPoll.data]);
+  /* The check against the device needs two readings of each, so that every
+     figure is a movement and not a lifetime total. */
+  const checkReady = live && readings >= 2 && fcReadings >= 2;
+  const check = useMemo(() => (checkReady ? liveFindings({
+    doc: simDoc, readings: portReads, filters: liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions,
+    hbSendPorts: (hbTargets ?? []).filter((x) => x.enable).map((x) => x.sendPort).filter(Boolean),
+  }) : null), [checkReady, simDoc, portReads, liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions, hbTargets]);
+  const findingText = (f) => {
+    const vars = { port: f.port ?? "", from: f.from ?? "", fid: f.fid ?? "", id: f.id ? f.id + (f.name ? ` · ${f.name}` : "") : "", n: fmtNum(f.n ?? 0) };
+    return Object.entries(vars).reduce((text, [k, v]) => text.split("{" + k + "}").join(v), tr("sim.f." + f.kind));
+  };
   const liveStates = useMemo(() => Object.fromEntries(Object.entries(liveFilters).map(([k, v]) => [k, v.state === "match"])), [liveFilters]);
-  const liveInPorts = useMemo(() => (live ? Object.keys(moved).filter((p) => moved[p].in && chainForPort(p)) : []), [live, moved, doc.chains]);
+  const liveInPorts = useMemo(() => (live ? Object.keys(moved).filter((p) => moved[p].in && chainForPort(p)) : []), [live, moved, simDoc.chains]);
   const liveInputs = useMemo(() => (live ? inputs.filter((i) => moved[i.port]?.out) : []), [live, moved, inputs]);
   // resizable device-panel height (session only; null = auto/natural height)
   const [panelHeight, setPanelHeight] = useState(null);
@@ -11064,20 +11038,20 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
   // ingress ports available: union of chains' ingress ports and the device list
   const chainInPorts = useMemo(() => {
     const s = new Set();
-    (doc.chains ?? []).forEach((c) => (c.ports || "").split(",").map((p) => p.trim()).filter(Boolean).forEach((p) => s.add(p)));
+    (simDoc.chains ?? []).forEach((c) => (c.ports || "").split(",").map((p) => p.trim()).filter(Boolean).forEach((p) => s.add(p)));
     return [...s];
-  }, [doc.chains]);
+  }, [simDoc.chains]);
 
   // output ports any chain routes to (physical P-ports only; O-refs and 0/drop excluded)
   const chainOutPorts = useMemo(() => {
     const s = new Set();
-    (doc.chains ?? []).forEach((c) => (function walk(n) {
+    (simDoc.chains ?? []).forEach((c) => (function walk(n) {
       if (!n) return;
       if (n.t === "out" && n.ports) n.ports.split(",").map((p) => p.trim()).filter(Boolean).forEach((p) => { if (/^[A-Z]\d+$/.test(p) && !/^O\d+$/.test(p)) s.add(p); });
       ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
     })(c.tree));
     return s;
-  }, [doc.chains]);
+  }, [simDoc.chains]);
   const inPortSet = useMemo(() => new Set(chainInPorts), [chainInPorts]);
 
   // the switches that decide: the device's while following it, otherwise the manual ones
@@ -11090,18 +11064,18 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
     if (originInput) return inputReentry && inputReentry.how !== "out" ? [inputReentry.port] : [];
     return inPort ? [inPort] : [];
   }, [live, liveInPorts, originInput, inputReentry, inPort]);
-  const results = useMemo(() => traceOrigins.flatMap((port) => (doc.chains ?? [])
+  const results = useMemo(() => traceOrigins.flatMap((port) => (simDoc.chains ?? [])
     .filter((c) => (c.ports || "").split(",").map((p) => p.trim()).includes(port))
-    .map((c) => ({ port, chain: c, ...simulateChain(c, effStates, filterAlt) }))), [traceOrigins, doc.chains, effStates, filterAlt]);
+    .map((c) => ({ port, chain: c, ...simulateChain(c, effStates, filterAlt) }))), [traceOrigins, simDoc.chains, effStates, filterAlt]);
 
   /* The switches and the trace say "F1" and "O2" and nothing else, which is the
      same problem the chain pictures have. Same hover, same two sources. */
   const { tip, show, hide } = useNodeTip();
   const showFids = (ev, fids, op) => show(ev, {
-    rows: branchConditions(fids, doc.filters, tr, hbTargets, deviceFilters),
+    rows: branchConditions(fids, simDoc.filters, tr, hbTargets, deviceFilters),
     op: op === "and" ? tr("crit.and") : tr("crit.or"),
   });
-  const showOuts = (ev, ports) => show(ev, { outs: outDestinations(ports, doc.outputs, tr) });
+  const showOuts = (ev, ports) => show(ev, { outs: outDestinations(ports, simDoc.outputs, tr) });
 
   const setFilter = (fid, on) => setStates((s) => ({ ...s, [fid]: on }));
   const allNotMatch = () => setStates({});
@@ -11131,7 +11105,7 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
       const t = tok.trim();
       const oMatch = /^O(\d+)$/.exec(t);
       if (!oMatch) return { port: t };
-      const outDef = (doc.outputs ?? []).find((o) => o.id === +oMatch[1]);
+      const outDef = (simDoc.outputs ?? []).find((o) => o.id === +oMatch[1]);
       if (outDef && outDef.port) return { port: outDef.port, ref: t };
       return { exitAt: t };
     };
@@ -11185,12 +11159,12 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
     }
     if (!paths.length) return null;
     return { paths, split: paths.length > 1 };
-  }, [live, liveInPorts, liveInputs, originInput, inPort, effStates, filterAlt, inlines, doc.chains, doc.outputs, loopPorts]);
+  }, [live, liveInPorts, liveInputs, originInput, inPort, effStates, filterAlt, inlines, simDoc.chains, simDoc.outputs, loopPorts]);
 
   return (
     <div className="sim-page">
       <div className="dev-panel-outer" style={panelHeight ? { height: panelHeight, flex: "0 0 auto" } : undefined}>
-        <DevicePanel portOptions={portOptions} portDescs={portDescs} inPortSet={inPortSet} outPortSet={chainOutPorts}
+        <DevicePanel portOptions={panelPorts ?? portOptions} disabledPorts={disabledPorts} portDescs={portDescs} inPortSet={inPortSet} outPortSet={chainOutPorts}
           selected={inPort} onPick={(p) => setInPort(p)}
           inlines={inlines} onRemoveInline={removeInline}
           inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
@@ -11281,6 +11255,27 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
             </div>
           </div>
         )}
+        {live && (
+          <div className="sim-check">
+            <div className="sim-check-head">
+              <span>{tr("sim.checkTitle")}</span>
+              {dirty && deviceDoc && <span className="sim-check-note" title={tr("sim.checkDirtyTip")}>{tr("sim.checkDirty")}</span>}
+            </div>
+            {!checkReady && <p className="sim-note">{statsPoll.state === "error" ? `${tr("tf.loadFailed")}: ${statsPoll.errMsg}` : tr("sim.liveWait")}</p>}
+            {check && check.findings.length === 0 && (
+              <p className="sim-check-ok">✓ {check.checked ? tr("sim.checkOk") : tr("sim.checkQuiet")}</p>
+            )}
+            {check && check.findings.map((f, i) => (
+              <div key={i} className={"sim-finding " + f.sev}>
+                <span className="sim-finding-mark">{f.sev === "error" ? "✕" : f.sev === "warn" ? "!" : "i"}</span>
+                <span>{findingText(f)}</span>
+              </div>
+            ))}
+            {check && check.agree.length > 0 && (
+              <p className="sim-check-agree">✓ {tr("sim.checkAgree").replace("{n}", String(check.agree.length))} {check.agree.map((a) => `${a.from} → ${a.to.join(", ")}`).join(" · ")}</p>
+            )}
+          </div>
+        )}
         {live && liveInputs.length > 0 && (
           <div className="sim-trace input">
             <div className="sim-trace-body">{tr("sim.liveInputs")} {liveInputs.map((i) => `${i.id}${i.name ? ` · ${i.name}` : ""} → ${i.port}`).join(", ")}</div>
@@ -11332,7 +11327,7 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
 }
 
 /* What this document changed, line by line, against the version it was loaded
-   from. The doc-level diff drives the tab badges; this is the text itself,
+   from. The simDoc-level diff drives the tab badges; this is the text itself,
    which is what anyone about to submit wants to read.
 
    Untouched stretches are collapsed -- a run.xml is hundreds of lines and an

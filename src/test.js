@@ -2344,6 +2344,39 @@ group("extra running-config files");
     check("live filters: matched moving is a match, a cleared counter is not movement",
       c.filters.F1.state === "match" && c.filters.F1.dMatched === 2 && c.filters.F3.idle);
   }
+  {
+    const rows1 = [{ name: "P0", inPackets: 100, outPackets: 0, inDrops: 0, inErrors: 0, linkStatus: 1 }, { name: "P1", inPackets: 0, outPackets: 50, linkStatus: 1 }];
+    const a = C.portReadings(null, rows1);
+    check("port readings: first sighting moves nothing", a.ports.P0.in === 0 && a.ports.P0.first && a.ports.P0.link);
+    const b = C.portReadings(a.next, [{ name: "P0", inPackets: 130, outPackets: 0, inDrops: 4, linkStatus: 0 }, { name: "P1", inPackets: 0, outPackets: 20, linkStatus: 1 }]);
+    check("port readings: deltas, drops, link; a cleared counter is not movement",
+      b.ports.P0.in === 30 && b.ports.P0.inDrops === 4 && b.ports.P0.link === false && b.ports.P1.out === 0 && !b.ports.P0.first);
+  }
+  {
+    const doc = C.normalizeDoc({
+      filters: [{ id: 1, name: "https", sessionBase: "no", root: { id: "r", t: "or", children: [{ id: "f", t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
+      outputs: [{ id: 1, name: "tag", port: "P3", mods: [] }],
+      inputs: [{ id: 1, name: "replay", type: "replayPcap", port: "P5", filepaths: ["H1/a.pcap"], fields: {} }],
+      chains: [{ cid: "c1", ports: "P0", tree: { id: "b", t: "branch", fids: "F1", fidOp: "or", match: { id: "m", t: "out", ports: "O1", mode: "duplicate", lb: "5thash" }, notmatch: { id: "n", t: "out", ports: "P2", mode: "duplicate", lb: "5thash" } } }],
+    });
+    const reads = (over) => ({ P0: { in: 100, out: 0, inDrops: 0, inErrors: 0, link: true }, P2: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: true },
+      P3: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: true }, P4: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: true }, P5: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: true }, ...over });
+    const ports = ["P0", "P2", "P3", "P4", "P5"];
+    const kinds = (r) => r.findings.map((f) => f.kind + ":" + (f.fid ?? f.port ?? "")).join(" ");
+    let r = C.liveFindings({ doc, readings: reads({ P3: { in: 0, out: 100, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "match", dTried: 100, dMatched: 100 } }, portOptions: ports });
+    check("device check: a path whose egress moves agrees", r.findings.length === 1 && r.findings[0].kind === "inputSilent" && r.agree.length === 1 && r.agree[0].to[0] === "P3", kinds(r));
+    r = C.liveFindings({ doc, readings: reads({ P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "match", dTried: 100, dMatched: 100 } }, portOptions: ports });
+    check("device check: the predicted egress is silent", kinds(r) === "egressSilent:P3", kinds(r));
+    r = C.liveFindings({ doc, readings: reads({ P2: { in: 0, out: 100, inDrops: 0, inErrors: 0, link: true }, P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "notmatch", dTried: 100, dMatched: 0 } }, portOptions: ports });
+    check("device check: not-match goes to P2, which moves; the filter is reported as never matching", kinds(r) === "filterNoMatch:F1" && r.agree[0].to[0] === "P2", kinds(r));
+    r = C.liveFindings({ doc, readings: reads({ P2: { in: 0, out: 100, inDrops: 0, inErrors: 0, link: true }, P4: { in: 7, out: 7, inDrops: 3, inErrors: 0, link: true }, P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: {}, portOptions: ports });
+    check("device check: a filter the device lacks, traffic no chain takes, egress nothing explains, drops",
+      kinds(r) === "filterMissing:F1 ingressNoChain:P4 drops:P4 egressUnexpected:P4", kinds(r));
+    r = C.liveFindings({ doc, readings: reads({ P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "match", dTried: 0, dMatched: 0 } }, portOptions: ports, disabledPorts: ["P3"] });
+    check("device check: a disabled egress, and a first filter never tried", kinds(r) === "egressDisabled:P3 filterNotTried:F1", kinds(r));
+    r = C.liveFindings({ doc, readings: reads({ P0: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: false }, P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "notmatch", dTried: 0, dMatched: 0 } }, portOptions: ports });
+    check("device check: quiet device, ingress link down", kinds(r) === "ingressLinkDown:P0" && r.checked === 0, kinds(r));
+  }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false
     && C.trapDispatcherEnabled({ services: [{ name: "sshd", enable: true }] }) === null);
