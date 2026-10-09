@@ -11313,21 +11313,35 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
     let paths = [];
     const others = [];                     // ports moving that no chain or input accounts for
     if (live) {
-      liveInPorts.forEach((p) => paths.push(...buildFrom(p, 0)));
+      /* A port whose ingress the device itself feeds -- the far side of an
+         inline device that is sending into it, or a LOOP port that is
+         sending -- gets no packets of its own from outside: they are the
+         ones already drawn coming back through the IPS or round the LOOP,
+         and drawing both showed every packet twice. */
+      const fed = new Set();
+      inlines.forEach((d) => {
+        if (moved[d.portA]?.out) fed.add(d.portB);
+        if (moved[d.portB]?.out) fed.add(d.portA);
+      });
+      loopPorts.forEach((p) => { if (moved[p]?.out) fed.add(p); });
+      liveInPorts.filter((p) => !fed.has(p)).forEach((p) => paths.push(...buildFrom(p, 0)));
       liveInputs.forEach((i) => paths.push(...fromInput(i)));
       /* Traffic on a port no chain takes is still traffic: what comes in is
          drawn arriving (the device handles it by default, so it goes no
          further), and what goes out of a port no drawn path reaches is drawn
          leaving -- round its LOOP, or into its inline device. */
       const onPanel = new Set(panelPorts ?? portOptions);
-      Object.keys(moved).filter((p) => moved[p].in && onPanel.has(p) && !chainForPort(p)).forEach((p) => {
+      Object.keys(moved).filter((p) => moved[p].in && onPanel.has(p) && !chainForPort(p) && !fed.has(p)).forEach((p) => {
         paths.push({ nodes: [{ kind: "outside-in", port: p }, { kind: "port", port: p }], share: 1 });
         others.push({ port: p, dir: "in" });
       });
       const leaving = new Set(paths.flatMap((x) => x.nodes.filter((n) => ["outside-out", "loop", "ips-in"].includes(n.kind)).map((n) => n.port)));
       const inputPortSet = new Set(inputs.map((i) => i.port));
+      /* Traffic going out of a port that no drawn path reaches: drawn leaving,
+         and -- into an inline device or round a LOOP -- on through whatever
+         takes it on the far side, since that side was left to this path. */
       Object.keys(moved).filter((p) => moved[p].out && onPanel.has(p) && !leaving.has(p) && !inputPortSet.has(p)).forEach((p) => {
-        paths.push(...leaveBy(p, [], 8, p));
+        paths.push(...leaveBy(p, [], 0, null));
         others.push({ port: p, dir: "out" });
       });
     } else if (originInput) {
