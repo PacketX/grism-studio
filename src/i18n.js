@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.237.0";
+export const STUDIO_VERSION = "2.238.0";
 
 export const I18N = {
   en: {
@@ -791,7 +791,7 @@ export const I18N = {
     "sim.inputLeaves": "— {port} is not a LOOP port and nothing brings the traffic back, so the packets leave the device and reach no chain.",
     "sim.inputLoops": "— {port} is a LOOP interface, so the packets come back in on {port}.",
     "sim.inputWired": "— through {dev} and back in on {back}.",
-    "sim.sync": "Follow the device", "sim.syncTip": "Ingress ports and filter results come from the device's counters as they move",
+    "sim.sync": "Follow the device", "sim.syncTip": "Ingress ports and filter results come from the device's counters as they move. Click again to stop.",
     "sim.syncNote": "A port whose ingress counters are moving is an ingress; a filter whose matched count is moving is a match. Read every {n} s.",
     "sim.syncPorts": "every port with ingress traffic", "sim.liveChip": "live",
     "sim.liveIdle": "no traffic", "sim.liveUnknown": "not on the device", "sim.liveTried": "tried",
@@ -1780,7 +1780,7 @@ export const I18N = {
     "sim.inputLeaves": "— {port} 不是 LOOP 介面,也沒有接回來,封包離開裝置,不會進入任何鏈結。",
     "sim.inputLoops": "— {port} 是 LOOP 介面,封包從 {port} 回到裝置。",
     "sim.inputWired": "— 經 {dev} 從 {back} 回到裝置。",
-    "sim.sync": "與裝置同步", "sim.syncTip": "入口埠與篩選結果依裝置計數的變化決定",
+    "sim.sync": "與裝置同步", "sim.syncTip": "入口埠與篩選結果依裝置計數的變化決定。再點一次停止同步。",
     "sim.syncNote": "入口計數有增加的埠就是入口;符合計數有增加的篩選器就是符合。每 {n} 秒讀取一次。",
     "sim.syncPorts": "所有有入口流量的埠", "sim.liveChip": "同步中",
     "sim.liveIdle": "無流量", "sim.liveUnknown": "裝置上沒有", "sim.liveTried": "比對",

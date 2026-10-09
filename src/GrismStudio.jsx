@@ -9995,7 +9995,7 @@ function XmlView({ xml }) {
    as chain ingress / output highlighted. Clicking a port selects it as the
    simulation ingress. Below, user-added inline devices (e.g. an external IPS)
    are drawn bridging two ports. */
-function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], inputPorts = {}, livePorts = null, autoPlay = false, t }) {
+function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], inputPorts = {}, livePorts = null, autoPlay = false, syncState = null, t }) {
   const tr = t || ((k) => k);
   const portRole = (p) => { const i = inPortSet.has(p), o = outPortSet.has(p); return i && o ? "both" : i ? "in" : o ? "out" : "idle"; };
   const inlinePorts = new Set(inlines.flatMap((x) => [x.portA, x.portB]));
@@ -10424,11 +10424,18 @@ function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSe
               <span className="dev-leg idle"><span className="dev-leg-dot" />{tr("sim.roleIdle")}</span>
             </div>
             <div className="dev-head-btns">
-              {autoPlay && <span className="dev-live" title={tr("sim.syncTip")}>● {tr("sim.liveChip")}</span>}
               {!autoPlay && playState === "idle" && <button className="dev-play" onClick={play} disabled={!animPlan} title={animPlan ? tr("sim.playTip") : tr("sim.selectIngress")}>{tr("sim.play")}</button>}
               {!autoPlay && playState === "playing" && <button className="dev-play" onClick={pause} title={tr("sim.pauseTip")}>{tr("sim.pause")}</button>}
               {!autoPlay && playState === "paused" && <button className="dev-play" onClick={resume} title={tr("sim.resumeTip")}>{tr("sim.resume")}</button>}
               {!autoPlay && playState !== "idle" && <button className="dev-stop" onClick={stop} title={tr("sim.stopTip")}>{tr("sim.stop")}</button>}
+              {/* following the device sits with the playback controls: it is
+                  the other way of making the panel move */}
+              {syncState && (
+                <button className={"dev-sync" + (syncState[0] ? " on" : "")} aria-pressed={syncState[0]}
+                  onClick={() => syncState[1]((v) => !v)} title={tr("sim.syncTip")}>
+                  {syncState[0] ? "● " + tr("sim.liveChip") : "⟳ " + tr("sim.sync")}
+                </button>
+              )}
               <div className="inline-add-wrap">
                 <button className={"inline-add-btn" + (inlineDraft.open ? " on" : "")}
                   onClick={() => setInlineDraft((s) => {
@@ -11177,7 +11184,8 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
           inlines={inlines} onRemoveInline={removeInline}
           inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
           animPlan={animPlan} flipState={simFlipped} loopPorts={loopPorts} t={tr}
-          inputPorts={inputPorts} livePorts={live ? moved : null} autoPlay={live} />
+          inputPorts={inputPorts} livePorts={live ? moved : null} autoPlay={live}
+          syncState={loggedIn ? [sync, setSync] : null} />
       </div>
       <div className="sim-resizer" onMouseDown={onResizeStart} title={tr("sim.resizeTip")}>
         <span className="sim-resizer-grip" />
@@ -11186,11 +11194,6 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
       <aside className="sim-controls">
         <div className="sim-section">
           <div className="sim-label">{tr("sim.ingressPort")}</div>
-          {loggedIn && (
-            <label className="sim-sync" title={tr("sim.syncTip")}>
-              <input type="checkbox" checked={sync} onChange={(e) => setSync(e.target.checked)} /> {tr("sim.sync")}
-            </label>
-          )}
           <select className="sim-inport" value={live ? "" : inPort} disabled={live} onChange={(e) => setInPort(e.target.value)}>
             <option value="">— {live ? tr("sim.syncPorts") : tr("sim.selectIngressOpt")} —</option>
             {[...new Set([...chainInPorts, ...portOptions])].map((p) => <option key={p} value={p}>{ifacePortLabel(p, portDescs)}{chainInPorts.includes(p) ? "" : ` (${tr("sim.noChain")})`}</option>)}

@@ -657,7 +657,9 @@
 .dev-port-role.off{color:var(--txt-faint);}
 .dev-port.live{border-color:var(--accent-2);}
 .dev-port.live .dev-port-led{background:var(--accent-2); box-shadow:0 0 8px var(--accent-2);}
-.dev-live{font-family:var(--mono); font-size:11px; color:var(--match); padding:4px 8px; letter-spacing:.06em;}
+.dev-sync{background:transparent; border:1px solid var(--line-2); color:var(--txt-dim); border-radius:6px; padding:4px 12px; font-size:11px; font-family:var(--mono); font-weight:600;}
+.dev-sync:hover{border-color:var(--match); color:var(--match);}
+.dev-sync.on{border-color:var(--match); color:var(--match); background:rgba(52,211,153,.1);}
 .dev-port-jack{position:absolute; bottom:-4px; left:50%; transform:translateX(-50%); width:7px; height:7px; border-radius:99px; background:var(--accent-2); box-shadow:0 0 6px var(--accent-2); z-index:3;}
 .dev-inlines{position:absolute; inset:0; z-index:4; pointer-events:none;}
 .inline-dev{position:relative; display:flex; align-items:center; gap:10px; background:linear-gradient(180deg,var(--panel),var(--panel-2)); border:1px solid var(--accent-2); border-radius:10px; padding:12px 14px 10px; box-shadow:0 6px 18px -12px rgba(0,0,0,.5); transition:box-shadow .15s, border-color .15s;}
@@ -711,7 +713,6 @@
 .sim-toggle.notmatch{color:var(--notmatch); border-color:var(--notmatch); background:rgba(251,113,133,.08);}
 .sim-toggle.live{cursor:default;}
 .sim-live-k{font-family:var(--mono); font-size:10px; color:var(--txt-dim); flex:0 0 auto; margin-left:auto;}
-.sim-sync{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--txt); cursor:pointer;}
 .sim-note{font-size:11.5px; color:var(--txt-dim); line-height:1.5; margin:0;}
 .sim-bulk button:disabled{opacity:.45; cursor:default;}
 .sim-trace.input .sim-trace-body{color:var(--txt-dim); font-size:13px; line-height:1.6;}
