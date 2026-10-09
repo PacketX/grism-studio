@@ -11006,11 +11006,17 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
   const check = useMemo(() => (checkReady ? liveFindings({
     doc: simDoc, readings: portReads, filters: liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions,
     hbSendPorts: (hbTargets ?? []).filter((x) => x.enable).map((x) => x.sendPort).filter(Boolean),
-  }) : null), [checkReady, simDoc, portReads, liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions, hbTargets]);
-  const findingText = (f) => {
-    const vars = { port: f.port ?? "", from: f.from ?? "", fid: f.fid ?? "", id: f.id ? f.id + (f.name ? ` · ${f.name}` : "") : "", n: fmtNum(f.n ?? 0) };
-    return Object.entries(vars).reduce((text, [k, v]) => text.split("{" + k + "}").join(v), tr("sim.f." + f.kind));
+    inlines,
+  }) : null), [checkReady, simDoc, portReads, liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions, hbTargets, inlines]);
+  const fill = (text, f) => {
+    const vars = { port: f.port ?? "", from: f.from ?? "", back: f.back ?? "", dev: f.dev ?? "", fid: f.fid ?? "",
+      id: f.id ? f.id + (f.name ? ` · ${f.name}` : "") : "", n: fmtNum(f.n ?? 0),
+      sent: fmtNum(f.sent ?? 0), got: fmtNum(f.got ?? 0), pct: String(f.pct ?? "") };
+    return Object.entries(vars).reduce((s, [k, v]) => s.split("{" + k + "}").join(v), text);
   };
+  const findingText = (f) => fill(tr("sim.f." + f.kind), f);
+  // a destination wired to an inline device says so in the agreeing paths
+  const wiredTo = (p) => inlines.find((d) => d.portA === p || d.portB === p)?.name;
   const liveStates = useMemo(() => Object.fromEntries(Object.entries(liveFilters).map(([k, v]) => [k, v.state === "match"])), [liveFilters]);
   const liveInPorts = useMemo(() => (live ? Object.keys(moved).filter((p) => moved[p].in && chainForPort(p)) : []), [live, moved, simDoc.chains]);
   const liveInputs = useMemo(() => (live ? inputs.filter((i) => moved[i.port]?.out) : []), [live, moved, inputs]);
@@ -11272,8 +11278,11 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
               </div>
             ))}
             {check && check.agree.length > 0 && (
-              <p className="sim-check-agree">✓ {tr("sim.checkAgree").replace("{n}", String(check.agree.length))} {check.agree.map((a) => `${a.from} → ${a.to.join(", ")}`).join(" · ")}</p>
+              <p className="sim-check-agree">✓ {tr("sim.checkAgree").replace("{n}", String(check.agree.length))} {check.agree.map((a) => `${a.from} → ${a.to.map((p) => (wiredTo(p) ? `${p} (${wiredTo(p)})` : p)).join(", ")}`).join(" · ")}</p>
             )}
+            {check && check.inlineOk.map((x, i) => (
+              <p key={"il" + i} className="sim-check-agree">✓ {fill(tr("sim.inlineOk"), x)}</p>
+            ))}
           </div>
         )}
         {live && liveInputs.length > 0 && (

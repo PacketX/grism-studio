@@ -2418,7 +2418,7 @@ export function portReadings(prev, rows) {
    should be sending, and the filter it asks first should have been tried.
    Traffic nothing explains -- out of a port no path reaches, in on a port no
    chain takes, an input whose port is quiet -- is reported as such. */
-export function liveFindings({ doc, readings, filters, loopPorts = [], disabledPorts = [], mgmtPorts = [], portOptions = [], hbSendPorts = [] }) {
+export function liveFindings({ doc, readings, filters, loopPorts = [], disabledPorts = [], mgmtPorts = [], portOptions = [], hbSendPorts = [], inlines = [] }) {
   const out = [];
   const reads = readings ?? {};
   const r = (p) => reads[p];
@@ -2493,6 +2493,37 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
     if (r(p).inErrors > 0) out.push({ kind: "errors", sev: "warn", port: p, n: r(p).inErrors });
   });
 
+  /* An inline device drawn on the panel is a promise: what leaves by one of
+     its ports comes back in on the other. Both directions are checked, and
+     the counters are read in one call, so the two sides are the same
+     interval: nothing back at all, a share missing, more back than went, or
+     traffic coming back that nothing sent. */
+  const inlineOk = [];
+  (inlines ?? []).forEach((dev) => {
+    const name = dev.name || "inline";
+    [dev.portA, dev.portB].forEach((p) => {
+      if (r(p) && r(p).link === false) out.push({ kind: "inlineLinkDown", sev: "warn", dev: name, port: p });
+    });
+    [[dev.portA, dev.portB], [dev.portB, dev.portA]].forEach(([x, y]) => {
+      if (!r(x) || !r(y)) return;
+      const sent = r(x).out, got = r(y).in;
+      if (sent > 0 && got === 0) {
+        out.push({ kind: "inlineNoReturn", sev: "warn", dev: name, port: x, back: y, n: sent });
+      } else if (sent > 0) {
+        const missing = sent - got;
+        if (missing >= 10 && missing / sent > 0.05) {
+          out.push({ kind: "inlineLoss", sev: "info", dev: name, port: x, back: y, sent, got, pct: Math.round((missing / sent) * 100) });
+        } else if (got - sent >= 10 && (got - sent) / sent > 0.05) {
+          out.push({ kind: "inlineExtra", sev: "info", dev: name, port: x, back: y, sent, got });
+        } else {
+          inlineOk.push({ dev: name, port: x, back: y, sent, got });
+        }
+      } else if (got > 0) {
+        out.push({ kind: "inlineUnsolicited", sev: "info", dev: name, port: x, back: y, n: got });
+      }
+    });
+  });
+
   // a filter the device keeps asking and never matches: worth a look, not wrong
   const referenced = new Set();
   chains.forEach((c) => chainFilterRefs(c.tree, referenced));
@@ -2502,9 +2533,9 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
 
   const rank = { error: 0, warn: 1, info: 2 };
   const seen = new Set();
-  const findings = out.filter((f) => { const k = [f.kind, f.port, f.from, f.fid, f.id].join("|"); if (seen.has(k)) return false; seen.add(k); return true; })
+  const findings = out.filter((f) => { const k = [f.kind, f.port, f.from, f.fid, f.id, f.dev, f.back].join("|"); if (seen.has(k)) return false; seen.add(k); return true; })
     .sort((a, b) => rank[a.sev] - rank[b.sev]);
-  return { findings, agree, checked: activeIn.length };
+  return { findings, agree, inlineOk, checked: activeIn.length };
 }
 
 /* Which filter ids the device itself holds, from get_filter_counter, with how

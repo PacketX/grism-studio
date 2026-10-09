@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.234.0";
+export const STUDIO_VERSION = "2.235.0";
 
 export const I18N = {
   en: {
@@ -813,6 +813,12 @@ export const I18N = {
     "sim.f.drops": "{port} is dropping incoming packets ({n}).",
     "sim.f.errors": "{port} is counting receive errors ({n}).",
     "sim.f.filterNoMatch": "{fid} was evaluated {n} times and matched nothing.",
+    "sim.f.inlineNoReturn": "{dev}: {port} sent {n} packets to it, but nothing came back on {back} — the inline device is down, is blocking the traffic, or is wired differently.",
+    "sim.f.inlineLoss": "{dev}: {port} sent {sent}, {back} got back {got} ({pct}% missing) — the inline device is dropping or blocking part of it.",
+    "sim.f.inlineExtra": "{dev}: {back} got back {got}, more than the {sent} {port} sent — something else is on that link.",
+    "sim.f.inlineUnsolicited": "{dev}: {port} sent nothing, yet {back} is receiving from it ({n} packets).",
+    "sim.f.inlineLinkDown": "{dev} is wired to {port}, but {port}'s link is down.",
+    "sim.inlineOk": "{dev}: {port} sent {sent}, {back} got back {got}",
     // shared / common
     "adv.badge": "Advanced",
     "adv.inputs": "Inputs replay pcap files or generate synthetic traffic. Most setups feed traffic from physical ports and won't need this.",
@@ -1794,6 +1800,12 @@ export const I18N = {
     "sim.f.drops": "{port} 正在丟棄進入的封包({n} 個)。",
     "sim.f.errors": "{port} 有接收錯誤({n} 個)。",
     "sim.f.filterNoMatch": "{fid} 比對了 {n} 次,沒有任何符合。",
+    "sim.f.inlineNoReturn": "{dev}:{port} 送出了 {n} 個封包,但 {back} 沒有收回任何封包,inline 裝置可能中斷、阻擋了流量,或接線不同。",
+    "sim.f.inlineLoss": "{dev}:{port} 送出 {sent},{back} 只收回 {got}(少了 {pct}%),inline 裝置可能丟棄或阻擋了部分流量。",
+    "sim.f.inlineExtra": "{dev}:{back} 收回 {got},比 {port} 送出的 {sent} 還多,這條線路上還有其他流量。",
+    "sim.f.inlineUnsolicited": "{dev}:{port} 沒有送出,但 {back} 有流量從它進來({n} 個封包)。",
+    "sim.f.inlineLinkDown": "{dev} 接在 {port},但 {port} 連線中斷。",
+    "sim.inlineOk": "{dev}:{port} 送出 {sent},{back} 收回 {got}",
     // shared / common
     "adv.badge": "進階",
     "adv.inputs": "Inputs 重播 pcap 檔或產生合成流量。大多數設定從實體埠餵入流量,不需要用到這個。",

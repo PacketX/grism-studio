@@ -2377,6 +2377,29 @@ group("extra running-config files");
     r = C.liveFindings({ doc, readings: reads({ P0: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: false }, P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "notmatch", dTried: 0, dMatched: 0 } }, portOptions: ports });
     check("device check: quiet device, ingress link down", kinds(r) === "ingressLinkDown:P0" && r.checked === 0, kinds(r));
   }
+  {
+    const doc = C.normalizeDoc({ chains: [{ cid: "c", ports: "P0", tree: { id: "o", t: "out", ports: "P6", mode: "duplicate", lb: "5thash" } },
+      { cid: "d", ports: "P7", tree: { id: "o2", t: "out", ports: "P1", mode: "duplicate", lb: "5thash" } }] });
+    const z = { in: 0, out: 0, inDrops: 0, inErrors: 0, link: true };
+    const ips = [{ name: "IPS", portA: "P6", portB: "P7" }];
+    const run = (over) => C.liveFindings({ doc, filters: {}, inlines: ips, portOptions: ["P0", "P1", "P6", "P7"],
+      readings: { P0: { ...z, in: 1000 }, P1: { ...z }, P6: { ...z }, P7: { ...z }, ...over } });
+    const kinds = (r) => r.findings.map((f) => f.kind + ":" + (f.port ?? "") + (f.back ? ">" + f.back : "")).join(" ");
+    let r = run({ P6: { ...z, out: 1000 }, P7: { ...z, in: 998 }, P1: { ...z, out: 998 } });
+    check("inline: what went out came back, and on through the return chain", kinds(r) === "" && r.inlineOk.length === 1 && r.inlineOk[0].got === 998, kinds(r));
+    r = run({ P6: { ...z, out: 1000 } });
+    check("inline: nothing came back", kinds(r) === "inlineNoReturn:P6>P7", kinds(r));
+    r = run({ P6: { ...z, out: 1000 }, P7: { ...z, in: 700 }, P1: { ...z, out: 700 } });
+    check("inline: part of it missing", kinds(r) === "inlineLoss:P6>P7" && r.findings[0].pct === 30, kinds(r));
+    r = run({ P6: { ...z, out: 1000 }, P7: { ...z, in: 1500 }, P1: { ...z, out: 1500 } });
+    check("inline: more back than went", kinds(r) === "inlineExtra:P6>P7", kinds(r));
+    r = run({ P6: { ...z, out: 1000 }, P7: { ...z, in: 1000, out: 0, link: true }, P1: { ...z, out: 1000 }, P0: { ...z, in: 1000 } });
+    check("inline: no false alarm in the quiet direction", !r.findings.some((f) => f.back === "P6"), kinds(r));
+    r = run({ P6: { ...z, out: 0, in: 50 }, P0: { ...z } });
+    check("inline: traffic back that nothing sent", kinds(r).includes("inlineUnsolicited:P7>P6"), kinds(r));
+    r = run({ P6: { ...z, out: 1000 }, P7: { ...z, in: 1000, link: false }, P1: { ...z, out: 1000 } });
+    check("inline: a side with its link down", kinds(r).includes("inlineLinkDown:P7"), kinds(r));
+  }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false
     && C.trapDispatcherEnabled({ services: [{ name: "sshd", enable: true }] }) === null);
