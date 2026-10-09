@@ -2483,6 +2483,8 @@ group("extra running-config files");
     check("a filter tried a handful of times without a match says nothing; tried often, it is noted",
       run(13) === "" && run(50) === "filterNoMatch", run(13) + " / " + run(50));
   }
+  check("local login hosts are an administrator's", C.minPrivForRequest("/grism/task/get_local_login_hosts", "GET") === C.PRIV.ADMIN
+    && C.minPrivForRequest("/grism/task/set_local_login_hosts", "POST") === C.PRIV.ADMIN);
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false
     && C.trapDispatcherEnabled({ services: [{ name: "sshd", enable: true }] }) === null);

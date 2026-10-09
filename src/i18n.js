@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.242.0";
+export const STUDIO_VERSION = "2.243.0";
 
 export const I18N = {
   en: {
@@ -370,8 +370,14 @@ export const I18N = {
     "set.acctDeleted": "Account deleted.", "set.acctNone": "No accounts returned.",
     "set.acctWhoUnknown": "Cannot tell which account is signed in, so the password cannot be changed from here.",
     "set.acctSignIn": "Could not read the account list — sign in to the device again.",
-    "set.acctFallbackOnly": "These accounts can only be used while the authentication server is unreachable.",
-    "set.authNote": "Check credentials against an external server when signing in to the device. While it is enabled, local accounts can sign in only when the server cannot be reached.",
+    "set.acctFallbackOnly": "These accounts can only be used while the authentication server is unreachable, or from an Allow Local Login Host.",
+    "set.authNote": "Check credentials against an external server when signing in to the device. While it is enabled, local accounts can sign in only when the server cannot be reached, or from the hosts listed below.",
+    "set.llTitle": "Allow Local Login Hosts",
+    "set.llNote": "Signing in from these IPv4 addresses or networks always uses the local accounts, and the TACACS+ or RADIUS server is not asked; everyone else is checked by the server as usual. One per line, CIDR allowed (e.g. 192.168.1.0/24). Empty means none.",
+    "set.llNoRemote": "Neither TACACS+ nor RADIUS is on, so everyone already signs in with the local accounts — the list has no effect for now.",
+    "set.llYouIn": "Your own address is in the list: once saved, your next sign-in uses a local account.",
+    "set.llSaved": "Saved — it applies from the next sign-in.",
+    "set.llUnavailable": "The list could not be read.",
     "set.liveUpdate": "Live filter updates",
     "set.liveUpdateOn": "Apply filter changes without interrupting traffic",
     "set.liveUpdateNote": "Rebuilds filters in the background when they change, so large IP, DNS name, HTTP host or TLS server-name blocklists can be updated without dropping traffic or restarting the engine.",
@@ -1368,8 +1374,14 @@ export const I18N = {
     "set.acctDeleted": "帳號已刪除。", "set.acctNone": "沒有取得任何帳號。",
     "set.acctWhoUnknown": "無法判斷目前登入的帳號,因此無法在此變更密碼。",
     "set.acctSignIn": "無法讀取帳號列表 — 請重新登入裝置。",
-    "set.acctFallbackOnly": "這些帳號只有在伺服器斷線時才能使用。",
-    "set.authNote": "登入裝置時改向外部伺服器驗證帳密。啟用後,本機帳號只有在伺服器無法連線時才能登入。",
+    "set.acctFallbackOnly": "這些帳號只有在伺服器斷線時,或從「強制本機帳號登入的來源」登入時才能使用。",
+    "set.authNote": "登入裝置時改向外部伺服器驗證帳密。啟用後,本機帳號只有在伺服器無法連線時,或從下方指定的來源登入時才能使用。",
+    "set.llTitle": "強制本機帳號登入的來源(Allow Local Login Hosts)",
+    "set.llNote": "從下列 IPv4 位址或網段登入時,一律用本機帳號驗證,不會詢問 TACACS+ 或 RADIUS 伺服器;其他來源照常由伺服器驗證。每行一筆,可用 CIDR(例如 192.168.1.0/24)。空白表示不使用。",
+    "set.llNoRemote": "目前沒有啟用 TACACS+ 或 RADIUS,所有人本來就是用本機帳號登入,這份清單暫時沒有作用。",
+    "set.llYouIn": "您目前的位址在清單中:儲存後,下次登入要用本機帳號。",
+    "set.llSaved": "已儲存,下一次登入起生效。",
+    "set.llUnavailable": "無法讀取這份清單。",
     "set.liveUpdate": "篩選器即時更新",
     "set.liveUpdateOn": "更新篩選器時不中斷流量",
     "set.liveUpdateNote": "篩選器變更時在背景重建,讓 IP、DNS 名稱、HTTP host、TLS server name 等大量黑名單更新時不丟封包、也不需要重啟引擎。",

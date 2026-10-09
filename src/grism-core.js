@@ -2863,7 +2863,7 @@ const WRITE_PATHS = [
    refuse with a reason instead of relaying a bare 401. 0 is anyone signed in. */
 const ADMIN_PATHS = [
   /^\/(list_user|create_user|delete_user|set_user_priv)/,
-  /^\/grism\/task\/(update|upload_component|halt|backup|download_backup|restore|get_mgmt_access|set_mgmt_access)/,
+  /^\/grism\/task\/(update|upload_component|halt|backup|download_backup|restore|get_mgmt_access|set_mgmt_access|get_local_login_hosts|set_local_login_hosts)/,
 ];
 const CONFIG_PATHS = [
   /^\/grism\/task\/submit_config/, /^\/grism\/set_/,

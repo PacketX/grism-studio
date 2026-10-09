@@ -2257,6 +2257,33 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
       setTimeout(() => setMgmtState({ state: "idle", msg: "" }), 2500);
     } catch (e) { setMgmtState({ state: "error", msg: String(e.message || e) }); }
   };
+  /* Allow Local Login Hosts: addresses that sign in with the accounts on the
+     box even while TACACS+ or RADIUS is on. ll is what the device answered
+     (null before), llText what is being typed. */
+  const [ll, setLl] = React.useState(null);
+  const [llText, setLlText] = React.useState("");
+  const [llState, setLlState] = React.useState({ state: "idle", msg: "" });
+  const loadLocalLogin = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_local_login_hosts", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const v = await res.json();
+      setLl(v); setLlText((v.hosts ?? []).join("\n"));
+    } catch (e) { warnFetch("local login hosts", e); setLl({ unavailable: true }); }
+  }, []);
+  const saveLocalLogin = async () => {
+    setLlState({ state: "sending", msg: "" });
+    try {
+      const body = new URLSearchParams(); body.set("hosts", parseAllowList(llText).entries.join("\n"));
+      const res = await fetch("/grism/task/set_local_login_hosts", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || "HTTP " + res.status);
+      const r = await res.json();
+      setLl((o) => ({ ...o, hosts: r.hosts })); setLlText((r.hosts ?? []).join("\n"));
+      setLlState({ state: "ok", msg: "" });
+      setTimeout(() => setLlState({ state: "idle", msg: "" }), 2500);
+    } catch (e) { setLlState({ state: "error", msg: String(e.message || e) }); }
+  };
   const [communityBase, setCommunityBase] = React.useState("");
   const [extras, setExtras] = React.useState(null);      // xmlrpc / backup service settings
   const [snmpCopied, setSnmpCopied] = React.useState(null);
@@ -2692,6 +2719,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
     } catch (e) { warnFetch("login authentication", e); }
   }, [getConfig]);
   React.useEffect(() => { if (loggedIn && isAdmin && section === "auth" && !views) loadViews(); }, [loggedIn, isAdmin, section, views, loadViews]);
+  React.useEffect(() => { if (loggedIn && isAdmin && section === "auth" && ll === null) loadLocalLogin(); }, [loggedIn, isAdmin, section, ll, loadLocalLogin]);
 
   const loadHeartbeat = React.useCallback(async () => {
     try {
@@ -3375,7 +3403,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
               }
               else if (section === "services") { setSvc(null); loadServices(); }
               else if (section === "logging") { setLg(null); loadLogging(); }
-              else if (section === "auth") { setViews(null); loadViews(); }
+              else if (section === "auth") { setViews(null); loadViews(); setLl(null); }
               else if (section === "alerts") { setAlRules(null); loadAlertRules(); }
               else { setEditingRaw(false); load(); }
             }}>
@@ -4550,6 +4578,40 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                 disabled={submit.state === "sending" || JSON.stringify(views) === JSON.stringify(viewsBase) || viewsProblems(views).length > 0}
                 onClick={() => setConfirm({ kind: "views" })}>{tr("set.apply")}</button>
             </div>
+
+            {/* Allow Local Login Hosts: its own list and its own apply, kept by
+                pywww rather than in the configuration, like the management
+                access list -- so it takes effect at the next sign-in without
+                a reload, and an update leaves it in place */}
+            {ll && (() => {
+              const parsed = parseAllowList(llText);
+              const changed = parsed.entries.join("\n") !== (ll.hosts ?? []).join("\n");
+              const remoteOn = !!(viewsBase?.tacacsLogin || viewsBase?.radiusLogin);
+              const meIn = !!ll.client_ip && allowListCovers(parsed.entries, ll.client_ip);
+              return (
+                <section className="sys-card">
+                  <h3 className="sys-card-title">{tr("set.llTitle")}</h3>
+                  {ll.unavailable ? <p className="set-hint err">{tr("set.llUnavailable")}</p> : <>
+                    <p className="set-hint">{tr("set.llNote")}</p>
+                    {!remoteOn && <p className="set-hint warn">{tr("set.llNoRemote")}</p>}
+                    <textarea className="mgmt-allow mono" rows={4} value={llText} placeholder={"192.168.1.10\n10.0.0.0/8"}
+                      onChange={(e) => setLlText(e.target.value)} />
+                    {ll.client_ip && <p className="set-hint">{tr("set.mgmtYou")} <span className="mono">{ll.client_ip}</span>
+                      {" "}<button className="copy-btn" disabled={meIn}
+                        onClick={() => setLlText((t) => (t.trim() ? t.trimEnd() + "\n" : "") + ll.client_ip)}>{tr("set.mgmtAddMe")}</button></p>}
+                    {meIn && remoteOn && <p className="set-hint">{tr("set.llYouIn")}</p>}
+                    {parsed.bad && <p className="set-hint err">{tr("set.mgmtBad").replace("{v}", parsed.bad)}</p>}
+                    {llState.state === "error" && <p className="set-hint err">{llState.msg}</p>}
+                    {llState.state === "ok" && <p className="set-hint ok">{tr("set.llSaved")}</p>}
+                    <div className="set-actions">
+                      <button className="copy-btn" disabled={!changed} onClick={() => setLlText((ll.hosts ?? []).join("\n"))}>{tr("set.revert")}</button>
+                      <button className="sys-refresh" disabled={!changed || !!parsed.bad || llState.state === "sending"}
+                        onClick={saveLocalLogin}>{tr("set.apply")}</button>
+                    </div>
+                  </>}
+                </section>
+              );
+            })()}
           </>)}
         </div>
       )}
