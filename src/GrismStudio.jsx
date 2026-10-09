@@ -11006,12 +11006,14 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
   const check = useMemo(() => (checkReady ? liveFindings({
     doc: simDoc, readings: portReads, filters: liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions,
     hbSendPorts: (hbTargets ?? []).filter((x) => x.enable).map((x) => x.sendPort).filter(Boolean),
+    hbPorts: (hbTargets ?? []).filter((x) => x.enable).flatMap((x) => [x.sendPort, x.receivePort]).filter(Boolean),
     inlines,
   }) : null), [checkReady, simDoc, portReads, liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions, hbTargets, inlines]);
   const fill = (text, f) => {
     const vars = { port: f.port ?? "", from: f.from ?? "", back: f.back ?? "", dev: f.dev ?? "", fid: f.fid ?? "",
       id: f.id ? f.id + (f.name ? ` · ${f.name}` : "") : "", n: fmtNum(f.n ?? 0),
-      sent: fmtNum(f.sent ?? 0), got: fmtNum(f.got ?? 0), pct: String(f.pct ?? "") };
+      sent: fmtNum(f.sent ?? 0), got: fmtNum(f.got ?? 0), pct: String(f.pct ?? ""),
+      roles: (f.roles ?? []).map((x) => tr("sim.role." + x.k).replace("{dev}", x.dev ?? "")).join(tr("sim.roleJoin")) };
     return Object.entries(vars).reduce((s, [k, v]) => s.split("{" + k + "}").join(v), text);
   };
   const findingText = (f) => fill(tr("sim.f." + f.kind), f);

@@ -2375,7 +2375,13 @@ group("extra running-config files");
     r = C.liveFindings({ doc, readings: reads({ P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "match", dTried: 0, dMatched: 0 } }, portOptions: ports, disabledPorts: ["P3"] });
     check("device check: a disabled egress, and a first filter never tried", kinds(r) === "egressDisabled:P3 filterNotTried:F1", kinds(r));
     r = C.liveFindings({ doc, readings: reads({ P0: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: false }, P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "notmatch", dTried: 0, dMatched: 0 } }, portOptions: ports });
-    check("device check: quiet device, ingress link down", kinds(r) === "ingressLinkDown:P0" && r.checked === 0, kinds(r));
+    check("device check: quiet device, ingress link down", kinds(r) === "linkDown:P0" && r.checked === 0 && r.findings[0].sev === "warn", kinds(r));
+    r = C.liveFindings({ doc, readings: reads({ P3: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: false }, P5: { in: 0, out: 9, inDrops: 0, inErrors: 0, link: true } }), filters: { F1: { state: "match", dTried: 100, dMatched: 100 } }, portOptions: ports });
+    check("device check: the measured path sends to a port whose link is down -- an error, not 'silent'",
+      kinds(r) === "linkDown:P3" && r.findings[0].sev === "error" && r.findings[0].roles.map((x) => x.k).join() === "egress" && r.agree.length === 0, kinds(r));
+    r = C.liveFindings({ doc, readings: reads({ P2: { in: 0, out: 100, inDrops: 0, inErrors: 0, link: true }, P3: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: false }, P5: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: false }, P4: { in: 0, out: 0, inDrops: 0, inErrors: 0, link: false } }), filters: { F1: { state: "notmatch", dTried: 100, dMatched: 0 } }, portOptions: ports, hbPorts: ["P4"] });
+    check("device check: links down where nothing is lost are warnings, an unused port is not reported, a down input is not 'silent'",
+      kinds(r) === "linkDown:P3 linkDown:P5 linkDown:P4 filterNoMatch:F1" && r.findings.slice(0, 3).every((f) => f.sev === "warn"), kinds(r));
   }
   {
     const doc = C.normalizeDoc({ chains: [{ cid: "c", ports: "P0", tree: { id: "o", t: "out", ports: "P6", mode: "duplicate", lb: "5thash" } },
@@ -2398,7 +2404,7 @@ group("extra running-config files");
     r = run({ P6: { ...z, out: 0, in: 50 }, P0: { ...z } });
     check("inline: traffic back that nothing sent", kinds(r).includes("inlineUnsolicited:P7>P6"), kinds(r));
     r = run({ P6: { ...z, out: 1000 }, P7: { ...z, in: 1000, link: false }, P1: { ...z, out: 1000 } });
-    check("inline: a side with its link down", kinds(r).includes("inlineLinkDown:P7"), kinds(r));
+    check("inline: a side with its link down", kinds(r).includes("linkDown:P7") && r.findings.find((f) => f.kind === "linkDown").roles.some((x) => x.k === "inline" && x.dev === "IPS"), kinds(r));
   }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false

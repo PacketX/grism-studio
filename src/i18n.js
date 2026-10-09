@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.235.0";
+export const STUDIO_VERSION = "2.236.0";
 
 export const I18N = {
   en: {
@@ -809,7 +809,6 @@ export const I18N = {
     "sim.f.egressUnexpected": "{port} is sending traffic ({n} packets) that no chain, input or heartbeat accounts for.",
     "sim.f.inputSilent": "{id} should be transmitting out of {port}, but {port} is sending nothing — replay finished, or the file is missing?",
     "sim.f.ingressDisabled": "{port} is a chain ingress but is disabled.",
-    "sim.f.ingressLinkDown": "{port} is a chain ingress but its link is down.",
     "sim.f.drops": "{port} is dropping incoming packets ({n}).",
     "sim.f.errors": "{port} is counting receive errors ({n}).",
     "sim.f.filterNoMatch": "{fid} was evaluated {n} times and matched nothing.",
@@ -817,7 +816,9 @@ export const I18N = {
     "sim.f.inlineLoss": "{dev}: {port} sent {sent}, {back} got back {got} ({pct}% missing) — the inline device is dropping or blocking part of it.",
     "sim.f.inlineExtra": "{dev}: {back} got back {got}, more than the {sent} {port} sent — something else is on that link.",
     "sim.f.inlineUnsolicited": "{dev}: {port} sent nothing, yet {back} is receiving from it ({n} packets).",
-    "sim.f.inlineLinkDown": "{dev} is wired to {port}, but {port}'s link is down.",
+    "sim.f.linkDown": "{port}'s link is down — it is {roles}.",
+    "sim.role.ingress": "a chain ingress", "sim.role.egress": "a chain destination", "sim.role.input": "an input's port",
+    "sim.role.heartbeat": "a heartbeat port", "sim.role.inline": "wired to {dev}", "sim.roleJoin": ", ",
     "sim.inlineOk": "{dev}: {port} sent {sent}, {back} got back {got}",
     // shared / common
     "adv.badge": "Advanced",
@@ -1796,7 +1797,6 @@ export const I18N = {
     "sim.f.egressUnexpected": "{port} 正在送出流量({n} 個封包),但沒有任何鏈結、輸入或 heartbeat 會送到它。",
     "sim.f.inputSilent": "{id} 應該從 {port} 送出,但 {port} 沒有送出任何封包,重播已結束或檔案不存在?",
     "sim.f.ingressDisabled": "{port} 是鏈結的入口,但已停用。",
-    "sim.f.ingressLinkDown": "{port} 是鏈結的入口,但連線中斷。",
     "sim.f.drops": "{port} 正在丟棄進入的封包({n} 個)。",
     "sim.f.errors": "{port} 有接收錯誤({n} 個)。",
     "sim.f.filterNoMatch": "{fid} 比對了 {n} 次,沒有任何符合。",
@@ -1804,7 +1804,9 @@ export const I18N = {
     "sim.f.inlineLoss": "{dev}:{port} 送出 {sent},{back} 只收回 {got}(少了 {pct}%),inline 裝置可能丟棄或阻擋了部分流量。",
     "sim.f.inlineExtra": "{dev}:{back} 收回 {got},比 {port} 送出的 {sent} 還多,這條線路上還有其他流量。",
     "sim.f.inlineUnsolicited": "{dev}:{port} 沒有送出,但 {back} 有流量從它進來({n} 個封包)。",
-    "sim.f.inlineLinkDown": "{dev} 接在 {port},但 {port} 連線中斷。",
+    "sim.f.linkDown": "{port} 連線中斷,它是{roles}。",
+    "sim.role.ingress": "鏈結的入口", "sim.role.egress": "鏈結的輸出", "sim.role.input": "輸入的送出埠",
+    "sim.role.heartbeat": "heartbeat 的埠", "sim.role.inline": "{dev} 的接線埠", "sim.roleJoin": "、",
     "sim.inlineOk": "{dev}:{port} 送出 {sent},{back} 收回 {got}",
     // shared / common
     "adv.badge": "進階",

@@ -2418,7 +2418,7 @@ export function portReadings(prev, rows) {
    should be sending, and the filter it asks first should have been tried.
    Traffic nothing explains -- out of a port no path reaches, in on a port no
    chain takes, an input whose port is quiet -- is reported as such. */
-export function liveFindings({ doc, readings, filters, loopPorts = [], disabledPorts = [], mgmtPorts = [], portOptions = [], hbSendPorts = [], inlines = [] }) {
+export function liveFindings({ doc, readings, filters, loopPorts = [], disabledPorts = [], mgmtPorts = [], portOptions = [], hbSendPorts = [], hbPorts = [], inlines = [] }) {
   const out = [];
   const reads = readings ?? {};
   const r = (p) => reads[p];
@@ -2438,6 +2438,7 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
 
   // along the chains of every moving ingress
   const expected = new Set();          // ports some path sends to
+  const lostTo = new Set();            // ...whose link is down: that traffic is being lost
   let unknownDest = false;             // a path the device decides itself: no telling where it went
   const agree = [];
   activeIn.forEach((p) => chainsOn(p).forEach((chain) => {
@@ -2455,12 +2456,15 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
       const dead = dests.filter((d) => disabled.has(d));
       dead.forEach((d) => out.push({ kind: "egressDisabled", sev: "error", port: d, from: p }));
       const live = dests.filter((d) => !disabled.has(d));
-      const silent = live.filter((d) => !moving(d, "out"));
+      live.filter((d) => r(d) && r(d).link === false).forEach((d) => lostTo.add(d));
+      const silent = live.filter((d) => !moving(d, "out") && !lostTo.has(d));
       // a load balancer spreads the packets: one of its ports moving is enough
       if (outcome.mode === "loadBalance" ? (live.length && silent.length === live.length) : silent.length) {
         silent.forEach((d) => out.push({ kind: "egressSilent", sev: "warn", port: d, from: p }));
-      } else if (live.length) {
-        agree.push({ from: p, to: live });
+      } else {
+        // a destination whose link is down is not agreeing: its traffic is lost
+        const reached = live.filter((d) => !lostTo.has(d));
+        if (reached.length) agree.push({ from: p, to: reached });
       }
     } else if (outcome.kind !== "drop") {
       unknownDest = true;
@@ -2478,14 +2482,37 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
   // an input whose port is not transmitting
   (doc?.inputs ?? []).forEach((i) => {
     const p = String(i.port ?? "").trim();
-    if (p && consider(p) && r(p) && !moving(p, "out")) out.push({ kind: "inputSilent", sev: "warn", port: p, id: "I" + i.id, name: i.name || i.alt || "" });
+    if (p && consider(p) && r(p) && !moving(p, "out") && r(p).link !== false) out.push({ kind: "inputSilent", sev: "warn", port: p, id: "I" + i.id, name: i.name || i.alt || "" });
   });
 
   // a chain ingress the device cannot take packets on
   chains.forEach((c) => tokens(c.ports).forEach((p) => {
     if (disabled.has(p)) out.push({ kind: "ingressDisabled", sev: "error", port: p });
-    else if (r(p) && r(p).link === false) out.push({ kind: "ingressLinkDown", sev: "warn", port: p });
   }));
+
+  /* A link down on any port the configuration uses, with what it is used
+     for: a chain's ingress or destination, an input's port, a heartbeat's,
+     an inline device's side. An error when a measured path is sending there
+     right now -- that traffic is being lost -- and a warning otherwise. A
+     port nothing uses is allowed to have no cable in it. */
+  const roles = new Map();
+  const role = (p, k, extra) => { p = String(p ?? "").trim(); if (!p || p === "0" || disabled.has(p)) return;
+    if (!roles.has(p)) roles.set(p, []); if (!roles.get(p).some((x) => x.k === k && x.dev === extra)) roles.get(p).push({ k, dev: extra }); };
+  chains.forEach((c) => {
+    tokens(c.ports).forEach((p) => role(p, "ingress"));
+    (function walk(n) {
+      if (!n) return;
+      if (n.t === "out") tokens(n.ports).forEach((t) => role(/^O\d+$/.test(t) ? outPort.get(t) : t, "egress"));
+      ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
+    })(c.tree);
+  });
+  (doc?.inputs ?? []).forEach((i) => role(i.port, "input"));
+  (hbPorts ?? []).forEach((p) => role(p, "heartbeat"));
+  (inlines ?? []).forEach((d) => { role(d.portA, "inline", d.name || "inline"); role(d.portB, "inline", d.name || "inline"); });
+  roles.forEach((list, p) => {
+    if (!r(p) || r(p).link !== false) return;
+    out.push({ kind: "linkDown", sev: lostTo.has(p) ? "error" : "warn", port: p, roles: list });
+  });
 
   // the counters that mean trouble whatever the configuration
   Object.keys(reads).filter(consider).forEach((p) => {
@@ -2501,9 +2528,6 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
   const inlineOk = [];
   (inlines ?? []).forEach((dev) => {
     const name = dev.name || "inline";
-    [dev.portA, dev.portB].forEach((p) => {
-      if (r(p) && r(p).link === false) out.push({ kind: "inlineLinkDown", sev: "warn", dev: name, port: p });
-    });
     [[dev.portA, dev.portB], [dev.portB, dev.portA]].forEach(([x, y]) => {
       if (!r(x) || !r(y)) return;
       const sent = r(x).out, got = r(y).in;
