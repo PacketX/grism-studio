@@ -2367,10 +2367,11 @@ export function summarizeFilterCounters(list) {
 }
 
 /* Each filter's state on the device, from two readings of get_filter_counter:
-   its matched count moved -> match; only its try count moved -> not-match;
-   neither -> nothing reached it (idle), shown as not-match. The first reading
-   has nothing to compare with, so it goes by the device's matched-per-second.
-   A count that went down (counters cleared) reads as no movement. */
+   every packet tried matched -> match; none did -> not-match; some did ->
+   partial, with `share` the part that matched; nothing reached it -> idle,
+   shown as not-match. The first reading has nothing to compare with, so it
+   goes by the device's matched-per-second. A count that went down (counters
+   cleared) reads as no movement. */
 export function liveFilterStates(prev, list) {
   const next = new Map(), filters = {};
   (Array.isArray(list) ? list : []).forEach((f) => {
@@ -2381,12 +2382,66 @@ export function liveFilterStates(prev, list) {
     const was = prev?.get(id);
     const dTried = was ? Math.max(0, tried - was.tried) : 0;
     const dMatched = was ? Math.max(0, matched - was.matched) : 0;
-    let state, idle;
-    if (was) { state = dMatched > 0 ? "match" : "notmatch"; idle = dTried === 0 && dMatched === 0; }
-    else { state = perSecond > 0 ? "match" : "notmatch"; idle = perSecond === 0; }
-    filters[id] = { state, idle, dTried, dMatched, perSecond, tried, matched };
+    let state, idle, share;
+    if (was) {
+      idle = dTried === 0 && dMatched === 0;
+      share = dTried > 0 ? Math.min(1, dMatched / dTried) : (dMatched > 0 ? 1 : 0);
+      state = dMatched === 0 ? "notmatch" : share >= 1 ? "match" : "partial";
+    } else {
+      state = perSecond > 0 ? "match" : "notmatch"; idle = perSecond === 0; share = state === "match" ? 1 : 0;
+    }
+    filters[id] = { state, idle, share, dTried, dMatched, perSecond, tried, matched };
   });
   return { filters, next };
+}
+
+/* The share of a branch's traffic that matches, from each filter's share.
+   The filters of one branch are taken as independent -- the counters give
+   no joint figure -- so AND multiplies and OR is one minus the product of
+   the misses; a negated filter is its complement. */
+export function branchShare(fids, fidOp, shareOf) {
+  const toks = String(fids || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!toks.length) return 0;
+  const ps = toks.map((tok) => {
+    const p = Math.max(0, Math.min(1, Number(shareOf(tok.replace(/^!/, ""))) || 0));
+    return tok.startsWith("!") ? 1 - p : p;
+  });
+  return fidOp === "and" ? ps.reduce((a, b) => a * b, 1) : 1 - ps.reduce((a, b) => a * (1 - b), 1);
+}
+
+/* Every way through a chain that carries some traffic, with the share that
+   takes it: a branch whose filters partly match sends both ways. Each leaf
+   has the steps it took and its outcome, in simulateChain's shapes. */
+export function chainLeaves(chain, shareOf, filterAlt = {}) {
+  const leaves = [];
+  const altOf = (fids, op) => String(fids || "").split(",").map((t) => {
+    const id = t.trim().replace(/^!/, ""); const neg = t.trim().startsWith("!");
+    return (neg ? "!" : "") + (filterAlt[id] || id);
+  }).join(op === "and" ? " AND " : " OR ");
+  const walk = (node, share, steps, guard) => {
+    if (share <= 0) return;
+    if (!node || guard > 200) { leaves.push({ share, steps, outcome: { kind: "default", key: "sim.noRoute" } }); return; }
+    if (isUnset(node)) { leaves.push({ share, steps, outcome: { kind: "default", key: "sim.unspecified" } }); return; }
+    if (node.t === "out") {
+      leaves.push({ share, steps, outcome: isDrop(node) ? { kind: "drop", key: "sim.dropped" } : { kind: "out", text: node.ports, mode: node.mode, lb: node.lb } });
+      return;
+    }
+    if (node.t === "branch") {
+      const p = branchShare(node.fids, node.fidOp, shareOf);
+      const alt = altOf(node.fids, node.fidOp);
+      [[true, p], [false, 1 - p]].forEach(([matched, s]) => {
+        if (s <= 0) return;
+        const st = [...steps, { id: node.id, fids: node.fids, op: node.fidOp, alt, matched, share: s }];
+        const next = matched ? node.match : node.notmatch;
+        if (!next || isUnset(next)) { leaves.push({ share: share * s, steps: st, outcome: { kind: "default", key: matched ? "sim.matchUnspec" : "sim.notMatchUnspec" } }); return; }
+        walk(next, share * s, st, guard + 1);
+      });
+      return;
+    }
+    leaves.push({ share, steps, outcome: { kind: "default", key: "sim.noRoute" } });
+  };
+  walk(chain?.tree, 1, [], 0);
+  return leaves;
 }
 
 /* Each port's movement between two readings of get_statistics_json: packets
@@ -2398,11 +2453,11 @@ export function portReadings(prev, rows) {
   (rows ?? []).forEach((r) => {
     const name = String(r?.name ?? "");
     if (!name) return;
-    const now = { in: num(r.inPackets), out: num(r.outPackets), inDrops: num(r.inDrops), inErrors: num(r.inErrors) };
+    const now = { in: num(r.inPackets), out: num(r.outPackets), inDrops: num(r.inDrops), inErrors: num(r.inErrors), outDrops: num(r.outDrops) };
     next.set(name, now);
     const was = prev?.get(name);
     const d = (k) => (was ? Math.max(0, now[k] - was[k]) : 0);
-    ports[name] = { in: d("in"), out: d("out"), inDrops: d("inDrops"), inErrors: d("inErrors"),
+    ports[name] = { in: d("in"), out: d("out"), inDrops: d("inDrops"), inErrors: d("inErrors"), outDrops: d("outDrops"),
       link: num(r.linkStatus) === 1, first: !was };
   });
   return { ports, next };
@@ -2414,8 +2469,9 @@ export function portReadings(prev, rows) {
    device runs. Each finding names what and where; the page puts it in words.
 
    Expected traffic follows the chains: an ingress port that is moving runs
-   its chain with the filters' measured answers, so the ports it ends at
-   should be sending, and the filter it asks first should have been tried.
+   its chain with the share each filter matched, so every way through it
+   that carries a fair number of packets should end at a port that is
+   sending, and the filter it asks first should have been tried.
    Traffic nothing explains -- out of a port no path reaches, in on a port no
    chain takes, an input whose port is quiet -- is reported as such. */
 export function liveFindings({ doc, readings, filters, loopPorts = [], disabledPorts = [], mgmtPorts = [], portOptions = [], hbSendPorts = [], hbPorts = [], inlines = [] }) {
@@ -2426,7 +2482,11 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
   const chains = doc?.chains ?? [];
   const tokens = (text) => String(text ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   const chainsOn = (p) => chains.filter((c) => tokens(c.ports).includes(p));
-  const states = Object.fromEntries(Object.entries(filters ?? {}).map(([k, v]) => [k, v.state === "match"]));
+  const shareOf = (fid) => {
+    const f = filters?.[fid];
+    if (!f) return 0;                    // the device does not hold it: it never matches
+    return f.share ?? (f.dTried > 0 ? f.dMatched / f.dTried : f.state === "match" ? 1 : 0);
+  };
   const outPort = new Map((doc?.outputs ?? []).map((o) => ["O" + o.id, String(o.port ?? "").trim()]));
   const disabled = new Set(disabledPorts), mgmt = new Set(mgmtPorts), known = new Set(portOptions);
   // the data ports: what the device listed, or failing that everything but management
@@ -2450,7 +2510,6 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
   let unknownDest = false;             // a path the device decides itself: no telling where it went
   const agree = [];
   activeIn.forEach((p) => chainsOn(p).forEach((chain) => {
-    const { outcome } = simulateChain(chain, states, {});
     if (chain.tree?.t === "branch") {
       tokens(chain.tree.fids).map((t) => t.replace(/^!/, "")).forEach((fid) => {
         if (!(fid in (filters ?? {}))) { out.push({ kind: "filterMissing", sev: "error", port: p, fid }); return; }
@@ -2458,25 +2517,33 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
         if (f.dTried === 0 && f.dMatched === 0) out.push({ kind: "filterNotTried", sev: "warn", port: p, fid });
       });
     }
-    if (outcome.kind === "out") {
-      const dests = [...new Set(tokens(outcome.text).map((t) => (/^O\d+$/.test(t) ? outPort.get(t) || "" : t)).filter(Boolean))];
-      dests.forEach((d) => expected.add(d));
-      const dead = dests.filter((d) => disabled.has(d));
-      dead.forEach((d) => out.push({ kind: "egressDisabled", sev: "error", port: d, from: p }));
-      const live = dests.filter((d) => !disabled.has(d));
-      live.filter((d) => r(d) && r(d).link === false).forEach((d) => lostTo.add(d));
-      const silent = live.filter((d) => !moving(d, "out") && !lostTo.has(d));
-      // a load balancer spreads the packets: one of its ports moving is enough
-      if (outcome.mode === "loadBalance" ? (live.length && silent.length === live.length) : silent.length) {
-        silent.forEach((d) => out.push({ kind: "egressSilent", sev: "warn", port: d, from: p }));
-      } else {
-        // a destination whose link is down is not agreeing: its traffic is lost
-        const reached = live.filter((d) => !lostTo.has(d));
-        if (reached.length) agree.push({ from: p, to: reached });
+    const N = r(p).in;
+    chainLeaves(chain, shareOf).forEach(({ share, outcome }) => {
+      if (outcome.kind === "out") {
+        const dests = [...new Set(tokens(outcome.text).map((t) => (/^O\d+$/.test(t) ? outPort.get(t) || "" : t)).filter(Boolean))];
+        dests.forEach((d) => expected.add(d));
+        const dead = dests.filter((d) => disabled.has(d));
+        dead.forEach((d) => out.push({ kind: "egressDisabled", sev: "error", port: d, from: p }));
+        const live = dests.filter((d) => !disabled.has(d));
+        live.filter((d) => r(d) && r(d).link === false).forEach((d) => lostTo.add(d));
+        const silent = live.filter((d) => !moving(d, "out") && !lostTo.has(d));
+        /* Silence only means something when this way carried enough packets
+           to be noticed: a few percent of a trickle may well be nothing in
+           three seconds. A load balancer spreads them, so one of its ports
+           moving is enough. */
+        const enough = N * share >= 10;
+        const lb = outcome.mode === "loadBalance";
+        if (enough && (lb ? live.length > 0 && silent.length === live.length : silent.length > 0)) {
+          silent.forEach((d) => out.push({ kind: "egressSilent", sev: "warn", port: d, from: p, share }));
+        } else {
+          // a destination whose link is down is not agreeing: its traffic is lost
+          const reached = live.filter((d) => !lostTo.has(d) && moving(d, "out"));
+          if (reached.length) agree.push({ from: p, to: reached, share });
+        }
+      } else if (outcome.kind !== "drop") {
+        unknownDest = true;
       }
-    } else if (outcome.kind !== "drop") {
-      unknownDest = true;
-    }
+    });
   }));
 
   // out of a port nothing sends to
@@ -2526,6 +2593,22 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
   Object.keys(reads).filter(consider).forEach((p) => {
     if (r(p).inDrops > 0) out.push({ kind: "drops", sev: "warn", port: p, n: r(p).inDrops });
     if (r(p).inErrors > 0) out.push({ kind: "errors", sev: "warn", port: p, n: r(p).inErrors });
+    /* Out drops are ordinary on some setups, so only a port some chain sends
+       to is looked at -- a warning while traffic is being sent there now. */
+    if ((r(p).outDrops ?? 0) > 0 && (expected.has(p) || roles.get(p)?.some((x) => x.k === "egress"))) {
+      out.push({ kind: "outDrops", sev: expected.has(p) ? "warn" : "info", port: p, n: r(p).outDrops });
+    }
+  });
+
+  /* A LOOP port hands back what it sends -- the counters agree to the
+     packet -- so a difference is packets lost inside the device. */
+  (loopPorts ?? []).forEach((p) => {
+    if (!consider(p) || disabled.has(p) || !r(p)) return;
+    const sent = r(p).out, got = r(p).in;
+    if (sent > 0 && got === 0) out.push({ kind: "loopNoReturn", sev: "error", port: p, n: sent });
+    else if (sent > 0 && sent - got >= 10 && (sent - got) / sent > 0.05) {
+      out.push({ kind: "loopLoss", sev: "warn", port: p, sent, got, pct: Math.round(((sent - got) / sent) * 100) });
+    }
   });
 
   /* An inline device drawn on the panel is a promise: what leaves by one of

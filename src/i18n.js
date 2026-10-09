@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.238.0";
+export const STUDIO_VERSION = "2.239.0";
 
 export const I18N = {
   en: {
@@ -804,7 +804,7 @@ export const I18N = {
     "sim.f.ingressNoChain": "{port} receives traffic ({n} packets), but no chain ingresses there — the device handles it by default.",
     "sim.f.filterMissing": "{fid} is on the chain for {port} but the device does not hold it — that condition never matches.",
     "sim.f.filterNotTried": "{port} carries traffic, yet {fid}, the first filter on its chain, is not being evaluated.",
-    "sim.f.egressSilent": "By the filter results, {from}'s traffic should leave by {port}, but {port} is sending nothing.",
+    "sim.f.egressSilent": "By the filter results, {from}'s traffic{share} should leave by {port}, but {port} is sending nothing.",
     "sim.f.egressDisabled": "The chain on {from} sends to {port}, which is disabled.",
     "sim.f.egressUnexpected": "{port} is sending traffic ({n} packets) that no chain, input or heartbeat accounts for.",
     "sim.f.inputSilent": "{id} should be transmitting out of {port}, but {port} is sending nothing — replay finished, or the file is missing?",
@@ -821,6 +821,12 @@ export const I18N = {
     "sim.role.ingress": "a chain ingress", "sim.role.egress": "a chain destination", "sim.role.input": "an input's port",
     "sim.role.heartbeat": "a heartbeat port", "sim.role.inline": "wired to {dev}", "sim.roleJoin": ", ",
     "sim.inlineOk": "{dev}: {port} sent {sent}, {back} got back {got}",
+    "sim.f.outDrops": "{port} dropped {n} packets on the way out.",
+    "sim.f.loopNoReturn": "LOOP port {port} sent {n} packets, but none came back in.",
+    "sim.f.loopLoss": "LOOP port {port} sent {sent}, only {got} came back in ({pct}% missing) — packets are being lost inside the device.",
+    "sim.shareOf": " (about {pct})", "sim.partial": "partly", "sim.partialTip": "Part of the traffic tried matched, so the chain goes both ways",
+    "sim.shareTip": "The share of this port's traffic that takes this way, by the filters' counts",
+    "sim.resolved": "resolved", "sim.lasting": "for {t}", "sim.findingTip": "Click to point out what this is about",
     // shared / common
     "adv.badge": "Advanced",
     "adv.inputs": "Inputs replay pcap files or generate synthetic traffic. Most setups feed traffic from physical ports and won't need this.",
@@ -1793,7 +1799,7 @@ export const I18N = {
     "sim.f.ingressNoChain": "{port} 有流量進入({n} 個封包),但沒有鏈結以它為入口,依裝置預設處理。",
     "sim.f.filterMissing": "{fid} 在 {port} 的鏈結上,但裝置沒有這個篩選器,這個條件永遠不會符合。",
     "sim.f.filterNotTried": "{port} 有流量,但它鏈結的第一個篩選器 {fid} 沒有被比對。",
-    "sim.f.egressSilent": "依篩選結果,{from} 的流量應該從 {port} 送出,但 {port} 沒有送出任何封包。",
+    "sim.f.egressSilent": "依篩選結果,{from} 的流量{share}應該從 {port} 送出,但 {port} 沒有送出任何封包。",
     "sim.f.egressDisabled": "{from} 的鏈結送往 {port},但 {port} 已停用。",
     "sim.f.egressUnexpected": "{port} 正在送出流量({n} 個封包),但沒有任何鏈結、輸入或 heartbeat 會送到它。",
     "sim.f.inputSilent": "{id} 應該從 {port} 送出,但 {port} 沒有送出任何封包,重播已結束或檔案不存在?",
@@ -1810,6 +1816,12 @@ export const I18N = {
     "sim.role.ingress": "鏈結的入口", "sim.role.egress": "鏈結的輸出", "sim.role.input": "輸入的送出埠",
     "sim.role.heartbeat": "heartbeat 的埠", "sim.role.inline": "{dev} 的接線埠", "sim.roleJoin": "、",
     "sim.inlineOk": "{dev}:{port} 送出 {sent},{back} 收回 {got}",
+    "sim.f.outDrops": "{port} 送出時丟棄了 {n} 個封包。",
+    "sim.f.loopNoReturn": "LOOP 埠 {port} 送出了 {n} 個封包,但沒有收回任何封包。",
+    "sim.f.loopLoss": "LOOP 埠 {port} 送出 {sent},只收回 {got}(少了 {pct}%),封包在裝置內部遺失。",
+    "sim.shareOf": "(約 {pct})", "sim.partial": "部分", "sim.partialTip": "比對的流量只有一部分符合,鏈結兩側都會有流量",
+    "sim.shareTip": "依篩選器計數,這個埠的流量走這條路徑的比例",
+    "sim.resolved": "已恢復", "sim.lasting": "持續 {t}", "sim.findingTip": "點一下標出相關的埠、鏈結或篩選器",
     // shared / common
     "adv.badge": "進階",
     "adv.inputs": "Inputs 重播 pcap 檔或產生合成流量。大多數設定從實體埠餵入流量,不需要用到這個。",

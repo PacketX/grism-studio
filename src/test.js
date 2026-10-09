@@ -2341,8 +2341,10 @@ group("extra running-config files");
     check("live filters, second reading: the counts moving decide",
       b.filters.F1.state === "notmatch" && !b.filters.F1.idle && b.filters.F1.dTried === 10 && b.filters.F2.idle && b.filters.F3.state === "notmatch" && b.filters.F3.idle);
     const c = C.liveFilterStates(b.next, [{ id: 1, try_count: 25, matched_count: 4 }, { id: 3, try_count: 1, matched_count: 1 }]);
-    check("live filters: matched moving is a match, a cleared counter is not movement",
-      c.filters.F1.state === "match" && c.filters.F1.dMatched === 2 && c.filters.F3.idle);
+    check("live filters: part of the tried matching is partial, with its share; a cleared counter is not movement",
+      c.filters.F1.state === "partial" && c.filters.F1.dMatched === 2 && c.filters.F1.share === 0.4 && c.filters.F3.idle);
+    const d = C.liveFilterStates(c.next, [{ id: 1, try_count: 35, matched_count: 14 }]);
+    check("live filters: every one tried matching is a match", d.filters.F1.state === "match" && d.filters.F1.share === 1);
   }
   {
     const rows1 = [{ name: "P0", inPackets: 100, outPackets: 0, inDrops: 0, inErrors: 0, linkStatus: 1 }, { name: "P1", inPackets: 0, outPackets: 50, linkStatus: 1 }];
@@ -2413,6 +2415,56 @@ group("extra running-config files");
       readings: { P0: { ...z, in: 1000 }, P6: { ...z, out: 1000 }, P7: { ...z, in: 1000 } } });
     check("inline: what comes back on a port with no chain is named as the device's return",
       kinds(noReturnChain) === "inlineBackNoChain:P7" && noReturnChain.findings[0].dev === "IPS", kinds(noReturnChain));
+  }
+  {
+    // shares through a chain
+    const sh = { F1: 0.3, F2: 0.5 };
+    const shareOf = (id) => sh[id] ?? 0;
+    const near = (a, b) => Math.abs(a - b) < 1e-9;
+    check("branch share: one filter, negated, OR, AND",
+      near(C.branchShare("F1", "or", shareOf), 0.3) && near(C.branchShare("!F1", "or", shareOf), 0.7)
+      && near(C.branchShare("F1,F2", "or", shareOf), 1 - 0.7 * 0.5) && near(C.branchShare("F1,F2", "and", shareOf), 0.15));
+    const chain = { tree: { id: "b1", t: "branch", fids: "F1", fidOp: "or",
+      match: { id: "o1", t: "out", ports: "P3", mode: "duplicate", lb: "5thash" },
+      notmatch: { id: "b2", t: "branch", fids: "F2", fidOp: "or", match: { id: "o2", t: "out", ports: "0", mode: "duplicate", lb: "5thash" }, notmatch: { id: "u", t: "unset" } } } };
+    const leaves = C.chainLeaves(chain, shareOf);
+    check("chain leaves: every way with its share, steps and outcome",
+      leaves.length === 3 && near(leaves[0].share, 0.3) && leaves[0].outcome.text === "P3"
+      && near(leaves[1].share, 0.35) && leaves[1].outcome.kind === "drop" && leaves[1].steps.length === 2
+      && near(leaves[2].share, 0.35) && leaves[2].outcome.kind === "default",
+      JSON.stringify(leaves.map((l) => [l.share, l.outcome.kind])));
+    check("chain leaves: all-or-nothing shares give the one way simulateChain gives",
+      C.chainLeaves(chain, (id) => (id === "F1" ? 1 : 0)).length === 1 && C.chainLeaves(chain, () => 0).length === 1);
+  }
+  {
+    const doc = C.normalizeDoc({ filters: [{ id: 1, name: "https", sessionBase: "no", root: { id: "r", t: "or", children: [{ id: "f", t: "find", field: "tcp.port", rel: "==", val: "443" }] } }],
+      chains: [{ cid: "c", ports: "P0", tree: { id: "b", t: "branch", fids: "F1", fidOp: "or",
+        match: { id: "m", t: "out", ports: "P3", mode: "duplicate", lb: "5thash" }, notmatch: { id: "n", t: "out", ports: "P2", mode: "duplicate", lb: "5thash" } } }] });
+    const z = { in: 0, out: 0, inDrops: 0, inErrors: 0, outDrops: 0, link: true };
+    const ports = ["P0", "P2", "P3", "P4"];
+    const kinds = (r) => r.findings.map((f) => f.kind + ":" + (f.fid ?? f.port ?? "")).join(" ");
+    let r = C.liveFindings({ doc, portOptions: ports, filters: { F1: { state: "partial", share: 0.3, dTried: 1000, dMatched: 300 } },
+      readings: { P0: { ...z, in: 1000 }, P2: { ...z, out: 700 }, P3: { ...z, out: 300 }, P4: { ...z } } });
+    check("partial: both sides expected, both agree, nothing reported as unexplained",
+      kinds(r) === "" && r.agree.length === 2 && r.agree.some((a) => a.to[0] === "P3" && Math.abs(a.share - 0.3) < 1e-9), kinds(r));
+    r = C.liveFindings({ doc, portOptions: ports, filters: { F1: { state: "partial", share: 0.3, dTried: 1000, dMatched: 300 } },
+      readings: { P0: { ...z, in: 1000 }, P2: { ...z, out: 700 }, P3: { ...z }, P4: { ...z } } });
+    check("partial: the matching side silent is reported, with its share",
+      kinds(r) === "egressSilent:P3" && Math.abs(r.findings[0].share - 0.3) < 1e-9, kinds(r));
+    r = C.liveFindings({ doc, portOptions: ports, filters: { F1: { state: "partial", share: 0.003, dTried: 1000, dMatched: 3 } },
+      readings: { P0: { ...z, in: 1000 }, P2: { ...z, out: 997 }, P3: { ...z }, P4: { ...z } } });
+    check("partial: a side too small to be seen in one interval is not called silent", kinds(r) === "", kinds(r));
+    r = C.liveFindings({ doc, portOptions: ports, filters: { F1: { state: "notmatch", share: 0, dTried: 1000, dMatched: 0 } },
+      readings: { P0: { ...z, in: 1000 }, P2: { ...z, out: 990, outDrops: 10 }, P3: { ...z, outDrops: 4 }, P4: { ...z, outDrops: 9 } } });
+    check("out drops: a warning where traffic is going now, a note on another destination, nothing on an unused port",
+      kinds(r) === "outDrops:P2 outDrops:P3 filterNoMatch:F1" && r.findings[0].sev === "warn" && r.findings[1].sev === "info", kinds(r));
+    r = C.liveFindings({ doc: C.normalizeDoc({}), portOptions: ["P5", "P6", "P7"], loopPorts: ["P5", "P6", "P7"], filters: {},
+      readings: { P5: { ...z, out: 100, in: 100 }, P6: { ...z, out: 100 }, P7: { ...z, out: 100, in: 80 } } });
+    check("LOOP: what goes out comes back; none back is an error, a share missing a warning",
+      kinds(r).includes("loopNoReturn:P6") && kinds(r).includes("loopLoss:P7") && !/loop\w*:P5/.test(kinds(r))
+      && r.findings.find((f) => f.kind === "loopLoss").pct === 20, kinds(r));
+    const pr = C.portReadings(C.portReadings(null, [{ name: "P2", outDrops: 5 }]).next, [{ name: "P2", outDrops: 12 }]);
+    check("port readings: out drops", pr.ports.P2.outDrops === 7);
   }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false

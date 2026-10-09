@@ -15,7 +15,7 @@ import {
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
   insertHeartbeatTarget, loggingProblems, mkHeartbeatTarget, mkLogTarget, mkNetflowTarget,
   mkSyslogTarget, parseHeartbeat, parseLogging, summarizeSettings,
-  ALERT_RULE_META, trapDispatcherEnabled, describeCron, fmtDuration, liveFilterStates, chainFilterRefs, simulateChain, portReadings, liveFindings, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
+  ALERT_RULE_META, trapDispatcherEnabled, describeCron, fmtDuration, liveFilterStates, chainFilterRefs, simulateChain, chainLeaves, portReadings, liveFindings, alertRulesPayload, alertRulesProblems, alertUnacked, alertValueText, parseAlertRules, parseAlerts,
   MAX_TRAP_TARGETS, mkTrapTarget, parseTrapTargets, trapTargetsPayload, trapTargetsProblems,
   parseHeartbeatStatus, parseServiceExtras,
   parseServices, parseTimezones, tokenizeXml,
@@ -424,7 +424,11 @@ export default function GrismStudio() {
   // component unmounts when you navigate away).
   const simState = useState({});                 // filter match/not-match switches
   const simInPort = useState("");                // chosen ingress port
-  const simInlines = useState([]);               // inline devices (session only)
+  // inline devices: taken as the device's real wiring, so remembered in this browser
+  const simInlines = useState(() => (Array.isArray(readPrefs().simInlines) ? readPrefs().simInlines : [])
+    .filter((d) => d && d.portA && d.portB && d.portA !== d.portB)
+    .map((d) => ({ id: String(d.id || nid()), name: String(d.name || "inline"), portA: String(d.portA), portB: String(d.portB) })));
+  useEffect(() => { writePref("simInlines", simInlines[0]); }, [simInlines[0]]);
   const simInlineDraft = useState({ open: false, name: "IPS", portA: "", portB: "" });
   const simFlipped = useState(false);            // device panel row flip
   const [activeChain, setActiveChain] = useState(null); // cid of selected chain
@@ -9995,7 +9999,7 @@ function XmlView({ xml }) {
    as chain ingress / output highlighted. Clicking a port selects it as the
    simulation ingress. Below, user-added inline devices (e.g. an external IPS)
    are drawn bridging two ports. */
-function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], inputPorts = {}, livePorts = null, autoPlay = false, syncState = null, t }) {
+function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSet, outPortSet, selected, onPick, inlines, onRemoveInline, inlineDraft, setInlineDraft, onAddInline, animPlan, flipState, loopPorts = [], inputPorts = {}, livePorts = null, autoPlay = false, syncState = null, flashPorts = null, t }) {
   const tr = t || ((k) => k);
   const portRole = (p) => { const i = inPortSet.has(p), o = outPortSet.has(p); return i && o ? "both" : i ? "in" : o ? "out" : "idle"; };
   const inlinePorts = new Set(inlines.flatMap((x) => [x.portA, x.portB]));
@@ -10048,7 +10052,7 @@ function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSe
   const devRefs = useRef({});    // inline id -> element
   const geomRef = useRef({ ports: {}, inlines: {}, center: null }); // measured points for animation
   const [cables, setCables] = useState([]);
-  const [devPos, setDevPos] = useState({});   // devId -> {x,y} floating position within the panel (session only)
+  const [devPos, setDevPos] = useState(() => readPrefs().simInlinePos ?? {});   // devId -> {x,y} floating position within the panel
   const dragRef = useRef(null);               // active drag: { id, offx, offy }
   const [packets, setPackets] = useState([]);  // [{x,y}] current positions (one per active path)
   const [trails, setTrails] = useState([]);     // [[{x,y}...]] fading tails, one per packet
@@ -10190,7 +10194,7 @@ function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSe
       y = Math.max(0, Math.min(y, wb.height - 40));
       setDevPos((prev) => ({ ...prev, [drag.id]: { x, y } }));
     };
-    const onUp = () => { if (dragRef.current) { dragRef.current = null; setCables((c) => c.slice()); } };
+    const onUp = () => { if (dragRef.current) { dragRef.current = null; setCables((c) => c.slice()); setDevPos((p) => { writePref("simInlinePos", p); return p; }); } };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
@@ -10244,7 +10248,7 @@ function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSe
       if (p.row === "top") return { x: p.x, y: Math.max(7, (p.topEdge ?? p.y) - OUT) };
       return { x: p.x, y: H ? Math.min(H - 7, (p.bottomEdge ?? p.y) + OUT) : (p.bottomEdge ?? p.y) + OUT };
     };
-    const lists = plan.paths.map((nodes) => nodesToPts(nodes, outsidePt, geo)).filter(Boolean);
+    const lists = plan.paths.map((nodes, i) => ({ pts: nodesToPts(nodes, outsidePt, geo), share: plan.shares?.[i] ?? 1 })).filter((x) => x.pts);
     return lists.length ? lists : null;
   };
 
@@ -10292,7 +10296,10 @@ function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSe
     const lists = buildAllWaypoints();
     if (!lists || !lists.length) return false;
     const A = animRef.current;
-    lists.forEach((pts) => {
+    /* A way through that carries a small share of the traffic sends packets
+       less often -- though never so seldom that it seems not to be there. */
+    lists.forEach(({ pts, share }) => {
+      if (share < 1 && Math.random() > Math.max(share, 0.15)) return;
       const segs = []; let total = 0;
       for (let i = 0; i < pts.length - 1; i++) { const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y; const len = Math.hypot(dx, dy); segs.push(len); total += len; }
       const dur = Math.min(MAX_DUR, Math.max(MIN_DUR, (total / SPEED) * 1000));
@@ -10370,7 +10377,7 @@ function DevicePanel({ portOptions, disabledPorts = [], portDescs = {}, inPortSe
     const off = offSet.has(p);
     return (
       <button key={p} ref={(el) => { portRefs.current[p] = el; }}
-        className={"dev-port " + role + (picked ? " selected" : "") + (wired ? " wired" : "") + (isLoop ? " loop" : "") + (off ? " off" : "") + (liveOn ? " live" : "") + (nextPortSet.has(p) ? " next" : prevPortSet.has(p) ? " from" : "")}
+        className={"dev-port " + role + (picked ? " selected" : "") + (wired ? " wired" : "") + (isLoop ? " loop" : "") + (off ? " off" : "") + (liveOn ? " live" : "") + (flashPorts?.has(p) ? " flash" : "") + (nextPortSet.has(p) ? " next" : prevPortSet.has(p) ? " from" : "")}
         onClick={() => onPick(p)} title={off ? tr("sim.portOffTip") : isLoop ? tr("sim.loopTip") : role === "both" ? tr("sim.roleBoth") : role === "in" ? tr("sim.roleIn") : role === "out" ? tr("sim.roleOut") : tr("sim.roleIdle")}>
         <span className="dev-port-led" />
         <span className="dev-port-name">{p}</span>
@@ -10961,7 +10968,7 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
 
   const [states, setStates] = simState;      // { F1: true(match)/false(not-match) }, the manual switches
   const [inPort, setInPort] = simInPort;      // chosen ingress port
-  const [inlines, setInlines] = simInlines;   // [{ id, name, portA, portB }] — session only, not persisted
+  const [inlines, setInlines] = simInlines;   // [{ id, name, portA, portB }] — remembered in this browser
   const [inlineDraft, setInlineDraft] = simInlineDraft;
   const chainForPort = (p) => (simDoc.chains ?? []).find((c) => (c.ports || "").split(",").map((x) => x.trim()).includes(p));
 
@@ -11020,13 +11027,74 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
     const vars = { port: f.port ?? "", from: f.from ?? "", back: f.back ?? "", dev: f.dev ?? "", fid: f.fid ?? "",
       id: f.id ? f.id + (f.name ? ` · ${f.name}` : "") : "", n: fmtNum(f.n ?? 0),
       sent: fmtNum(f.sent ?? 0), got: fmtNum(f.got ?? 0), pct: String(f.pct ?? ""),
+      share: f.share != null && f.share < 0.995 ? tr("sim.shareOf").replace("{pct}", pctText(f.share)) : "",
       roles: (f.roles ?? []).map((x) => tr("sim.role." + x.k).replace("{dev}", x.dev ?? "")).join(tr("sim.roleJoin")) };
     return Object.entries(vars).reduce((s, [k, v]) => s.split("{" + k + "}").join(v), text);
   };
   const findingText = (f) => fill(tr("sim.f." + f.kind), f);
+
+  /* A finding is shown once it has held for two readings in a row, so one
+     quiet interval on a light link does not flash a warning that is gone the
+     next; once it clears it stays a minute, greyed, marked resolved. The
+     readings come in two halves (ports, then filters); only a new port
+     reading counts as a new interval. */
+  const CONFIRM = 2, RESOLVED_KEEP_MS = 60000;
+  const findingKey = (f) => [f.kind, f.port, f.from, f.fid, f.id, f.dev, f.back].join("|");
+  const trackRef = useRef({ tick: -1, items: new Map() });
+  const [tracked, setTracked] = useState([]);
+  useEffect(() => {
+    if (!live) { trackRef.current = { tick: -1, items: new Map() }; setTracked([]); return; }
+    if (!check) return;
+    const T = trackRef.current, now = Date.now();
+    const fresh = T.tick !== readings;
+    const keys = new Set();
+    check.findings.forEach((f) => {
+      const k = findingKey(f); keys.add(k);
+      const it = T.items.get(k);
+      if (!it || it.resolvedAt) T.items.set(k, { f, first: now, count: 1, resolvedAt: 0 });
+      else { it.f = f; if (fresh) it.count += 1; }
+    });
+    if (fresh) {
+      T.items.forEach((it, k) => {
+        if (keys.has(k) || it.resolvedAt) return;
+        if (it.count >= CONFIRM) it.resolvedAt = now; else T.items.delete(k);
+      });
+    }
+    T.items.forEach((it, k) => { if (it.resolvedAt && now - it.resolvedAt > RESOLVED_KEEP_MS) T.items.delete(k); });
+    T.tick = readings;
+    const rank = { error: 0, warn: 1, info: 2 };
+    setTracked([...T.items.entries()].map(([k, it]) => ({ key: k, ...it }))
+      .filter((it) => it.resolvedAt || it.count >= CONFIRM)
+      .sort((a, b) => (a.resolvedAt ? 1 : 0) - (b.resolvedAt ? 1 : 0) || rank[a.f.sev] - rank[b.f.sev]));
+  }, [live, check, readings]);
+  const activeFindings = tracked.filter((x) => !x.resolvedAt);
+  const age = (ms) => fmtDuration(Math.max(1, Math.round(ms / 1000)), tr);
+
+  /* Clicking a finding points at what it is about: its ports flash on the
+     panel, and the trace of the chain it concerns, or the filter's switch,
+     is scrolled to and flashes too. */
+  const [flash, setFlash] = useState(null);   // { ports: Set, trace, fid }
+  const flashTimer = useRef(0);
+  const pointAt = (f) => {
+    const ports = new Set([f.port, f.from, f.back].filter(Boolean));
+    const trace = [f.from, f.port].find((p) => p && document.querySelector(`.sim-trace[data-port="${p}"]`)) ?? null;
+    clearTimeout(flashTimer.current);
+    setFlash(null);
+    requestAnimationFrame(() => {
+      setFlash({ ports, trace, fid: f.fid ?? null });
+      const el = trace ? document.querySelector(`.sim-trace[data-port="${trace}"]`)
+        : f.fid ? document.querySelector(`.sim-switch-row[data-fid="${f.fid}"]`) : null;
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      flashTimer.current = setTimeout(() => setFlash(null), 2600);
+    });
+  };
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
   // a destination wired to an inline device says so in the agreeing paths
   const wiredTo = (p) => inlines.find((d) => d.portA === p || d.portB === p)?.name;
   const liveStates = useMemo(() => Object.fromEntries(Object.entries(liveFilters).map(([k, v]) => [k, v.state === "match"])), [liveFilters]);
+  // the share of a filter's traffic that matched, for walking a chain both ways
+  const shareOf = useCallback((fid) => liveFilters[fid]?.share ?? 0, [liveFilters]);
+  const pctText = (s) => (s >= 0.995 ? "" : s < 0.01 ? "<1%" : Math.round(s * 100) + "%");
   const liveInPorts = useMemo(() => (live ? Object.keys(moved).filter((p) => moved[p].in && chainForPort(p)) : []), [live, moved, simDoc.chains]);
   const liveInputs = useMemo(() => (live ? inputs.filter((i) => moved[i.port]?.out) : []), [live, moved, inputs]);
   // resizable device-panel height (session only; null = auto/natural height)
@@ -11081,7 +11149,11 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
   }, [live, liveInPorts, originInput, inputReentry, inPort]);
   const results = useMemo(() => traceOrigins.flatMap((port) => (simDoc.chains ?? [])
     .filter((c) => (c.ports || "").split(",").map((p) => p.trim()).includes(port))
-    .map((c) => ({ port, chain: c, ...simulateChain(c, effStates, filterAlt) }))), [traceOrigins, simDoc.chains, effStates, filterAlt]);
+    .flatMap((c) => (live
+      /* following the device, a branch whose filters partly match goes both
+         ways, each with the share of the traffic that takes it */
+      ? chainLeaves(c, shareOf, filterAlt).map((l, k) => ({ port, chain: c, steps: l.steps, outcome: l.outcome, share: l.share, key: c.cid + ":" + k }))
+      : [{ port, chain: c, ...simulateChain(c, effStates, filterAlt), share: 1, key: c.cid }]))), [live, traceOrigins, simDoc.chains, effStates, filterAlt, shareOf]);
 
   /* The switches and the trace say "F1" and "O2" and nothing else, which is the
      same problem the chain pictures have. Same hover, same two sources. */
@@ -11126,41 +11198,46 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
     };
     // what becomes of a packet leaving by a port: back in on a LOOP port, round
     // an inline device to its paired port, or out of the device for good
+    // each path is { nodes, share }: the share of the traffic that takes it
     const leaveBy = (outPort, lead, guard, ingress) => {
       if (loopSet.has(outPort)) {
         const head = [...lead, { kind: "port", port: outPort }, { kind: "loop", port: outPort }, { kind: "port", port: outPort }];
-        if (ingress === outPort || guard >= 8) return [head];               // safety
-        return buildFrom(outPort, guard + 1).map((tail) => [...head, ...tail.slice(1)]); // drop tail's outside-in
+        if (ingress === outPort || guard >= 8) return [{ nodes: head, share: 1 }];               // safety
+        return buildFrom(outPort, guard + 1).map((tail) => ({ nodes: [...head, ...tail.nodes.slice(1)], share: tail.share })); // drop tail's outside-in
       }
       const wire = inlines.find((d) => d.portA === outPort || d.portB === outPort);
-      if (!wire) return [[...lead, { kind: "port", port: outPort }, { kind: "outside-out", port: outPort }]];
+      if (!wire) return [{ nodes: [...lead, { kind: "port", port: outPort }, { kind: "outside-out", port: outPort }], share: 1 }];
       const paired = wire.portA === outPort ? wire.portB : wire.portA;
       const head = [...lead, { kind: "port", port: outPort }, { kind: "ips-in", devId: wire.id, port: outPort }, { kind: "ips-out", devId: wire.id, port: paired }, { kind: "port", port: paired }];
-      if (guard >= 8) return [head];
-      return buildFrom(paired, guard + 1).map((tail) => [...head, ...tail.slice(1)]);
+      if (guard >= 8) return [{ nodes: head, share: 1 }];
+      return buildFrom(paired, guard + 1).map((tail) => ({ nodes: [...head, ...tail.nodes.slice(1)], share: tail.share }));
     };
+    const leavesFor = (chain) => (live
+      ? chainLeaves(chain, shareOf, filterAlt).map((l) => ({ share: l.share, outcome: l.outcome }))
+      : [{ share: 1, outcome: simulateChain(chain, effStates, filterAlt).outcome }]);
     // Build all paths from an ingress port. Returns an array of node-lists. A chain
     // that outputs to several ports fans out: the common prefix (ingress → out
     // point) is shared, then each port continues as its own path.
     const buildFrom = (ingress, guard) => {
       const prefix = [{ kind: "outside-in", port: ingress }];
       const chain = chainForPort(ingress);
-      if (!chain) return [[...prefix, { kind: "port", port: ingress }, { kind: "fizzle", port: ingress, label: "no chain" }]];
-      const { outcome } = simulateChain(chain, effStates, filterAlt);
-      if (outcome.kind !== "out") return [[...prefix, { kind: "fizzle", port: ingress, label: outcome.kind }]];
-      const tokens = outcome.text.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!chain) return [{ nodes: [...prefix, { kind: "port", port: ingress }, { kind: "fizzle", port: ingress, label: "no chain" }], share: 1 }];
       // continue a single out token from the point it leaves the chain
       const continuePort = (tok) => {
         const r = resolveOut(tok);
         const lead = [];
         if (r.ref) lead.push({ kind: "output-ref", ref: r.ref, port: r.port });
-        if (r.exitAt) return [[{ kind: "port", port: r.exitAt }, { kind: "outside-out", port: r.exitAt }]];
+        if (r.exitAt) return [{ nodes: [{ kind: "port", port: r.exitAt }, { kind: "outside-out", port: r.exitAt }], share: 1 }];
         return leaveBy(r.port, lead, guard, ingress);
       };
-      // each token becomes one or more paths; prepend the shared ingress prefix
       const paths = [];
-      tokens.forEach((tok) => { continuePort(tok).forEach((rest) => paths.push([...prefix, ...rest])); });
-      return paths.length ? paths : [[...prefix, { kind: "port", port: ingress }, { kind: "fizzle", port: ingress, label: "no output" }]];
+      leavesFor(chain).forEach(({ share, outcome }) => {
+        if (outcome.kind !== "out") { paths.push({ nodes: [...prefix, { kind: "fizzle", port: ingress, label: outcome.kind }], share }); return; }
+        // each token becomes one or more paths; prepend the shared ingress prefix
+        outcome.text.split(",").map((s) => s.trim()).filter(Boolean)
+          .forEach((tok) => { continuePort(tok).forEach((rest) => paths.push({ nodes: [...prefix, ...rest.nodes], share: share * rest.share })); });
+      });
+      return paths.length ? paths : [{ nodes: [...prefix, { kind: "port", port: ingress }, { kind: "fizzle", port: ingress, label: "no output" }], share: 1 }];
     };
     const fromInput = (i) => leaveBy(i.port, [], 0, null);
     let paths = [];
@@ -11173,8 +11250,8 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
       paths = buildFrom(inPort, 0);
     }
     if (!paths.length) return null;
-    return { paths, split: paths.length > 1 };
-  }, [live, liveInPorts, liveInputs, originInput, inPort, effStates, filterAlt, inlines, simDoc.chains, simDoc.outputs, loopPorts]);
+    return { paths: paths.map((x) => x.nodes), shares: paths.map((x) => x.share), split: paths.length > 1 };
+  }, [live, liveInPorts, liveInputs, originInput, inPort, effStates, filterAlt, shareOf, inlines, simDoc.chains, simDoc.outputs, loopPorts]);
 
   return (
     <div className="sim-page">
@@ -11185,7 +11262,7 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
           inlineDraft={inlineDraft} setInlineDraft={setInlineDraft} onAddInline={addInline}
           animPlan={animPlan} flipState={simFlipped} loopPorts={loopPorts} t={tr}
           inputPorts={inputPorts} livePorts={live ? moved : null} autoPlay={live}
-          syncState={loggedIn ? [sync, setSync] : null} />
+          syncState={loggedIn ? [sync, setSync] : null} flashPorts={flash?.ports ?? null} />
       </div>
       <div className="sim-resizer" onMouseDown={onResizeStart} title={tr("sim.resizeTip")}>
         <span className="sim-resizer-grip" />
@@ -11227,15 +11304,21 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
                 : lf.idle ? tr("sim.liveIdle")
                   : lf.dMatched ? "+" + fmtNum(lf.dMatched) : lf.perSecond ? fmtNum(lf.perSecond) + "/s" : "+" + fmtNum(lf.dTried) + " " + tr("sim.liveTried");
               return (
-                <div key={fid} className="sim-switch-row"
+                <div key={fid} className={"sim-switch-row" + (flash?.fid === fid ? " flash" : "")} data-fid={fid}
                   onMouseEnter={(ev) => showFids(ev, fid)} onMouseLeave={hide}>
                   <span className="sim-fid">{fid}{undef && <span className="sim-undef" title={tr("sim.notDefined")}> ·dev</span>}</span>
                   <span className="sim-falt">{filterAlt[fid]}</span>
                   {live && <span className="sim-live-k">{liveNote}</span>}
-                  <button className={"sim-toggle" + (on ? " match" : " notmatch") + (live ? " live" : "")} disabled={live}
-                    onClick={() => setFilter(fid, !on)}>
-                    {on ? tr("flow.match") : tr("flow.nomatch")}
-                  </button>
+                  {lf?.state === "partial" ? (
+                    <button className="sim-toggle partial live" disabled title={tr("sim.partialTip")}>
+                      {tr("sim.partial")} {pctText(lf.share)}
+                    </button>
+                  ) : (
+                    <button className={"sim-toggle" + (on ? " match" : " notmatch") + (live ? " live" : "")} disabled={live}
+                      onClick={() => setFilter(fid, !on)}>
+                      {on ? tr("flow.match") : tr("flow.nomatch")}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -11273,17 +11356,20 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
               {dirty && deviceDoc && <span className="sim-check-note" title={tr("sim.checkDirtyTip")}>{tr("sim.checkDirty")}</span>}
             </div>
             {!checkReady && <p className="sim-note">{statsPoll.state === "error" ? `${tr("tf.loadFailed")}: ${statsPoll.errMsg}` : tr("sim.liveWait")}</p>}
-            {check && check.findings.length === 0 && (
+            {check && activeFindings.length === 0 && (
               <p className="sim-check-ok">✓ {check.checked ? tr("sim.checkOk") : tr("sim.checkQuiet")}</p>
             )}
-            {check && check.findings.map((f, i) => (
-              <div key={i} className={"sim-finding " + f.sev}>
-                <span className="sim-finding-mark">{f.sev === "error" ? "✕" : f.sev === "warn" ? "!" : "i"}</span>
-                <span>{findingText(f)}</span>
+            {tracked.map((it) => (
+              <div key={it.key} className={"sim-finding " + it.f.sev + (it.resolvedAt ? " resolved" : "")}
+                role="button" tabIndex={0} title={tr("sim.findingTip")}
+                onClick={() => pointAt(it.f)} onKeyDown={(e) => { if (e.key === "Enter") pointAt(it.f); }}>
+                <span className="sim-finding-mark">{it.resolvedAt ? "✓" : it.f.sev === "error" ? "✕" : it.f.sev === "warn" ? "!" : "i"}</span>
+                <span>{findingText(it.f)}</span>
+                <span className="sim-finding-age">{it.resolvedAt ? tr("sim.resolved") : tr("sim.lasting").replace("{t}", age(Date.now() - it.first))}</span>
               </div>
             ))}
             {check && check.agree.length > 0 && (
-              <p className="sim-check-agree">✓ {tr("sim.checkAgree").replace("{n}", String(check.agree.length))} {check.agree.map((a) => `${a.from} → ${a.to.map((p) => (wiredTo(p) ? `${p} (${wiredTo(p)})` : p)).join(", ")}`).join(" · ")}</p>
+              <p className="sim-check-agree">✓ {tr("sim.checkAgree").replace("{n}", String(check.agree.length))} {check.agree.map((a) => `${a.from} → ${a.to.map((p) => (wiredTo(p) ? `${p} (${wiredTo(p)})` : p)).join(", ")}${a.share < 0.995 ? ` (${pctText(a.share)})` : ""}`).join(" · ")}</p>
             )}
             {check && check.inlineOk.map((x, i) => (
               <p key={"il" + i} className="sim-check-agree">✓ {fill(tr("sim.inlineOk"), x)}</p>
@@ -11295,11 +11381,12 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
             <div className="sim-trace-body">{tr("sim.liveInputs")} {liveInputs.map((i) => `${i.id}${i.name ? ` · ${i.name}` : ""} → ${i.port}`).join(", ")}</div>
           </div>
         )}
-        {results.map(({ port, chain, steps, outcome }, i) => (
-          <div key={chain.cid} className="sim-trace">
+        {results.map(({ port, chain, steps, outcome, share, key }, i) => (
+          <div key={key} className={"sim-trace" + (flash?.trace === port ? " flash" : "")} data-port={port}>
             <div className="sim-trace-head">
               <span className="sim-chip in">IN {port}</span>
               {results.length > 1 && <span className="sim-trace-n">{tr("sim.chainN").replace("{n}", i + 1)}</span>}
+              {live && share < 0.995 && <span className="sim-chip share" title={tr("sim.shareTip")}>{pctText(share)}</span>}
             </div>
             <div className="sim-flow">
               <div className="sim-node in"><span className="sim-node-k">{tr("sim.ingress")}</span><span className="sim-node-v">{port}</span></div>
@@ -11309,7 +11396,7 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
                   <div className={"sim-node branch " + (s.matched ? "matched" : "notmatched")}
                     onMouseEnter={(ev) => showFids(ev, s.fids, s.op)} onMouseLeave={hide}>
                     <span className="sim-node-k">{s.fids}{s.alt && s.alt !== s.fids ? ` · ${s.alt}` : ""}</span>
-                    <span className={"sim-node-badge " + (s.matched ? "match" : "notmatch")}>{(s.matched ? tr("sim.match") : tr("sim.notMatch")) + " →"}</span>
+                    <span className={"sim-node-badge " + (s.matched ? "match" : "notmatch")}>{(s.matched ? tr("sim.match") : tr("sim.notMatch")) + (s.share != null && s.share < 0.995 ? " " + pctText(s.share) : "") + " →"}</span>
                   </div>
                 </React.Fragment>
               ))}
