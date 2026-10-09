@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.241.0";
+export const STUDIO_VERSION = "2.242.0";
 
 export const I18N = {
   en: {
@@ -798,6 +798,7 @@ export const I18N = {
     "sim.liveWait": "Waiting for a second reading…",
     "sim.noLiveTraffic": "No ingress port with a chain is carrying traffic right now.",
     "sim.liveInputs": "Transmitting:",
+    "sim.liveOther": "Traffic on ports no chain takes:", "sim.dirIn": "in", "sim.dirOut": "out",
     "sim.checkTitle": "Against the device", "sim.checkDirty": "unapplied changes", "sim.checkDirtyTip": "The editor holds changes not applied yet; the device is checked against the configuration it runs.",
     "sim.checkOk": "Everything the device does is what the configuration says.", "sim.checkQuiet": "No port is carrying traffic yet.",
     "sim.checkAgree": "{n} path(s) as configured:",
@@ -1793,6 +1794,7 @@ export const I18N = {
     "sim.liveWait": "等待第二次讀取…",
     "sim.noLiveTraffic": "目前沒有任何有鏈結的入口埠有流量。",
     "sim.liveInputs": "送出中:",
+    "sim.liveOther": "不在鏈結中、但有流量的埠:", "sim.dirIn": "入", "sim.dirOut": "出",
     "sim.checkTitle": "與裝置比對", "sim.checkDirty": "有未套用的修改", "sim.checkDirtyTip": "編輯器裡有尚未套用的修改;比對是依裝置目前執行的設定。",
     "sim.checkOk": "裝置的行為都和設定一致。", "sim.checkQuiet": "目前沒有任何埠有流量。",
     "sim.checkAgree": "{n} 條路徑與設定一致:",

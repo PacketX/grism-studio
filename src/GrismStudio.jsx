@@ -11249,17 +11249,33 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
     };
     const fromInput = (i) => leaveBy(i.port, [], 0, null);
     let paths = [];
+    const others = [];                     // ports moving that no chain or input accounts for
     if (live) {
       liveInPorts.forEach((p) => paths.push(...buildFrom(p, 0)));
       liveInputs.forEach((i) => paths.push(...fromInput(i)));
+      /* Traffic on a port no chain takes is still traffic: what comes in is
+         drawn arriving (the device handles it by default, so it goes no
+         further), and what goes out of a port no drawn path reaches is drawn
+         leaving -- round its LOOP, or into its inline device. */
+      const onPanel = new Set(panelPorts ?? portOptions);
+      Object.keys(moved).filter((p) => moved[p].in && onPanel.has(p) && !chainForPort(p)).forEach((p) => {
+        paths.push({ nodes: [{ kind: "outside-in", port: p }, { kind: "port", port: p }], share: 1 });
+        others.push({ port: p, dir: "in" });
+      });
+      const leaving = new Set(paths.flatMap((x) => x.nodes.filter((n) => ["outside-out", "loop", "ips-in"].includes(n.kind)).map((n) => n.port)));
+      const inputPortSet = new Set(inputs.map((i) => i.port));
+      Object.keys(moved).filter((p) => moved[p].out && onPanel.has(p) && !leaving.has(p) && !inputPortSet.has(p)).forEach((p) => {
+        paths.push(...leaveBy(p, [], 8, p));
+        others.push({ port: p, dir: "out" });
+      });
     } else if (originInput) {
       paths = fromInput(originInput);
     } else if (inPort) {
       paths = buildFrom(inPort, 0);
     }
     if (!paths.length) return null;
-    return { paths: paths.map((x) => x.nodes), shares: paths.map((x) => x.share), split: paths.length > 1 };
-  }, [live, liveInPorts, liveInputs, originInput, inPort, effStates, filterAlt, shareOf, inlines, simDoc.chains, simDoc.outputs, loopPorts]);
+    return { paths: paths.map((x) => x.nodes), shares: paths.map((x) => x.share), split: paths.length > 1, others };
+  }, [live, liveInPorts, liveInputs, originInput, inPort, effStates, filterAlt, shareOf, inlines, simDoc.chains, simDoc.outputs, loopPorts, moved, panelPorts, portOptions, inputs]);
 
   return (
     <div className="sim-page">
@@ -11338,7 +11354,7 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
         {!live && !inPort && <div className="sim-hint">{tr("sim.pickIngress")}</div>}
         {!live && inPort && !originInput && results.length === 0 &&
           <div className="sim-hint">{tr("sim.noChainFor").replace("{port}", inPort)}</div>}
-        {live && results.length === 0 && liveInputs.length === 0 && (
+        {live && results.length === 0 && liveInputs.length === 0 && !(animPlan?.others?.length) && (
           <div className="sim-hint">{statsPoll.state === "error" ? `${tr("tf.loadFailed")}: ${statsPoll.errMsg}`
             : readings < 2 ? tr("sim.liveWait") : tr("sim.noLiveTraffic")}</div>
         )}
@@ -11387,6 +11403,11 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
         {live && liveInputs.length > 0 && (
           <div className="sim-trace input">
             <div className="sim-trace-body">{tr("sim.liveInputs")} {liveInputs.map((i) => `${i.id}${i.name ? ` · ${i.name}` : ""} → ${i.port}`).join(", ")}</div>
+          </div>
+        )}
+        {live && animPlan?.others?.length > 0 && (
+          <div className="sim-trace input">
+            <div className="sim-trace-body">{tr("sim.liveOther")} {animPlan.others.map((o) => `${ifacePortLabel(o.port, portDescs)} ${tr(o.dir === "in" ? "sim.dirIn" : "sim.dirOut")}`).join("、")}</div>
           </div>
         )}
         {results.map(({ port, chain, steps, outcome, share, key }, i) => (
