@@ -2305,6 +2305,29 @@ export function summarizeFilterCounters(list) {
   }).sort((a, b) => b.matched - a.matched || b.tried - a.tried);
 }
 
+/* Each filter's state on the device, from two readings of get_filter_counter:
+   its matched count moved -> match; only its try count moved -> not-match;
+   neither -> nothing reached it (idle), shown as not-match. The first reading
+   has nothing to compare with, so it goes by the device's matched-per-second.
+   A count that went down (counters cleared) reads as no movement. */
+export function liveFilterStates(prev, list) {
+  const next = new Map(), filters = {};
+  (Array.isArray(list) ? list : []).forEach((f) => {
+    const id = "F" + f.id;
+    const tried = Number(f.try_count) || 0, matched = Number(f.matched_count) || 0;
+    const perSecond = Number(f.matched_per_second) || 0;
+    next.set(id, { tried, matched });
+    const was = prev?.get(id);
+    const dTried = was ? Math.max(0, tried - was.tried) : 0;
+    const dMatched = was ? Math.max(0, matched - was.matched) : 0;
+    let state, idle;
+    if (was) { state = dMatched > 0 ? "match" : "notmatch"; idle = dTried === 0 && dMatched === 0; }
+    else { state = perSecond > 0 ? "match" : "notmatch"; idle = perSecond === 0; }
+    filters[id] = { state, idle, dTried, dMatched, perSecond, tried, matched };
+  });
+  return { filters, next };
+}
+
 /* Which filter ids the device itself holds, from get_filter_counter, with how
    many entries each carries. Used to tell a filter the device made from one
    that is genuinely missing. */

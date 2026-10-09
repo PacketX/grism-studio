@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.231.0";
+export const STUDIO_VERSION = "2.232.0";
 
 export const I18N = {
   en: {
@@ -785,6 +785,18 @@ export const I18N = {
     "sim.wiredTip": "wired to an inline device",
     "sim.roleBoth": "ingress + output", "sim.roleIn": "ingress", "sim.roleOut": "output", "sim.roleIdle": "unused",
     "sim.selectIngressOpt": "select ingress", "sim.noChain": "no chain",
+    "sim.inputs": "Inputs", "sim.inputTip": "input: transmits out of this port",
+    "sim.inputFrom": "{id} transmits out of {port}",
+    "sim.inputLeaves": "— {port} is not a LOOP port and nothing brings the traffic back, so the packets leave the device and reach no chain.",
+    "sim.inputLoops": "— {port} is a LOOP interface, so the packets come back in on {port}.",
+    "sim.inputWired": "— through {dev} and back in on {back}.",
+    "sim.sync": "Follow the device", "sim.syncTip": "Ingress ports and filter results come from the device's counters as they move",
+    "sim.syncNote": "A port whose ingress counters are moving is an ingress; a filter whose matched count is moving is a match. Read every {n} s.",
+    "sim.syncPorts": "every port with ingress traffic", "sim.liveChip": "live",
+    "sim.liveIdle": "no traffic", "sim.liveUnknown": "not on the device", "sim.liveTried": "tried",
+    "sim.liveWait": "Waiting for a second reading…",
+    "sim.noLiveTraffic": "No ingress port with a chain is carrying traffic right now.",
+    "sim.liveInputs": "Transmitting:",
     // shared / common
     "adv.badge": "Advanced",
     "adv.inputs": "Inputs replay pcap files or generate synthetic traffic. Most setups feed traffic from physical ports and won't need this.",
@@ -1738,6 +1750,18 @@ export const I18N = {
     "sim.wiredTip": "已接到 inline 裝置",
     "sim.roleBoth": "入口 + 輸出", "sim.roleIn": "入口", "sim.roleOut": "輸出", "sim.roleIdle": "未使用",
     "sim.selectIngressOpt": "選擇入口埠", "sim.noChain": "無 chain",
+    "sim.inputs": "輸入", "sim.inputTip": "輸入:從此埠送出",
+    "sim.inputFrom": "{id} 從 {port} 送出",
+    "sim.inputLeaves": "— {port} 不是 LOOP 介面,也沒有接回來,封包離開裝置,不會進入任何鏈結。",
+    "sim.inputLoops": "— {port} 是 LOOP 介面,封包從 {port} 回到裝置。",
+    "sim.inputWired": "— 經 {dev} 從 {back} 回到裝置。",
+    "sim.sync": "與裝置同步", "sim.syncTip": "入口埠與篩選結果依裝置計數的變化決定",
+    "sim.syncNote": "入口計數有增加的埠就是入口;符合計數有增加的篩選器就是符合。每 {n} 秒讀取一次。",
+    "sim.syncPorts": "所有有入口流量的埠", "sim.liveChip": "同步中",
+    "sim.liveIdle": "無流量", "sim.liveUnknown": "裝置上沒有", "sim.liveTried": "比對",
+    "sim.liveWait": "等待第二次讀取…",
+    "sim.noLiveTraffic": "目前沒有任何有鏈結的入口埠有流量。",
+    "sim.liveInputs": "送出中:",
     // shared / common
     "adv.badge": "進階",
     "adv.inputs": "Inputs 重播 pcap 檔或產生合成流量。大多數設定從實體埠餵入流量,不需要用到這個。",

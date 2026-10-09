@@ -2334,6 +2334,16 @@ group("extra running-config files");
       [7776000, "90 天(3 個月)", "90 days (3 months)"], [3888000, "45 天(約 1.5 個月)", "45 days (about 1.5 months)"], [0, "0 秒", "0 seconds"]];
     for (const [n, zh, en] of dur) check("duration " + n, C.fmtDuration(n, zhT) === zh && C.fmtDuration(n, enT) === en, C.fmtDuration(n, zhT) + " | " + C.fmtDuration(n, enT));
   }
+  {
+    const a = C.liveFilterStates(null, [{ id: 1, try_count: 10, matched_count: 2, matched_per_second: 3 }, { id: 2, try_count: 10, matched_count: 0, matched_per_second: 0 }]);
+    check("live filters, first reading: per-second decides", a.filters.F1.state === "match" && !a.filters.F1.idle && a.filters.F2.state === "notmatch" && a.filters.F2.idle);
+    const b = C.liveFilterStates(a.next, [{ id: 1, try_count: 20, matched_count: 2, matched_per_second: 0 }, { id: 2, try_count: 10, matched_count: 0 }, { id: 3, try_count: 5, matched_count: 5 }]);
+    check("live filters, second reading: the counts moving decide",
+      b.filters.F1.state === "notmatch" && !b.filters.F1.idle && b.filters.F1.dTried === 10 && b.filters.F2.idle && b.filters.F3.state === "notmatch" && b.filters.F3.idle);
+    const c = C.liveFilterStates(b.next, [{ id: 1, try_count: 25, matched_count: 4 }, { id: 3, try_count: 1, matched_count: 1 }]);
+    check("live filters: matched moving is a match, a cleared counter is not movement",
+      c.filters.F1.state === "match" && c.filters.F1.dMatched === 2 && c.filters.F3.idle);
+  }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false
     && C.trapDispatcherEnabled({ services: [{ name: "sshd", enable: true }] }) === null);
