@@ -11017,13 +11017,20 @@ function SimulateTab({ doc, definedIds, portOptions, portDescs = {}, loopPorts =
   /* The check against the device needs two readings of each, so that every
      figure is a movement and not a lifetime total. */
   const checkReady = live && readings >= 2 && fcReadings >= 2;
-  const check = useMemo(() => (checkReady ? liveFindings({
+  /* A round is one port reading and one filter reading. They arrive apart,
+     and checking between the two halves mixes this interval's ports with
+     the last one's filters -- a filter shown as partly matching beside a
+     finding that it matched nothing. So the check runs once both halves of
+     a round are in, and holds its last answer in between. */
+  const roundIn = readings === fcReadings;
+  const lastCheck = useRef(null);
+  const check = useMemo(() => (!checkReady ? (lastCheck.current = null) : !roundIn ? lastCheck.current : (lastCheck.current = liveFindings({
     doc: simDoc, readings: portReads, filters: liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions,
     hbSendPorts: (hbTargets ?? []).filter((x) => x.enable).map((x) => x.sendPort).filter(Boolean),
     hbReceivePorts: (hbTargets ?? []).filter((x) => x.enable).map((x) => x.receivePort).filter(Boolean),
     hbPorts: (hbTargets ?? []).filter((x) => x.enable).flatMap((x) => [x.sendPort, x.receivePort]).filter(Boolean),
     inlines,
-  }) : null), [checkReady, simDoc, portReads, liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions, hbTargets, inlines]);
+  }))), [checkReady, roundIn, simDoc, portReads, liveFilters, loopPorts, disabledPorts, mgmtPorts, portOptions, hbTargets, inlines]);
   const fill = (text, f) => {
     const vars = { port: f.port ?? "", from: f.from ?? "", back: f.back ?? "", dev: f.dev ?? "", fid: f.fid ?? "",
       id: f.id ? f.id + (f.name ? ` · ${f.name}` : "") : "", n: fmtNum(f.n ?? 0),

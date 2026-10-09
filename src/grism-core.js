@@ -2641,11 +2641,13 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
     });
   });
 
-  // a filter the device keeps asking and never matches: worth a look, not wrong
+  /* A filter the device keeps asking and never matches: worth a look, not
+     wrong -- and only once it has been asked often enough for "never" to
+     mean something; a handful of tries on a quiet link says nothing. */
   const referenced = new Set();
   chains.forEach((c) => chainFilterRefs(c.tree, referenced));
   Object.entries(filters ?? {}).forEach(([fid, f]) => {
-    if (referenced.has(fid) && f.dTried > 0 && f.dMatched === 0) out.push({ kind: "filterNoMatch", sev: "info", fid, n: f.dTried });
+    if (referenced.has(fid) && f.dTried >= 50 && f.dMatched === 0) out.push({ kind: "filterNoMatch", sev: "info", fid, n: f.dTried });
   });
 
   const rank = { error: 0, warn: 1, info: 2 };

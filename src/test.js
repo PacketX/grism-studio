@@ -2475,6 +2475,14 @@ group("extra running-config files");
     check("heartbeat: probes out of the send port and back on the receive port are expected; other traffic is not",
       k === "ingressNoChain:P4", k);
   }
+  {
+    const doc = C.normalizeDoc({ chains: [{ cid: "c", ports: "P0", tree: { id: "b", t: "branch", fids: "F1", fidOp: "or", match: { id: "m", t: "out", ports: "P1", mode: "duplicate", lb: "5thash" }, notmatch: { id: "n", t: "out", ports: "0", mode: "duplicate", lb: "5thash" } } }] });
+    const z = { in: 0, out: 0, inDrops: 0, inErrors: 0, outDrops: 0, link: true };
+    const run = (tries) => C.liveFindings({ doc, portOptions: ["P0", "P1"], filters: { F1: { state: "notmatch", share: 0, dTried: tries, dMatched: 0 } },
+      readings: { P0: { ...z, in: tries }, P1: { ...z } } }).findings.map((f) => f.kind).join(" ");
+    check("a filter tried a handful of times without a match says nothing; tried often, it is noted",
+      run(13) === "" && run(50) === "filterNoMatch", run(13) + " / " + run(50));
+  }
   check("trap dispatcher: on, off, not listed", C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: true }] }) === true
     && C.trapDispatcherEnabled({ services: [{ name: "packetx_trap_dispatcher", enable: false }] }) === false
     && C.trapDispatcherEnabled({ services: [{ name: "sshd", enable: true }] }) === null);
