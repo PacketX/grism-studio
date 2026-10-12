@@ -25,7 +25,7 @@ import {
   mkAction, mkActionMod, mkChain, firstTwoPorts, mkDrop, mkFind, lastFindField, mkGroup,
   mkInput, mkNot, mkOut, mkOutput, mkOutputMod, mkUnset,
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
-  createPcapReader, decodePacket, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
+  createPcapReader, decodePacket, packetRowText, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, advancedInUse, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
   summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
@@ -6988,14 +6988,21 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
         if (cancelled) return;
         tail.current.offset += buf.length;
         if (buf.length) {
-          const rows = reader.current.feed(buf).map((p) => {
+          /* Only the newest records of a slice can stay in the list, so only
+             those are decoded: a megabyte of small packets is nine thousand
+             of them, and all but the last `keep` used to be decoded and
+             dropped in the same breath. They are still counted. */
+          const recs = reader.current.feed(buf);
+          const skip = Math.max(0, recs.length - keepRef.current);
+          seq.current += skip;
+          const rows = (skip ? recs.slice(skip) : recs).map((p) => {
             const d = decodePacket(p.data, reader.current.linktype);
             return {
               no: ++seq.current, tsMs: p.tsMs, caplen: p.caplen, origlen: p.origlen,
               data: p.data, d,
               /* built once here: rebuilding it per packet on every filter
                  recompute was most of what filtering cost */
-              text: `${d.src} ${d.dst} ${d.proto} ${d.info}`.toLowerCase(),
+              text: packetRowText(d),
             };
           });
           if (rows.length) setPackets((prev) => {
@@ -7127,7 +7134,8 @@ function PacketLive({ storage, dir, filename, names = [], q, onQ, tr, onClose })
                     <td className="mono">{fmtPacketTime(p.tsMs)}</td>
                     <td className="mono pl-addr">{p.d.src}</td>
                     <td className="mono pl-addr">{p.d.dst}</td>
-                    <td><span className={"pl-proto " + p.d.proto.replace(/[^a-z0-9]/gi, "").toLowerCase()}>{p.d.proto}</span></td>
+                    <td className="pl-protos"><span className={"pl-proto " + p.d.proto.replace(/[^a-z0-9]/gi, "").toLowerCase()}>{p.d.proto}</span>
+                      {p.d.via && <span className="pl-via" title={tr("cap.liveVia").replace("{tunnel}", p.d.via)}>{p.d.via}</span>}</td>
                     <td className="tf-num mono">{p.origlen}</td>
                     <td className="pl-info" title={p.d.info}>{p.d.info}</td>
                   </tr>

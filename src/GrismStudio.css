@@ -1959,6 +1959,10 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
   white-space:nowrap; color:var(--txt-dim);}
 .pl-proto{font-size:10.5px; font-weight:700; letter-spacing:.04em; border-radius:99px; padding:1px 8px;
   border:1px solid var(--line-2); color:var(--txt-dim); background:var(--bg);}
+/* the tunnel a row's packet came out of: beside the protocol, and quieter */
+.pl-protos{white-space:nowrap;}
+.pl-via{margin-left:5px; font-size:10px; font-weight:600; letter-spacing:.04em; color:var(--txt-dim);
+  border-bottom:1px dotted var(--line-2); cursor:help;}
 .pl-proto.tcp{color:#4a9eff; border-color:rgba(74,158,255,.4);}
 .pl-proto.udp{color:#33c48d; border-color:rgba(51,196,141,.4);}
 .pl-proto.dns, .pl-proto.mdns{color:#c98bff; border-color:rgba(201,139,255,.4);}

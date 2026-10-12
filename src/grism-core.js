@@ -4483,8 +4483,12 @@ function decodeDns(u8, o, end, layers) {
 
 /* One captured packet, decoded layer by layer for the live view. Every read is
    bounds-checked against what was captured: a snaplen-truncated packet decodes
-   as far as its bytes go and stops, it does not throw. */
-export function decodePacket(u8, linktype = 1) {
+   as far as its bytes go and stops, it does not throw.
+
+   A packet inside a tunnel -- GRE (L2GRE, plain IP, ERSPAN) or VXLAN -- is
+   decoded through to what it carries: src/dst/proto/info and f describe that
+   packet, `via` names the tunnel, and the layers run outermost first. */
+export function decodePacket(u8, linktype = 1, depth = 0) {
   const layers = [];
   /* f holds the same packet as values rather than as text, so the filter can
      compare on them -- ip.addr == 10.0.0.0/8, tcp.port >= 1024 -- instead of
@@ -4492,7 +4496,6 @@ export function decodePacket(u8, linktype = 1) {
   const f = { len: u8.length, vlan: [] };
   const res = { src: "", dst: "", proto: "", info: "", layers, f };
   const u16 = (i) => i + 1 < u8.length ? (u8[i] << 8) | u8[i + 1] : 0;
-  const u32 = (i) => ((u16(i) << 16) >>> 0) + u16(i + 2);
   if (linktype !== 1 || u8.length < 14) {
     res.proto = "DATA";
     res.info = `${u8.length} bytes` + (linktype !== 1 ? ` (link type ${linktype})` : "");
@@ -4535,6 +4538,50 @@ export function decodePacket(u8, linktype = 1) {
     }
     return res;
   }
+  return decodeNetwork(u8, l3, etype, res, depth);
+}
+
+/* How many tunnels deep the decode follows. A packet is free to nest them
+   without end, and each level is another decode of the same bytes. */
+const TUNNEL_DEPTH = 2;
+const GRE_TYPES = { 0x0800: "IPv4", 0x86dd: "IPv6", 0x6558: "Ethernet", 0x88be: "ERSPAN", 0x880b: "PPP", 0x8847: "MPLS" };
+const hex4 = (n) => n.toString(16).padStart(4, "0");
+
+/* Everything above the link layer, from the network header at l3 whose
+   ethertype is etype. Apart from decodePacket it is what a tunnel that
+   carries a network header directly -- plain GRE -- is decoded with. */
+function decodeNetwork(u8, l3, etype, res, depth) {
+  const { layers, f } = res;
+  const u16 = (i) => i + 1 < u8.length ? (u8[i] << 8) | u8[i + 1] : 0;
+  const u32 = (i) => ((u16(i) << 16) >>> 0) + u16(i + 2);
+  /* What a tunnel carries is a packet in its own right. Decode it and let the
+     row be about that -- the conversation, rather than the two tunnel
+     endpoints that are the same on every row -- with the tunnel's own headers
+     kept as the leading layers. The carried packet's fields become the row's,
+     and the tunnel's hang off them as .outer so the filter can ask about
+     either. `type` is the ethertype when a network header follows directly,
+     0 for a whole Ethernet frame.
+
+     Nothing is decrypted, and nothing needs to be: with Encapsulation Encrypt
+     on, the engine has already decrypted a tunnel packet by the time any
+     output -- the capture included -- sees it. It leaves the outer IP header
+     as it arrived, so that header's length runs past the end of the frame;
+     the caller's end is the frame's, never the header's alone. */
+  const carried = (from, to, type = 0) => {
+    if (depth >= TUNNEL_DEPTH || to - from < (type === 0x86dd ? 40 : type ? 20 : 14)) return;
+    const sub = u8.subarray(from, to);
+    const d = type
+      ? decodeNetwork(sub, 0, type, { src: "", dst: "", proto: "", info: "", layers: [], f: { len: sub.length, vlan: [] } }, depth + 1)
+      : decodePacket(sub, 1, depth + 1);
+    for (const l of d.layers) layers.push(l);
+    res.src = d.src; res.dst = d.dst; res.proto = d.proto; res.info = d.info;
+    res.via = d.via ? `${f.proto}/${d.via}` : f.proto;
+    let g = d.f;
+    res.f = g;
+    g.len = f.len;                    // one frame, however much of it is tunnel
+    while (g.outer) g = g.outer;
+    g.outer = f;
+  };
 
   if (etype === 0x0806 && l3 + 28 <= u8.length) {           // ARP
     const op = u16(l3 + 6);
@@ -4610,6 +4657,15 @@ export function decodePacket(u8, linktype = 1) {
       const dns = decodeDns(u8, l4 + 8, l4end, layers);
       if (dns) { res.proto = sport === 5353 || dport === 5353 ? "MDNS" : "DNS"; f.proto = res.proto; res.info = dns; }
     }
+    /* VXLAN: its destination port, and the flag that says a VNI is present.
+       The reserved bits are for a receiver to ignore, so they are. */
+    if (dport === 4789 && (u8[l4 + 8] & 0x08) && l4 + 16 <= l4end) {
+      const vni = u32(l4 + 12) >>> 8;
+      layers.push({ name: "VXLAN", fields: [["VNI", vni]] });
+      res.proto = "VXLAN"; f.proto = "VXLAN";
+      res.info = `VNI ${vni}, ${l4end - l4 - 16} bytes`;
+      carried(l4 + 16, l4end);
+    }
   } else if (ipProto === 1 && l4 + 4 <= u8.length) {          // ICMP
     const t = u8[l4], code = u8[l4 + 1];
     const name = ICMP_TYPES[t] || `type ${t}`;
@@ -4621,6 +4677,34 @@ export function decodePacket(u8, linktype = 1) {
     const name = ICMP6_TYPES[t] || `type ${t}`;
     layers.push({ name: "ICMPv6", fields: [["Type", `${t} (${name})`], ["Code", u8[l4 + 1]]] });
     res.proto = "ICMPv6"; f.proto = "ICMPv6"; f.icmpType = t; res.info = name;
+  } else if (ipProto === 47 && l4 + 4 <= u8.length) {         // GRE
+    const gfl = u16(l4), gtype = u16(l4 + 2);
+    const gname = GRE_TYPES[gtype];
+    const gf = [["Protocol type", gname ? `${gname} (0x${hex4(gtype)})` : "0x" + hex4(gtype)]];
+    let g = l4 + 4;
+    if (gfl & 0xc000) g += 4;                                 // checksum and offset
+    if (gfl & 0x2000) { gf.push(["Key", u32(g)]); g += 4; }
+    if (gfl & 0x1000) { gf.push(["Sequence", u32(g)]); g += 4; }
+    layers.push({ name: "GRE", fields: gf });
+    res.proto = "GRE"; f.proto = "GRE";
+    res.info = `${gname || "0x" + hex4(gtype)}, ${Math.max(0, l4end - g)} bytes`;
+    /* Version 0 only, and not with a source route: PPTP's GRE and a route
+       list both put something else where the payload would start. */
+    if ((gfl & 0x4007) === 0 && g <= l4end) {
+      if (gtype === 0x6558) carried(g, l4end);                // L2GRE: a whole frame
+      else if (gtype === 0x0800 || gtype === 0x86dd) carried(g, l4end, gtype);
+      else if (gtype === 0x88be) {
+        /* ERSPAN. Type II says so with the sequence bit and puts eight bytes
+           of its own in front of the mirrored frame; type I has neither. */
+        res.proto = "ERSPAN"; f.proto = "ERSPAN";
+        if (gfl & 0x1000) {
+          if (g + 8 > l4end) return res;
+          layers.push({ name: "ERSPAN", fields: [["Session", u16(g + 2) & 0x03ff], ["VLAN", u16(g) & 0x0fff]] });
+          g += 8;
+        }
+        carried(g, l4end);
+      }
+    }
   } else {
     res.proto = protocolName(ipProto).split(" ")[0]; f.proto = res.proto;
     res.info = `${Math.max(0, l4end - l4)} bytes`;
@@ -4628,11 +4712,31 @@ export function decodePacket(u8, linktype = 1) {
   return res;
 }
 
+/* The row as the filter's plain words see it: the columns, lowercased. The
+   tunnel a packet came out of is one of them, so "gre" still finds it now that
+   the protocol column names what it carried. */
+export const packetRowText = (d) =>
+  `${d.src} ${d.dst} ${d.proto}${d.via ? " " + d.via : ""} ${d.info}`.toLowerCase();
+
+/* A packet that came out of a tunnel answers for the tunnel too: its own
+   fields, then those of each set of headers it was carried in (f.outer). So
+   ip.addr finds the tunnel endpoints as well as the hosts talking through
+   them, vlan.id either tag, and "proto == gre" the packet itself. The frame
+   length is the exception -- there is one frame, and f.len is all of it. */
+const acrossTunnels = (read) => (f) => {
+  if (!f.outer) return read(f);
+  let all = [];
+  for (let x = f; x; x = x.outer) all = all.concat(read(x));
+  return all;
+};
+const fieldReaders = (table, whole = []) => Object.fromEntries(Object.entries(table)
+  .map(([name, read]) => [name, whole.includes(name) ? read : acrossTunnels(read)]));
+
 /* The fields a filter term can name, and how to read one off a decoded packet.
    The names are the ones anyone who has used Wireshark will try first; a field
    that can hold two values at once (either end of a conversation) answers with
    both, and a comparison against it holds when either side matches. */
-export const PACKET_FIELDS = {
+export const PACKET_FIELDS = fieldReaders({
   "eth.src": (f) => f.ethSrc, "eth.dst": (f) => f.ethDst,
   "eth.addr": (f) => [f.ethSrc, f.ethDst],
   "ip.src": (f) => f.ipSrc, "ip.dst": (f) => f.ipDst,
@@ -4646,14 +4750,14 @@ export const PACKET_FIELDS = {
   "port": (f) => [f.tcpSrc, f.tcpDst, f.udpSrc, f.udpDst],
   "icmp.type": (f) => f.icmpType,
   "proto": (f) => f.proto, "frame.len": (f) => f.len, "len": (f) => f.len,
-};
+}, ["frame.len", "len"]);
 /* The same addresses as numbers (set at decode time), so a CIDR term is one
    mask-and-compare per packet instead of re-parsing the dotted string. IPv6
    has no numeric form here and simply never matches a v4 prefix. */
-const PACKET_FIELDS_N = {
+const PACKET_FIELDS_N = fieldReaders({
   "ip.src": (f) => f.ipSrcN, "ip.dst": (f) => f.ipDstN,
   "ip.addr": (f) => [f.ipSrcN, f.ipDstN],
-};
+});
 
 /* An IPv4 address as a number, for prefix comparisons. IPv6 is compared as
    text: "ip.addr == 2001:db8::1" is exact, and a v6 prefix is a substring

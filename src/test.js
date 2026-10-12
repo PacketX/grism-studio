@@ -4930,6 +4930,113 @@ group("pcap live view");
   const dump = C.hexDump(hexpkt("41424344 45464748 494a"));
   check("hexDump line format", dump.length === 1 && dump[0].includes("41 42 43 44") && dump[0].endsWith("ABCDEFGHIJ"));
   check("hexDump caps output", C.hexDump(new Uint8Array(5000), 4096).at(-1).includes("more bytes"));
+
+  // ---- tunnels: the row is the packet inside, the filter answers for both ----
+  {
+    const hex = (n, w) => n.toString(16).padStart(w, "0");
+    const cat = (...parts) => { const b = new Uint8Array(parts.reduce((n, x) => n + x.length, 0)); let o = 0; for (const x of parts) { b.set(x, o); o += x.length; } return b; };
+    const names = (d) => d.layers.map((l) => l.name).join(",");
+    const hit = (q, d) => { const r = C.parseFilterExpr(q); return r.ok && r.test({ text: C.packetRowText(d), f: d.f }); };
+    // an inner frame like the ones an SD-WAN tunnel carries: tagged, TCP SYN 10.1.1.1 -> 10.2.2.2:443
+    const innerTcp = hexpkt(`020000000001 020000000002 8100 0064 0800
+      4500 0028 0001 4000 4006 0000 0a010101 0a020202
+      c000 01bb 00000064 00000000 50 02 1c84 0000 0000`);
+    // 192.168.1.162 -> 192.168.1.6 on VLAN 921, the tunnel on .189; `slack` is
+    // how far the IP header's length overstates what follows it
+    const gre = (greHdr, payload, { slack = 0 } = {}) => {
+      const g = hexpkt(greHdr);
+      return cat(hexpkt(`${ethHdr} 8100 0399 0800 4500 ${hex(20 + g.length + payload.length + slack, 4)} 0001 0000 402f 0000 c0a801a2 c0a80106`), g, payload);
+    };
+
+    const l2 = gre("0000 6558", innerTcp);
+    const dL2 = C.decodePacket(l2);
+    check("L2GRE: the row is the conversation inside", dL2.src === "10.1.1.1" && dL2.dst === "10.2.2.2" && dL2.proto === "TCP" && dL2.info.includes("49152 → 443") && dL2.info.includes("SYN"));
+    check("L2GRE: the row says which tunnel", dL2.via === "GRE");
+    check("L2GRE: layers run outermost first", names(dL2) === "Ethernet,802.1Q VLAN,IPv4,GRE,Ethernet,802.1Q VLAN,IPv4,TCP");
+    check("L2GRE: the GRE layer names what it carries", dL2.layers[3].fields[0][1] === "Ethernet (0x6558)");
+    check("L2GRE: the tunnel's fields are kept", dL2.f.outer?.ipSrc === "192.168.1.162" && dL2.f.outer.proto === "GRE" && dL2.f.ipSrc === "10.1.1.1");
+    check("filter: a host inside the tunnel", hit("ip.addr == 10.1.1.1", dL2) && hit("ip.src == 10.1.1.1", dL2) && hit("ip.dst == 10.2.2.2", dL2));
+    check("filter: a tunnel endpoint", hit("ip.addr == 192.168.1.162", dL2) && hit("ip.dst == 192.168.1.6", dL2) && !hit("ip.src == 192.168.1.6", dL2));
+    check("filter: a prefix finds either pair", hit("ip.addr == 10.0.0.0/8", dL2) && hit("ip.addr == 192.168.1.0/24", dL2) && !hit("ip.addr == 172.16.0.0/12", dL2));
+    check("filter: != means none of the four", !hit("ip.addr != 192.168.1.6", dL2) && !hit("ip.addr != 10.1.1.1", dL2) && hit("ip.addr != 8.8.8.8", dL2));
+    check("filter: the port inside", hit("tcp.port == 443", dL2) && hit("tcp.flags contains syn", dL2) && !hit("udp.port == 443", dL2));
+    check("filter: proto is what it carries and what carried it", hit("proto == tcp", dL2) && hit("proto == gre", dL2) && !hit("proto != gre", dL2) && !hit("proto == udp", dL2));
+    check("filter: ip.proto likewise", hit("ip.proto == 6", dL2) && hit("ip.proto == 47", dL2));
+    check("filter: either VLAN tag", hit("vlan.id == 921", dL2) && hit("vlan.id == 100", dL2) && !hit("vlan.id == 5", dL2));
+    check("filter: one frame, one length", dL2.f.len === l2.length && hit(`len == ${l2.length}`, dL2) && !hit(`len == ${innerTcp.length}`, dL2));
+    check("filter: the bare word gre still finds it", hit("gre", dL2) && hit("gre and 443", dL2));
+
+    /* What .189 records with Encapsulation Encrypt on: the engine decrypted
+       the frame and trimmed the padding, and left the outer IP header saying
+       the padded length. The inner frame ends where the capture does. */
+    const dStale = C.decodePacket(gre("0000 6558", innerTcp, { slack: 14 }));
+    check("L2GRE: an outer length past the end of the frame", dStale.proto === "TCP" && dStale.src === "10.1.1.1" && names(dStale) === names(dL2));
+
+    const dKey = C.decodePacket(gre("3000 6558 0000002a 00000007", innerTcp));
+    check("GRE key and sequence are stepped over, and shown", dKey.proto === "TCP" && JSON.stringify(dKey.layers[3].fields.slice(1)) === '[["Key",42],["Sequence",7]]');
+    check("GRE checksum is stepped over", C.decodePacket(gre("8000 6558 12340000", innerTcp)).proto === "TCP");
+
+    const innerUdp = hexpkt("4500 001c 0006 0000 4011 0000 0a010101 0a020202 d000 0050 0008 0000");
+    const dIp = C.decodePacket(gre("0000 0800", innerUdp));
+    check("plain GRE: an IP header follows directly", dIp.proto === "UDP" && dIp.src === "10.1.1.1" && dIp.via === "GRE" && names(dIp) === "Ethernet,802.1Q VLAN,IPv4,GRE,IPv4,UDP");
+    check("plain GRE: filter", hit("udp.port == 80", dIp) && hit("ip.addr == 192.168.1.6", dIp) && hit("proto == gre", dIp));
+    const dIp6 = C.decodePacket(gre("0000 86dd", v6Tcp.subarray(14)));
+    check("plain GRE: IPv6 inside", dIp6.proto === "TCP" && dIp6.src === "2001:db8::1" && hit("ip.addr == 2001:db8::2", dIp6) && hit("ip.addr == 192.168.1.0/24", dIp6));
+
+    const dEr2 = C.decodePacket(gre("1000 88be 00000001 1064 0005 00000000", arpReq));
+    check("ERSPAN II: the mirrored frame", dEr2.proto === "ARP" && dEr2.via === "ERSPAN" && dEr2.info.startsWith("Who has 192.168.1.1"));
+    check("ERSPAN II: session and VLAN", JSON.stringify(dEr2.layers.find((l) => l.name === "ERSPAN")?.fields) === '[["Session",5],["VLAN",100]]');
+    check("ERSPAN II: filter", hit("proto == erspan", dEr2) && hit("arp", dEr2) && hit("ip.proto == 47", dEr2));
+    const dEr1 = C.decodePacket(gre("0000 88be", arpReq));
+    check("ERSPAN I: no header of its own", dEr1.proto === "ARP" && dEr1.via === "ERSPAN" && !dEr1.layers.some((l) => l.name === "ERSPAN"));
+
+    // PPTP's GRE is version 1, and what follows it is PPP: named, not entered
+    const dPptp = C.decodePacket(gre("3001 880b 00100001 00000001", hexpkt("ff03 0021 4500")));
+    check("PPTP GRE is left alone", dPptp.proto === "GRE" && dPptp.via === undefined && dPptp.info.startsWith("PPP, ") && dPptp.src === "192.168.1.162");
+    const dOdd = C.decodePacket(gre("0000 1234", hexpkt("0102030405060708")));
+    check("an unknown GRE payload is named by number", dOdd.proto === "GRE" && dOdd.info === "0x1234, 8 bytes");
+
+    const vxlan = (hdr, payload, { sport = 0xd000, dport = 4789 } = {}) => cat(hexpkt(`${ethHdr} 0800
+      4500 ${hex(20 + 8 + 8 + payload.length, 4)} 0001 0000 4011 0000 c0a801a2 c0a80106
+      ${hex(sport, 4)} ${hex(dport, 4)} ${hex(8 + 8 + payload.length, 4)} 0000 ${hdr}`), payload);
+    const dVx = C.decodePacket(vxlan("08000000 00007b00", innerTcp));
+    check("VXLAN: the row is the conversation inside", dVx.proto === "TCP" && dVx.src === "10.1.1.1" && dVx.via === "VXLAN");
+    check("VXLAN: layers and VNI", names(dVx) === "Ethernet,IPv4,UDP,VXLAN,Ethernet,802.1Q VLAN,IPv4,TCP" && dVx.layers[3].fields[0][1] === 123);
+    check("VXLAN: filter", hit("udp.port == 4789", dVx) && hit("tcp.port == 443", dVx) && hit("proto == vxlan", dVx) && hit("vxlan", dVx) && hit("ip.addr == 192.168.1.162", dVx));
+    // reserved bits are ignored, as a receiver must: a sender is free to have put something there
+    check("VXLAN: reserved bits ignored", C.decodePacket(vxlan("08000000 00007b01", innerTcp)).proto === "TCP" && C.decodePacket(vxlan("0c000000 00007b00", innerTcp)).via === "VXLAN");
+    const dNotVx = C.decodePacket(vxlan("00000000 00007b00", innerTcp));
+    check("port 4789 without the VNI flag is just UDP", dNotVx.proto === "UDP" && dNotVx.via === undefined && dNotVx.src === "192.168.1.162");
+    check("another port is just UDP", C.decodePacket(vxlan("08000000 00007b00", innerTcp, { dport: 4790 })).proto === "UDP");
+    check("4789 as the source port is just UDP", C.decodePacket(vxlan("08000000 00007b00", innerTcp, { sport: 4789, dport: 0xd000 })).proto === "UDP");
+
+    // a tunnel in a tunnel is followed; a third is where it stops
+    const wrap = (payload) => gre("0000 6558", payload);
+    const d2 = C.decodePacket(wrap(wrap(innerTcp)));
+    check("two tunnels deep", d2.proto === "TCP" && d2.via === "GRE/GRE" && d2.f.outer?.outer?.ipSrc === "192.168.1.162" && !d2.f.outer.outer.outer);
+    check("two tunnels deep: one frame length", d2.f.len === wrap(wrap(innerTcp)).length);
+    const d3 = C.decodePacket(wrap(wrap(wrap(innerTcp))));
+    check("a third tunnel is named, not entered", d3.proto === "GRE" && d3.via === "GRE/GRE" && d3.info.startsWith("Ethernet, "));
+    let deep = innerTcp; for (let i = 0; i < 40; i++) deep = wrap(deep);
+    const t1 = Date.now(); C.decodePacket(deep);
+    check("nesting without end costs a bounded decode", Date.now() - t1 < 200);
+    const dMix = C.decodePacket(wrap(vxlan("08000000 00007b00", innerTcp).subarray(0)));
+    check("VXLAN inside GRE", dMix.proto === "TCP" && dMix.via === "GRE/VXLAN" && hit("udp.port == 4789", dMix) && hit("ip.proto == 47", dMix));
+
+    // cut short at every length: never a throw, and never a row less sure than the bytes allow
+    let threw = 0;
+    for (const pkt of [l2, vxlan("08000000 00007b00", innerTcp), gre("1000 88be 00000001 1064 0005 00000000", arpReq), gre("0000 0800", innerUdp)])
+      for (let n = 0; n <= pkt.length; n++) { try { C.decodePacket(pkt.subarray(0, n)); } catch { threw++; } }
+    check("a truncated tunnel packet never throws", threw === 0);
+    const outerLen = 14 + 4 + 20 + 4;
+    const dCut = C.decodePacket(l2.subarray(0, outerLen + 10));       // ten bytes of the inner Ethernet header
+    check("too little of the carried frame: the row stays the tunnel's", dCut.proto === "GRE" && dCut.via === undefined && dCut.src === "192.168.1.162");
+
+    // nothing changes for a packet that is not in a tunnel
+    check("no tunnel: no via, no outer", dTcp.via === undefined && dTcp.f.outer === undefined && dDns.f.outer === undefined);
+    check("row text is the columns, lowercased", C.packetRowText(dTcp) === `${dTcp.src} ${dTcp.dst} ${dTcp.proto} ${dTcp.info}`.toLowerCase()
+      && C.packetRowText(dL2) === `10.1.1.1 10.2.2.2 tcp gre ${dL2.info}`.toLowerCase());
+  }
 }
 
 /* ---------- lint (catches what the suite cannot) ---------- */

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.244.0";
+export const STUDIO_VERSION = "2.245.0";
 
 export const I18N = {
   en: {
@@ -69,7 +69,7 @@ export const I18N = {
     "cap.colNo": "#", "cap.colTime": "Time", "cap.colSrc": "Source", "cap.colDst": "Destination",
     "cap.colProto": "Protocol", "cap.colLen": "Length", "cap.colInfo": "Info",
     "cap.liveFilter": "Filter", "cap.liveFilterHint": "Matches source, destination, protocol or info. Combine with and / or / not and brackets — tcp and not 443, (arp or stp), \"echo request\". This page only: the device is not asked anything.",
-    "cap.liveFilterWhat": "Two kinds of term, combined with and / or / not and brackets. A field comparison: ip.addr == 10.0.0.0/8, tcp.port >= 1024, proto == dns, tcp.flags contains syn (fields: eth/ip .src .dst .addr, tcp/udp .port .srcport .dstport, vlan, ip.proto, ip.ttl, icmp.type, proto, len). Anything else is a plain substring matched against the columns above — 443 matches an address containing 443 too, so prefer the field form when you mean the port. Quote a phrase that contains an operator word.",
+    "cap.liveFilterWhat": "Two kinds of term, combined with and / or / not and brackets. A field comparison: ip.addr == 10.0.0.0/8, tcp.port >= 1024, proto == dns, tcp.flags contains syn (fields: eth/ip .src .dst .addr, tcp/udp .port .srcport .dstport, vlan, ip.proto, ip.ttl, icmp.type, proto, len). Anything else is a plain substring matched against the columns above — 443 matches an address containing 443 too, so prefer the field form when you mean the port. Quote a phrase that contains an operator word. A packet carried in a GRE or VXLAN tunnel is listed as the packet inside, and its fields answer for both: ip.addr matches the hosts and the tunnel endpoints alike, and proto == gre still finds it.",
     "cap.fltUnbalanced": "brackets do not match", "cap.fltOperand": "an operator with nothing to apply to",
     "cap.fltField": "not a filterable field name",
     "cap.fltBad": "filter not applied —",
@@ -81,6 +81,7 @@ export const I18N = {
     "cap.liveNoMatch": "No packet matches the filter.",
     "cap.liveDetail": "Packet detail", "cap.livePick": "Select a packet to see its layers and bytes.",
     "cap.liveBytes": "bytes on the wire", "cap.liveCaptured": "bytes captured",
+    "cap.liveVia": "Carried in a {tunnel} tunnel. The row is the packet inside; the tunnel's own headers are the first layers in the detail below.",
     "tab.trafficPorts": "Interfaces", "tab.trafficSessions": "Sessions",
     "tab.trafficServices": "Services", "tab.trafficCountries": "Countries",
     "tab.trafficL2gre": "L2GRE Correlation",
@@ -1073,7 +1074,7 @@ export const I18N = {
     "cap.colNo": "#", "cap.colTime": "時間", "cap.colSrc": "來源", "cap.colDst": "目的",
     "cap.colProto": "協定", "cap.colLen": "長度", "cap.colInfo": "資訊",
     "cap.liveFilter": "過濾", "cap.liveFilterHint": "比對來源、目的、協定或資訊。可用 and / or / not 與括號組合 — tcp and not 443、(arp or stp)、\"echo request\"。僅作用於此頁面:不會向裝置要求任何東西。",
-    "cap.liveFilterWhat": "兩種條件,可用 and / or / not 與括號組合。欄位比較:ip.addr == 10.0.0.0/8、tcp.port >= 1024、proto == dns、tcp.flags contains syn(欄位有 eth/ip .src .dst .addr、tcp/udp .port .srcport .dstport、vlan、ip.proto、ip.ttl、icmp.type、proto、len)。其他字詞則以字串包含比對上方各欄 — 輸入 443 也會比中含 443 的位址,指定 port 時請用欄位寫法。片語含運算子字詞時請加引號。",
+    "cap.liveFilterWhat": "兩種條件,可用 and / or / not 與括號組合。欄位比較:ip.addr == 10.0.0.0/8、tcp.port >= 1024、proto == dns、tcp.flags contains syn(欄位有 eth/ip .src .dst .addr、tcp/udp .port .srcport .dstport、vlan、ip.proto、ip.ttl、icmp.type、proto、len)。其他字詞則以字串包含比對上方各欄 — 輸入 443 也會比中含 443 的位址,指定 port 時請用欄位寫法。片語含運算子字詞時請加引號。封裝在 GRE 或 VXLAN 通道內的封包會以通道內的封包列出,欄位則內外都比對:ip.addr 同時比對通道內的主機與通道兩端,proto == gre 仍然找得到它。",
     "cap.fltUnbalanced": "括號不成對", "cap.fltOperand": "運算子後面缺少條件",
     "cap.fltField": "不是可過濾的欄位名稱",
     "cap.fltBad": "過濾條件未套用 —",
@@ -1085,6 +1086,7 @@ export const I18N = {
     "cap.liveNoMatch": "沒有符合過濾條件的封包。",
     "cap.liveDetail": "封包內容", "cap.livePick": "選擇一個封包以檢視分層與位元組內容。",
     "cap.liveBytes": "線上長度", "cap.liveCaptured": "側錄長度",
+    "cap.liveVia": "封裝在 {tunnel} 通道內。此列顯示的是通道內的封包;通道本身的標頭在下方詳細資料的最前面幾層。",
     "tab.trafficPorts": "介面", "tab.trafficSessions": "連線",
     "tab.trafficServices": "服務", "tab.trafficCountries": "國家",
     "tab.trafficL2gre": "L2GRE 對應表",
