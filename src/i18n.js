@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.247.0";
+export const STUDIO_VERSION = "2.248.0";
 
 export const I18N = {
   en: {
@@ -421,6 +421,9 @@ export const I18N = {
     "set.mecSweepNote": "A sweep drops S1AP/NGAP table entries nothing has touched for a while, so the table does not fill up with sessions that ended.",
     "set.mecCron": "Run at (cron)",
     "set.mecIdleMax": "Idle for at least (s)",
+    "set.mecNrCell": "5G cell identity", "set.mecNrCellBits": "High bits of the NR Cell Identity",
+    "set.mecNrCellNote": "The cell id a filter compares (gtp.data.by.s1ap.CellIdentity) is the top N bits of the 36-bit NR Cell Identity. Which bits name the gNB and which the cell within it is the operator's choice (gNB ID length 22–32), so set N to what the filter should see: 26 if unset; 32 gives the gNB ID of a network that uses 32-bit gNB IDs. Takes effect for sessions set up after the change.",
+    "set.mecNrCellBitsBad": "1 to 32.",
     "set.mecCronHelp": "Five fields: minute hour day month weekday. Each is * or a single number — ranges and steps are not supported. Month counts from 0 (January) and weekday from 0 (Sunday).",
     "set.mecCronEmpty": "Empty — idle entries are never cleared.",
     "set.mecCronFields": "A cron needs exactly five fields.",
@@ -1425,6 +1428,9 @@ export const I18N = {
     "set.mecSweepNote": "定期清掉一段時間沒有動靜的 S1AP/NGAP 項目,避免表格被已結束的連線塞滿。",
     "set.mecCron": "執行時間 (cron)",
     "set.mecIdleMax": "閒置超過 (秒)",
+    "set.mecNrCell": "5G cell 識別", "set.mecNrCellBits": "NR Cell Identity 取高幾個 bit",
+    "set.mecNrCellNote": "篩選器比對的 cell id(gtp.data.by.s1ap.CellIdentity)是 36 bit NR Cell Identity 的高 N 個 bit。哪些 bit 是 gNB、哪些是 gNB 內的 cell 由電信商決定(gNB ID 長度 22–32),所以 N 設成篩選器要看的範圍:未設定時為 26;網路用 32 bit gNB ID 時設 32 就是完整的 gNB ID。改了之後對新建立的 session 生效。",
+    "set.mecNrCellBitsBad": "1 到 32。",
     "set.mecCronHelp": "五個欄位:分 時 日 月 星期。每個欄位只能是 * 或單一數字,不支援範圍與間隔。月份從 0 開始(0 是一月),星期從 0 開始(0 是星期日)。",
     "set.mecCronEmpty": "留空 — 不會清除閒置項目。",
     "set.mecCronFields": "cron 必須剛好五個欄位。",

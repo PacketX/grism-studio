@@ -4105,8 +4105,13 @@ group("MEC settings");
   check("the idle seconds must be a number",
     C.mecProblems({ s1apItemsClearIdleMax: "604800" }).length === 0 &&
     C.mecProblems({ s1apItemsClearIdleMax: "a week" }).length === 1);
+  check("the cell-identity bits must be 1..32",
+    C.mecProblems({ nrCellIdentityBits: "26" }).length === 0 && C.mecProblems({ nrCellIdentityBits: "32" }).length === 0 &&
+    C.mecProblems({ nrCellIdentityBits: "" }).length === 0 &&
+    C.mecProblems({ nrCellIdentityBits: "0" })[0]?.scope === "nrbits" && C.mecProblems({ nrCellIdentityBits: "36" })[0]?.scope === "nrbits" &&
+    C.mecProblems({ nrCellIdentityBits: "x" })[0]?.scope === "nrbits");
   check("every key the card writes is named", C.MEC_ARG_KEYS.join() ===
-    "s1cCorrelation,flowExtensionGtpTunnelhdr,s1apItemsClearIdleCron,s1apItemsClearIdleMax");
+    "s1cCorrelation,flowExtensionGtpTunnelhdr,s1apItemsClearIdleCron,s1apItemsClearIdleMax,nrCellIdentityBits");
 }
 
 group("deduplication ports");

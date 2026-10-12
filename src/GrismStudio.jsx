@@ -2510,7 +2510,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
   // <filters>; the timezone list and SNMP community have endpoints of their own.
   const SYS_ARGS = ["timeServer", "timeServer2", "resolveNameServer", "resolveNameServer2",
     "grel2CorrelationPort", "vxlanCorrelationPort", "encapsulationEncryptKeyTimeout",
-    "deduplicationPorts", "s1apItemsClearIdleCron", "s1apItemsClearIdleMax"];
+    "deduplicationPorts", "s1apItemsClearIdleCron", "s1apItemsClearIdleMax", "nrCellIdentityBits"];
   const PKT_ARGS = ["deduplication", "ipFragmentCorrelation", "tcpSegmentDataReassemble", "quicInitialReassemble", "sctpDataChunkReconstruct", "tryRunXmltoGdp",
     "grel2Correlation", "vxlanCorrelation", "encapsulationEncrypt",
     "s1cCorrelation", "flowExtensionGtpTunnelhdr"];
@@ -4210,6 +4210,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                 const mecMixed = mecOn > 0 && !mecAllOn;
                 const cronErr = problems.find((x) => x.scope === "cron");
                 const maxErr = problems.find((x) => x.scope === "max");
+                const bitsErr = problems.find((x) => x.scope === "nrbits");
                 const cronText = String(sys.s1apItemsClearIdleCron ?? "").trim();
                 const idleText = String(sys.s1apItemsClearIdleMax ?? "").trim();
                 const cronMeans = cronText ? describeCron(cronText, tr) : null;
@@ -4239,6 +4240,19 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                       <span className="dim"> {tr("set.mecTemplateNote")}</span>
                     </p>
                   )}
+
+                  {/* 5G: the filters' cell id is the top N bits of the 36-bit NR
+                      Cell Identity. Which bits are the gNB and which the cell
+                      is the operator's choice (gNB ID length 22..32), so N is. */}
+                  <div className="oattr-subhead">{tr("set.mecNrCell")}</div>
+                  <p className="set-hint">{tr("set.mecNrCellNote")}</p>
+                  <div className="set-grid">
+                    <label className="ml" style={{ flex: "0 1 220px" }}><span>{tr("set.mecNrCellBits")}</span>
+                      <input type="text" inputMode="numeric" value={sys.nrCellIdentityBits ?? ""}
+                        placeholder="26"
+                        onChange={(e) => setSysField("nrCellIdentityBits", e.target.value)} /></label>
+                  </div>
+                  {bitsErr && <p className="set-hint err">{tr("set.mecNrCellBitsBad")}</p>}
 
                   <div className="oattr-subhead">{tr("set.mecSweep")}</div>
                   <p className="set-hint">{tr("set.mecSweepNote")}</p>

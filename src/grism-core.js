@@ -6230,6 +6230,7 @@ export function s1apParsePage(text, matched, size) {
 export const MEC_ARG_KEYS = [
   "s1cCorrelation", "flowExtensionGtpTunnelhdr",
   "s1apItemsClearIdleCron", "s1apItemsClearIdleMax",
+  "nrCellIdentityBits",
 ];
 
 /* The firmware's cron is not the usual dialect: each field is compared with a
@@ -6324,6 +6325,9 @@ export function mecProblems(v) {
   if (cron && cron.kind !== "empty") out.push({ ...cron, scope: "cron" });
   const max = String(v?.s1apItemsClearIdleMax ?? "").trim();
   if (max !== "" && !/^\d+$/.test(max)) out.push({ scope: "max", kind: "syntax" });
+  // the 5G cell id is the top N bits of a 36-bit identity, kept in 32 bits
+  const bits = String(v?.nrCellIdentityBits ?? "").trim();
+  if (bits !== "" && !(/^\d+$/.test(bits) && Number(bits) >= 1 && Number(bits) <= 32)) out.push({ scope: "nrbits", kind: "range" });
   return out;
 }
 
