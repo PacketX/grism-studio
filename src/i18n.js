@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.246.0";
+export const STUDIO_VERSION = "2.247.0";
 
 export const I18N = {
   en: {
@@ -990,7 +990,7 @@ export const I18N = {
     "out.noValue": "no value",
     "common.valueSet": "A value is set",
     "ch.negOn": "Change to \"does not match this filter\"", "ch.negOff": "Change back to \"matches this filter\"",
-    "ch.noneChosen": "(none chosen)", "ch.outDrop": "discard", "ch.outSwitch": "to the switch",
+    "ch.noneChosen": "(none chosen)", "ch.outDrop": "discard",
     "ch.dropNote": "0 discards the packet outright, which is not the same as leaving it unspecified.",
     "ch.portsDefaultNote": "Default list — sign in to load the device\u2019s actual ports.",
     "ch.zoomIn": "Zoom in", "ch.zoomOut": "Zoom out", "ch.zoomReset": "Back to 100%",
@@ -1992,7 +1992,7 @@ export const I18N = {
     "out.noValue": "無值",
     "common.valueSet": "已設定值",
     "ch.negOn": "改成「不符合這個篩選器」", "ch.negOff": "改回「符合這個篩選器」",
-    "ch.noneChosen": "(未選擇)", "ch.outDrop": "丟棄", "ch.outSwitch": "交給交換器",
+    "ch.noneChosen": "(未選擇)", "ch.outDrop": "丟棄",
     "ch.dropNote": "選擇 0 代表明確丟棄,與「未指定」不同。",
     "ch.portsDefaultNote": "這是預設清單 — 登入後會載入裝置實際的連接埠。",
     "ch.zoomIn": "放大", "ch.zoomOut": "縮小", "ch.zoomReset": "回到 100%",

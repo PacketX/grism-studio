@@ -8965,8 +8965,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     return o && o.port ? `${tok}(${o.port})` : tok;
   }).join(",");
   /* Everything a chain's <out> accepts, in one list: ports, the outputs this
-     document defines, then the two standalone values. */
-  const SOLO_OUTS = [{ id: "0", subKey: "ch.outDrop" }, { id: "S", subKey: "ch.outSwitch" }];
+     document defines, then the standalone value. (The firmware also takes
+     "S", hand the packet to the switch; it is not offered any more, but a
+     chain that already says it keeps it listed, so it can be seen and
+     removed.) */
+  const SOLO_OUTS = [{ id: "0", subKey: "ch.outDrop" }];
   const outChoices = useMemo(() => [
     ...portOptions.map((p) => ({ id: p, sub: portDescs[p] ?? "" })),
     ...(doc.outputs ?? []).map((o) => ({
@@ -9411,9 +9414,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               </>}
               {sel && sel.t === "out" && <>
                 {/* One list: the device's ports, the outputs this document defines,
-                    and the two values that are neither -- 0 discards, S hands the
-                    packet to the switch. Those two stand alone, so choosing one
-                    clears the rest and choosing a port clears them. */}
+                    and the one value that is neither -- 0 discards. It stands
+                    alone, so choosing it clears the rest and choosing a port
+                    clears it. */}
                 {isDrop(sel) && <p className="insp-note">{tr("ch.dropNote")}</p>}
                 <>
                   {/* Same for an out: a port it already names stays listed even
