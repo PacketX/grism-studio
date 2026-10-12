@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.245.0";
+export const STUDIO_VERSION = "2.246.0";
 
 export const I18N = {
   en: {
@@ -925,7 +925,6 @@ export const I18N = {
     "act.typeLinkPairs": "linkpairs — bind two ports so one going down drops the other",
     "act.addModifier": "add modifier",
     // chain editor
-    "ch.inspector": "Inspector", "ch.selectNode": "Select a node to edit.",
     "ch.unspecified": "Unspecified", "ch.ingress": "Ingress", "ch.filter": "FILTER", "ch.discard": "Discard", "ch.output": "Output",
     "ch.ingressPorts": "Ingress ports", "ch.routeExplicitly": "Route explicitly",
     "ch.unsetNote": "No branch here — device default applies. No <next> is written.",
@@ -1928,7 +1927,6 @@ export const I18N = {
     "act.typeLinkPairs": "linkpairs — 綁定兩個埠,其一斷線另一個也斷",
     "act.addModifier": "新增 modifier",
     // chain editor
-    "ch.inspector": "檢視器", "ch.selectNode": "選擇一個節點來編輯。",
     "ch.unspecified": "未指定", "ch.ingress": "入口", "ch.filter": "篩選", "ch.discard": "丟棄", "ch.output": "輸出",
     "ch.ingressPorts": "入口埠", "ch.routeExplicitly": "明確指定路由",
     "ch.unsetNote": "此處沒有分支 — 套用裝置預設。不會寫出 <next>。",
