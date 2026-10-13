@@ -6111,24 +6111,30 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
   const poll = usePolledJson("/grism/task/get_statistics_json", loggedIn);
   const fPoll = usePolledJson("/grism/task/get_filter_counter", loggedIn, { followSec: poll.refreshSec });
   // heartbeat: the status rows are positional, so the target list labels them
-  const hbPoll = usePolledJson("/grism/task/get_heartbeat_status", loggedIn, { followSec: poll.refreshSec });
   /* The target list only labels the status rows, and it changes when someone
      edits the settings -- not every tick. Polling the whole configuration
      document alongside the counters re-downloaded it every refresh, on a device
      that is already the slow part, for a card that is not even drawn when there
      are no targets. */
-  const [hbTargets, setHbTargets] = React.useState([]);
+  const [hbCfg, setHbCfg] = React.useState({ enable: false, targets: [] });
   React.useEffect(() => {
     if (!loggedIn) return;
     let alive = true;
     (async () => {
       try {
         const res = await fetch("/grism/task/get_config", { credentials: "include" });
-        if (res.ok && alive) setHbTargets(parseHeartbeat(await res.json()).targets);
+        if (res.ok && alive) setHbCfg(parseHeartbeat(await res.json()));
       } catch { /* the rows simply stay unlabelled */ }
     })();
     return () => { alive = false; };
   }, [loggedIn]);
+  /* The device answers get_heartbeat_status with a row for every enabled
+     target whether or not heartbeat itself is switched on, so with the switch
+     off this card listed targets as "down" that nothing was probing. Off means
+     no card -- and no request for one, as on the interface page. */
+  const hbTargets = hbCfg.targets;
+  const hbOn = hbCfg.enable && hbTargets.some((tg) => tg.enable);
+  const hbPoll = usePolledJson("/grism/task/get_heartbeat_status", loggedIn && hbOn, { followSec: poll.refreshSec });
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
 
@@ -6136,7 +6142,7 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
   const v6 = summarizeSessions(poll.data?.sessionsv6, { v6: true });
   const pkts = summarizePacketTypes(poll.data?.packet_type_counter);
   const filters = summarizeFilterCounters(fPoll.data?.filter_counter);
-  const hbRows = heartbeatStatusRows(hbTargets, parseHeartbeatStatus(hbPoll.data));
+  const hbRows = hbOn ? heartbeatStatusRows(hbTargets, parseHeartbeatStatus(hbPoll.data)) : [];
 
   const family = (info, label, protoLabel) => info && (
     <section className="sys-card">
@@ -8901,7 +8907,13 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const chain = chains.find((c) => c.cid === activeChain) || chains[0];
   const cid = chain?.cid;
 
-  const { placed, edges, totalW, totalH } = useMemo(() => chain ? layoutChain(chain) : { placed: [], edges: [], totalW: 0, totalH: 0 }, [chain]);
+  /* Which side each test's aside was first drawn on, per chain, for as long as
+     the tab is open: handed to the layout so that inserting a test does not
+     send the asides below it over to the other side of the spine. */
+  const sidesRef = React.useRef({});
+  const { placed, edges, totalW, totalH, spineX } = useMemo(() => chain
+    ? layoutChain(chain, (sidesRef.current[chain.cid] ??= new Map()))
+    : { placed: [], edges: [], totalW: 0, totalH: 0, spineX: 0 }, [chain]);
   const problems = useMemo(() => {
     if (!chain) return [];
     const probs = chainProblems(chain.tree, []);
@@ -9147,7 +9159,13 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     setSelId(out.id);
   };
 
-  const PAD = 40, svgW = totalW + PAD * 2, svgH = totalH + PAD * 2;
+  /* The drawing is as wide either side of the ingress as its wider side, so the
+     ingress -- the spine -- is the centre line of the canvas. Centring the
+     bounding box instead put a chain with one aside 92px off to the left, and
+     slid everything sideways whenever an edit made one side wider. */
+  const PAD = 40;
+  const spineC = (spineX ?? 0) + NODE_W / 2, halfW = Math.max(spineC, totalW - spineC), shiftX = halfW - spineC;
+  const svgW = halfW * 2 + PAD * 2, svgH = totalH + PAD * 2;
 
   /* Zoom. The viewBox stays at the drawing's own size and only the rendered
      width and height scale, so nothing has to know about it -- node positions,
@@ -9156,6 +9174,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const [zoom, setZoom] = React.useState(() => readPrefs().chainZoom ?? 1);
   React.useEffect(() => { writePref("chainZoom", zoom); }, [zoom]);
   const paneRef = React.useRef(null);
+  /* "Home" is the ingress on the pane's centre line, the top of the drawing at
+     the top: where a chain opens, and where the fit and 100% buttons return. */
+  const homeRef = React.useRef(true);
+  const [homeTick, setHomeTick] = React.useState(0);
+  const goHome = React.useCallback(() => { homeRef.current = true; setHomeTick((n) => n + 1); }, []);
   const stepZoom = (dir) => setZoom((z) => {
     const i = ZOOM_STEPS.findIndex((v) => v >= z - 0.001);
     const next = dir > 0 ? ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, i + 1)]
@@ -9172,7 +9195,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     // as shrinking a large one, within the range the buttons can reach
     const f = Math.min((pane.clientWidth - padX) / svgW, (pane.clientHeight - padY) / svgH);
     setZoom(Math.min(2, Math.max(0.2, Math.floor(f * 100) / 100)));
-  }, [svgW, svgH]);
+    goHome();
+  }, [svgW, svgH, goHome]);
 
   /* React attaches wheel handlers as passive, so preventDefault inside one is
      ignored and the pane scrolls under the zoom. Bind it ourselves. */
@@ -9213,13 +9237,89 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     show(ev, { rows, outs, ports, vlan, kind,
                op: node.fidOp === "and" ? tr("crit.and") : tr("crit.or") });
   };
-  const center = (n) => ({ x: n._x + NODE_W / 2 + PAD, y: n._y + PAD });
+  const center = (n) => ({ x: n._x + shiftX + NODE_W / 2 + PAD, y: n._y + PAD });
   /* Where the node editor goes: to the right of the chosen node, or to its
      left when the right has no room, and never outside the pane's visible
      part. Measured before paint, so it does not jump into place. */
   const svgRef = React.useRef(null);
   const popRef = React.useRef(null);
   const [popAt, setPopAt] = React.useState(null);
+
+  /* Room to move the drawing in. The pane scrolls, and a drawing smaller than
+     the pane has nowhere to scroll to -- so the stage around it is padded by
+     most of a pane each way, and dragging the empty canvas (below) can take
+     any part of the chain to any part of the view. */
+  const hasChain = !!chain;
+  const [slack, setSlack] = React.useState({ x: 0, y: 0 });
+  React.useLayoutEffect(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    const measure = () => setSlack((cur) => {
+      const x = Math.max(0, pane.clientWidth - 160), y = Math.max(0, pane.clientHeight - 160);
+      return cur.x === x && cur.y === y ? cur : { x, y };
+    });
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(pane);
+    return () => ro.disconnect();
+  }, [hasChain]);
+  /* Whatever changes the drawing's size -- an inserted test, a zoom step, the
+     window -- its top centre (the ingress) stays where it was on screen: the
+     pane is scrolled by exactly as far as that point moved. Without this an
+     edit that widened the canvas slid the whole chain sideways under the
+     pointer. Runs before the editor below is placed, which measures the result. */
+  const anchorRef = React.useRef(null);
+  React.useLayoutEffect(() => { homeRef.current = true; }, [cid]);
+  React.useLayoutEffect(() => {
+    const pane = paneRef.current, svg = svgRef.current;
+    if (!pane || !svg) { anchorRef.current = null; return; }
+    const pb = pane.getBoundingClientRect(), sb = svg.getBoundingClientRect();
+    const cx = sb.left - pb.left - pane.clientLeft + pane.scrollLeft + sb.width / 2;
+    const top = sb.top - pb.top - pane.clientTop + pane.scrollTop;
+    if (homeRef.current || !anchorRef.current) {
+      pane.scrollLeft = Math.max(0, cx - pane.clientWidth / 2);
+      pane.scrollTop = Math.max(0, top - 24);
+      homeRef.current = false;
+    } else {
+      pane.scrollLeft += cx - anchorRef.current.cx;
+      pane.scrollTop += top - anchorRef.current.top;
+    }
+    anchorRef.current = { cx, top };
+  }, [cid, svgW, svgH, zoom, slack.x, slack.y, homeTick]);
+
+  /* Dragging the empty canvas moves the drawing. Only from the canvas itself --
+     a node is a click target, the editor and the zoom buttons are their own
+     thing -- and only once the pointer has really moved, so a click still
+     closes the editor and a drag does not. Touch is left alone: the pane
+     already pans under a finger. */
+  const dragRef = React.useRef(null);
+  const draggedRef = React.useRef(false);
+  const [panning, setPanning] = React.useState(false);
+  const panDown = (e) => {
+    draggedRef.current = false;
+    if (e.button !== 0 || e.pointerType === "touch") return;
+    if (e.target.closest(".gnode, .node-pop, .zoom-bar")) return;
+    const pane = paneRef.current;
+    dragRef.current = { x: e.clientX, y: e.clientY, left: pane.scrollLeft, top: pane.scrollTop, id: e.pointerId, moved: false };
+  };
+  const panMove = (e) => {
+    const d = dragRef.current, pane = paneRef.current;
+    if (!d || !pane) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!d.moved) {
+      if (Math.abs(dx) + Math.abs(dy) < 4) return;
+      d.moved = true; setPanning(true); hideTip();
+      try { pane.setPointerCapture(d.id); } catch { /* the drag still works while the pointer is over the pane */ }
+    }
+    pane.scrollLeft = d.left - dx; pane.scrollTop = d.top - dy;
+  };
+  const panUp = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (d?.moved) { draggedRef.current = true; setPanning(false); }
+  };
+
   React.useLayoutEffect(() => {
     const pane = paneRef.current, svg = svgRef.current, pop = popRef.current;
     if (!sel || !pane || !svg || !pop) { setPopAt(null); return; }
@@ -9240,7 +9340,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     const viewT = pane.scrollTop, viewB = viewT + pane.clientHeight;
     const top = Math.max(viewT + M, Math.min(nodeT, viewB - pop.offsetHeight - M));
     setPopAt({ left, top });
-  }, [sel, zoom]);
+  }, [sel, zoom, slack.x, slack.y]);
   const byId = Object.fromEntries(placed.map((n) => [n.id, n]));
 
   if (!chain) return (
@@ -9316,16 +9416,19 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
       </aside>
 
       <div className="chain-main">
-      <section className="canvas-wrap" ref={paneRef} onClick={() => setSelId(null)}>
+      <section className={"canvas-wrap" + (panning ? " panning" : "")} ref={paneRef}
+        onClick={() => { if (draggedRef.current) { draggedRef.current = false; return; } setSelId(null); }}
+        onPointerDown={panDown} onPointerMove={panMove} onPointerUp={panUp} onPointerCancel={panUp}>
         <div className="zoom-bar" onClick={(e) => e.stopPropagation()}>
           <button onClick={() => stepZoom(-1)} disabled={zoom <= ZOOM_STEPS[0]}
             title={tr("ch.zoomOut")} aria-label={tr("ch.zoomOut")}>−</button>
-          <button className="zoom-pct" onClick={() => setZoom(1)} title={tr("ch.zoomReset")}>
+          <button className="zoom-pct" onClick={() => { setZoom(1); goHome(); }} title={tr("ch.zoomReset")}>
             {Math.round(zoom * 100)}%</button>
           <button onClick={() => stepZoom(1)} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
             title={tr("ch.zoomIn")} aria-label={tr("ch.zoomIn")}>+</button>
           <button className="zoom-fit" onClick={fitZoom} title={tr("ch.zoomFitTip")}>{tr("ch.zoomFit")}</button>
         </div>
+        <div className="canvas-stage" style={{ padding: `${slack.y}px ${slack.x}px` }}>
         <svg ref={svgRef} width={svgW * zoom} height={svgH * zoom} viewBox={`0 0 ${svgW} ${svgH}`} className="canvas">
           <defs>
             <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3a5064" /></marker>
@@ -9367,6 +9470,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             </g>;
           })}
         </svg>
+        </div>
         <NodeTip tip={tip} />
         {/* The editor for the chosen node, beside the node itself rather than
             in a column of its own: what is being changed and where it sits in

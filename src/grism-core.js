@@ -2096,7 +2096,7 @@ export function fmtBytes(n) {
 export function toks(fids) { return String(fids || "").split(",").map((s) => s.trim()).filter(Boolean).length; }
 
 export const NODE_W = 150, NODE_H = 52, H_GAP = 34, V_GAP = 60, PH_H = 40;
-export function layoutChain(root) {
+export function layoutChain(root, sides = null) {
   const placed = [], edges = [];
   const inNode = { id: "__in__", t: "in", ports: root.ports, child: root.tree };
   /* A chain is usually a spine: one side of each test ends the packet's journey
@@ -2119,6 +2119,25 @@ export function layoutChain(root) {
   };
   // which way this level's aside hangs; alternating keeps the spine centred
   const asideGoesLeft = (depth) => depth % 2 === 1;
+  /* By depth alone, a test inserted into the spine moves every test below it
+     one level down -- and flips each of their asides to the other side, so the
+     whole drawing rearranges around the one thing that changed. `sides` is a
+     Map the caller keeps from one layout of a chain to the next: a test stays
+     on the side it was first given, and a test seen for the first time goes
+     opposite its spine parent, which for a chain laid out afresh is the same
+     alternation as before. */
+  const hangsLeft = new Map();
+  (function assign(node, depth, parentLeft) {
+    if (!node) return;
+    if (node.t === "in") { assign(node.child, depth, null); return; }
+    if (ends(node)) return;
+    const sp = spineChild(node);
+    if (!sp) { assign(node.match, depth + 1, null); assign(node.notmatch, depth + 1, null); return; }
+    const left = sides?.has(node.id) ? sides.get(node.id)
+      : sides && parentLeft != null ? !parentLeft : asideGoesLeft(depth);
+    hangsLeft.set(node.id, left); sides?.set(node.id, left);
+    assign(sp.on, depth + 1, left);
+  })(inNode, 0, null);
 
   const extents = new Map();
   function extent(node, depth) {
@@ -2132,7 +2151,7 @@ export function layoutChain(root) {
       const sp = spineChild(node);
       if (sp) {
         const on = extent(sp.on, depth + 1);
-        out = asideGoesLeft(depth)
+        out = hangsLeft.get(node.id)
           ? { l: Math.max(on.l, NODE_W + H_GAP), r: Math.max(on.r, NODE_W) }
           : { l: Math.max(on.l, 0), r: Math.max(on.r, NODE_W + H_GAP + NODE_W) };
       } else {
@@ -2176,7 +2195,7 @@ export function layoutChain(root) {
     if (sp) {
       const asideKind = sp.aside === node.match ? "match" : "notmatch";
       const onKind = sp.on === node.match ? "match" : "notmatch";
-      const asideX = asideGoesLeft(depth)
+      const asideX = hangsLeft.get(node.id)
         ? x - H_GAP - NODE_W
         : x + NODE_W + H_GAP;
       place(sp.aside, asideX, cy, depth + 1, node, asideKind);
@@ -2200,7 +2219,8 @@ export function layoutChain(root) {
   placed.forEach((n) => { n._x -= minX; });
   const totalW = Math.max(...placed.map((n) => n._x + NODE_W));
   const totalH = Math.max(...placed.map((n) => n._y)) + NODE_H;
-  return { placed, edges, totalW, totalH };
+  // spineX: the ingress's left edge, for a caller that wants the drawing centred on it
+  return { placed, edges, totalW, totalH, spineX: -minX };
 }
 
 /* Collapsible multi-select: a header (click to expand) showing the picked

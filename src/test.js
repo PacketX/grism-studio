@@ -2928,6 +2928,35 @@ group("chain layout");
     const outs = L.placed.filter((n) => n.t === "out" || n.t === "unset");
     return outs.some((n) => n._x < sx) && outs.some((n) => n._x > sx);
   })());
+  /* Inserting a test into the spine pushed everything under it one level down,
+     and by depth alone that flipped each of their asides to the other side:
+     the drawing rearranged itself around the one test that was added. With
+     the caller's memo of sides, what was there stays where it was. */
+  {
+    const tree = spine(6), memo = new Map();
+    const side = (L) => { const sx = L.placed.find((n) => n.t === "branch")._x;
+      return Object.fromEntries(L.placed.filter((n) => n.t === "out").map((n) => [n.id, Math.sign(n._x - sx)])); };
+    const fresh = C.layoutChain({ ports: "P0", tree });
+    const first = C.layoutChain({ ports: "P0", tree }, memo);
+    check("a memo of sides changes nothing on the first layout",
+      JSON.stringify(first.placed.map((n) => [n.id, n._x, n._y])) === JSON.stringify(fresh.placed.map((n) => [n.id, n._x, n._y])));
+    // a new test above the third one down, the old subtree kept on its notmatch side
+    const insertAbove = (n, depth) => depth === 0
+      ? { id: "new", t: "branch", fids: "", fidOp: "or", match: { id: "nu", t: C.UNSET }, notmatch: n }
+      : { ...n, notmatch: insertAbove(n.notmatch, depth - 1) };
+    const grown = insertAbove(tree, 2);
+    const before = side(first), after = side(C.layoutChain({ ports: "P0", tree: grown }, memo));
+    check("an inserted test leaves every other aside on its side",
+      Object.keys(before).every((id) => before[id] === after[id]));
+    const flipped = side(C.layoutChain({ ports: "P0", tree: grown }));
+    check("without the memo the asides below it do change sides",
+      Object.keys(before).some((id) => before[id] !== flipped[id]));
+    const L = C.layoutChain({ ports: "P0", tree: grown }, memo);
+    check("the spine keeps one column after the insert",
+      new Set(L.placed.filter((n) => n.t === "branch").map((n) => n._x)).size === 1);
+    check("spineX is the ingress's own left edge",
+      L.spineX === L.placed.find((n) => n.t === "in")._x && first.spineX === first.placed.find((n) => n.t === "in")._x);
+  }
   check("depth still costs height", (() => {
     const a = C.layoutChain({ ports: "P0", tree: spine(2) }).totalH;
     const b = C.layoutChain({ ports: "P0", tree: spine(8) }).totalH;
