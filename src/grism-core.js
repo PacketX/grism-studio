@@ -7166,6 +7166,9 @@ export const ALERT_RULE_META = {
   grism_zombie: { fields: ["sustain"] },
   service_down: { fields: ["sustain"] },
   in_drops: { unit: "%", fields: ["threshold", "clear", "min_pps", "sustain"] },
+  /* how full the MEC mapping table and its TEID and UE-address indexes are;
+     one alert each, named by its subject */
+  mec_table: { unit: "%", fields: ["threshold", "clear", "sustain"] },
 };
 export const ALERT_RULE_ORDER = Object.keys(ALERT_RULE_META);
 const ALERT_LIMITS = { threshold: [0, 1000], clear: [0, 1000], sustain: [0, 86400], min_pps: [0, 100000000] };
@@ -7254,6 +7257,8 @@ export function alertValueText(a) {
     case "cpu": case "memory": case "disk": return `${a.value}%`;
     case "temperature": return `${a.value} °C`;
     case "in_drops": return `${a.value}%` + (a.detail != null && a.detail !== "" ? ` · ${a.detail}/s` : "");
+    // detail is "used/size": 1080000/1200000
+    case "mec_table": return `${a.value}%` + (a.detail ? ` · ${String(a.detail).replace("/", " / ")}` : "");
     case "grism_zombie": return a.detail ? `Z: ${a.detail}` : "";
     default: return "";
   }

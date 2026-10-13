@@ -2267,6 +2267,11 @@ group("extra running-config files");
     const rules = C.parseAlertRules({ rules: [{ id: "cpu", enable: true, threshold: 95, sustain: 60, clear: 5 },
       { id: "fan", enable: true, sustain: 10 }, { id: "in_drops", enable: false, threshold: 1, clear: 0.5, min_pps: 100, sustain: 30 }, { id: "bogus" }] });
     check("alert rules: known ones, in order", rules.map((r) => r.id).join() === "cpu,fan,in_drops");
+    check("alert rules: the MEC table rule is one the page knows, with a threshold in percent",
+      C.ALERT_RULE_ORDER.includes("mec_table") && C.ALERT_RULE_META.mec_table.unit === "%"
+      && C.parseAlertRules({ rules: [{ id: "mec_table", enable: true, threshold: 90, clear: 5, sustain: 0 }] })[0].threshold === 90);
+    check("alert value: a full index reads as its percentage and its count",
+      C.alertValueText({ rule: "mec_table", subject: "UE index", value: 90.2, detail: "1082400/1200000" }) === "90.2% · 1082400 / 1200000");
     check("alert rules: valid ones pass", C.alertRulesProblems(rules).length === 0);
     check("alert rules: an empty threshold is a problem", C.alertRulesProblems([{ ...rules[0], threshold: "" }]).some((p) => p.field === "threshold"));
     check("alert rules: a clear margin as big as the threshold is a problem", C.alertRulesProblems([{ ...rules[0], clear: 95 }]).some((p) => p.field === "clear"));
