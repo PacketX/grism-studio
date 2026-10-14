@@ -8912,13 +8912,16 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const chain = chains.find((c) => c.cid === activeChain) || chains[0];
   const cid = chain?.cid;
 
-  /* Which side each test's aside was first drawn on, per chain, for as long as
-     the tab is open: handed to the layout so that inserting a test does not
-     send the asides below it over to the other side of the spine. */
+  /* Which side each test's aside was first drawn on, and where each node was
+     first placed, per chain, for as long as the tab is open: handed to the
+     layout so that an edit -- a test inserted, a side removed -- moves what it
+     changed and leaves the rest of the drawing where it was. */
   const sidesRef = React.useRef({});
-  const { placed, edges, totalW, totalH, spineX } = useMemo(() => chain
-    ? layoutChain(chain, (sidesRef.current[chain.cid] ??= new Map()))
-    : { placed: [], edges: [], totalW: 0, totalH: 0, spineX: 0 }, [chain]);
+  const { placed, edges, totalW, totalH, spineX } = useMemo(() => {
+    if (!chain) return { placed: [], edges: [], totalW: 0, totalH: 0, spineX: 0 };
+    const memo = (sidesRef.current[chain.cid] ??= { sides: new Map(), slots: new Map(), seen: null });
+    return layoutChain(chain, memo.sides, memo);
+  }, [chain]);
   const problems = useMemo(() => {
     if (!chain) return [];
     const probs = chainProblems(chain.tree, []);
@@ -9439,14 +9442,14 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3a5064" /></marker>
             <marker id="ard" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3a4654" /></marker>
           </defs>
-          {edges.map((e, i) => {
+          {edges.map((e) => {
             const a = byId[e.from], b = byId[e.to]; if (!a || !b) return null;
             const tu = isUnset(b); const p1 = center(a), p2 = center(b);
             const y1 = p1.y + NODE_H / 2, y2 = p2.y - (tu ? PH_H : NODE_H) / 2, midY = (y1 + y2) / 2;
             const path = `M ${p1.x} ${y1} C ${p1.x} ${midY}, ${p2.x} ${midY}, ${p2.x} ${y2}`;
             const base = e.kind === "match" ? "match" : e.kind === "notmatch" ? "notmatch" : "flow";
             const label = e.kind === "match" ? "match" : e.kind === "notmatch" ? "notmatch" : null;
-            return <g key={i}>
+            return <g key={e.from + ">" + e.to}>
               <path d={path} className={"edge " + base + (tu ? " toUnset" : "")} markerEnd={tu ? "url(#ard)" : "url(#ar)"} />
               {label && <text x={(p1.x + p2.x) / 2} y={midY - 4} className={"edge-label " + base + (tu ? " dim" : "")} textAnchor="middle">{label}</text>}
             </g>;
@@ -9462,16 +9465,26 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               </g>;
             }
             const x = c.x - NODE_W / 2, y = c.y - NODE_H / 2, drop = isDrop(n), bad = problemIds.has(n.id);
-            return <g key={n.id} className={`gnode ${n.t}${drop ? " drop" : ""}${bad ? " bad" : ""}${isSel ? " sel" : ""}`}
+            /* A test with no filter yet, or an output with nowhere to go -- what
+               inserting a test or routing a side leaves -- says what it is
+               waiting for in its own main line, in a dashed outline, rather
+               than a "!" in the corner of an otherwise blank box. */
+            const todo = n.t === "branch" ? !String(n.fids ?? "").trim()
+              : n.t === "out" && !String(n.ports ?? "").trim();
+            return <g key={n.id} className={`gnode ${n.t}${drop ? " drop" : ""}${bad && !todo ? " bad" : ""}${todo ? " todo" : ""}${isSel ? " sel" : ""}`}
               onClick={(ev) => { ev.stopPropagation(); setSelId(n.id); }}
               onMouseEnter={(ev) => showTip(ev, n)}
               onMouseLeave={hideTip}>
               <rect x={x} y={y} width={NODE_W} height={NODE_H} rx="9" />
-              {bad && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
+              {bad && !todo && <text x={x + NODE_W - 13} y={y + 16} className="n-warn">!</text>}
               {n.t === "in" && <><text x={c.x} y={c.y - 5} className="n-kind">{tr("ch.capIngress")}</text><text x={c.x} y={c.y + 12} className="n-main"><title>{n.ports}</title>{fitNodeText(n.ports, NODE_CHARS)}</text></>}
 
-              {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || tr("ch.capFilter")}</text><text x={c.x} y={c.y + 12} className="n-main"><title>{n.fids}</title>{fitNodeText(n.fids, NODE_CHARS)}</text></>; })()}
-              {n.t === "out" && <><text x={c.x} y={c.y - 5} className="n-kind">{drop ? tr("ch.capDiscard") : (n.mode === "loadBalance" ? tr("ch.capBalance") : tr("ch.capOutput"))}</text><text x={c.x} y={c.y + 12} className="n-main"><title>{drop ? "drop (0)" : withOutPorts(n.ports)}</title>{drop ? "drop (0)" : fitNodeText(withOutPorts(n.ports), NODE_CHARS)}</text></>}
+              {n.t === "branch" && (() => { const full = branchAlt(n.fids, n.fidOp); return <><text x={c.x} y={c.y - 5} className={full ? "n-alt" : "n-kind"}>{full && <title>{full}</title>}{capAlt(full) || tr("ch.capFilter")}</text>{todo
+                ? <text x={c.x} y={c.y + 11} className="n-todo">{tr("ch.pickFilter")}</text>
+                : <text x={c.x} y={c.y + 12} className="n-main"><title>{n.fids}</title>{fitNodeText(n.fids, NODE_CHARS)}</text>}</>; })()}
+              {n.t === "out" && <><text x={c.x} y={c.y - 5} className="n-kind">{drop ? tr("ch.capDiscard") : (n.mode === "loadBalance" ? tr("ch.capBalance") : tr("ch.capOutput"))}</text>{todo
+                ? <text x={c.x} y={c.y + 11} className="n-todo">{tr("ch.pickOutput")}</text>
+                : <text x={c.x} y={c.y + 12} className="n-main"><title>{drop ? "drop (0)" : withOutPorts(n.ports)}</title>{drop ? "drop (0)" : fitNodeText(withOutPorts(n.ports), NODE_CHARS)}</text>}</>}
             </g>;
           })}
         </svg>

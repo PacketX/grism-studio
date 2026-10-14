@@ -1607,7 +1607,9 @@ group("chain layout");
   const laid = C.layoutChain({ ports: "P0", tree: { id: "b", t: "branch", fids: "F1", fidOp: "or",
     match: { id: "m", t: "out", ports: "P1" }, notmatch: { id: "n", t: "out", ports: "P2" } } });
   check("ingress plus three nodes placed", laid.placed.length === 4);
-  check("edges connect them", laid.edges.length === 4);
+  // ingress -> test, test -> each side; the ingress edge used to be pushed twice
+  check("edges connect them", laid.edges.length === 3);
+  check("no edge is drawn twice", new Set(laid.edges.map((e) => e.from + ">" + e.to)).size === laid.edges.length);
   check("canvas has positive size", laid.totalW > 0 && laid.totalH > 0);
   check("match edge labelled", laid.edges.some((e) => e.kind === "match"));
   check("notmatch edge labelled", laid.edges.some((e) => e.kind === "notmatch"));
@@ -2961,6 +2963,135 @@ group("chain layout");
       new Set(L.placed.filter((n) => n.t === "branch").map((n) => n._x)).size === 1);
     check("spineX is the ingress's own left edge",
       L.spineX === L.placed.find((n) => n.t === "in")._x && first.spineX === first.placed.find((n) => n.t === "in")._x);
+  }
+  /* An edit moves what it changed and nothing else. Before the memo of
+     slots, a test inserted above an aside made both sides of the test above it
+     carry on, the spine became a fork, and everything under it moved a column
+     sideways; a fork with one side grown became a spine and its other side
+     jumped. Now whatever sits in a slot is drawn where that slot was. */
+  {
+    const overlaps = (L) => L.placed.some((a, i) => L.placed.some((b, j) => j > i
+      && a._x < b._x + C.NODE_W && b._x < a._x + C.NODE_W && a._y < b._y + C.NODE_H && b._y < a._y + C.NODE_H));
+    // ingress-relative, so a drawing that widened to one side compares as unmoved
+    const where = (L) => { const ix = L.placed.find((n) => n.t === "in")._x;
+      return Object.fromEntries(L.placed.map((n) => [n.id, [n._x - ix, n._y]])); };
+    const same = (a, b, ids) => ids.every((id) => a[id] && b[id] && a[id][0] === b[id][0] && a[id][1] === b[id][1]);
+    const memo = () => [new Map(), { slots: new Map(), seen: null }];
+    const lay = (tree, m) => C.layoutChain({ ports: "P0", tree }, m[0], m[1]);
+    // what the editor does: a new test above node `id`, which it keeps on `keep`
+    const insertAbove = (n, id, w, keep = "match") => !n ? n : n.id === id
+      ? { id: w, t: "branch", fids: "", fidOp: "or", [keep]: n, [keep === "match" ? "notmatch" : "match"]: { id: w + "u", t: C.UNSET } }
+      : n.t === "branch" ? { ...n, match: insertAbove(n.match, id, w, keep), notmatch: insertAbove(n.notmatch, id, w, keep) } : n;
+    const replace = (n, id, by) => !n ? n : n.id === id ? by
+      : n.t === "branch" ? { ...n, match: replace(n.match, id, by), notmatch: replace(n.notmatch, id, by) } : n;
+    // the aside of the test `depth` levels down a spine(), and that test
+    const asideAt = (tree, depth) => { let n = tree; for (let i = 0; i < depth; i++) n = n.notmatch; return n.match.id; };
+
+    for (const depth of [0, 1, 2]) {
+      const tree = spine(5), m = memo();
+      const before = where(lay(tree, m));
+      const moved = asideAt(tree, depth);
+      const grown = insertAbove(tree, moved, "w" + depth);
+      const G = lay(grown, m), after = where(G);
+      check(`an insert above the aside at level ${depth} moves nothing else`,
+        same(before, after, Object.keys(before).filter((id) => id !== moved)));
+      check("  ...the new test takes that node's place", same({ x: before[moved] }, { x: after["w" + depth] }, ["x"]));
+      check("  ...and that node goes straight under it",
+        after[moved][0] === after["w" + depth][0] && after[moved][1] > after["w" + depth][1]);
+      check("  ...overlapping nothing", !overlaps(G));
+      check("  ...with every edge joining placed nodes",
+        G.edges.every((e) => G.placed.some((n) => n.id === e.from) && G.placed.some((n) => n.id === e.to)));
+      check("  ...and laid out again it does not drift", JSON.stringify(where(lay(grown, m))) === JSON.stringify(after));
+      // which is not what a layout without the memo does
+      const fresh = where(C.layoutChain({ ports: "P0", tree: grown }));
+      check("  ...where without it the spine below is pushed aside",
+        Object.keys(before).filter((id) => id !== moved).some((id) => fresh[id] && fresh[id][0] !== before[id][0]));
+    }
+
+    // a fork whose one side grows a test stays a fork: the other side stays put
+    {
+      const tree = { id: "fk", t: "branch", fids: "F1", fidOp: "or", match: out("P1"), notmatch: out("P2") };
+      const m = memo(), before = where(lay(tree, m));
+      const grown = insertAbove(tree, tree.match.id, "fw");
+      const after = where(lay(grown, m));
+      check("a fork's other side does not move when one side grows a test",
+        same(before, after, ["__in__", "fk", tree.notmatch.id]) && same({ x: before[tree.match.id] }, { x: after.fw }, ["x"]));
+      const fresh = where(C.layoutChain({ ports: "P0", tree: grown }));
+      check("  ...which without the memo it does", !same(before, fresh, [tree.notmatch.id]));
+    }
+
+    // a chain built one test at a time stays a straight spine, nothing moving
+    {
+      const m = memo();
+      let tree = out("P1");
+      const oid = tree.id;
+      let prev = where(lay(tree, m)), moves = 0;
+      for (let i = 0; i < 6; i++) {
+        tree = insertAbove(tree, oid, "h" + i, i % 2 ? "notmatch" : "match");
+        const now = where(lay(tree, m));
+        if (!same(prev, now, Object.keys(prev).filter((id) => id !== oid))) moves++;
+        prev = now;
+      }
+      const L = lay(tree, m);
+      check("building a chain test by test moves nothing already drawn", moves === 0);
+      check("  ...and it comes out one column", new Set(L.placed.filter((n) => n.t === "branch").map((n) => n._x)).size === 1);
+      check("  ...with its undecided sides on both sides of it", (() => {
+        const sx = L.placed.find((n) => n.t === "branch")._x, us = L.placed.filter((n) => n.t === C.UNSET);
+        return us.some((n) => n._x < sx) && us.some((n) => n._x > sx);
+      })());
+      check("  ...overlapping nothing", !overlaps(L));
+    }
+
+    // an aside that grows twice still clears the spine, which does not move
+    {
+      const tree = spine(6), m = memo();
+      const before = where(lay(tree, m));
+      const a1 = asideAt(tree, 1);
+      let grown = insertAbove(tree, a1, "g1");
+      lay(grown, m);
+      grown = insertAbove(grown, a1, "g2");
+      const G = lay(grown, m), after = where(G);
+      check("an aside grown twice overlaps nothing", !overlaps(G));
+      check("  ...and the rest has not moved", same(before, after, Object.keys(before).filter((id) => id !== a1)));
+    }
+
+    // a grown aside that would run into the spine below gives way, not the spine
+    {
+      const tree = spine(5), m = memo();
+      const before = where(lay(tree, m));
+      const a0 = asideAt(tree, 0);
+      // an aside subtree two levels deep, wider than one node on every row
+      let grown = insertAbove(tree, a0, "c1");
+      grown = replace(grown, "c1u", { id: "c1f", t: "branch", fids: "F9", fidOp: "or", match: out("P7"), notmatch: out("P8") });
+      const G = lay(grown, m), after = where(G);
+      check("a grown aside clears the spine", !overlaps(G));
+      check("  ...by moving itself, not the spine", same(before, after, Object.keys(before).filter((id) => id !== a0)));
+    }
+
+    // taking an edit back puts the drawing back exactly as it was
+    {
+      const tree = spine(4), m = memo();
+      const before = JSON.stringify(where(lay(tree, m)));
+      lay(insertAbove(tree, asideAt(tree, 1), "u1"), m);
+      lay(insertAbove(tree, tree.notmatch.id, "u2"), m);
+      check("taking the edits back restores the drawing", JSON.stringify(where(lay(tree, m))) === before);
+    }
+
+    // removing a test leaves what replaces it in its place
+    {
+      const tree = spine(4), m = memo();
+      const before = where(lay(tree, m));
+      const t1 = tree.notmatch;                               // a test on the spine, all of its subtree under it
+      const after = where(lay(replace(tree, t1.id, { id: "r1", t: "out", ports: "P1" }), m));
+      check("a test removed: the output in its slot sits where it was", same({ x: before[t1.id] }, { x: after.r1 }, ["x"]));
+      check("  ...and everything above it stays", same(before, after, ["__in__", tree.id, tree.match.id]));
+    }
+
+    // and the first drawing of a chain is the same with or without the memo
+    for (const t of [spine(6), fork(3)]) {
+      check("a memo changes nothing on a first layout",
+        JSON.stringify(where(lay(t, memo()))) === JSON.stringify(where(C.layoutChain({ ports: "P0", tree: t }))));
+    }
   }
   check("depth still costs height", (() => {
     const a = C.layoutChain({ ports: "P0", tree: spine(2) }).totalH;

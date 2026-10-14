@@ -2096,7 +2096,7 @@ export function fmtBytes(n) {
 export function toks(fids) { return String(fids || "").split(",").map((s) => s.trim()).filter(Boolean).length; }
 
 export const NODE_W = 150, NODE_H = 52, H_GAP = 34, V_GAP = 60, PH_H = 40;
-export function layoutChain(root, sides = null) {
+export function layoutChain(root, sides = null, keep = null) {
   const placed = [], edges = [];
   const inNode = { id: "__in__", t: "in", ports: root.ports, child: root.tree };
   /* A chain is usually a spine: one side of each test ends the packet's journey
@@ -2107,14 +2107,22 @@ export function layoutChain(root, sides = null) {
      way. A real fork, both sides continuing, still spreads out.
 
      Positions here are the node's own left edge, and each subtree reports how
-     far it reaches either side of that, so a branch hanging left is as easy to
-     account for as one hanging right. */
+     far it reaches either side of that, row by row, so a branch hanging left is
+     as easy to account for as one hanging right. */
   const ends = (n) => !n || n.t === "out" || n.t === UNSET;
   const goesOn = (n) => !!n && !ends(n);
+  /* { on, aside } where one side carries the chain on, null for a fork. A test
+     whose sides both end, one of them still to be decided -- what inserting a
+     test leaves -- draws the decided side under it and the undecided one
+     aside, so a chain built a test at a time comes out as a spine. */
   const spineChild = (n) => {
     if (!n || !n.match || !n.notmatch) return null;
-    if (goesOn(n.match) && !goesOn(n.notmatch)) return { on: n.match, aside: n.notmatch };
-    if (goesOn(n.notmatch) && !goesOn(n.match)) return { on: n.notmatch, aside: n.match };
+    const mOn = goesOn(n.match), nOn = goesOn(n.notmatch);
+    if (mOn !== nOn) return mOn ? { on: n.match, aside: n.notmatch } : { on: n.notmatch, aside: n.match };
+    if (!mOn) {
+      const mU = n.match.t === UNSET, nU = n.notmatch.t === UNSET;
+      if (mU !== nU) return mU ? { on: n.notmatch, aside: n.match } : { on: n.match, aside: n.notmatch };
+    }
     return null;
   };
   // which way this level's aside hangs; alternating keeps the spine centred
@@ -2127,93 +2135,134 @@ export function layoutChain(root, sides = null) {
      opposite its spine parent, which for a chain laid out afresh is the same
      alternation as before. */
   const hangsLeft = new Map();
-  (function assign(node, depth, parentLeft) {
+  /* A test placed off to one side of its parent -- one that took the place of
+     an aside, or of one side of a fork -- hangs its own aside further that way,
+     so what it grows does not fold back across its neighbour. */
+  const slots = keep?.slots ?? null;
+  (function assign(node, depth, parentLeft, slotKey) {
     if (!node) return;
-    if (node.t === "in") { assign(node.child, depth, null); return; }
+    if (node.t === "in") { assign(node.child, depth, null, node.id + ":flow"); return; }
     if (ends(node)) return;
     const sp = spineChild(node);
-    if (!sp) { assign(node.match, depth + 1, null); assign(node.notmatch, depth + 1, null); return; }
+    const kidKey = (k) => node.id + ":" + (k === node.match ? "match" : "notmatch");
+    if (!sp) {
+      assign(node.match, depth + 1, null, kidKey(node.match));
+      assign(node.notmatch, depth + 1, null, kidKey(node.notmatch));
+      return;
+    }
+    const slotDx = slotKey ? slots?.get(slotKey)?.dx : undefined;
     const left = sides?.has(node.id) ? sides.get(node.id)
+      : slotDx ? slotDx < 0
       : sides && parentLeft != null ? !parentLeft : asideGoesLeft(depth);
     hangsLeft.set(node.id, left); sides?.set(node.id, left);
-    assign(sp.on, depth + 1, left);
-  })(inNode, 0, null);
+    assign(sp.on, depth + 1, left, kidKey(sp.on));
+    // an aside that has grown tests of its own hangs outwards the same way
+    if (goesOn(sp.aside)) assign(sp.aside, depth + 1, !left, kidKey(sp.aside));
+  })(inNode, 0, null, null);
 
-  const extents = new Map();
-  function extent(node, depth) {
-    if (!node) return { l: 0, r: 0 };
-    const key = node.id + "@" + depth;
-    if (extents.has(key)) return extents.get(key);
-    let out;
-    if (node.t === "in") out = extent(node.child, depth);
-    else if (ends(node)) out = { l: 0, r: NODE_W };
-    else {
-      const sp = spineChild(node);
+  /* What was drawn stays where it was drawn. `keep` is the caller's memo from
+     one layout of a chain to the next: for each slot -- a test's match or
+     notmatch side, the ingress's one child -- how far from its parent it was
+     first placed, and what sat in it then. Whatever occupies a slot is placed
+     there: a test inserted above a node takes that node's place, the node goes
+     under it, and nothing else moves. Without this an edit could re-centre a
+     fork or turn it into a spine, and nodes it had nothing to do with jumped
+     sideways. A slot is only recorded the first time, so taking an edit back
+     (or undoing it) puts the drawing back exactly as it was. */
+  const seen = keep?.seen ? new Set(keep.seen) : null;
+
+  /* Each subtree's reach, row by row from its own row down: { l, r } measured
+     from the subtree root's left edge. One row's reach is what decides how
+     close a neighbour may come on that row, so an aside that is a subtree
+     clears the spine beside it wherever the two meet. */
+  const boxes = new Map();          // id -> { rows, kids: [{ node, dx, kind }], dirty }
+  const reachL = (rows) => Math.min(...rows.map((c) => c.l));
+  const reachR = (rows) => Math.max(...rows.map((c) => c.r));
+  const below = (kids) => {
+    const rows = [];
+    for (const k of kids) k.rows.forEach((c, i) => {
+      const l = c.l + k.dx, r = c.r + k.dx;
+      rows[i] = rows[i] ? { l: Math.min(rows[i].l, l), r: Math.max(rows[i].r, r) } : { l, r };
+    });
+    return rows;
+  };
+  function box(node) {
+    if (boxes.has(node.id)) return boxes.get(node.id);
+    const own = { l: 0, r: NODE_W };
+    let kids = [], sp = null;
+    if (node.t === "in") {
+      if (node.child) kids = [{ node: node.child, dx: 0, kind: "flow" }];
+    } else if (!ends(node)) {
+      sp = spineChild(node);
       if (sp) {
-        const on = extent(sp.on, depth + 1);
-        out = hangsLeft.get(node.id)
-          ? { l: Math.max(on.l, NODE_W + H_GAP), r: Math.max(on.r, NODE_W) }
-          : { l: Math.max(on.l, 0), r: Math.max(on.r, NODE_W + H_GAP + NODE_W) };
-      } else {
-        const m = node.match ? extent(node.match, depth + 1) : null;
-        const n2 = node.notmatch ? extent(node.notmatch, depth + 1) : null;
-        if (!m && !n2) out = { l: 0, r: NODE_W };
-        else if (m && n2) {
-          // the two blocks sit side by side and the node centres over them
-          const blockW = (m.l + m.r) + H_GAP + (n2.l + n2.r);
-          const mid = (blockW - NODE_W) / 2;
-          out = { l: mid, r: blockW - mid };
+        const on = box(sp.on).rows, aside = box(sp.aside).rows;
+        const rowsBoth = Math.min(on.length, aside.length);
+        let dx;
+        if (hangsLeft.get(node.id)) {
+          dx = -(H_GAP + NODE_W);
+          for (let i = 0; i < rowsBoth; i++) dx = Math.min(dx, on[i].l - H_GAP - aside[i].r);
         } else {
-          const only = m ?? n2;
-          out = { l: only.l, r: Math.max(NODE_W, only.r) };
+          dx = NODE_W + H_GAP;
+          for (let i = 0; i < rowsBoth; i++) dx = Math.max(dx, on[i].r + H_GAP - aside[i].l);
         }
+        kids = [{ node: sp.aside, dx, kind: sp.aside === node.match ? "match" : "notmatch" },
+                { node: sp.on, dx: 0, kind: sp.on === node.match ? "match" : "notmatch" }];
+      } else if (node.match && node.notmatch) {
+        // a real fork: the two blocks side by side, the node centred over them
+        const m = box(node.match).rows, n2 = box(node.notmatch).rows;
+        const gap = reachR(m) + H_GAP - reachL(n2);
+        const centre = (reachL(m) + gap + reachR(n2)) / 2;
+        const shift = centre - NODE_W / 2;
+        kids = [{ node: node.match, dx: -shift, kind: "match" },
+                { node: node.notmatch, dx: gap - shift, kind: "notmatch" }];
+      } else if (node.match || node.notmatch) {
+        const only = node.match ?? node.notmatch;
+        kids = [{ node: only, dx: 0, kind: only === node.match ? "match" : "notmatch" }];
       }
     }
-    extents.set(key, out);
+    // a subtree is "changed" when something in it was not there last time
+    let dirty = !!seen && !seen.has(node.id);
+    for (const k of kids) {
+      const b = box(k.node), was = slots?.get(node.id + ":" + k.kind);
+      k.rows = b.rows;
+      k.changed = !was || was.occ !== k.node.id || b.dirty;
+      if (was) k.dx = was.dx;
+      dirty ||= k.changed;
+    }
+    /* Two slots placed where they were may now meet: what changed grew, or
+       moved down a row. What gives way is what changed -- a spine's aside
+       whatever happened, since moving the spine would move everything under
+       it -- pushed outwards just far enough to clear on every row. */
+    if (kids.length === 2) {
+      const [a, b] = kids[0].dx <= kids[1].dx ? kids : [kids[1], kids[0]];
+      let need = -Infinity;
+      for (let i = 0; i < Math.min(a.rows.length, b.rows.length); i++) need = Math.max(need, a.rows[i].r + H_GAP - b.rows[i].l);
+      const short = need - (b.dx - a.dx);
+      if (short > 0) {
+        const moveA = sp ? a.node === sp.aside
+          : a.changed !== b.changed ? a.changed : null;
+        if (moveA === true) a.dx -= short;
+        else if (moveA === false) b.dx += short;
+        else { a.dx -= short / 2; b.dx += short / 2; }
+      }
+    }
+    if (slots) for (const k of kids) {
+      const key = node.id + ":" + k.kind;
+      if (!slots.has(key)) slots.set(key, { dx: k.dx, occ: k.node.id });
+    }
+    const out = { rows: [own, ...below(kids)], kids, dirty };
+    boxes.set(node.id, out);
     return out;
   }
 
-  function place(node, x, y, depth, parent, kind) {
-    if (!node) return;
-    if (node.t === "in") {
-      placed.push({ ...node, _x: x, _y: y });
-      if (node.child) {
-        edges.push({ from: node.id, to: node.child.id, kind: "flow" });
-        place(node.child, x, y + NODE_H + V_GAP, depth, node, "flow");
-      }
-      return;
-    }
-    if (ends(node)) {
-      placed.push({ ...node, _x: x, _y: y });
-      if (parent) edges.push({ from: parent.id, to: node.id, kind });
-      return;
-    }
+  function place(node, x, y, parent, kind) {
     placed.push({ ...node, _x: x, _y: y });
     if (parent) edges.push({ from: parent.id, to: node.id, kind });
-    const cy = y + NODE_H + V_GAP;
-    const sp = spineChild(node);
-    if (sp) {
-      const asideKind = sp.aside === node.match ? "match" : "notmatch";
-      const onKind = sp.on === node.match ? "match" : "notmatch";
-      const asideX = hangsLeft.get(node.id)
-        ? x - H_GAP - NODE_W
-        : x + NODE_W + H_GAP;
-      place(sp.aside, asideX, cy, depth + 1, node, asideKind);
-      place(sp.on, x, cy, depth + 1, node, onKind);
-      return;
-    }
-    const m = node.match ? extent(node.match, depth + 1) : null;
-    const n2 = node.notmatch ? extent(node.notmatch, depth + 1) : null;
-    if (m && n2) {
-      const blockW = (m.l + m.r) + H_GAP + (n2.l + n2.r);
-      const blockLeft = x + NODE_W / 2 - blockW / 2;   // centred under this node
-      place(node.match, blockLeft + m.l, cy, depth + 1, node, "match");
-      place(node.notmatch, blockLeft + (m.l + m.r) + H_GAP + n2.l, cy, depth + 1, node, "notmatch");
-    } else if (m) place(node.match, x, cy, depth + 1, node, "match");
-    else if (n2) place(node.notmatch, x, cy, depth + 1, node, "notmatch");
+    for (const k of box(node).kids) place(k.node, x + k.dx, y + NODE_H + V_GAP, node, k.kind);
   }
 
-  place(inNode, 0, 0, 0, null, null);
+  place(inNode, 0, 0, null, null);
+  if (keep) keep.seen = new Set(placed.map((n) => n.id));
   // the drawing is laid out around the spine, so shift it back to x = 0
   const minX = Math.min(...placed.map((n) => n._x));
   placed.forEach((n) => { n._x -= minX; });

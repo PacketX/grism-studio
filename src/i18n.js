@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.252.0";
+export const STUDIO_VERSION = "2.253.0";
 
 export const I18N = {
   en: {
@@ -957,6 +957,7 @@ export const I18N = {
     "ch.newChain": "+ New chain",
     "ch.capIngress": "INGRESS",
     "ch.capFilter": "FILTER",
+    "ch.pickFilter": "choose a filter", "ch.pickOutput": "choose a destination",
     "ch.capOutput": "OUTPUT",
     "ch.capDiscard": "DISCARD",
     "ch.capBalance": "LOAD BALANCE",
@@ -1965,6 +1966,7 @@ export const I18N = {
     "ch.newChain": "+ 新增鏈結",
     "ch.capIngress": "入口",
     "ch.capFilter": "篩選",
+    "ch.pickFilter": "請選擇篩選器", "ch.pickOutput": "請選擇輸出",
     "ch.capOutput": "輸出",
     "ch.capDiscard": "丟棄",
     "ch.capBalance": "負載平衡",

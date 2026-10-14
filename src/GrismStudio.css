@@ -329,13 +329,18 @@
 .edge-label{font-family:var(--mono); font-size:9.5px;}
 .edge-label.match{fill:var(--match);} .edge-label.notmatch{fill:var(--notmatch);} .edge-label.dim{fill:var(--unset);}
 .gnode{cursor:pointer;}
-.gnode rect{stroke-width:1.5; transition:.12s;}
+/* Colours only. A bare transition also eased x and y, so after an edit every box
+   slid from where it had been while its caption was already in the new place:
+   the drawing seemed to fly in from one side. */
+.gnode rect{stroke-width:1.5; transition:fill .12s, stroke .12s, stroke-width .12s, filter .12s;}
 .gnode.in rect{fill:var(--node-in-fill); stroke:var(--accent-2);}
 .gnode.branch rect{fill:var(--node-branch-fill); stroke:var(--node-branch-stroke);}
 .gnode.out rect{fill:var(--node-out-fill); stroke:var(--node-out-stroke);}
 .gnode.out.drop rect{fill:var(--node-drop-fill); stroke:var(--node-drop-stroke);}
 .gnode.unset rect{fill:var(--node-unset-fill); stroke:var(--unset); stroke-dasharray:4 3;}
 .gnode.bad rect{stroke:var(--notmatch); stroke-width:2;}
+/* waiting for a filter or a destination: say so, in a dashed amber outline */
+.gnode.todo rect{stroke:var(--warn); stroke-width:2; stroke-dasharray:6 4;}
 .gnode.sel rect{stroke:var(--accent); stroke-width:2.4; filter:drop-shadow(0 0 8px rgba(var(--accent-rgb),.5));}
 .gnode:hover rect{stroke:var(--accent);}
 .n-kind{fill:var(--txt-faint); font-family:var(--mono); font-size:8.5px; letter-spacing:.12em; text-anchor:middle;}
@@ -344,6 +349,7 @@
 .n-main{fill:var(--txt); font-family:var(--mono); font-size:14px; font-weight:600; text-anchor:middle;}
 .n-default{fill:var(--txt-dim); font-size:10.5px; font-style:italic; text-anchor:middle;}
 .n-warn{fill:var(--notmatch); font-family:var(--mono); font-size:14px; font-weight:800; text-anchor:middle;}
+.n-todo{fill:var(--warn); font-family:var(--sans); font-size:12.5px; font-weight:600; text-anchor:middle;}
 .gnode.out .n-main{fill:var(--node-out-txt);} .gnode.out.drop .n-main{fill:var(--node-drop-txt);}
 .gnode.branch .n-main{fill:var(--node-branch-txt);} .gnode.in .n-main{fill:var(--node-in-txt);}
 
