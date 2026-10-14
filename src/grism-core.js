@@ -898,6 +898,14 @@ export function simulateChain(chain, states, filterAlt) {
 }
 
 
+/* Take a test out and join one of its sides to what was above it: that side's
+   whole subtree takes the test's place and the other side goes with the test.
+   The inverse of inserting a test above a node, so the two round-trip. A side
+   that is missing comes back as undecided rather than as nothing. */
+export function removeTestKeeping(tree, id, keepSide, fallback = mkUnset()) {
+  return cUpdate(tree, id, (n) => (n.t === "branch" ? (n[keepSide] ?? fallback) : n));
+}
+
 export function cUpdate(node, id, fn) {
   if (!node) return node;
   if (node.id === id) return fn(node);

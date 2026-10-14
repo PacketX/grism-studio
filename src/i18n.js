@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.253.0";
+export const STUDIO_VERSION = "2.254.0";
 
 export const I18N = {
   en: {
@@ -939,7 +939,9 @@ export const I18N = {
     "ch.insertKeepTest": "Insert filter above — keep this filter on:",
     "ch.insertKeepOutput": "Insert filter above — keep this output on:",
     "ch.filterToMatch": "+ filter (this → match)", "ch.filterToNotmatch": "+ filter (this → notmatch)",
-    "ch.removeTest": "Remove filter → output",
+    "ch.removeKeep": "Remove this filter — keep one side, joined to what is above:",
+    "ch.keepMatch": "− filter (keep match: {what})", "ch.keepNotmatch": "− filter (keep notmatch: {what})",
+    "ch.removeKeepNote": "The other side is removed along with the filter.",
     "ch.outputPorts": "Output ports", "ch.mode": "Mode", "ch.balanceBy": "Balance by",
     "ch.modeDuplicate": "duplicate", "ch.modeBalance": "load balance",
     "ch.modeDuplicateTo": "duplicate to", "ch.modeBalanceTo": "load balance to",
@@ -1948,7 +1950,9 @@ export const I18N = {
     "ch.insertKeepTest": "在上方插入篩選器 — 將此篩選器保留在:",
     "ch.insertKeepOutput": "在上方插入篩選器 — 將此輸出保留在:",
     "ch.filterToMatch": "+ 篩選器(此 → 符合)", "ch.filterToNotmatch": "+ 篩選器(此 → 不符合)",
-    "ch.removeTest": "移除篩選器 → 輸出",
+    "ch.removeKeep": "移除此篩選器 — 保留其中一側,接回上一層:",
+    "ch.keepMatch": "− 篩選器(保留符合:{what})", "ch.keepNotmatch": "− 篩選器(保留不符合:{what})",
+    "ch.removeKeepNote": "另一側會跟著篩選器一起移除。",
     "ch.outputPorts": "輸出埠", "ch.mode": "模式", "ch.balanceBy": "分流依據",
     "ch.modeDuplicate": "複製", "ch.modeBalance": "負載平衡",
     "ch.modeDuplicateTo": "複製到", "ch.modeBalanceTo": "負載平衡到",

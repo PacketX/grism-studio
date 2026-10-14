@@ -6,7 +6,7 @@ import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
   buildArgsConfigSet, buildInTunnelsConfigSet, buildPortConfigSet, buildServicesConfigSet,
-  cUpdate, chainProblems, changedPorts, changedServices, deviceFilterList, diffDoc, docSnapshot, isDeviceFilterId,
+  cUpdate, removeTestKeeping, chainProblems, changedPorts, changedServices, deviceFilterList, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
   portDescriptions, ifacePortLabel, nextUpdatePhase, flowTableCapacity, FLOW_CACHE_NODE_TOP,
@@ -9147,7 +9147,21 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     setChainTreeFor(cid, (tree) => tree.id === id ? wrap(tree) : cUpdate(tree, id, wrap));
     setSelId(newId);
   };
-  const removeTest = (id) => mutate(id, (n) => mkOut(n.match?.ports || "P1"));
+  /* Removing a test keeps one of its sides, chosen like inserting one: that
+     side takes the test's place, joined to what was above it, and the other
+     side goes with the test. It used to replace the test, and both its sides,
+     with an output. The kept node is selected, as an inserted one is. */
+  const removeTest = (id, keepSide) => {
+    const fallback = mkUnset();
+    const keptId = (sel?.id === id ? sel[keepSide] : null)?.id ?? fallback.id;
+    setChainTreeFor(cid, (tree) => removeTestKeeping(tree, id, keepSide, fallback));
+    setSelId(keptId);
+  };
+  // what a side holds, in a few characters, for the buttons that keep it
+  const sideSummary = (n) => !n || isUnset(n) ? tr("ch.unspecified")
+    : isDrop(n) ? "drop (0)"
+    : n.t === "out" ? (fitNodeText(withOutPorts(n.ports), 18) || tr("ch.pickOutput"))
+    : (fitNodeText(n.fids, 14) || tr("ch.pickFilter")) + (n.match || n.notmatch ? " …" : "");
   const requestRemove = (nid2) => {
     const o = ownerOf(nid2); if (!o) return;
     const other = o.side === "match" ? "notmatch" : "match";
@@ -9546,7 +9560,16 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                     <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>{tr("ch.filterToNotmatch")}</button>
                   </div>
                 </div>
-                <button className="danger" onClick={() => removeTest(sel.id)}>{tr("ch.removeTest")}</button>
+                <div className="add-filter-group">
+                  <span className="add-filter-label">{tr("ch.removeKeep")}</span>
+                  <div className="add-filter-btns">
+                    <button className="danger" onClick={() => removeTest(sel.id, "match")}>
+                      {tr("ch.keepMatch").replace("{what}", sideSummary(sel.match))}</button>
+                    <button className="danger" onClick={() => removeTest(sel.id, "notmatch")}>
+                      {tr("ch.keepNotmatch").replace("{what}", sideSummary(sel.notmatch))}</button>
+                  </div>
+                  <span className="add-filter-note">{tr("ch.removeKeepNote")}</span>
+                </div>
               </>}
               {sel && sel.t === "out" && <>
                 {/* One list: the device's ports, the outputs this document defines,

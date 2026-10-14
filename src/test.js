@@ -3087,6 +3087,40 @@ group("chain layout");
       check("  ...and everything above it stays", same(before, after, ["__in__", tree.id, tree.match.id]));
     }
 
+    /* Removing a test keeps the side chosen, joined to what was above it --
+       the inverse of inserting one, on either side, anywhere in the chain. */
+    for (const keepSide of ["match", "notmatch"]) {
+      const tree = spine(4);
+      for (const target of [tree.id, tree.notmatch.id, tree.match.id, tree.notmatch.notmatch.notmatch.id]) {
+        const grown = insertAbove(tree, target, "rt", keepSide);
+        check(`insert then remove keeping ${keepSide} gives back the same chain (${target})`,
+          JSON.stringify(C.removeTestKeeping(grown, "rt", keepSide)) === JSON.stringify(tree));
+      }
+    }
+    {
+      const tree = spine(4), t1 = tree.notmatch;
+      const r = C.removeTestKeeping(tree, t1.id, "notmatch");
+      check("removing a test keeping notmatch: that side takes its place", r.notmatch === t1.notmatch);
+      check("  ...and the other side is gone with it", !JSON.stringify(r).includes(`"${t1.match.id}"`));
+      const r2 = C.removeTestKeeping(tree, t1.id, "match");
+      check("keeping match instead puts that side in its place", r2.notmatch === t1.match
+        && !JSON.stringify(r2).includes(`"${t1.notmatch.id}"`));
+      check("the chain's first test can go too", C.removeTestKeeping(tree, tree.id, "notmatch") === tree.notmatch);
+      const oneSided = { id: "os1", t: "branch", fids: "F1", fidOp: "or", match: out("P1"), notmatch: null };
+      check("a side that is not there comes back undecided",
+        C.isUnset(C.removeTestKeeping(oneSided, "os1", "notmatch")));
+      check("an output is not a test to remove", C.removeTestKeeping(tree, tree.match.id, "match") === tree);
+      check("the original tree is not modified", tree.notmatch === t1 && t1.match && t1.notmatch);
+      // and in the drawing: what was above stays, what comes up keeps its column
+      const m = memo(), before = where(lay(tree, m));
+      const after = where(lay(r, m));
+      check("removing a spine test leaves everything above it where it was",
+        same(before, after, ["__in__", tree.id, tree.match.id]));
+      check("  ...and brings what it kept up one row, in its column",
+        Object.keys(after).filter((id) => before[id] && ![ "__in__", tree.id, tree.match.id].includes(id))
+          .every((id) => after[id][0] === before[id][0] && after[id][1] === before[id][1] - (C.NODE_H + C.V_GAP)));
+    }
+
     // and the first drawing of a chain is the same with or without the memo
     for (const t of [spine(6), fork(3)]) {
       check("a memo changes nothing on a first layout",
