@@ -938,9 +938,13 @@ export function normalizeDoc(d) {
   /* Every collection has to exist, even empty: a template that is only an action
      or only an input still has to serialise, and the serialiser walks all four. */
   const base = { filters: [], inputs: [], outputs: [], actions: [], ...d };
-  if (base.chains) return { ...base, chains: base.chains.map((c) => c.cid ? c : { ...c, cid: nid() }) };
+  /* A chain always has a first slot to draw and click, if only an undecided
+     one: with no tree at all the canvas showed the ingress and nothing that
+     could be turned into a route. Both serialise as an empty chain. */
+  const whole = (c) => c.cid && c.tree ? c : { ...c, cid: c.cid ?? nid(), tree: c.tree ?? mkUnset() };
+  if (base.chains) return { ...base, chains: base.chains.map(whole) };
   const { chain, ...rest } = base;
-  return { ...rest, chains: [{ cid: nid(), ports: chain?.ports ?? "P0", tree: chain?.tree }] };
+  return { ...rest, chains: [whole({ ports: chain?.ports ?? "P0", tree: chain?.tree })] };
 }
 
 export function vlanAttrs(o) {

@@ -3121,6 +3121,24 @@ group("chain layout");
           .every((id) => after[id][0] === before[id][0] && after[id][1] === before[id][1] - (C.NODE_H + C.V_GAP)));
     }
 
+    /* A chain down to its ingress still has a first slot to route: an
+       undecided one, which the editor replaces by its id -- there is no test
+       above it to set a side on. */
+    {
+      const n1 = C.normalizeDoc({ chains: [{ cid: "c1", ports: "P1", tree: null }] });
+      const n2 = C.normalizeDoc({ chain: { ports: "P2" } });
+      check("a chain with no tree gets an undecided first slot",
+        C.isUnset(n1.chains[0].tree) && C.isUnset(n2.chains[0].tree) && n1.chains[0].cid === "c1");
+      const kept = { cid: "c2", ports: "P1", tree: out("P3") };
+      check("a whole chain is passed through as it is", C.normalizeDoc({ chains: [kept] }).chains[0] === kept);
+      check("an undecided first slot serialises as the empty chain it was",
+        C.serializeRun(n1) === C.serializeRun({ ...n1, chains: [{ ...n1.chains[0], tree: null }] }));
+      const root = C.mkUnset(), routed = C.mkOut("");
+      check("routing the first slot replaces it", C.cUpdate(root, root.id, () => routed) === routed);
+      const L = C.layoutChain({ ports: "P1", tree: root });
+      check("and the drawing has it to click", L.placed.some((n) => n.id === root.id));
+    }
+
     // and the first drawing of a chain is the same with or without the memo
     for (const t of [spine(6), fork(3)]) {
       check("a memo changes nothing on a first layout",

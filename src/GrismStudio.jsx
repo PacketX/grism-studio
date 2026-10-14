@@ -9173,11 +9173,13 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     setSelId(null); setConfirm(null);
   };
   /* Turning an unspecified side into a real route drops the user on the output
-     with nothing chosen, rather than guessing a port for them. */
+     with nothing chosen, rather than guessing a port for them. The node is
+     replaced where it is, by its id: the chain's first slot has no test above
+     it, and looking for one there made the button do nothing at all on a
+     chain that was down to its ingress. */
   const restoreSide = (nid2) => {
-    const o = ownerOf(nid2); if (!o) return;
     const out = mkOut("");
-    setChainTreeFor(cid, (tree) => setSide(tree, o.branchId, o.side, out));
+    setChainTreeFor(cid, (tree) => cUpdate(tree, nid2, () => out));
     setSelId(out.id);
   };
 
