@@ -4124,11 +4124,16 @@ function vlansInUse(doc) {
    a chain coming back from it sends to the output. The packet is captured on
    its first pass and rewritten on its second.
 
-   One LOOP port carries all of them -- a device has few and they are usually
-   spoken for -- and one chain brings them all back. What tells them apart is a
-   VLAN tag: an output per destination adds one on the way to the LOOP port,
-   and the chain coming back strips it with <in vlantype="stripping">, so no
-   action is needed for that.
+   When there is a free LOOP port for every output, each output gets one of its
+   own (method "loop"): the chain sends to that LOOP port in the output's place
+   and a plain chain from it reaches the output -- no tag, no filter, no extra
+   output, nothing for anyone reading the result to puzzle out.
+
+   Only when there are fewer free LOOP ports than outputs (method "vlan") does
+   one LOOP port carry all of them, with one chain bringing them all back. What
+   tells them apart is a VLAN tag: an output per destination adds one on the
+   way to the LOOP port, and the chain coming back strips it with
+   <in vlantype="stripping">, so no action is needed for that.
 
    The tag is on an output rather than on the <out> element because one <out>
    carries one tag: <out>O9,O10</out> could not tell two rewriting outputs
@@ -4142,23 +4147,52 @@ function vlansInUse(doc) {
    Only the chains the capture is actually on are changed; anything else still
    reaches the output directly, which is what it did before.
 
-   Returns { ok, loop, pairs, doc } or { ok: false } when there is no free LOOP
-   port to route through. */
+   Returns { ok, method, loop, loops, need, free, pairs, doc } -- `loops` the
+   LOOP ports the plan takes, `loop` the first of them -- or { ok: false } when
+   there is no free LOOP port to route through. */
 export function buildLoopFix(doc, ports, loopPorts) {
   const risky = captureRewriteRisk(doc, ports);
   const used = portsInUse(doc);
-  const free = (loopPorts ?? []).map((p) => String(p).trim()).filter((p) => p && !used.has(p));
+  const free = [...new Set((loopPorts ?? []).map((p) => String(p).trim()).filter((p) => p && !used.has(p)))];
   if (!risky.length) return { ok: false, need: 0, free: free.length, pairs: [] };
   if (!free.length) return { ok: false, need: 1, free: 0, pairs: [] };
+
+  const chosen = new Set((Array.isArray(ports) ? ports : String(ports ?? "").split(","))
+    .map((p) => String(p).trim()).filter(Boolean));
+  const next = JSON.parse(JSON.stringify(doc ?? {}));
+  next.filters = next.filters ?? []; next.chains = next.chains ?? []; next.outputs = next.outputs ?? [];
+  // the chains the capture is on send each rewriting output's share to its detour instead
+  const reroute = (byOutput) => {
+    for (const c of next.chains) {
+      const ins = String(c.ports || "").split(",").map((p) => p.trim()).filter(Boolean);
+      if (!ins.some((p) => chosen.has(p))) continue;
+      (function walk(n) {
+        if (!n) return;
+        if (n.t === "out" && n.ports) {
+          // each destination swaps for its own detour; anything else is left alone
+          n.ports = String(n.ports).split(",").map((x) => x.trim()).filter(Boolean)
+            .map((tok) => byOutput.get(tok)?.detour ?? tok).join(",");
+        }
+        ["match", "notmatch"].forEach((k) => walk(n[k]));
+        (n.children ?? []).forEach(walk);
+      })(c.tree);
+    }
+  };
+
+  if (free.length >= risky.length) {
+    const pairs = risky.map((r, i) => ({ output: r.id, port: r.port, name: r.name, via: r.via,
+                                         loop: free[i], vlan: null, filter: null, detour: free[i] }));
+    reroute(new Map(pairs.map((p) => [p.output, p])));
+    pairs.forEach((p) => next.chains.push({ cid: nid(), ports: p.loop, tree: mkOut(p.output) }));
+    return { ok: true, method: "loop", loop: pairs[0].loop, loops: pairs.map((p) => p.loop),
+             need: risky.length, free: free.length, pairs, doc: next };
+  }
 
   const loop = free[0];
   const takenVlan = vlansInUse(doc);
   const nextVlan = (() => { let v = 3001; return () => { while (takenVlan.has(v)) v += 1; takenVlan.add(v); return v++; }; })();
   let nextFilterId = Math.max(0, ...(doc?.filters ?? []).map((f) => Number(f.id) || 0)) + 1;
   let nextOutId = Math.max(0, ...(doc?.outputs ?? []).map((o) => Number(o.id) || 0)) + 1;
-
-  const next = JSON.parse(JSON.stringify(doc ?? {}));
-  next.filters = next.filters ?? []; next.chains = next.chains ?? []; next.outputs = next.outputs ?? [];
 
   const pairs = risky.map((r) => {
     const vlan = nextVlan();
@@ -4182,23 +4216,7 @@ export function buildLoopFix(doc, ports, loopPorts) {
              filter: "F" + filter.id, detour: "O" + detour.id };
   });
 
-  const byOutput = new Map(pairs.map((p) => [p.output, p]));
-  const chosen = new Set((Array.isArray(ports) ? ports : String(ports ?? "").split(","))
-    .map((p) => String(p).trim()).filter(Boolean));
-  for (const c of next.chains) {
-    const ins = String(c.ports || "").split(",").map((p) => p.trim()).filter(Boolean);
-    if (!ins.some((p) => chosen.has(p))) continue;
-    (function walk(n) {
-      if (!n) return;
-      if (n.t === "out" && n.ports) {
-        // each destination swaps for its own detour; anything else is left alone
-        n.ports = String(n.ports).split(",").map((x) => x.trim()).filter(Boolean)
-          .map((tok) => byOutput.get(tok)?.detour ?? tok).join(",");
-      }
-      ["match", "notmatch"].forEach((k) => walk(n[k]));
-      (n.children ?? []).forEach(walk);
-    })(c.tree);
-  }
+  reroute(new Map(pairs.map((p) => [p.output, p])));
 
   /* One chain back, testing each tag in turn: the chain strips the tag on the
      way in, and every packet that came through the detour matches exactly one
@@ -4208,7 +4226,7 @@ export function buildLoopFix(doc, ports, loopPorts) {
     match: mkOut(p.output), notmatch: rest,
   }), mkUnset());
   next.chains.push({ cid: nid(), ports: loop, inVlan: { vlantype: "stripping" }, tree: back });
-  return { ok: true, loop, pairs, doc: next };
+  return { ok: true, method: "vlan", loop, loops: [loop], need: risky.length, free: free.length, pairs, doc: next };
 }
 
 export function captureProblems(opts, problems = []) {

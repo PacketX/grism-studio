@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.251.0";
+export const STUDIO_VERSION = "2.252.0";
 
 export const I18N = {
   en: {
@@ -52,10 +52,12 @@ export const I18N = {
     "cap.rwFix": "Rewrite the configuration for me",
     "cap.rwFixNone": "There is no free LOOP port to route through. A LOOP port already named anywhere in the configuration — as a chain ingress, as somewhere a chain sends to, or as the port an output sits on — already has traffic of its own.",
     "cap.rwFixTitle": "Route these outputs behind a LOOP port?",
-    "cap.rwFixBody": "The chains this capture is on will send to {loop} instead, each tagged with a VLAN of its own, and one chain coming back from {loop} will strip the tag, match on it, and send to the output it was meant for. The packet is captured on its first pass and rewritten on its second. Nothing else is added: the chains carry the tagging themselves.",
+    "cap.rwFixBody": "The chains this capture is on will send to {loop} instead, each tagged with a VLAN of its own, and one chain coming back from {loop} will strip the tag, match on it, and send to the output it was meant for. The packet is captured on its first pass and rewritten on its second. Each output gets an output that adds its tag and a filter that matches it; no action is needed, the chain coming back strips the tag itself.",
+    "cap.rwFixBodyLoop": "The chains this capture is on will send to a LOOP port instead, a LOOP port for each output, and a chain coming back from each LOOP port will send to the output it was meant for. The packet is captured on its first pass and rewritten on its second. There is a free LOOP port for every output, so no VLAN tag is needed.",
     "cap.rwFixList": "What changes",
     "cap.rwFixVia": "now goes through",
-    "cap.rwFixKeep": "One LOOP port carries all of them. Chains this capture is not on still reach those outputs directly.",
+    "cap.rwFixKeep": "There are {free} free LOOP ports for {need} outputs, not one each, so one LOOP port carries all of them and a VLAN tag tells them apart. Chains this capture is not on still reach those outputs directly.",
+    "cap.rwFixKeepLoop": "Each output has a LOOP port of its own. Chains this capture is not on still reach those outputs directly.",
     "cap.rwFixAfter": "The edited configuration opens in the Export tab. Nothing is sent to the device until you submit it there.",
     "cap.rwFixGo": "Rewrite and open in Export",
     "cap.rwFixFailed": "The configuration could not be rewritten",
@@ -1060,10 +1062,12 @@ export const I18N = {
     "cap.rwFix": "幫我改寫設定",
     "cap.rwFixNone": "沒有可用的 LOOP 介面可以繞道。只要這個 LOOP 介面已經出現在設定中的任何地方 — 當作鏈結入口、已有鏈結送往、或是某個輸出所在的埠 — 它就已經有自己的流量了。",
     "cap.rwFixTitle": "把這些輸出改走 LOOP 介面?",
-    "cap.rwFixBody": "這次側錄所在的鏈結會改成送往 {loop},每個輸出各打上一個專屬的 VLAN tag;再由一條從 {loop} 進來的鏈結把 tag 拿掉、依它判斷原本要送往哪個輸出。封包在第一趟被側錄到,第二趟才被改寫。不會新增其他東西 — tag 的加與拿都由鏈結本身完成。",
+    "cap.rwFixBody": "這次側錄所在的鏈結會改成送往 {loop},每個輸出各打上一個專屬的 VLAN tag;再由一條從 {loop} 進來的鏈結把 tag 拿掉、依它判斷原本要送往哪個輸出。封包在第一趟被側錄到,第二趟才被改寫。每個輸出會新增一個打 tag 的輸出和一個比對該 tag 的過濾條件;不需要動作 (action),tag 由回程鏈結自己拿掉。",
+    "cap.rwFixBodyLoop": "這次側錄所在的鏈結會改成送往 LOOP 介面,每個輸出各用一個;再由每個 LOOP 介面各一條鏈結,把封包送往原本的輸出。封包在第一趟被側錄到,第二趟才被改寫。可用的 LOOP 介面夠每個輸出各分一個,所以不需要 VLAN tag。",
     "cap.rwFixList": "會變更的內容",
     "cap.rwFixVia": "改為經過",
-    "cap.rwFixKeep": "所有輸出共用同一個 LOOP 介面。不在這次側錄範圍內的鏈結,仍然直接送往那些輸出。",
+    "cap.rwFixKeep": "可用的 LOOP 介面有 {free} 個、輸出有 {need} 個,不夠每個輸出各分一個,所以全部共用同一個 LOOP 介面,以 VLAN tag 區分。不在這次側錄範圍內的鏈結,仍然直接送往那些輸出。",
+    "cap.rwFixKeepLoop": "每個輸出各用一個 LOOP 介面。不在這次側錄範圍內的鏈結,仍然直接送往那些輸出。",
     "cap.rwFixAfter": "改好的設定會在「匯出」頁開啟。在你於該頁提交之前,不會送任何東西到裝置。",
     "cap.rwFixGo": "改寫並開啟匯出頁",
     "cap.rwFixFailed": "無法改寫設定",

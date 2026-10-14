@@ -7393,7 +7393,10 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
           <div className="modal-scrim confirm-load-scrim" onClick={() => setFixAsk(null)}>
             <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
               <div className="modal-title">{tr("cap.rwFixTitle")}</div>
-              <p className="modal-body">{tr("cap.rwFixBody").replaceAll("{loop}", fixAsk.loop)}</p>
+              {/* a LOOP port per output when there are enough; one shared LOOP
+                  port with a VLAN tag per output only when there are not */}
+              <p className="modal-body">{tr(fixAsk.method === "loop" ? "cap.rwFixBodyLoop" : "cap.rwFixBody")
+                .replaceAll("{loop}", fixAsk.loop)}</p>
               <div className="fix-plan">
                 <div className="fix-plan-head">{tr("cap.rwFixList")}</div>
                 {fixAsk.pairs.map((p) => (
@@ -7401,13 +7404,15 @@ function CaptureTab({ loggedIn, t, ports, portDescs = {}, filterIds, doc, loopPo
                     <code>{p.via.join(", ")}</code> → <code>{p.output}</code>
                     <span className="dim"> {tr("cap.rwFixVia")} </span>
                     <code className="fix-loop">{p.loop}</code>
-                    <span className="dim"> · VLAN </span>
-                    <code className="fix-loop">{p.vlan}</code>
+                    {p.vlan != null && <><span className="dim"> · VLAN </span>
+                      <code className="fix-loop">{p.vlan}</code></>}
                     {p.port && <span className="dim"> → {p.port}</span>}
                   </div>
                 ))}
               </div>
-              <p className="modal-body dim">{tr("cap.rwFixKeep")}<br />{tr("cap.rwFixAfter")}</p>
+              <p className="modal-body dim">{fixAsk.method === "loop" ? tr("cap.rwFixKeepLoop")
+                : tr("cap.rwFixKeep").replace("{free}", fixAsk.free).replace("{need}", fixAsk.need)}
+                <br />{tr("cap.rwFixAfter")}</p>
               <button className="opt" onClick={() => applyFix(fixAsk)}>
                 <span className="opt-name">{tr("cap.rwFixGo")}</span>
               </button>
