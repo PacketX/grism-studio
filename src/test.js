@@ -2662,6 +2662,18 @@ for (const lang of Object.keys(I18N)) {
     !!I18N[lang]["set.sdwanNoPorts"] && !!I18N[lang]["set.sdwanKeyTimeoutBad"]);
 }
 
+/* ---------- system log files ---------- */
+group("system log files");
+{
+  // the rotated files are read, listed and zipped by anyone who may read log.txt
+  for (const u of ["/grism/task/get_log_files", "/grism/task/get_log_file?name=log.txt.1", "/grism/task/download_logs"])
+    check(`${u} needs no more than view`, C.minPrivForRequest(u, "GET") === 0);
+  check("clearing them still needs config", C.minPrivForRequest("/grism/task/clear_log", "POST") === C.PRIV.CONFIG);
+  for (const lang of ["en", "zh-TW"])
+    check(`log file strings exist in ${lang}`, ["log.otherFiles", "log.otherNote", "log.current", "log.shown",
+      "log.downloadAll", "log.downloadAllTip"].every((k) => !!I18N[lang][k]));
+}
+
 /* ---------- MEC template ---------- */
 group("MEC template");
 {

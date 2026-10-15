@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.258.0";
+export const STUDIO_VERSION = "2.259.0";
 
 export const I18N = {
   en: {
@@ -265,6 +265,9 @@ export const I18N = {
     "tab.syslog": "System log",
     "log.title": "System log", "log.follow": "follow", "log.empty": "The log is empty.",
     "log.clear": "Clear log", "log.clearTitle": "Clear the system log?",
+    "log.otherFiles": "Older log files", "log.otherNote": "When log.txt passes 10 MB the device moves it to log.txt.1 and the older ones up to .4; the oldest is dropped.",
+    "log.current": "current", "log.shown": "shown above",
+    "log.downloadAll": "Download all (zip)", "log.downloadAllTip": "log.txt and every older log file, in one zip",
     "log.clearBody": "Every line on the device is removed, the rotated older files included, and cannot be brought back. The device then notes who cleared it.",
     "log.clearFailed": "Could not clear the log", "log.clearDenied": "only an administrator can clear the log",
     "set.backup": "Backup & restore", "set.firmware": "Firmware",
@@ -1281,6 +1284,9 @@ export const I18N = {
     "tab.syslog": "系統紀錄",
     "log.title": "系統紀錄", "log.follow": "自動捲動", "log.empty": "紀錄是空的。",
     "log.clear": "清空紀錄", "log.clearTitle": "要清空系統紀錄嗎?",
+    "log.otherFiles": "較舊的紀錄檔", "log.otherNote": "log.txt 超過 10 MB 時,裝置會把它改名為 log.txt.1,較舊的依序往後到 .4,最舊的刪除。",
+    "log.current": "目前", "log.shown": "顯示中",
+    "log.downloadAll": "全部下載(zip)", "log.downloadAllTip": "log.txt 和所有較舊的紀錄檔,打包成一個 zip",
     "log.clearBody": "設備上的所有紀錄都會刪除,包含輪替保存的舊紀錄,且無法復原。清空後設備會記下是誰執行的。",
     "log.clearFailed": "無法清空紀錄", "log.clearDenied": "只有管理員可以清空紀錄",
     "set.backup": "備份與還原", "set.firmware": "韌體",

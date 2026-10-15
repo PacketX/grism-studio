@@ -1919,7 +1919,13 @@ function FilePick({ accept, file, onPick, tr, hint }) {
 }
 
 /* The device's log, as plain text. It's append-only, so the view stays pinned to
-   the newest line unless the reader has scrolled up to look at something. */
+   the newest line unless the reader has scrolled up to look at something.
+
+   grism rotates it past 10 MB into log.txt.1 ... .4, which the page used to
+   have no way to reach. When there are any, they are listed under the log the
+   way the export page lists the other config files, and one can be opened in
+   place of log.txt; all of them, log.txt included, download as one zip. */
+const LOG_CURRENT = "log.txt";
 function SystemLogTab({ loggedIn, t }) {
   const tr = t || ((k) => k);
   const [text, setText] = React.useState("");
@@ -1930,20 +1936,31 @@ function SystemLogTab({ loggedIn, t }) {
   const boxRef = React.useRef(null);
   const [confirmClear, setConfirmClear] = React.useState(false);
   const [clearErr, setClearErr] = React.useState("");
+  const [files, setFiles] = React.useState([]);       // [{name, size, mtime}] from the device
+  const [viewing, setViewing] = React.useState(LOG_CURRENT);
+  const [listOpen, setListOpen] = React.useState(false);
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (name = LOG_CURRENT) => {
     setState((p) => (p === "ok" ? "ok" : "loading"));
     try {
-      const res = await fetch("/grism/get_log", { credentials: "include" });
+      const res = await fetch(name === LOG_CURRENT ? "/grism/get_log"
+        : "/grism/task/get_log_file?name=" + encodeURIComponent(name), { credentials: "include" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       setText(await res.text());
       setState("ok"); setUpdatedAt(new Date()); setErrMsg("");
     } catch (e) { setState("error"); setErrMsg(String(e.message || e)); }
+    // the list rides along: a refresh is also when a rotation shows up. A
+    // device whose pywww predates the endpoint just has no list.
+    try {
+      const res = await fetch("/grism/task/get_log_files", { credentials: "include" });
+      setFiles(res.ok ? ((await res.json()).files ?? []) : []);
+    } catch { setFiles([]); }
   }, []);
-  React.useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
+  React.useEffect(() => { if (loggedIn) load(LOG_CURRENT); }, [loggedIn, load]);
   React.useLayoutEffect(() => {
     if (follow && boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
   }, [text, follow]);
+  const open = (name) => { setViewing(name); setFollow(true); load(name); };
   /* Empties log.txt and the rotated files behind it; the device then writes
      who did it as the first line, which the reload below shows. */
   const clearLog = async () => {
@@ -1951,23 +1968,30 @@ function SystemLogTab({ loggedIn, t }) {
     try {
       const res = await fetch("/grism/task/clear_log", { method: "POST", credentials: "include" });
       if (!res.ok) throw new Error(res.status === 401 ? tr("log.clearDenied") : "HTTP " + res.status);
-      await load();
+      setViewing(LOG_CURRENT);
+      await load(LOG_CURRENT);
     } catch (e) { setClearErr(String(e.message || e)); }
   };
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
   const lines = text ? text.replace(/\s+$/, "").split("\n") : [];
+  const older = files.filter((f) => f.name !== LOG_CURRENT);
+  const when = (f) => f.mtime ? new Date(f.mtime * 1000).toLocaleString() : "";
 
   return (
     <div className="sys-wrap">
       <div className="sys-head">
-        <h2 className="sys-title">{tr("log.title")}<span className="sys-card-metric">{lines.length}</span></h2>
+        <h2 className="sys-title">{tr("log.title")}
+          {viewing !== LOG_CURRENT && <code className="log-viewing">{viewing}</code>}
+          <span className="sys-card-metric">{lines.length}</span></h2>
         <div className="sys-controls">
           {updatedAt && <span className="sys-updated">{tr("tf.updated")} {updatedAt.toLocaleTimeString()}</span>}
           <label className="tf-interval"><input type="checkbox" checked={follow}
             onChange={(e) => setFollow(e.target.checked)} /> {tr("log.follow")}</label>
-          <button className="sys-refresh" onClick={load} disabled={state === "loading"}>
+          <button className="sys-refresh" onClick={() => load(viewing)} disabled={state === "loading"}>
             {state === "loading" ? tr("sys.refreshing") : tr("sys.refresh")}</button>
+          {files.length > 0 && <a className="copy-btn log-zip" href="/grism/task/download_logs"
+            title={tr("log.downloadAllTip")}>{tr("log.downloadAll")}</a>}
           <button className="del" onClick={() => setConfirmClear(true)}>{tr("log.clear")}</button>
         </div>
       </div>
@@ -1982,6 +2006,33 @@ function SystemLogTab({ loggedIn, t }) {
             <button className="opt-cancel" onClick={() => setConfirmClear(false)}>{tr("common.cancel")}</button>
           </div>
         </div>
+      )}
+      {older.length > 0 && (
+        <section className="xfiles log-files">
+          <button className="xf-toggle" onClick={() => setListOpen(!listOpen)} aria-expanded={listOpen}>
+            {tr("log.otherFiles")}<span className="xf-count">{older.length}</span>
+            <span className="xf-chev">{listOpen ? tr("xf.hide") : tr("xf.show")}</span>
+          </button>
+          {listOpen && (
+            <div className="xf-body">
+              <p className="xf-note">{tr("log.otherNote")}</p>
+              <ul className="xf-list">
+                {files.map((f) => (
+                  <li key={f.name} className={viewing === f.name ? "on" : ""}>
+                    <code className="xf-name">{f.name}</code>
+                    <span className="xf-size">{formatFileSize(f.size)} · {when(f)}
+                      {f.name === LOG_CURRENT && <span> · {tr("log.current")}</span>}</span>
+                    {viewing === f.name
+                      ? <span className="xf-size log-shown">{tr("log.shown")}</span>
+                      : <button className="copy-btn" onClick={() => open(f.name)}>{tr("xf.open")}</button>}
+                    <a className="copy-btn" download={f.name} href={f.name === LOG_CURRENT ? "/grism/get_log"
+                      : "/grism/task/get_log_file?name=" + encodeURIComponent(f.name)}>{tr("xf.download")}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
       )}
       <pre className="syslog-box" ref={boxRef}
         onScroll={(e) => {
