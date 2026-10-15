@@ -9262,12 +9262,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                op: node.fidOp === "and" ? tr("crit.and") : tr("crit.or") });
   };
   const center = (n) => ({ x: n._x + shiftX + NODE_W / 2 + PAD, y: n._y + PAD });
-  /* Where the node editor goes: to the right of the chosen node, or to its
-     left when the right has no room, and never outside the pane's visible
-     part. Measured before paint, so it does not jump into place. */
   const svgRef = React.useRef(null);
-  const popRef = React.useRef(null);
-  const [popAt, setPopAt] = React.useState(null);
+  const sideRef = React.useRef(null);
 
   /* Room to move the drawing in. The pane scrolls, and a drawing smaller than
      the pane has nowhere to scroll to -- so the stage around it is padded by
@@ -9292,7 +9288,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
      window -- its top centre (the ingress) stays where it was on screen: the
      pane is scrolled by exactly as far as that point moved. Without this an
      edit that widened the canvas slid the whole chain sideways under the
-     pointer. Runs before the editor below is placed, which measures the result. */
+     pointer. Runs before the chosen node is brought into view, below, which
+     measures the result. */
   const anchorRef = React.useRef(null);
   React.useLayoutEffect(() => { homeRef.current = true; }, [cid]);
   React.useLayoutEffect(() => {
@@ -9323,7 +9320,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const panDown = (e) => {
     draggedRef.current = false;
     if (e.button !== 0 || e.pointerType === "touch") return;
-    if (e.target.closest(".gnode, .node-pop, .zoom-bar")) return;
+    if (e.target.closest(".gnode, .zoom-bar")) return;
     const pane = paneRef.current;
     dragRef.current = { x: e.clientX, y: e.clientY, left: pane.scrollLeft, top: pane.scrollTop, id: e.pointerId, moved: false };
   };
@@ -9344,28 +9341,58 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     if (d?.moved) { draggedRef.current = true; setPanning(false); }
   };
 
+  /* A node chosen while partly outside the pane -- clicked at an edge, or
+     the one an insert or a removal selects -- is scrolled just far enough to
+     be whole, and one that already is moves nothing. The editor has a column
+     of its own, so a node needs no room beside it any more: when it floated
+     beside the node, a click on one half-hidden at the bottom put that node
+     at the top of the pane and took the rest of the drawing out of view.
+     Keyed on the choice alone: a zoom, or an edit that moves the chosen node,
+     leaves the pane where the ingress anchor above put it. */
   React.useLayoutEffect(() => {
-    const pane = paneRef.current, svg = svgRef.current, pop = popRef.current;
-    if (!sel || !pane || !svg || !pop) { setPopAt(null); return; }
-    const c = center(sel), h = isUnset(sel) ? PH_H : NODE_H, GAP = 14, M = 8;
+    const pane = paneRef.current, svg = svgRef.current;
+    if (!sel || !pane || !svg) return;
+    const c = center(sel), h = isUnset(sel) ? PH_H : NODE_H, M = 12;
     /* the svg's origin in the pane's scroll space (an svg has no offsetLeft) */
     const pb = pane.getBoundingClientRect(), sb = svg.getBoundingClientRect();
     const ox = sb.left - pb.left - pane.clientLeft + pane.scrollLeft, oy = sb.top - pb.top - pane.clientTop + pane.scrollTop;
     const nodeL = ox + (c.x - NODE_W / 2) * zoom, nodeR = ox + (c.x + NODE_W / 2) * zoom;
     const nodeT = oy + (c.y - h / 2) * zoom, nodeB = nodeT + h * zoom;
-    /* A node the pane is scrolled away from is brought into view first --
-       a node that was selected from the keyboard, or that a zoom moved --
-       so the editor is never beside something that cannot be seen. */
-    if (nodeT < pane.scrollTop + M || nodeB > pane.scrollTop + pane.clientHeight - M) pane.scrollTop = Math.max(0, nodeT - 24);
-    if (nodeL < pane.scrollLeft + M || nodeR > pane.scrollLeft + pane.clientWidth - M) pane.scrollLeft = Math.max(0, nodeL - 24);
-    const viewL = pane.scrollLeft, viewR = viewL + pane.clientWidth;
-    let left = nodeR + GAP;
-    if (left + pop.offsetWidth > viewR && nodeL - GAP - pop.offsetWidth >= viewL) left = nodeL - GAP - pop.offsetWidth;
-    const viewT = pane.scrollTop, viewB = viewT + pane.clientHeight;
-    const top = Math.max(viewT + M, Math.min(nodeT, viewB - pop.offsetHeight - M));
-    setPopAt({ left, top });
-  }, [sel, zoom, slack.x, slack.y]);
+    const viewL = pane.scrollLeft, viewT = pane.scrollTop;
+    const viewR = viewL + pane.clientWidth, viewB = viewT + pane.clientHeight;
+    if (nodeL < viewL + M) pane.scrollLeft = nodeL - M;
+    else if (nodeR > viewR - M) pane.scrollLeft = viewL + nodeR - (viewR - M);
+    if (nodeT < viewT + M) pane.scrollTop = nodeT - M;
+    else if (nodeB > viewB - M) pane.scrollTop = viewT + nodeB - (viewB - M);
+    /* On a phone the editor is a sheet over the bottom of the screen: a node
+       it would cover goes up above it, page and all. */
+    const side = sideRef.current, rect = svg.querySelector(".gnode.sel rect");
+    if (side && rect && getComputedStyle(side).position === "fixed") {
+      const over = rect.getBoundingClientRect().bottom - (side.getBoundingClientRect().top - M);
+      const page = pane.closest(".chain-layout3");
+      if (over > 0 && page) page.scrollTop += over;
+    }
+  }, [selId]);
   const byId = Object.fromEntries(placed.map((n) => [n.id, n]));
+  /* The chosen node's place in the chain, read from the ingress down: each
+     test on the way and the side taken out of it. The editor sits in its own
+     column, away from the node, so this is what names the node it edits;
+     each step selects that node. */
+  const selPath = useMemo(() => {
+    if (!chain || !sel || sel.t === "in") return [];
+    let found = null;
+    (function walk(n, trail) {
+      if (!n || found) return;
+      if (n.id === sel.id) { found = trail; return; }
+      if (n.t === "branch") ["match", "notmatch"].forEach((k) => walk(n[k], [...trail, { node: n, side: k }]));
+    })(chain.tree, []);
+    return found ?? [];
+  }, [chain, sel]);
+  const nodeShort = (n) => isUnset(n) ? tr("ch.unspecified")
+    : n.t === "in" ? fitNodeText(compactPorts(chain.ports || ""), 14) || "?"
+    : isDrop(n) ? "drop (0)"
+    : n.t === "out" ? (fitNodeText(withOutPorts(n.ports), 18) || tr("ch.pickOutput"))
+    : (fitNodeText(n.fids, 14) || tr("ch.pickFilter"));
 
   if (!chain) return (
     <div className="empty-pane">
@@ -9506,141 +9533,155 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
         </svg>
         </div>
         <NodeTip tip={tip} />
-        {/* The editor for the chosen node, beside the node itself rather than
-            in a column of its own: what is being changed and where it sits in
-            the chain stay in the same glance. Placed after measuring, so it can
-            swap to the node's left when the right has no room and stay inside
-            the pane's visible part; it scrolls with the canvas. */}
-        {sel && (
-          <div className="node-pop" ref={popRef}
-            style={popAt ? { left: popAt.left, top: popAt.top } : { left: 0, top: 0, visibility: "hidden" }}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setSelId(null); } }}>
-            <div className="inspector">
-              <div className="insp-head"><span>{isUnset(sel) ? tr("ch.unspecified") : sel.t === "in" ? tr("ch.ingress") : sel.t === "branch" ? tr("ch.filter") : isDrop(sel) ? tr("ch.discard") : tr("ch.output")}</span>
-                <button className="pop-close" onClick={() => setSelId(null)} title={tr("cap.liveClose")} aria-label={tr("cap.liveClose")}>×</button></div>
-              {/* portChoices: a port turned off after this chain was written is
-                  still listed, so it can be seen and removed. */}
-              {sel && sel.t === "in" && <>
+      </section>
+      </div>
+
+      {/* The editor for the chosen node, in a column of its own at the right.
+          It floated beside the node for a while (2.246.0-2.255.0), and covered
+          the node's neighbours on most clicks -- the next node to edit, more
+          often than not -- and moved two hundred pixels with every click.
+          Here it stays put and the canvas keeps its width whatever is chosen;
+          the path under its heading says which node it is editing. With
+          nothing chosen it lists the filters the chain refers to. */}
+      <aside className={"chain-side" + (sel ? " editing" : "")} ref={sideRef} aria-label={tr("ch.editorLabel")}
+        onKeyDown={(e) => { if (e.key === "Escape" && sel) { e.stopPropagation(); setSelId(null); } }}>
+        {sel ? (
+          <div className="inspector">
+            <div className="insp-head"><span>{isUnset(sel) ? tr("ch.unspecified") : sel.t === "in" ? tr("ch.ingress") : sel.t === "branch" ? tr("ch.filter") : isDrop(sel) ? tr("ch.discard") : tr("ch.output")}</span>
+              <button className="side-close" onClick={() => setSelId(null)} title={tr("cap.liveClose")} aria-label={tr("cap.liveClose")}>×</button></div>
+            {sel.t !== "in" && (
+              <ol className="node-path" aria-label={tr("ch.pathLabel")}>
+                <li><button className="path-step" onClick={() => setSelId("__in__")}>{tr("ch.ingress")} {nodeShort({ t: "in" })}</button></li>
+                {selPath.map(({ node, side }) => <li key={node.id}>
+                  <button className="path-step" onClick={() => setSelId(node.id)}>{nodeShort(node)}</button>
+                  <span className={"path-side " + side}>{sideWord(side)}</span></li>)}
+                <li className="path-here" aria-current="true"><span>{nodeShort(sel)}</span></li>
+              </ol>
+            )}
+            {/* portChoices: a port turned off after this chain was written is
+                still listed, so it can be seen and removed. */}
+            {sel && sel.t === "in" && <>
+              <CheckAccordion
+                label={tr("ch.ingressPorts")}
+                t={t}
+                items={portChoices(portOptions, chain.ports).map((p) => ({ id: p, b: p, sub: portDescs[p] ?? "", on: listHas(chain.ports, p) }))}
+                onToggle={(p) => toggleInPort(p)}
+                onAll={(on) => setAllInPorts(portOptions, on)}
+                onSetOne={(p) => setOneInPort(portOptions, p)}
+                emptyNote={!portsFromDevice ? tr("ch.defaultPorts") : null} />
+              <CollapseSection t={tr} label={tr("ch.advancedOp")} active={!!chain.inVlan?.vlantype}>
+                <label className="fld2"><span>{tr("ch.vlanOp")}</span>
+                  <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
+                    <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
+                  </select><em>optional — tag or strip VLAN at ingress</em></label>
+                {chain.inVlan?.vlantype === "tagging" && <label className="fld2"><span>{tr("ch.vlanId")}</span>
+                  <input value={chain.inVlan?.vlanid ?? ""} onChange={(e) => setInVlan({ vlanid: e.target.value })} placeholder="100" /></label>}
+              </CollapseSection>
+            </>}
+            {sel && isUnset(sel) && <><p className="insp-note">{tr("ch.unsetNote")}</p>
+              <button className="primary" onClick={() => restoreSide(sel.id)}>{tr("ch.routeExplicitly")}</button></>}
+            {sel && sel.t === "branch" && <>
+              {/* No free-text fids: every value it could hold is a filter that is
+                  either defined or a reference to nothing, and "!" is a control,
+                  not something to spell. The chosen value reads off the picker. */}
+              <CheckAccordion
+                label={tr("ch.definedFilters")}
+                t={t} joiner={sel.fidOp} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, fidOp: v }))}
+                items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
+                  on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) }))}
+                onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
+                onNegate={(fid) => negateFid(sel.id, sel.fids, fid)}
+                onAll={(on) => setAllFids(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), on)}
+                onSetOne={(fid) => setOneFid(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), fid)}
+                emptyNote={tr("ch.noFiltersDefined")} />
+              <div className="add-filter-group">
+                <span className="add-filter-label">{tr("ch.insertKeepTest")}</span>
+                <div className="add-filter-btns">
+                  <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>{tr("ch.filterToMatch")}</button>
+                  <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>{tr("ch.filterToNotmatch")}</button>
+                </div>
+              </div>
+              <div className="add-filter-group">
+                <span className="add-filter-label">{tr("ch.removeKeep")}</span>
+                <div className="add-filter-btns">
+                  <button className="danger" onClick={() => removeTest(sel.id, "match")}>
+                    {tr("ch.keepMatch").replace("{what}", sideSummary(sel.match))}</button>
+                  <button className="danger" onClick={() => removeTest(sel.id, "notmatch")}>
+                    {tr("ch.keepNotmatch").replace("{what}", sideSummary(sel.notmatch))}</button>
+                </div>
+                <span className="add-filter-note">{tr("ch.removeKeepNote")}</span>
+              </div>
+            </>}
+            {sel && sel.t === "out" && <>
+              {/* One list: the device's ports, the outputs this document defines,
+                  and the one value that is neither -- 0 discards. It stands
+                  alone, so choosing it clears the rest and choosing a port
+                  clears it. */}
+              {isDrop(sel) && <p className="insp-note">{tr("ch.dropNote")}</p>}
+              <>
+                {/* Same for an out: a port it already names stays listed even
+                    after the device turns that port off. */}
                 <CheckAccordion
-                  label={tr("ch.ingressPorts")}
+                  label={tr("ch.outputPorts")}
                   t={t}
-                  items={portChoices(portOptions, chain.ports).map((p) => ({ id: p, b: p, sub: portDescs[p] ?? "", on: listHas(chain.ports, p) }))}
-                  onToggle={(p) => toggleInPort(p)}
-                  onAll={(on) => setAllInPorts(portOptions, on)}
-                  onSetOne={(p) => setOneInPort(portOptions, p)}
-                  emptyNote={!portsFromDevice ? tr("ch.defaultPorts") : null} />
-                <CollapseSection t={tr} label={tr("ch.advancedOp")} active={!!chain.inVlan?.vlantype}>
+                  items={[...outChoices,
+                          ...portChoices([], sel.ports).filter((p2) => !outChoices.some((c) => c.id === p2))
+                            .map((p2) => ({ id: p2, sub: portDescs[p2] ?? "" }))]
+                    .map((c) => ({ id: c.id, b: c.label ?? c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
+                  onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
+                  onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
+                  onSetOne={(p2) => setOneOutPort(sel.id, sel.ports, outChoices.map((c) => c.id), p2)}
+                  joiner={sel.mode} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, mode: v }))}
+                  joinerLabel={tr("ch.mode")}
+                  joinerOptions={[{ v: "duplicate", l: tr("ch.modeDuplicate") }, { v: "loadBalance", l: tr("ch.modeBalance") }]}
+                  prefix={sel.mode === "loadBalance" ? tr("ch.modeBalanceTo") : tr("ch.modeDuplicateTo")}
+                  extra={sel.mode === "loadBalance" && (
+                    <label className="acc-join">{tr("ch.balanceBy")}
+                      <select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>
+                        {["session", "5thash", "rr", "sip", "dip"].map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  emptyNote={!portsFromDevice ? tr("ch.portsDefaultNote") : null} />
+                <CollapseSection t={tr} label={tr("ch.advancedOp")} active={!!sel.vlantype}>
                   <label className="fld2"><span>{tr("ch.vlanOp")}</span>
-                    <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
+                    <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
                       <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
-                    </select><em>optional — tag or strip VLAN at ingress</em></label>
-                  {chain.inVlan?.vlantype === "tagging" && <label className="fld2"><span>{tr("ch.vlanId")}</span>
-                    <input value={chain.inVlan?.vlanid ?? ""} onChange={(e) => setInVlan({ vlanid: e.target.value })} placeholder="100" /></label>}
+                    </select><em>optional — tag or strip VLAN on egress</em></label>
+                  {sel.vlantype === "tagging" && <label className="fld2"><span>{tr("ch.vlanId")}</span>
+                    <input value={sel.vlanid ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlanid: e.target.value }))} placeholder="100" /></label>}
                 </CollapseSection>
-              </>}
-              {sel && isUnset(sel) && <><p className="insp-note">{tr("ch.unsetNote")}</p>
-                <button className="primary" onClick={() => restoreSide(sel.id)}>{tr("ch.routeExplicitly")}</button></>}
-              {sel && sel.t === "branch" && <>
-                {/* No free-text fids: every value it could hold is a filter that is
-                    either defined or a reference to nothing, and "!" is a control,
-                    not something to spell. The chosen value reads off the picker. */}
-                <CheckAccordion
-                  label={tr("ch.definedFilters")}
-                  t={t} joiner={sel.fidOp} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, fidOp: v }))}
-                  items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
-                    on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) }))}
-                  onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
-                  onNegate={(fid) => negateFid(sel.id, sel.fids, fid)}
-                  onAll={(on) => setAllFids(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), on)}
-                  onSetOne={(fid) => setOneFid(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), fid)}
-                  emptyNote={tr("ch.noFiltersDefined")} />
                 <div className="add-filter-group">
-                  <span className="add-filter-label">{tr("ch.insertKeepTest")}</span>
+                  <span className="add-filter-label">{tr("ch.insertKeepOutput")}</span>
                   <div className="add-filter-btns">
                     <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>{tr("ch.filterToMatch")}</button>
                     <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>{tr("ch.filterToNotmatch")}</button>
                   </div>
                 </div>
-                <div className="add-filter-group">
-                  <span className="add-filter-label">{tr("ch.removeKeep")}</span>
-                  <div className="add-filter-btns">
-                    <button className="danger" onClick={() => removeTest(sel.id, "match")}>
-                      {tr("ch.keepMatch").replace("{what}", sideSummary(sel.match))}</button>
-                    <button className="danger" onClick={() => removeTest(sel.id, "notmatch")}>
-                      {tr("ch.keepNotmatch").replace("{what}", sideSummary(sel.notmatch))}</button>
-                  </div>
-                  <span className="add-filter-note">{tr("ch.removeKeepNote")}</span>
-                </div>
-              </>}
-              {sel && sel.t === "out" && <>
-                {/* One list: the device's ports, the outputs this document defines,
-                    and the one value that is neither -- 0 discards. It stands
-                    alone, so choosing it clears the rest and choosing a port
-                    clears it. */}
-                {isDrop(sel) && <p className="insp-note">{tr("ch.dropNote")}</p>}
-                <>
-                  {/* Same for an out: a port it already names stays listed even
-                      after the device turns that port off. */}
-                  <CheckAccordion
-                    label={tr("ch.outputPorts")}
-                    t={t}
-                    items={[...outChoices,
-                            ...portChoices([], sel.ports).filter((p2) => !outChoices.some((c) => c.id === p2))
-                              .map((p2) => ({ id: p2, sub: portDescs[p2] ?? "" }))]
-                      .map((c) => ({ id: c.id, b: c.label ?? c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
-                    onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
-                    onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
-                    onSetOne={(p2) => setOneOutPort(sel.id, sel.ports, outChoices.map((c) => c.id), p2)}
-                    joiner={sel.mode} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, mode: v }))}
-                    joinerLabel={tr("ch.mode")}
-                    joinerOptions={[{ v: "duplicate", l: tr("ch.modeDuplicate") }, { v: "loadBalance", l: tr("ch.modeBalance") }]}
-                    prefix={sel.mode === "loadBalance" ? tr("ch.modeBalanceTo") : tr("ch.modeDuplicateTo")}
-                    extra={sel.mode === "loadBalance" && (
-                      <label className="acc-join">{tr("ch.balanceBy")}
-                        <select value={sel.lb} onChange={(e) => mutate(sel.id, (n) => ({ ...n, lb: e.target.value }))}>
-                          {["session", "5thash", "rr", "sip", "dip"].map((o) => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                      </label>
-                    )}
-                    emptyNote={!portsFromDevice ? tr("ch.portsDefaultNote") : null} />
-                  <CollapseSection t={tr} label={tr("ch.advancedOp")} active={!!sel.vlantype}>
-                    <label className="fld2"><span>{tr("ch.vlanOp")}</span>
-                      <select value={sel.vlantype ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlantype: e.target.value || undefined }))}>
-                        <option value="">none</option><option value="tagging">tagging</option><option value="stripping">stripping</option>
-                      </select><em>optional — tag or strip VLAN on egress</em></label>
-                    {sel.vlantype === "tagging" && <label className="fld2"><span>{tr("ch.vlanId")}</span>
-                      <input value={sel.vlanid ?? ""} onChange={(e) => mutate(sel.id, (n) => ({ ...n, vlanid: e.target.value }))} placeholder="100" /></label>}
-                  </CollapseSection>
-                  <div className="add-filter-group">
-                    <span className="add-filter-label">{tr("ch.insertKeepOutput")}</span>
-                    <div className="add-filter-btns">
-                      <button className="primary" onClick={() => insertFilterAbove(sel.id, "match")}>{tr("ch.filterToMatch")}</button>
-                      <button className="primary" onClick={() => insertFilterAbove(sel.id, "notmatch")}>{tr("ch.filterToNotmatch")}</button>
-                    </div>
-                  </div>
-                </>
-                {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>{tr("ch.removeBranch").replace("{side}", selOwner.side)}</button>}
-              </>}
-            </div>
+              </>
+              {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>{tr("ch.removeBranch").replace("{side}", selOwner.side)}</button>}
+            </>}
+          </div>
+        ) : (
+          <div className="inspector side-overview">
+            <p className="side-hint">{tr("ch.selectNode")}</p>
+            {/* what this chain refers to: the filters it names and whether
+                each is defined here, on the device only, or nowhere */}
+            {refs.length > 0 && (
+              <div className="refs">
+                <div className="refs-head"><span>{tr("ch.filtersReferenced")}</span><span className="refs-count">{refs.length}</span></div>
+                {refs.map((r) => <div key={r.id} className={"ref-row " + (r.defined ? "here" : r.onDevice ? "device" : "missing")}>
+                  <span className="ref-dot" /><code className="ref-id">{r.id}</code>
+                  <span className="ref-name">{knownNames[r.id] || ""}</span>
+                  <span className="ref-where">{r.defined ? tr("ch.definedHere") : r.onDevice ? tr("ch.onDevice") : tr("ch.notDefined")}</span>
+                </div>)}
+                {refs.some((r) => r.onDevice) && <p className="refs-note">{tr("ch.deviceNote")}</p>}
+                {refs.some((r) => !r.defined && !r.onDevice) && <p className="refs-note bad">{tr("ch.missingNote")}</p>}
+              </div>
+            )}
           </div>
         )}
-      </section>
-      {/* what this chain refers to, in a strip under it: the filters it names
-          and whether each is defined here, on the device only, or nowhere */}
-      {refs.length > 0 && (
-        <div className="refs refs-bar">
-          <div className="refs-head"><span>{tr("ch.filtersReferenced")}</span><span className="refs-count">{refs.length}</span></div>
-          <div className="refs-rows">{refs.map((r) => <div key={r.id} className={"ref-row " + (r.defined ? "here" : r.onDevice ? "device" : "missing")}>
-            <span className="ref-dot" /><code className="ref-id">{r.id}</code>
-            <span className="ref-name">{knownNames[r.id] || ""}</span>
-            <span className="ref-where">{r.defined ? tr("ch.definedHere") : r.onDevice ? tr("ch.onDevice") : tr("ch.notDefined")}</span>
-          </div>)}</div>
-          {refs.some((r) => r.onDevice) && <p className="refs-note">{tr("ch.deviceNote")}</p>}
-          {refs.some((r) => !r.defined && !r.onDevice) && <p className="refs-note bad">{tr("ch.missingNote")}</p>}
-        </div>
-      )}
-      </div>
+      </aside>
 
       {confirm && <div className="modal-scrim" onClick={() => setConfirm(null)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.255.0";
+export const STUDIO_VERSION = "2.256.0";
 
 export const I18N = {
   en: {
@@ -932,6 +932,8 @@ export const I18N = {
     "act.addModifier": "add modifier",
     // chain editor
     "ch.unspecified": "Unspecified", "ch.ingress": "Ingress", "ch.filter": "FILTER", "ch.discard": "Discard", "ch.output": "Output",
+    "ch.editorLabel": "Node editor", "ch.selectNode": "Click a node in the drawing to edit it.",
+    "ch.pathLabel": "Where this node sits in the chain",
     "ch.ingressPorts": "Ingress ports", "ch.routeExplicitly": "Route explicitly",
     "ch.unsetNote": "No branch here — device default applies. No <next> is written.",
     "ch.filters": "Filter(s)", "ch.combine": "Combine",
@@ -1943,6 +1945,8 @@ export const I18N = {
     "act.addModifier": "新增 modifier",
     // chain editor
     "ch.unspecified": "未指定", "ch.ingress": "入口", "ch.filter": "篩選", "ch.discard": "丟棄", "ch.output": "輸出",
+    "ch.editorLabel": "節點編輯", "ch.selectNode": "點選圖上的節點來編輯。",
+    "ch.pathLabel": "此節點在鏈結中的位置",
     "ch.ingressPorts": "入口埠", "ch.routeExplicitly": "明確指定路由",
     "ch.unsetNote": "此處沒有分支 — 套用裝置預設。不會寫出 <next>。",
     "ch.filters": "篩選器", "ch.combine": "組合方式",

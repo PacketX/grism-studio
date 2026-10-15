@@ -288,7 +288,11 @@
 
 /* ---- chain ---- */
 .chain-layout{flex:1; display:grid; grid-template-columns:1fr 360px; min-height:0; gap:16px; padding:20px 24px; box-sizing:border-box;}
-.chain-layout3{flex:1; display:grid; grid-template-columns:200px minmax(0,1fr); min-height:0; gap:16px; padding:20px 24px; box-sizing:border-box;}
+/* chain list | canvas | node editor. The editor's column is there whether or
+   not a node is chosen, so choosing one never changes the canvas's width. */
+.chain-layout3{flex:1; display:grid; grid-template-columns:200px minmax(0,1fr) 320px; min-height:0; gap:16px; padding:20px 24px; box-sizing:border-box;}
+@media (max-width:1440px){ .chain-layout3{grid-template-columns:190px minmax(0,1fr) 300px; gap:12px;} }
+@media (max-width:1180px){ .chain-layout3{grid-template-columns:170px minmax(0,1fr) 280px;} }
 .chain-main{display:flex; flex-direction:column; min-height:0; min-width:0; gap:12px;}
 .chain-main .canvas-wrap{flex:1 1 auto; min-height:0;}
 .chain-list{border:1px solid var(--line); border-radius:12px; background:var(--panel-2); padding:12px; overflow:auto; display:flex; flex-direction:column; gap:4px;}
@@ -323,7 +327,7 @@
 .chain-main .canvas-wrap::-webkit-scrollbar{display:none;}
 .chain-main .canvas-wrap.panning{cursor:grabbing; user-select:none;}
 .canvas-stage{width:max-content; min-width:100%; box-sizing:border-box;}
-.chain-main .node-pop, .chain-main .zoom-bar{cursor:auto;}
+.chain-main .zoom-bar{cursor:auto;}
 .edge{fill:none; stroke-width:1.8;}
 .edge.match{stroke:var(--match);} .edge.notmatch{stroke:var(--notmatch); stroke-dasharray:5 4;} .edge.flow{stroke:var(--txt-dim);}
 .edge.toUnset{stroke:var(--unset); stroke-dasharray:3 5; opacity:.7;}
@@ -354,14 +358,25 @@
 .gnode.out .n-main{fill:var(--node-out-txt);} .gnode.out.drop .n-main{fill:var(--node-drop-txt);}
 .gnode.branch .n-main{fill:var(--node-branch-txt);} .gnode.in .n-main{fill:var(--node-in-txt);}
 
-/* the node editor, floating beside the chosen node on the canvas */
-.node-pop{position:absolute; z-index:5; width:340px; max-width:calc(100% - 16px); max-height:calc(100% - 16px);
-  overflow:auto; border:1px solid var(--line-2); border-radius:12px; background:var(--panel-2);
-  box-shadow:0 12px 32px rgba(0,0,0,.35), 0 0 0 1px rgba(var(--accent-rgb),.15);}
-.node-pop .inspector{border-bottom:0; overflow:visible; flex:none;}
-.node-pop .insp-head{display:flex; align-items:center; justify-content:space-between; gap:8px;}
-.pop-close{border:0; background:transparent; color:var(--txt-dim); font-size:18px; line-height:1; padding:0 4px; cursor:pointer; border-radius:6px;}
-.pop-close:hover{color:var(--txt); background:rgba(var(--accent-rgb),.12);}
+/* the node editor, in its own column right of the canvas */
+.chain-side{min-height:0; min-width:0; overflow:auto; border:1px solid var(--line); border-radius:12px; background:var(--panel-2);}
+.chain-side.editing{border-color:rgba(var(--accent-rgb),.45);}
+.chain-side .inspector{border-bottom:0; overflow:visible;}
+.chain-side .insp-head{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;}
+.side-close{border:0; background:transparent; color:var(--txt-dim); font-size:18px; line-height:1; padding:0 4px; cursor:pointer; border-radius:6px;}
+.side-close:hover{color:var(--txt); background:rgba(var(--accent-rgb),.12);}
+.side-hint{color:var(--txt-dim); font-size:13px; line-height:1.6; margin:0 0 14px;}
+.side-overview .refs{padding:12px 0 0; max-height:none; overflow:visible;}
+/* where the chosen node sits: ingress, each test and the side taken, then it */
+.node-path{list-style:none; margin:0 0 14px; padding:0 0 12px; border-bottom:1px solid var(--line);
+  display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; font-family:var(--mono); font-size:11.5px;}
+.node-path li{display:inline-flex; align-items:center; gap:5px;}
+.node-path li + li::before{content:"\2192"; color:var(--txt-faint);}
+.path-step{background:transparent; border:1px solid var(--line-2); color:var(--txt-dim); border-radius:5px; padding:2px 6px; font:inherit; cursor:pointer;}
+.path-step:hover{border-color:var(--accent); color:var(--accent);}
+.path-side{font-family:var(--sans); font-size:10.5px;}
+.path-side.match{color:var(--match);} .path-side.notmatch{color:var(--notmatch);}
+.path-here > span{color:var(--accent); font-weight:700; padding:2px 6px; border:1px solid var(--accent); border-radius:5px;}
 .inspector{padding:16px; border-bottom:1px solid var(--line); overflow:auto; flex:1 1 auto;}
 .insp-head{font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--txt-dim); margin-bottom:14px;}
 .insp-empty{color:var(--txt-faint); font-size:13px;}
@@ -423,11 +438,6 @@
 .danger{width:100%; background:transparent; border:1px solid var(--line-2); color:var(--notmatch); border-radius:7px; padding:8px; font-size:13px; margin-top:8px;}
 .danger:hover{border-color:var(--notmatch); background:rgba(251,113,133,.08);}
 .refs{padding:12px 16px; border-top:1px solid var(--line); flex:0 0 auto; max-height:38%; overflow:auto;}
-.refs-bar{flex:none; max-height:30%; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); padding:10px 16px;}
-.refs-bar .refs-head{margin-bottom:6px;}
-.refs-rows{display:flex; flex-wrap:wrap; gap:0 22px;}
-.refs-bar .ref-row{padding:3px 0;}
-.refs-bar .ref-name{flex:0 1 auto; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .refs-head{display:flex; align-items:center; gap:8px; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--txt-dim); margin-bottom:10px;}
 .refs-count{font-family:var(--mono); font-size:11px; color:var(--txt-faint); border:1px solid var(--line-2); border-radius:99px; padding:1px 7px;}
 .ref-row{display:flex; align-items:center; gap:8px; padding:5px 0; font-size:13px;}
@@ -812,6 +822,12 @@
   .chain-layout3{grid-template-columns:minmax(0,1fr);}   /* see .canvas-stage: the pane must not grow with its content */
   .filter-list,.chain-list{display:flex; max-height:34vh;}
   .chain-main{display:block;}
+  /* the editor rises from the bottom while a node is chosen, over the page
+     rather than stacked under it, where it would be a scroll away */
+  .chain-side.editing{position:fixed; left:0; right:0; bottom:0; z-index:30; max-height:55vh;
+    border-radius:14px 14px 0 0; box-shadow:0 -12px 32px rgba(0,0,0,.35);}
+  /* room to scroll the canvas up above the sheet */
+  .chain-layout3:has(.chain-side.editing){padding-bottom:58vh;}
   .export-side{display:block;}
   .canvas-wrap{height:46vh;}
   .sim-layout{grid-template-columns:1fr;}
