@@ -2662,6 +2662,27 @@ for (const lang of Object.keys(I18N)) {
     !!I18N[lang]["set.sdwanNoPorts"] && !!I18N[lang]["set.sdwanKeyTimeoutBad"]);
 }
 
+/* ---------- MEC template ---------- */
+group("MEC template");
+{
+  const doc = C.normalizeDoc(C.TEMPLATES.find((t) => t.id === "mec-breakout").make());
+  const fid = (id) => doc.filters.find((f) => f.id === id);
+  const edge = doc.chains.find((c) => c.ports === "P5").tree;
+  // the edge's packets go back into GTP only when they are for a UE: the rest
+  // has no tunnel, and handed to gtp2 it was refused and counted as out drops
+  check("the edge chain answers ARP for a UE first",
+    edge.t === "branch" && edge.fids === "F2" && edge.match.t === "out" && edge.match.ports === "O3");
+  check("and puts only what is for a UE address back into GTP",
+    edge.notmatch.t === "branch" && edge.notmatch.fids === "F4" &&
+    edge.notmatch.match.t === "out" && edge.notmatch.match.ports === "O2");
+  check("leaving the rest unrouted, which discards it", C.isUnset(edge.notmatch.notmatch));
+  const find1 = (f) => f.root.children[0];
+  check("F4 is the UE network as a destination, F1 the same network as a source",
+    find1(fid(4)).field === "ip.dst" && find1(fid(1)).field === "ip.src" && find1(fid(4)).val === find1(fid(1)).val);
+  check("the uplink chain is unchanged: F1 and F3, to the edge, else the core",
+    doc.chains.find((c) => c.ports === "P6").tree.fids === "F1,F3");
+}
+
 /* ---------- SD-WAN templates ---------- */
 group("SD-WAN templates");
 {

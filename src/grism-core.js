@@ -1091,8 +1091,12 @@ export const PCAP_REPLAY_XML = `<run>
    through the gateway; the rest carries on to the core. At the edge, ARP for
    a UE address is answered with the default MAC (O3), and what the edge sends
    back is put into GTP again (O2) towards the eNB. */
+/* What the edge sends goes back into GTP only when it is for a UE address
+   (F4): anything else it puts on the wire -- LLDP, IPv6, IPv4 for anyone
+   else -- has no tunnel to go into, and is left unrouted, which discards it,
+   rather than handed to gtp2 to be refused and counted as P6's out drops. */
 export const MEC_BREAKOUT_XML = `<run>
-  <filter id="1" name="UE addresses" sessionBase="no">
+  <filter id="1" name="src UE addresses" sessionBase="no">
     <or>
       <find name="ip.src" relation="==" content="192.168.1.0/24"/>
     </or>
@@ -1105,6 +1109,11 @@ export const MEC_BREAKOUT_XML = `<run>
   </filter>
   <filter id="3" name="more conditions" sessionBase="no">
     <or>
+    </or>
+  </filter>
+  <filter id="4" name="dest UE addresses" sessionBase="no">
+    <or>
+      <find name="ip.dst" relation="==" content="192.168.1.0/24"/>
     </or>
   </filter>
   <output id="1" name="to edge, GTP removed" arp_dstip_mac="yes">
@@ -1137,6 +1146,7 @@ export const MEC_BREAKOUT_XML = `<run>
     <fid>F2</fid>
     <out>O3</out>
     <next type="notmatch">
+      <fid>F4</fid>
       <out>O2</out>
     </next>
   </chain>
@@ -1282,8 +1292,8 @@ export const TEMPLATES = [
     make: () => parseRun(SDWAN_TEMPLATE_XML.vxlan).doc },
   { id: "mec-breakout", title: "4G/5G Mobile Edge Computing breakout", tag: "MEC",
     title_zh: "4G/5G 行動邊緣運算分流", tag_zh: "MEC",
-    blurb: "P5: Edge · P6: eNB · P7: Core. User traffic from the UEs leaves GTP and goes to the edge; the rest continues to the core, and what the edge answers is put back into GTP towards the eNB. ARP for UE addresses on the edge side is answered with the default MAC.",
-    blurb_zh: "P5:Edge · P6:eNB · P7:Core。UE 的使用者流量解除 GTP 後分流到 Edge,其餘繼續送往 Core;Edge 回應的流量重新封裝成 GTP 送回 eNB。Edge 端查詢 UE 位址的 ARP 以預設 MAC 回應。",
+    blurb: "P5: Edge · P6: eNB · P7: Core. User traffic from the UEs leaves GTP and goes to the edge; the rest continues to the core, and what the edge sends to a UE address is put back into GTP towards the eNB — anything else from the edge is discarded. ARP for UE addresses on the edge side is answered with the default MAC.",
+    blurb_zh: "P5:Edge · P6:eNB · P7:Core。UE 的使用者流量解除 GTP 後分流到 Edge,其餘繼續送往 Core;Edge 送往 UE 位址的流量重新封裝成 GTP 送回 eNB,其他從 Edge 來的封包則丟棄。Edge 端查詢 UE 位址的 ARP 以預設 MAC 回應。",
     make: () => parseRun(MEC_BREAKOUT_XML).doc },
   { id: "geo-recursive", title: "Geo + protocol, whitelisted", tag: "Recursive",
     title_zh: "地理 + 協定,含白名單", tag_zh: "遞迴",
