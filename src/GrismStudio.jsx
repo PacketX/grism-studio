@@ -8903,7 +8903,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   // {name} placeholders, so a translation can put the value where its own
   // grammar needs it rather than where English happened to put it
   const fill = (str, vals) => String(str).replace(/\{(\w+)\}/g, (_, k) => vals[k] ?? "");
-  const sideWord = (side) => tr(side === "match" ? "sim.match" : "sim.notMatch");
+  /* "match" / "notmatch" as the chain draws them -- on the edges, in the path
+     over the editor, in the remove buttons and dialog: the XML's own words in
+     English, 符合 / 不符合 in Chinese. The edges used to say match and notmatch
+     in every language. */
+  const sideWord = (side) => tr(side === "match" ? "ch.sideMatch" : "ch.sideNotmatch");
   const [selId, setSelId] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [chipConfirm, setChipConfirm] = useState(null); // { field: "fids"|"ports", from, to, nodeId }
@@ -9491,7 +9495,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
             const y1 = p1.y + NODE_H / 2, y2 = p2.y - (tu ? PH_H : NODE_H) / 2, midY = (y1 + y2) / 2;
             const path = `M ${p1.x} ${y1} C ${p1.x} ${midY}, ${p2.x} ${midY}, ${p2.x} ${y2}`;
             const base = e.kind === "match" ? "match" : e.kind === "notmatch" ? "notmatch" : "flow";
-            const label = e.kind === "match" ? "match" : e.kind === "notmatch" ? "notmatch" : null;
+            const label = e.kind === "match" || e.kind === "notmatch" ? sideWord(e.kind) : null;
             return <g key={e.from + ">" + e.to}>
               <path d={path} className={"edge " + base + (tu ? " toUnset" : "")} markerEnd={tu ? "url(#ard)" : "url(#ar)"} />
               {label && <text x={(p1.x + p2.x) / 2} y={midY - 4} className={"edge-label " + base + (tu ? " dim" : "")} textAnchor="middle">{label}</text>}
@@ -9659,7 +9663,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                   </div>
                 </div>
               </>
-              {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>{tr("ch.removeBranch").replace("{side}", selOwner.side)}</button>}
+              {selOwner && <button className="danger" onClick={() => requestRemove(sel.id)}>{tr("ch.removeBranch").replace("{side}", sideWord(selOwner.side))}</button>}
             </>}
           </div>
         ) : (

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.256.0";
+export const STUDIO_VERSION = "2.257.0";
 
 export const I18N = {
   en: {
@@ -934,6 +934,7 @@ export const I18N = {
     "ch.unspecified": "Unspecified", "ch.ingress": "Ingress", "ch.filter": "FILTER", "ch.discard": "Discard", "ch.output": "Output",
     "ch.editorLabel": "Node editor", "ch.selectNode": "Click a node in the drawing to edit it.",
     "ch.pathLabel": "Where this node sits in the chain",
+    "ch.sideMatch": "match", "ch.sideNotmatch": "notmatch",
     "ch.ingressPorts": "Ingress ports", "ch.routeExplicitly": "Route explicitly",
     "ch.unsetNote": "No branch here — device default applies. No <next> is written.",
     "ch.filters": "Filter(s)", "ch.combine": "Combine",
@@ -1799,7 +1800,7 @@ export const I18N = {
     "sim.noFilters": "沒有引用任何篩選器。",
     "sim.notDefined": "此設定中未定義",
     "sim.play": "▶ 播放", "sim.pause": "⏸ 暫停", "sim.resume": "▶ 繼續", "sim.stop": "⏹ 停止",
-    "sim.playTip": "持續送出封包,每個封包依進入當下的篩選器 match/not-match 決定去向", "sim.selectIngress": "請先選擇入口埠",
+    "sim.playTip": "持續送出封包,每個封包依進入當下的篩選器符合/不符合決定去向", "sim.selectIngress": "請先選擇入口埠",
     "sim.pauseTip": "凍結進行中的封包", "sim.resumeTip": "繼續", "sim.stopTip": "停止送出",
     "sim.addInline": "+ inline 裝置(IPS 等)",
     "sim.namePh": "名稱(例如 IPS)", "sim.portA": "埠 A", "sim.portB": "埠 B",
@@ -1947,6 +1948,7 @@ export const I18N = {
     "ch.unspecified": "未指定", "ch.ingress": "入口", "ch.filter": "篩選", "ch.discard": "丟棄", "ch.output": "輸出",
     "ch.editorLabel": "節點編輯", "ch.selectNode": "點選圖上的節點來編輯。",
     "ch.pathLabel": "此節點在鏈結中的位置",
+    "ch.sideMatch": "符合", "ch.sideNotmatch": "不符合",
     "ch.ingressPorts": "入口埠", "ch.routeExplicitly": "明確指定路由",
     "ch.unsetNote": "此處沒有分支 — 套用裝置預設。不會寫出 <next>。",
     "ch.filters": "篩選器", "ch.combine": "組合方式",
