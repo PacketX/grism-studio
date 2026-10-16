@@ -352,6 +352,45 @@ group("inferIntent");
   check("load balancing detected", lb.includes("intent.lb"));
   check("no chains and nothing else yields nothing", C.inferIntent({ filters: [], chains: [] }).length === 0);
 
+  /* The role a box plays is read from what its outputs do to packets, and it
+     comes first: a MEC box (.154) strips GTP towards the edge and puts it back
+     on the way home; an SD-WAN hub (.189) wraps and unwraps a tunnel -- on one
+     port, when it is single-armed -- and fails over on link state. */
+  const mecXml = `<run>
+    <filter id="1"><or><find name="ip.src" relation="==" content="10.45.0.0/16"/></or></filter>
+    <filter id="4"><or><find name="gtp.data.by.s1ap.CellIdentity" relation="==" content="16384"/></or></filter>
+    <output id="1" arp_dstip_mac="yes"><port>P3</port><stripping>gtp</stripping><gateway>10.45.255.254</gateway></output>
+    <output id="2"><port>P4</port><tagging>gtp2</tagging></output>
+    <chain><in>P5</in><out>P4</out></chain>
+    <chain><in>P4</in><fid type="and">F1,F4</fid><out>O1</out><next type="notmatch"><out>P5</out></next></chain>
+    <chain><in>P3</in><out>O2</out></chain></run>`;
+  const mec = C.inferIntent(C.parseRun(mecXml).doc);
+  check("MEC breakout named first", mec[0] === "intent.mec");
+  check("MEC cell condition named", mec.includes("intent.mecCell"));
+  check("MEC does not read as SD-WAN", !mec.some((k) => k.startsWith("intent.sdwan")));
+  const mecEn = C.inferIntent(C.parseRun(mecXml).doc, makeT("en"))[0];
+  check("MEC sentence names the edge port and gateway", mecEn.includes("P3") && mecEn.includes("10.45.255.254") && mecEn.includes("P4"));
+  const sdwanXml = `<run>
+    <filter id="1"><or><find name="gre" relation="==" content=""/></or></filter>
+    <filter id="3"><or><find name="dstmac.in.l2gre.mapping.table" relation="==" content=""/></or></filter>
+    <filter id="10"><or><find name="grism.port.linkdown" relation="==" content="P1"/></or></filter>
+    <output id="11"><port>P1</port><stripping>gre</stripping><tagging>l2gre</tagging><Q type="replace">921</Q></output>
+    <output id="12"><port>P1</port><stripping>gre</stripping></output>
+    <output id="13"><port>P1</port><tagging>l2gre</tagging><Q type="replace">921</Q></output>
+    <output id="14"><port>P1</port><arp_reply_target_mac>02:01:00:00:00:00</arp_reply_target_mac></output>
+    <chain><in>P1</in><fid>!F10</fid><next><fid>F1</fid><next><fid>F3</fid><out>O11</out><next type="notmatch"><out>O12</out></next></next>
+      <next type="notmatch"><out>O13</out></next></next><next type="notmatch"><out>P2</out></next></chain></run>`;
+  const sd = C.inferIntent(C.parseRun(sdwanXml).doc);
+  check("single-armed SD-WAN named first", sd[0] === "intent.sdwanOneArm");
+  check("SD-WAN failover named", sd.includes("intent.sdwanFailover"));
+  check("SD-WAN endpoint replies named", sd.includes("intent.sdwanReply"));
+  check("SD-WAN does not read as MEC", !sd.some((k) => k.startsWith("intent.mec")));
+  const sdZh = C.inferIntent(C.parseRun(sdwanXml).doc, makeT("zh-TW"))[0];
+  check("SD-WAN sentence names L2GRE, the port and the tunnel VLAN", sdZh.includes("L2GRE") && sdZh.includes("P1") && sdZh.includes("VLAN 921"));
+  const twoSided = C.purposeIntent({ outputs: [{ id: 1, port: "P7", mods: [{ k: "tagging", val: "vxlan" }] }, { id: 2, port: "P2", mods: [{ k: "stripping", val: "vxlan" }] }], filters: [] });
+  check("two-sided tunnel is the two-sided sentence", twoSided[0] === "intent.sdwan");
+  check("a plain forwarding box has no role line", C.purposeIntent({ outputs: [{ id: 1, port: "P1", mods: [{ k: "stripping", val: "vlan" }] }], filters: [] }).length === 0);
+
   /* Inputs and actions are the parts of a configuration where the device does
      something of its own rather than forwarding what arrives, so the front
      page has to name them -- including on a document with no chains at all. */

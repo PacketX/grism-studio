@@ -765,6 +765,51 @@ export function actionIntent(doc, t) {
   return out;
 }
 
+/* The job a configuration does, read from what its outputs do to packets.
+   Two of the roles a box is deployed for leave an unmistakable mark here --
+   GTP taken off towards an edge host (MEC breakout), a tunnel built on one side
+   and taken apart on the other (SD-WAN) -- and a reader wants the role named
+   before the structure is described. Kept apart from inferIntent so the
+   overview can put it first. */
+export function purposeIntent(doc, t) {
+  const tr = t || ((k) => k);
+  const out = [];
+  const outputs = doc?.outputs ?? [];
+  const modsOf = (o) => (o.mods ?? []).filter((m) => m && m.k);
+  const has = (o, k, val) => modsOf(o).some((m) => m.k === k && (val === undefined || String(m.val ?? "").trim() === val));
+  const ports = (list) => [...new Set(list.map((o) => o.port).filter(Boolean))].join(", ") || "—";
+  const fields = new Set();
+  (doc?.filters ?? []).forEach((f) => (function w(n) { if (!n) return; if (n.t === "find" && n.field) fields.add(n.field); (n.children ?? []).forEach(w); })(f.root));
+  // MEC: GTP stripped on the way to the edge, put back on the way home
+  const toEdge = outputs.filter((o) => has(o, "stripping", "gtp"));
+  const toRan = outputs.filter((o) => has(o, "tagging", "gtp2"));
+  if (toEdge.length || toRan.length) {
+    const gw = [...new Set(toEdge.flatMap((o) => modsOf(o).filter((m) => m.k === "gateway").map((m) => String(m.val ?? "").trim())).filter(Boolean))].join(", ");
+    out.push(tr("intent.mec").replace("{edge}", ports(toEdge)).replace("{gw}", gw || "—").replace("{ran}", ports(toRan)));
+    if ([...fields].some((f) => f.startsWith("gtp.data.by.s1ap."))) out.push(tr("intent.mecCell"));
+  }
+  // SD-WAN: a tunnel wrapped on one side and unwrapped on the other
+  const kindOf = (m) => m.k === "tagging" && m.val === "l2gre" ? "L2GRE" : m.k === "tagging" && m.val === "vxlan" ? "VXLAN"
+    : m.k === "stripping" && m.val === "gre" ? "L2GRE" : m.k === "stripping" && m.val === "vxlan" ? "VXLAN"
+    : m.k.startsWith("vxlan_") ? "VXLAN" : m.k.startsWith("nvgre_") ? "NVGRE" : null;
+  const wrap = outputs.filter((o) => modsOf(o).some((m) => (m.k === "tagging" && kindOf(m)) || m.k.startsWith("vxlan_") || m.k.startsWith("nvgre_")));
+  const unwrap = outputs.filter((o) => modsOf(o).some((m) => m.k === "stripping" && kindOf(m)));
+  if (wrap.length || unwrap.length) {
+    const kinds = [...new Set([...wrap, ...unwrap].flatMap((o) => modsOf(o).map(kindOf)).filter(Boolean))].join("/");
+    /* the tunnel's VLAN, when the wrapping output puts one on */
+    const vlan = [...new Set(wrap.flatMap((o) => modsOf(o).filter((m) => m.k === "Q" || m.k === "QinQ").map((m) => String(m.val ?? "").trim())).filter(Boolean))].join(", ");
+    /* one port doing both is a single-arm hub: the LAN and the tunnel share the
+       wire (on VLANs), and tunnel traffic can be relayed tunnel-to-tunnel */
+    const oneArm = wrap.length && unwrap.length && ports(wrap) === ports(unwrap);
+    out.push(tr(oneArm ? "intent.sdwanOneArm" : "intent.sdwan").replace("{kind}", kinds).replace("{port}", ports(wrap))
+      .replace("{tun}", ports(wrap)).replace("{lan}", ports(unwrap))
+      .replace("{vlan}", vlan ? tr("intent.sdwanVlan").replace("{vlan}", vlan) : ""));
+    if (fields.has("grism.port.linkdown")) out.push(tr("intent.sdwanFailover"));
+    if (outputs.some((o) => has(o, "arp_reply_target_mac") || has(o, "icmp_reply"))) out.push(tr("intent.sdwanReply"));
+  }
+  return out;
+}
+
 // Used for running configs and pasted XML where there's no authored description.
 // Returns an array of short observation strings.
 export function inferIntent(doc, t) {
@@ -772,6 +817,7 @@ export function inferIntent(doc, t) {
   const out = [];
   const chains = doc.chains ?? [];
   const filters = doc.filters ?? [];
+  out.push(...purposeIntent(doc, tr));
   /* Inputs come first, and before the no-chains exit: they are the one part of
      a configuration where the device sends packets of its own rather than
      forwarding what arrives, which is worth saying plainly on the front page.

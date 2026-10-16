@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.259.0";
+export const STUDIO_VERSION = "2.260.0";
 
 export const I18N = {
   en: {
@@ -696,6 +696,13 @@ export const I18N = {
     "intent.web": "Inspects web traffic (HTTP/HTTPS) — likely steering or filtering by web service.",
     "intent.geo": "Filters by country (GeoIP).",
     "intent.ip": "Matches specific IP addresses — an allow/block list pattern.",
+    "intent.mec": "MEC breakout: matching UE traffic has its GTP stripped on {edge} and goes straight to the edge host ({gw}); what comes back from the edge is wrapped in GTP again on {ran}, towards the base station.",
+    "intent.mecCell": "Breakout is decided by cell (base station) — the UE's cell as learned from S1AP/NGAP signalling.",
+    "intent.sdwan": "SD-WAN {kind} tunnel: traffic is wrapped into the tunnel on {tun} and unwrapped back onto the LAN on {lan}.{vlan}",
+    "intent.sdwanOneArm": "SD-WAN {kind} tunnel, single-armed on {port}: the same port wraps LAN traffic into the tunnel, unwraps what the tunnel brings, and relays between tunnels.{vlan}",
+    "intent.sdwanVlan": " The tunnel rides VLAN {vlan}.",
+    "intent.sdwanFailover": "Switches path on a port's link state (linkdown failover) — when one line drops, traffic takes the other.",
+    "intent.sdwanReply": "Answers ARP and ping for the tunnel endpoint itself.",
     // Export tab
     "ex.completeRun": "Complete Pipeline Configuration", "ex.editing": "editing",
     "ex.edit": "edit", "ex.copy": "copy", "ex.copied": "copied ✓",
@@ -1715,6 +1722,13 @@ export const I18N = {
     "intent.web": "檢查網頁流量(HTTP/HTTPS)— 可能依網頁服務分流或過濾。",
     "intent.geo": "依國家過濾(GeoIP)。",
     "intent.ip": "比對特定 IP 位址 — allow/block 清單模式。",
+    "intent.mec": "MEC 分流(breakout):符合條件的 UE 流量在 {edge} 去掉 GTP、直接交給邊緣主機({gw});邊緣回來的封包在 {ran} 重新封裝成 GTP 送回基地台。",
+    "intent.mecCell": "分流以 cell(基地台)為條件 — 由 S1AP/NGAP 訊令學到的 UE 所在 cell 決定。",
+    "intent.sdwan": "SD-WAN {kind} 隧道:在 {tun} 把流量封裝進隧道、在 {lan} 解封裝送回區域網路。{vlan}",
+    "intent.sdwanOneArm": "SD-WAN {kind} 隧道,單臂接在 {port}:同一個埠把區域網路的流量封裝進隧道、把隧道送來的流量解封裝,也在隧道之間轉送。{vlan}",
+    "intent.sdwanVlan": "隧道走 VLAN {vlan}。",
+    "intent.sdwanFailover": "依埠的連線狀態切換路徑(linkdown failover)— 一條線路斷了,流量改走另一條。",
+    "intent.sdwanReply": "代答隧道端點位址的 ARP 與 ping。",
     // Export tab
     "ex.completeRun": "完整封包處理設定", "ex.editing": "編輯中",
     "ex.edit": "編輯", "ex.copy": "複製", "ex.copied": "已複製 ✓",
