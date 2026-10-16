@@ -2,7 +2,7 @@
 
 GRISM Studio is the web interface of the GRISM packet broker. Open it in a browser; nothing is installed.
 
-The address is the device's management IP followed by `/grism-studio/`, for example `https://192.168.1.100/grism-studio/`.
+Enter the device's management IP in the browser; the factory default is `192.168.1.150`. The device redirects to `https://192.168.1.150/grism-studio/` by itself (HTTP is redirected to HTTPS too).
 
 The screens in this manual are GRISM Studio 2.260 on a G8S-MEC; other models differ in their port count and settings sections.
 

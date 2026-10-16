@@ -2,7 +2,7 @@
 
 GRISM Studio 是 GRISM 封包分流器的網頁操作介面。用瀏覽器連上裝置即可使用,不需安裝任何軟體。
 
-網址是裝置管理 IP 加上 `/grism-studio/`,例如 `https://192.168.1.100/grism-studio/`。
+在瀏覽器輸入裝置的管理 IP 即可,出廠預設是 `192.168.1.150`;裝置會自動轉到 `https://192.168.1.150/grism-studio/`(HTTP 也會轉成 HTTPS)。
 
 本手冊的畫面取自 GRISM Studio 2.260,機型 G8S-MEC;其他機型的埠數與設定分區略有不同。
 
