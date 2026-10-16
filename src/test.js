@@ -2341,6 +2341,15 @@ group("extra running-config files");
       && C.privLevel(1) === 1 && C.privLevel(0) === 1 && C.privLevel(14) === 10);
     check("levels: unknown is an administrator, as every account was", C.privLevel(null) === 15 && C.privLevel("") === 15 && C.privLevel("x") === 15);
     check("levels: role names", C.privRole(5) === "operator" && C.privRole(null) === "admin" && C.roleToPriv("view") === 1 && C.roleToPriv("nope") === 15);
+    check("levels: the automation calls", C.minPrivForRequest("/grism/task/create_api_token", "POST") === C.PRIV.ADMIN
+      && C.minPrivForRequest("/grism/task/get_api_tokens") === C.PRIV.ADMIN
+      && C.minPrivForRequest("/grism/task/set_webhooks", "POST") === C.PRIV.CONFIG
+      && C.minPrivForRequest("/grism/task/get_webhooks") === C.PRIV.CONFIG
+      && C.minPrivForRequest("/grism/task/validate", "POST") === C.PRIV.OPERATOR
+      && C.minPrivForRequest("/grism/task/confirm_submit", "POST") === C.PRIV.OPERATOR
+      && C.minPrivForRequest("/grism/task/get_capabilities") === 0
+      && C.minPrivForRequest("/grism/task/get_events") === 0
+      && C.minPrivForRequest("/grism/task/get_pending_submit") === 0);
     check("levels: a request's level", C.minPrivForRequest("/grism/task/submit_config", "POST") === C.PRIV.CONFIG
       && C.minPrivForRequest("/grism/task/submitxml", "POST") === C.PRIV.OPERATOR
       && C.minPrivForRequest("/grism/task/clear_counters") === C.PRIV.OPERATOR

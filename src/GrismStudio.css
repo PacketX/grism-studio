@@ -2278,3 +2278,17 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .log-viewing{margin-left:10px; font-size:13px; color:var(--accent); letter-spacing:0;}
 .log-shown{flex:0 0 auto; color:var(--accent);}
 .log-zip{text-decoration:none; white-space:nowrap;}
+
+/* API tokens (Settings > Login authentication) and webhooks (Settings > Alerts) */
+.tok-shown{margin:10px 0; padding:10px 12px; border:1px solid var(--warn, #d9a400); border-radius:8px; background:var(--bg-2, rgba(217,164,0,.06));}
+.tok-value{display:block; margin:6px 0; padding:8px 10px; font-size:14px; word-break:break-all; user-select:all;
+  background:var(--bg-1, rgba(0,0,0,.04)); border-radius:6px;}
+.wh-url{min-width:260px;}
+.wh-kinds{white-space:nowrap;}
+.wh-kinds label{margin-right:8px; font-size:12px;}
+/* a submit waiting for its confirm (Export) */
+.pending-banner{border-color:var(--warn, #d9a400); margin-bottom:12px;}
+.pending-banner b{color:var(--warn, #b07d00);}
+.hold-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:8px 0 12px; font-size:13px;}
+.hold-row input[type=number]{width:72px;}
+.pending-msg{margin:0 0 10px;}

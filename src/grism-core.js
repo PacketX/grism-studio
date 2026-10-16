@@ -3001,9 +3001,11 @@ const WRITE_PATHS = [
 const ADMIN_PATHS = [
   /^\/(list_user|create_user|delete_user|set_user_priv)/,
   /^\/grism\/task\/(update|upload_component|halt|backup|download_backup|restore|get_mgmt_access|set_mgmt_access|get_local_login_hosts|set_local_login_hosts)/,
+  /^\/grism\/task\/(get_api_tokens|create_api_token|delete_api_token)/,   // API tokens stand in for sign-ins
 ];
 const CONFIG_PATHS = [
   /^\/grism\/task\/submit_config/, /^\/grism\/set_/,
+  /^\/grism\/task\/(get_webhooks|set_webhooks|test_webhook)/,
   /^\/grism\/task\/set_(alert_rules|service_state|im_speed|t12s_speed|debug_core)/,
   /^\/grism\/task\/(reboot|clear_log|restart_grism|test_alert_trap|get_core_file|del_core_file)/,
   /^\/grism\/task\/(set|submit)_(switch_interface|cpss_)/,       // the Q16's switch

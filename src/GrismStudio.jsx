@@ -2335,6 +2335,75 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
       setTimeout(() => setLlState({ state: "idle", msg: "" }), 2500);
     } catch (e) { setLlState({ state: "error", msg: String(e.message || e) }); }
   };
+  /* API tokens (agent.py): a bearer token in place of a sign-in for an
+     automation. Made here, shown once, kept by pywww as a hash. */
+  const [tokens, setTokens] = React.useState(null);
+  const [tokNew, setTokNew] = React.useState({ name: "", priv: PRIV.OPERATOR, days: 0, hosts: "" });
+  const [tokShown, setTokShown] = React.useState(null);
+  const [tokState, setTokState] = React.useState({ state: "idle", msg: "" });
+  const loadTokens = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_api_tokens", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setTokens({ list: (await res.json()).tokens ?? [] });
+    } catch (e) { warnFetch("api tokens", e); setTokens({ unavailable: true }); }
+  }, []);
+  const createToken = async () => {
+    setTokState({ state: "sending", msg: "" });
+    try {
+      const res = await fetch("/grism/task/create_api_token", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: tokNew.name.trim(), priv: tokNew.priv, expires_days: Number(tokNew.days) || 0,
+          hosts: tokNew.hosts.split(",").map((h) => h.trim()).filter(Boolean) }) });
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || "HTTP " + res.status);
+      setTokShown(await res.json()); setTokNew({ name: "", priv: PRIV.OPERATOR, days: 0, hosts: "" });
+      setTokState({ state: "idle", msg: "" }); loadTokens();
+    } catch (e) { setTokState({ state: "error", msg: String(e.message || e) }); }
+  };
+  const deleteToken = async (name) => {
+    try {
+      const res = await fetch("/grism/task/delete_api_token", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || "HTTP " + res.status);
+      loadTokens();
+    } catch (e) { setTokState({ state: "error", msg: String(e.message || e) }); }
+  };
+  /* Webhooks (events.py): where the device POSTs its events. The whole list
+     is one setting with its own apply, like the trap targets. */
+  const WH_KINDS = ["alert", "config", "engine", "auth"];
+  const [wh, setWh] = React.useState(null);
+  const [whBase, setWhBase] = React.useState([]);
+  const [whState, setWhState] = React.useState({ state: "idle", msg: "" });
+  const [whTest, setWhTest] = React.useState(null);
+  const loadWebhooks = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_webhooks", { credentials: "include" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const list = (await res.json()).webhooks ?? [];
+      setWh(list); setWhBase(list);
+    } catch (e) { warnFetch("webhooks", e); setWh({ unavailable: true }); }
+  }, []);
+  const whProblem = (list) => (list ?? []).some((h) => !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$/.test(h.name || "") || !/^https?:\/\/\S+$/.test(h.url || ""));
+  const saveWebhooks = async () => {
+    setWhState({ state: "sending", msg: "" });
+    try {
+      const res = await fetch("/grism/task/set_webhooks", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ webhooks: wh }) });
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || "HTTP " + res.status);
+      const list = (await res.json()).webhooks ?? [];
+      setWh(list); setWhBase(list); setWhState({ state: "ok", msg: "" });
+      setTimeout(() => setWhState({ state: "idle", msg: "" }), 2500);
+    } catch (e) { setWhState({ state: "error", msg: String(e.message || e) }); }
+  };
+  const testWebhook = async (name) => {
+    setWhTest({ name, busy: true });
+    try {
+      const res = await fetch("/grism/task/test_webhook", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || "HTTP " + res.status);
+      const r = await res.json(); setWhTest({ name, ok: r.ok, error: r.error });
+    } catch (e) { setWhTest({ name, ok: false, error: String(e.message || e) }); }
+  };
   const [communityBase, setCommunityBase] = React.useState("");
   const [extras, setExtras] = React.useState(null);      // xmlrpc / backup service settings
   const [snmpCopied, setSnmpCopied] = React.useState(null);
@@ -2771,6 +2840,8 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
   }, [getConfig]);
   React.useEffect(() => { if (loggedIn && isAdmin && section === "auth" && !views) loadViews(); }, [loggedIn, isAdmin, section, views, loadViews]);
   React.useEffect(() => { if (loggedIn && isAdmin && section === "auth" && ll === null) loadLocalLogin(); }, [loggedIn, isAdmin, section, ll, loadLocalLogin]);
+  React.useEffect(() => { if (loggedIn && isAdmin && section === "auth" && tokens === null) loadTokens(); }, [loggedIn, isAdmin, section, tokens, loadTokens]);
+  React.useEffect(() => { if (loggedIn && section === "alerts" && wh === null) loadWebhooks(); }, [loggedIn, section, wh, loadWebhooks]);
 
   const loadHeartbeat = React.useCallback(async () => {
     try {
@@ -4677,6 +4748,65 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                 </section>
               );
             })()}
+
+            {/* API tokens: a bearer token that signs an automation in at a level
+                of its own. The token is in the creation answer and nowhere else
+                afterwards, so it is held on screen until dismissed. */}
+            {tokens && (
+              <section className="sys-card">
+                <h3 className="sys-card-title">{tr("set.tokTitle")}</h3>
+                {tokens.unavailable ? <p className="set-hint err">{tr("set.tokUnavailable")}</p> : <>
+                  <p className="set-hint">{tr("set.tokNote")}</p>
+                  {tokens.list.length === 0 && <p className="sys-note dim">{tr("set.tokNone")}</p>}
+                  {tokens.list.length > 0 && (
+                    <div className="al-table-wrap">
+                      <table className="al-table">
+                        <thead><tr><th>{tr("set.tokName")}</th><th>{tr("set.acctRole")}</th><th>{tr("set.tokHosts")}</th>
+                          <th>{tr("set.tokExpires")}</th><th>{tr("set.tokLastUsed")}</th><th /></tr></thead>
+                        <tbody>
+                          {tokens.list.map((tk) => (
+                            <tr key={tk.name}>
+                              <td className="mono">{tk.name}</td>
+                              <td>{tr("role." + privRole(tk.priv))}</td>
+                              <td className="mono">{(tk.hosts ?? []).join(", ") || tr("set.tokAnyHost")}</td>
+                              <td>{tk.expires ? new Date(tk.expires * 1000).toLocaleDateString() : tr("set.tokNever")}</td>
+                              <td className="dim">{tk.last_used ? new Date(tk.last_used * 1000).toLocaleString() + (tk.last_from ? " · " + tk.last_from : "") : "—"}</td>
+                              <td><button className="copy-btn" onClick={() => deleteToken(tk.name)}>{tr("set.trapRemove")}</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {tokShown && (
+                    <div className="tok-shown">
+                      <p className="set-hint warn">{tr("set.tokShownNote")}</p>
+                      <code className="mono tok-value">{tokShown.token}</code>
+                      <div className="set-actions">
+                        <button className="copy-btn" onClick={() => navigator.clipboard?.writeText(tokShown.token)}>{tr("ex.copy")}</button>
+                        <button className="copy-btn" onClick={() => setTokShown(null)}>{tr("set.tokDismiss")}</button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="set-grid">
+                    <label className="set-field"><span>{tr("set.tokName")}</span>
+                      <input value={tokNew.name} placeholder="agent-1" onChange={(e) => setTokNew({ ...tokNew, name: e.target.value })} /></label>
+                    <label className="set-field"><span>{tr("set.acctRole")}</span>
+                      <select value={tokNew.priv} onChange={(e) => setTokNew({ ...tokNew, priv: Number(e.target.value) })}>
+                        {PRIV_ROLES.filter(([, p]) => p < PRIV.ADMIN).map(([role, p]) => <option key={role} value={p}>{tr("role." + role)}</option>)}
+                      </select></label>
+                    <label className="set-field"><span>{tr("set.tokExpiresDays")}</span>
+                      <input type="number" min="0" max="3650" value={tokNew.days} onChange={(e) => setTokNew({ ...tokNew, days: e.target.value })} /></label>
+                    <label className="set-field"><span>{tr("set.tokHosts")}</span>
+                      <input value={tokNew.hosts} placeholder="192.168.1.0/24, 10.0.0.5" onChange={(e) => setTokNew({ ...tokNew, hosts: e.target.value })} /></label>
+                  </div>
+                  {tokState.state === "error" && <p className="set-hint err">{tokState.msg}</p>}
+                  <div className="set-actions">
+                    <button className="sys-refresh" disabled={!tokNew.name.trim() || tokState.state === "sending"} onClick={createToken}>{tr("set.tokCreate")}</button>
+                  </div>
+                </>}
+              </section>
+            )}
           </>)}
         </div>
       )}
@@ -4913,6 +5043,59 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                   </ul>
                 )}
               </section>
+              {/* Webhooks: the device's events pushed as JSON. Its own list and
+                  its own apply (events.py keeps it beside www.json). */}
+              {wh && (
+                <section className="sys-card">
+                  <h3 className="sys-card-title">{tr("set.whTitle")}</h3>
+                  {wh.unavailable ? <p className="set-hint err">{tr("set.whUnavailable")}</p> : (() => {
+                    const whDirty = JSON.stringify(wh) !== JSON.stringify(whBase);
+                    const patch = (i, p) => setWh((hs) => hs.map((x, j) => (j === i ? { ...x, ...p } : x)));
+                    return <>
+                      <p className="set-hint">{tr("set.whNote")}</p>
+                      {wh.length === 0 && <p className="sys-note dim">{tr("set.whNone")}</p>}
+                      {wh.length > 0 && (
+                        <div className="al-table-wrap">
+                          <table className="al-table">
+                            <thead><tr><th>{tr("set.enabled")}</th><th>{tr("set.tokName")}</th><th>{tr("set.whUrl")}</th>
+                              <th>{tr("set.whSecret")}</th><th>{tr("set.whKinds")}</th><th /></tr></thead>
+                            <tbody>
+                              {wh.map((h, i) => (
+                                <tr key={i} className={h.enable === false ? "port-off" : ""}>
+                                  <td><input type="checkbox" checked={h.enable !== false} onChange={(e) => patch(i, { enable: e.target.checked })} /></td>
+                                  <td><input className="al-host" value={h.name} placeholder="noc-agent" onChange={(e) => patch(i, { name: e.target.value })} /></td>
+                                  <td><input className="al-host wh-url" value={h.url} placeholder="https://host/path" onChange={(e) => patch(i, { url: e.target.value })} /></td>
+                                  <td><input className="al-host" type="password" value={h.secret ?? ""} onChange={(e) => patch(i, { secret: e.target.value })} /></td>
+                                  <td className="wh-kinds">{WH_KINDS.map((k) => (
+                                    <label key={k}><input type="checkbox" checked={(h.events ?? []).includes(k)}
+                                      onChange={(e) => patch(i, { events: e.target.checked ? [...(h.events ?? []), k] : (h.events ?? []).filter((x) => x !== k) })} /> {k}</label>))}</td>
+                                  <td>
+                                    <button className="copy-btn" disabled={whDirty || whTest?.busy} onClick={() => testWebhook(h.name)}>{whTest?.busy && whTest.name === h.name ? tr("set.whTesting") : tr("set.whTest")}</button>
+                                    {" "}<button className="copy-btn" onClick={() => setWh((hs) => hs.filter((_, j) => j !== i))}>{tr("set.trapRemove")}</button>
+                                    {whTest && !whTest.busy && whTest.name === h.name && (
+                                      <span className={"dim " + (whTest.ok ? "ok" : "bad")}> {whTest.ok ? tr("set.whSent") : tr("set.whFailed") + (whTest.error ? ": " + whTest.error : "")}</span>)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      <div className="add-row">
+                        <button className="add-btn" disabled={wh.length >= 8}
+                          onClick={() => setWh((hs) => [...hs, { name: "", url: "", secret: "", events: [], enable: true }])}>{tr("set.whAdd")}</button>
+                      </div>
+                      {whProblem(wh) && <p className="set-hint warn">{tr("set.whBad")}</p>}
+                      {whState.state === "error" && <p className="set-hint err">{whState.msg}</p>}
+                      {whState.state === "ok" && <p className="set-hint ok">{tr("set.whSaved")}</p>}
+                      <div className="set-actions">
+                        <button className="copy-btn" disabled={!whDirty} onClick={() => setWh(whBase)}>{tr("set.revert")}</button>
+                        <button className="sys-refresh" disabled={!whDirty || whProblem(wh) || whState.state === "sending"} onClick={saveWebhooks}>{tr("set.apply")}</button>
+                      </div>
+                    </>;
+                  })()}
+                </section>
+              )}
               <div className="set-actions">
                 <button className="copy-btn" disabled={!dirty} onClick={() => { setAlRules(alBase); setTrapTargets(trapBase); }}>{tr("set.revert")}</button>
                 <button className="sys-refresh" disabled={submit.state === "sending" || !dirty || problems.length > 0 || trapProblems.length > 0}
@@ -12008,6 +12191,38 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
   const [submit, setSubmit] = useState({ state: "idle", msg: "" }); // idle | sending | ok | error
   const [confirmSubmit, setConfirmSubmit] = useState(false); // show the "submit to device?" confirmation
   const [apply, setApply] = useState({ active: false, msg: "", warn: "" }); // device-side apply polling
+  /* commit-confirm (agent.py): a submit the device rolls back by itself unless
+     confirmed in time. The pending state is the device's, so a submit made by
+     an automation shows here too, with the same two buttons. */
+  const [hold, setHold] = useState(false);
+  const [holdSecs, setHoldSecs] = useState(60);
+  const [pending, setPending] = useState(null);
+  const [pendingMsg, setPendingMsg] = useState("");
+  const refreshPending = React.useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_pending_submit", { credentials: "include" });
+      if (!res.ok) return;
+      const p = await res.json();
+      setPending(p.pending ? p : null);
+    } catch { /* the next poll tells */ }
+  }, []);
+  /* every five seconds while signed in -- a submit made by an automation has
+     to show up here too -- and every two while one is counting down */
+  React.useEffect(() => {
+    if (!loggedIn) return undefined;
+    refreshPending();
+    const id = setInterval(refreshPending, pending ? 2000 : 5000);
+    return () => clearInterval(id);
+  }, [loggedIn, pending, refreshPending]);
+  const settlePending = async (keep) => {
+    try {
+      const res = await fetch(keep ? "/grism/task/confirm_submit" : "/grism/task/rollback_submit", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || "HTTP " + res.status);
+      setPending(null); setPendingMsg(keep ? tr("ex.pendingDone") : tr("ex.pendingRolled"));
+      setTimeout(() => setPendingMsg(""), 4000);
+      if (!keep) pollApplyStatus();   // the device is loading the previous configuration again
+    } catch (e) { setPendingMsg(String(e.message || e)); }
+  };
   const [edit, setEdit] = useState(null); // null = read-only; string = editing draft
   const [applyErr, setApplyErr] = useState("");
   const [showSaved, setShowSaved] = useState(false);
@@ -12141,13 +12356,17 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
       const body = new URLSearchParams();
       body.set("filename", "run.xml");
       body.set("data", runXml);
+      if (hold) body.set("confirm", String(Math.min(3600, Math.max(10, Number(holdSecs) || 60))));
       const res = await fetch("/grism/task/submitxml", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: body.toString(),
         credentials: "include",
       });
-      if (!res.ok) throw new Error(`device responded ${res.status}`);
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || `device responded ${res.status}`);
+      if (hold) {
+        try { const p = await res.json(); if (p?.pending) setPending(p); } catch { refreshPending(); }
+      }
       setSubmit({ state: "idle", msg: "" });
       // the device now applies the config; lock the screen and poll for completion
       pollApplyStatus();
@@ -12196,6 +12415,12 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
             <p className="modal-body">
               {docSource === "template" ? tr("ex.confirmBodyTmpl") : tr("ex.confirmBody")}
             </p>
+            <label className="hold-row">
+              <input type="checkbox" checked={hold} onChange={(e) => setHold(e.target.checked)} /> {tr("ex.confirmHold")}{" "}
+              <input type="number" className="al-num" min="10" max="3600" value={holdSecs} disabled={!hold}
+                onChange={(e) => setHoldSecs(e.target.value)} /> {tr("ex.confirmHoldSecs")}
+            </label>
+            {hold && <p className="modal-body dim">{tr("ex.confirmHoldDesc")}</p>}
             <button className={"opt" + (docSource === "template" ? " drop" : "")}
               onClick={() => { setConfirmSubmit(false); submitToDevice(); }}>
               <span className="opt-name">{docSource === "template" ? tr("ex.submitAnyway") : tr("ex.submitApply")}</span>
@@ -12206,6 +12431,17 @@ function ExportTab({ runXml, baseline = null, problems, warnings = [], onGoto, o
         </div>
       )}
       <div className="export-main">
+        {pending && (
+          <div className="tmpl-banner pending-banner">
+            <div className="tmpl-banner-text">
+              <b>{tr("ex.pendingTitle")} · {pending.remaining} s</b>
+              <span>{tr("ex.holdBody").replace("{file}", pending.filename || "run.xml").replace("{who}", pending.who || "?").replace("{s}", String(pending.remaining))}</span>
+            </div>
+            <button className="tmpl-btn on" onClick={() => settlePending(true)}>{tr("ex.pendingKeep")}</button>
+            <button className="tmpl-btn" onClick={() => settlePending(false)}>{tr("ex.pendingRollback")}</button>
+          </div>
+        )}
+        {pendingMsg && <p className="set-hint ok pending-msg">{pendingMsg}</p>}
         <div className="xb-head">
           <span className="xb-title">{tr("ex.completeRun")}{editing && <span className="xb-editing"> · {tr("ex.editing")}</span>}</span>
           {/* Edited, and the card shows the whole file as a diff -- the last

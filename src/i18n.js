@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.260.0";
+export const STUDIO_VERSION = "2.261.0";
 
 export const I18N = {
   en: {
@@ -385,6 +385,16 @@ export const I18N = {
     "set.llYouIn": "Your own address is in the list: once saved, your next sign-in uses a local account.",
     "set.llSaved": "Saved — it applies from the next sign-in.",
     "set.llUnavailable": "The list could not be read.",
+    "set.tokTitle": "API tokens",
+    "set.tokNote": "A token signs an automation in without a session: send it as Authorization: Bearer <token>. It has a level of its own (never administrator), can be limited to addresses, and can expire. The token is shown once, when it is made; the device keeps only its hash.",
+    "set.tokUnavailable": "The tokens could not be read.", "set.tokNone": "No tokens yet.",
+    "set.tokName": "Name", "set.tokHosts": "Allowed from", "set.tokAnyHost": "anywhere", "set.tokExpires": "Expires", "set.tokNever": "never",
+    "set.tokExpiresDays": "Expires in (days, 0 = never)", "set.tokLastUsed": "Last used", "set.tokCreate": "Create token",
+    "set.tokShownNote": "Copy the token now — it will not be shown again.", "set.tokDismiss": "Done, I copied it",
+    "set.whTitle": "Webhooks", "set.whNote": "Events are POSTed as JSON to each URL as they happen — alerts raised and cleared, configuration submitted or rolled back, the packet engine restarting, tokens made and sign-ins failed — with X-Grism-Event naming the kind and, when a secret is set, X-Grism-Signature carrying an HMAC-SHA256 of the body. An empty kind list means every kind.",
+    "set.whNone": "No webhooks yet.", "set.whUrl": "URL", "set.whSecret": "Secret", "set.whKinds": "Kinds", "set.whAdd": "+ Add webhook",
+    "set.whTest": "Send a test", "set.whTesting": "Sending…", "set.whSent": "delivered", "set.whFailed": "failed", "set.whBad": "A webhook needs a name and an http(s) URL.",
+    "set.whSaved": "Saved.", "set.whUnavailable": "The webhooks could not be read.",
     "set.liveUpdate": "Live filter updates",
     "set.liveUpdateOn": "Apply filter changes without interrupting traffic",
     "set.liveUpdateNote": "Rebuilds filters in the background when they change, so large IP, DNS name, HTTP host or TLS server-name blocklists can be updated without dropping traffic or restarting the engine.",
@@ -716,6 +726,10 @@ export const I18N = {
     "ex.confirmBodyTmpl": "This configuration came straight from a template and may not be tuned for this device. Submitting will overwrite the device's running config and apply it live.",
     "ex.submitApply": "Submit and apply", "ex.submitAnyway": "I understand — submit anyway",
     "ex.overwriteDesc": "Overwrite and apply the running config on the device.",
+    "ex.confirmHold": "Roll back by itself unless I confirm within", "ex.confirmHoldSecs": "seconds",
+    "ex.confirmHoldDesc": "The device keeps the configuration it runs now and puts it back when the time runs out — for a change that could cut you off.",
+    "ex.pendingTitle": "Waiting for confirmation", "ex.holdBody": "{file} submitted by {who}: the device goes back to the previous configuration in {s} s unless it is confirmed.",
+    "ex.pendingKeep": "Confirm — keep it", "ex.pendingRollback": "Roll back now", "ex.pendingDone": "Confirmed.", "ex.pendingRolled": "Rolled back.",
     "ex.pending": "Not submitted",
     "ex.pendingBody": "{n} changes are in this browser only — the device has not been given them. Submit them from the Export tab.",
     "ex.pendingGo": "Go to Export →",
@@ -1411,6 +1425,16 @@ export const I18N = {
     "set.llYouIn": "您目前的位址在清單中:儲存後,下次登入要用本機帳號。",
     "set.llSaved": "已儲存,下一次登入起生效。",
     "set.llUnavailable": "無法讀取這份清單。",
+    "set.tokTitle": "API 權杖",
+    "set.tokNote": "權杖讓自動化程式不用登入 session:以 Authorization: Bearer <權杖> 送出即可。它有自己的權限(不能是系統管理員)、可限制來源位址、可設到期日。權杖只在建立時顯示一次,裝置只保存它的雜湊。",
+    "set.tokUnavailable": "無法讀取權杖清單。", "set.tokNone": "尚未建立權杖。",
+    "set.tokName": "名稱", "set.tokHosts": "允許的來源", "set.tokAnyHost": "不限", "set.tokExpires": "到期", "set.tokNever": "永不",
+    "set.tokExpiresDays": "有效天數(0 = 永不到期)", "set.tokLastUsed": "最近使用", "set.tokCreate": "建立權杖",
+    "set.tokShownNote": "請現在複製權杖 — 之後不會再顯示。", "set.tokDismiss": "已複製,關閉",
+    "set.whTitle": "Webhook", "set.whNote": "事件發生時以 JSON POST 到每個網址 — 告警的觸發與解除、設定的提交與還原、封包引擎重啟、權杖的建立與登入失敗 — 標頭 X-Grism-Event 註明種類,設有密鑰時 X-Grism-Signature 帶內容的 HMAC-SHA256。種類留空表示全部。",
+    "set.whNone": "尚未設定 webhook。", "set.whUrl": "網址", "set.whSecret": "密鑰", "set.whKinds": "種類", "set.whAdd": "+ 新增 webhook",
+    "set.whTest": "送出測試", "set.whTesting": "送出中…", "set.whSent": "已送達", "set.whFailed": "失敗", "set.whBad": "每個 webhook 需要名稱與 http(s) 網址。",
+    "set.whSaved": "已儲存。", "set.whUnavailable": "無法讀取 webhook 清單。",
     "set.liveUpdate": "篩選器即時更新",
     "set.liveUpdateOn": "更新篩選器時不中斷流量",
     "set.liveUpdateNote": "篩選器變更時在背景重建,讓 IP、DNS 名稱、HTTP host、TLS server name 等大量黑名單更新時不丟封包、也不需要重啟引擎。",
@@ -1742,6 +1766,10 @@ export const I18N = {
     "ex.confirmBodyTmpl": "這份設定直接來自範本,可能未針對此裝置調整。提交將覆蓋裝置執行中的設定並即時套用。",
     "ex.submitApply": "提交並套用", "ex.submitAnyway": "我了解 — 仍要提交",
     "ex.overwriteDesc": "覆蓋並套用裝置上執行中的設定。",
+    "ex.confirmHold": "若我未在時限內確認則自動還原,時限", "ex.confirmHoldSecs": "秒",
+    "ex.confirmHoldDesc": "裝置會保留目前執行中的設定,時間到了沒確認就自動換回去 — 適合可能把自己鎖在外面的變更。",
+    "ex.pendingTitle": "等待確認", "ex.holdBody": "{who} 提交的 {file}:{s} 秒內未確認,裝置會換回前一版設定。",
+    "ex.pendingKeep": "確認保留", "ex.pendingRollback": "立即還原", "ex.pendingDone": "已確認。", "ex.pendingRolled": "已還原。",
     "ex.pending": "尚未提交",
     "ex.pendingBody": "有 {n} 項變更只存在於這個瀏覽器,裝置還沒有收到。請到「匯出」頁面提交。",
     "ex.pendingGo": "前往匯出 →",
