@@ -278,6 +278,14 @@ group("replayPcap input modes");
   check("removed legacy fields gone", !s1.includes("sessionCompleteness") && !s2.includes("sorting") && !s2.includes("reverseSession"));
   check("files: empty list reported", C.inputProblems({ id: 3, type: "replayPcap", port: "P0", pcapMode: "files", filepaths: [""], fields: {} }, []).length > 0);
   check("files: over 100 paths reported", C.inputProblems({ id: 4, type: "replayPcap", port: "P0", pcapMode: "files", filepaths: Array(101).fill("a.pcap"), fields: {} }, []).some((p) => /100/.test(p.msg)));
+  // <ratio>: N times the capture's own pace, between speed and interval in the XML
+  const fast = C.serializeInput({ ...files, fields: { time: "1", ratio: "25" } });
+  check("ratio emitted after time", /<time>1<\/time>\s*<ratio>25<\/ratio>/.test(fast));
+  const back = C.parseRun(`<run><input type="replayPcap"><port>P8</port><filepath>a.pcap</filepath><ratio>0.5</ratio></input></run>`);
+  check("ratio parsed back, no warning", back.doc.inputs[0].fields.ratio === "0.5" && !back.warnings.some((w) => /ratio/.test(w)));
+  check("ratio: half speed is fine", C.inputProblems({ ...files, fields: { ratio: "0.5" } }, []).length === 0);
+  check("ratio: zero and text reported", C.inputProblems({ ...files, fields: { ratio: "0" } }, []).length > 0
+    && C.inputProblems({ ...files, fields: { ratio: "fast" } }, []).length > 0);
 }
 
 /* ---------- inputs: traffic-gen duration ---------- */

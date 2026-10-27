@@ -231,6 +231,7 @@ export const VAL = {
   uint24: (s) => /^\d+$/.test(s) && +s <= 16777215 ? null : "0–16777215",
   bit: (s) => s === "0" || s === "1" ? null : "0 or 1",
   num: (s) => /^\d+$/.test(s) ? null : "Number",
+  ratio: (s) => /^\d+(\.\d+)?$/.test(s) && +s > 0 ? null : "Times the capture's pace, e.g. 25 or 0.5",
   int: (s) => /^-?\d+$/.test(s) ? null : "Integer",
   country: (s) => /^[A-Za-z]{2}$/.test(s) ? null : "ISO code, e.g. TW",
   grismport: (s) => /^[A-Z]\d+$/.test(s) ? null : "Port, e.g. P0",
@@ -1572,6 +1573,9 @@ export const INPUT_PCAP_FIELDS = [
   { k: "scandir", label: "Scan directory", kind: "str", ph: "H1/in", attrs: ["interval", "minbytes", "timeout"] },
   { k: "time", label: "Play count", kind: "num", ph: "1" },
   { k: "speed", label: "Speed", kind: "num", ph: "10000" },
+  /* N times the capture's own timing (0.5 = half speed). A speed or an
+     interval wins over it; engines before 2.11.32 / 2.9.35 ignore it. */
+  { k: "ratio", label: "Speed ratio (×)", kind: "ratio", ph: "1" },
   { k: "msinterval", label: "Interval (ms)", kind: "num", ph: "1" },
   { k: "playedFilesHandle", label: "After replay", kind: "enum", opts: ["", "delete", "move"] },
   { k: "playedFilesMoveTo", label: "Move played to", kind: "str", ph: "H1/in/played" },
@@ -1632,7 +1636,7 @@ export function serializeInput(inp) {
       }
     }
     // shared playback fields
-    ["time", "speed", "msinterval"].forEach((k) => { const v = inp.fields?.[k]; if (v != null && v !== "") lines.push(`  <${k}>${esc(v)}</${k}>`); });
+    ["time", "speed", "ratio", "msinterval"].forEach((k) => { const v = inp.fields?.[k]; if (v != null && v !== "") lines.push(`  <${k}>${esc(v)}</${k}>`); });
     /* Both modes: input_flush writes playedFilesHandle into the I line whatever
        the source is (runxml2fc.c:124) and main.c applies it once the replay
        count reaches zero, so keeping it for scandir only silently dropped the
