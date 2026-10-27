@@ -1618,6 +1618,10 @@ export const inputFieldsFor = (type) => type === "traffic-gen" ? INPUT_GEN_FIELD
 export const mkInput = (id) => ({ id, name: "", alt: "", type: "replayPcap", port: "P0",
   pcapMode: "files", filepaths: [""], fields: { time: "1" }, scanAttrs: {} });
 
+/* The playback settings of a replay input, in the order the XML carries them:
+   one list for the serializer and the editor, so a new one shows up in both
+   (the editor had its own copy, and <ratio> was written but never shown). */
+export const REPLAY_PLAYBACK_KEYS = ["time", "speed", "ratio", "msinterval"];
 export function serializeInput(inp) {
   const attrs = [`type="${inp.type}"`,
     inp.name ? `name="${esc(inp.name)}"` : null,
@@ -1636,7 +1640,7 @@ export function serializeInput(inp) {
       }
     }
     // shared playback fields
-    ["time", "speed", "ratio", "msinterval"].forEach((k) => { const v = inp.fields?.[k]; if (v != null && v !== "") lines.push(`  <${k}>${esc(v)}</${k}>`); });
+    REPLAY_PLAYBACK_KEYS.forEach((k) => { const v = inp.fields?.[k]; if (v != null && v !== "") lines.push(`  <${k}>${esc(v)}</${k}>`); });
     /* Both modes: input_flush writes playedFilesHandle into the I line whatever
        the source is (runxml2fc.c:124) and main.c applies it once the replay
        count reaches zero, so keeping it for scandir only silently dropped the

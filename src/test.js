@@ -283,6 +283,8 @@ group("replayPcap input modes");
   check("ratio emitted after time", /<time>1<\/time>\s*<ratio>25<\/ratio>/.test(fast));
   const back = C.parseRun(`<run><input type="replayPcap"><port>P8</port><filepath>a.pcap</filepath><ratio>0.5</ratio></input></run>`);
   check("ratio parsed back, no warning", back.doc.inputs[0].fields.ratio === "0.5" && !back.warnings.some((w) => /ratio/.test(w)));
+  check("every playback key the editor shows is a field, and ratio is one", C.REPLAY_PLAYBACK_KEYS.includes("ratio")
+    && C.REPLAY_PLAYBACK_KEYS.every((k) => C.INPUT_FIELD_INDEX[k]));
   check("ratio: half speed is fine", C.inputProblems({ ...files, fields: { ratio: "0.5" } }, []).length === 0);
   check("ratio: zero and text reported", C.inputProblems({ ...files, fields: { ratio: "0" } }, []).length > 0
     && C.inputProblems({ ...files, fields: { ratio: "fast" } }, []).length > 0);

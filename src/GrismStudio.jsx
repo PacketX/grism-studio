@@ -3,7 +3,7 @@ import "./GrismStudio.css";
 import { STUDIO_VERSION, makeT } from "./i18n.js";
 import { PacketxLogo } from "./PacketxLogo.jsx";
 import {
-  ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, NODE_W, NODE_H, PH_H,
+  ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, REPLAY_PLAYBACK_KEYS, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
   buildArgsConfigSet, buildInTunnelsConfigSet, buildPortConfigSet, buildServicesConfigSet,
   cUpdate, removeTestKeeping, chainProblems, changedPorts, changedServices, deviceFilterList, diffDoc, docSnapshot, isDeviceFilterId,
@@ -8633,7 +8633,7 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, port
             </>}
 
             {/* shared playback fields */}
-            {["time", "speed", "msinterval"].map((k) => renderField(INPUT_FIELD_INDEX[k]))}
+            {REPLAY_PLAYBACK_KEYS.map((k) => renderField(INPUT_FIELD_INDEX[k]))}
           </>}
         </div>
 
