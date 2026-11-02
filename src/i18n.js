@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.264.0";
+export const STUDIO_VERSION = "2.265.0";
 
 export const I18N = {
   en: {
@@ -927,8 +927,8 @@ export const I18N = {
     "flt.devHead": "On the device only", "flt.devTag": "read-only", "flt.devRowSub": "{n} entries", "flt.devNoCount": "on the device",
     "flt.devRowTip": "On the device but not in this configuration: read-only",
     "flt.devTitle": "is on the device, not in this configuration",
-    "flt.devEntries": "Entries", "flt.devTried": "Tried", "flt.devMatched": "Matched",
-    "flt.devBody": "It comes from a list loaded beside run.xml (run1.xml and up), from an instant config, or from the device itself. The device reports only its id and counters, so its conditions cannot be shown or changed here. A chain can still use it: pick it under Defined filters. The counters are as read when this page was opened.",
+    "flt.devEntries": "Entries",
+    "flt.devBody": "It comes from a list loaded beside run.xml (run1.xml and up), from an instant config, or from the device itself. The device reports only its id and size, so its conditions cannot be shown or changed here. A chain can still use it: pick it under Defined filters. The entry count is as read when this page was opened.",
     "flt.opAllMatch": "all must match", "flt.opAnyMatch": "any must match", "flt.opNotMatch": "must NOT match the item below",
     "flt.addCondition": "+ Condition", "flt.addGroup": "+ Group", "flt.addNot": "+ NOT",
     "flt.dupFilter": "⧉ Duplicate filter",
@@ -1971,8 +1971,8 @@ export const I18N = {
     "flt.devHead": "僅在裝置上", "flt.devTag": "唯讀", "flt.devRowSub": "{n} 筆", "flt.devNoCount": "在裝置上",
     "flt.devRowTip": "在裝置上、不在這份設定裡:唯讀",
     "flt.devTitle": "在裝置上，不在這份設定裡",
-    "flt.devEntries": "筆數", "flt.devTried": "比對次數", "flt.devMatched": "命中次數",
-    "flt.devBody": "它來自與 run.xml 一起即時載入的清單(run1.xml 起)、instant 設定，或由裝置自行建立。裝置只回報它的編號與計數，所以這裡無法顯示或修改它的條件。鏈結仍可使用它：在「已定義的篩選器」裡選取。計數是開啟此頁時讀取的。",
+    "flt.devEntries": "筆數",
+    "flt.devBody": "它來自與 run.xml 一起即時載入的清單(run1.xml 起)、instant 設定，或由裝置自行建立。裝置只回報它的編號與筆數，所以這裡無法顯示或修改它的條件。鏈結仍可使用它：在「已定義的篩選器」裡選取。筆數是開啟此頁時讀取的。",
     "flt.opAllMatch": "全部都要符合", "flt.opAnyMatch": "任一符合即可", "flt.opNotMatch": "下方項目必須「不」符合",
     "flt.addCondition": "+ 條件", "flt.addGroup": "+ 群組", "flt.addNot": "+ NOT",
     "flt.dupFilter": "⧉ 複製篩選器",

@@ -8367,12 +8367,11 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
 }
 
 /* One of the device's own filters (deviceOnlyFilters). The device says nothing
-   about it but its id and counters, so that is all there is to show -- and
-   nothing to edit: this document does not hold it, and a change here would go
+   about it but its id and size, so that is all there is to show -- and nothing
+   to edit: this document does not hold it, and a change here would go
    nowhere. */
 function DeviceFilterPane({ d, t }) {
   const tr = t || ((k) => k);
-  const n = (v) => (Number(v) || 0).toLocaleString();
   return (
     <div className="filter-editor dev-filter-pane">
       <div className="filter-meta">
@@ -8381,9 +8380,7 @@ function DeviceFilterPane({ d, t }) {
       </div>
       <div className="dev-body">
         <dl className="dev-stats">
-          <div><dt>{tr("flt.devEntries")}</dt><dd>{d.refs ? n(d.refs) : "—"}</dd></div>
-          <div><dt>{tr("flt.devTried")}</dt><dd>{n(d.tried)}</dd></div>
-          <div><dt>{tr("flt.devMatched")}</dt><dd>{n(d.matched)}</dd></div>
+          <div><dt>{tr("flt.devEntries")}</dt><dd>{d.refs ? d.refs.toLocaleString() : "—"}</dd></div>
         </dl>
         <p className="insp-note">{tr("flt.devBody")}</p>
       </div>

@@ -2809,8 +2809,7 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
    that is genuinely missing. */
 export const deviceFilterList = (payload) =>
   (Array.isArray(payload?.filter_counter) ? payload.filter_counter : [])
-    .map((f) => ({ id: f.id, refs: Number(f.count) || 0,
-      tried: Number(f.try_count) || 0, matched: Number(f.matched_count) || 0 }));
+    .map((f) => ({ id: f.id, refs: Number(f.count) || 0 }));
 
 /* The filter ids a run.xml defines, read straight off its text. */
 export const runXmlFilterIds = (xml) =>
@@ -2819,7 +2818,7 @@ export const runXmlFilterIds = (xml) =>
 /* The filters the device runs that this document does not define -- a list
    loaded live beside run.xml (run1.xml and up), an instant config, or one the
    device made itself -- so that a chain can name them. The device reports
-   nothing but each one's id and counters, which is all a row can show. A
+   nothing but each one's id and size, which is all a row can show. A
    filter of the device's own run.xml is not among them even when this
    document leaves it out: submitting replaces that file, so such a filter is
    on its way out, not one to build on. */

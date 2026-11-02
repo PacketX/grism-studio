@@ -170,7 +170,7 @@ group("device-only filters");
   const dev = C.deviceFilterList({ filter_counter: [
     { id: 1, count: 0, try_count: 5, matched_count: 2 }, { id: 7211, count: 100001, try_count: 900, matched_count: 300 },
     { id: 3, count: 0 }, { id: 7214, count: 200040 }, { id: 7211, count: 1 }, { id: "x" }] });
-  check("counters come through", dev[1].refs === 100001 && dev[1].tried === 900 && dev[1].matched === 300);
+  check("the size comes through", dev[1].refs === 100001);
   const extra = C.deviceOnlyFilters(dev, [{ id: 1 }], C.runXmlFilterIds('<run><filter id="3" name="a"></filter><filter name="b" id="9"/></run>'));
   check("only what neither this document nor run.xml defines", extra.map((d) => d.id).join() === "7211,7214");
   check("one row per id, the first report", extra[0].refs === 100001);
