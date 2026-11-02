@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.263.0";
+export const STUDIO_VERSION = "2.264.0";
 
 export const I18N = {
   en: {
@@ -924,6 +924,11 @@ export const I18N = {
     "flt.mpslogTip": "Send the per-second match count to syslog (requires syslog to be configured under System).",
     "flt.emptyMsg": "No filters yet. A <filter> is a named set of conditions — reference it from a chain as F1 to split traffic on it.",
     "flt.unnamed": "unnamed", "flt.namePh": "e.g. block list",
+    "flt.devHead": "On the device only", "flt.devTag": "read-only", "flt.devRowSub": "{n} entries", "flt.devNoCount": "on the device",
+    "flt.devRowTip": "On the device but not in this configuration: read-only",
+    "flt.devTitle": "is on the device, not in this configuration",
+    "flt.devEntries": "Entries", "flt.devTried": "Tried", "flt.devMatched": "Matched",
+    "flt.devBody": "It comes from a list loaded beside run.xml (run1.xml and up), from an instant config, or from the device itself. The device reports only its id and counters, so its conditions cannot be shown or changed here. A chain can still use it: pick it under Defined filters. The counters are as read when this page was opened.",
     "flt.opAllMatch": "all must match", "flt.opAnyMatch": "any must match", "flt.opNotMatch": "must NOT match the item below",
     "flt.addCondition": "+ Condition", "flt.addGroup": "+ Group", "flt.addNot": "+ NOT",
     "flt.dupFilter": "⧉ Duplicate filter",
@@ -1045,7 +1050,8 @@ export const I18N = {
     "ch.dragReorder": "Drag to reorder",
     "ch.removeBranch": "Remove {side} branch…",
     "ch.definedHere": "defined here", "ch.onDevice": "on device", "ch.notDefined": "not defined",
-    "ch.deviceNote": "Filter ids from 1000 up are created on the device, so they don't need to appear here.",
+    "ch.deviceNote": "These are on the device but not in this configuration: a list loaded beside run.xml, an instant config, or a filter the device made (ids from 1000 up always are). They don't need to appear here.",
+    "ch.devPickSub": "on the device · {n} entries", "ch.devPickSubNone": "on the device",
     "ch.missingNote": "Filter ids below 1000 should be defined in this configuration — these are missing.",
     "ch.addChain": "+ Add chain", "ch.dupChain": "⧉ Duplicate chain",
     "flt.validIn": "valid", "flt.issuesIn": "issues", "flt.issueIn": "issue",
@@ -1962,6 +1968,11 @@ export const I18N = {
     "flt.mpslogTip": "將每秒命中次數以 syslog 送出(需先在「系統」設定 syslog)。",
     "flt.emptyMsg": "尚無 filter。<filter> 是一組具名條件 — 在鏈結中以 F1 引用,用來分流。",
     "flt.unnamed": "未命名", "flt.namePh": "例如 block list",
+    "flt.devHead": "僅在裝置上", "flt.devTag": "唯讀", "flt.devRowSub": "{n} 筆", "flt.devNoCount": "在裝置上",
+    "flt.devRowTip": "在裝置上、不在這份設定裡:唯讀",
+    "flt.devTitle": "在裝置上，不在這份設定裡",
+    "flt.devEntries": "筆數", "flt.devTried": "比對次數", "flt.devMatched": "命中次數",
+    "flt.devBody": "它來自與 run.xml 一起即時載入的清單(run1.xml 起)、instant 設定，或由裝置自行建立。裝置只回報它的編號與計數，所以這裡無法顯示或修改它的條件。鏈結仍可使用它：在「已定義的篩選器」裡選取。計數是開啟此頁時讀取的。",
     "flt.opAllMatch": "全部都要符合", "flt.opAnyMatch": "任一符合即可", "flt.opNotMatch": "下方項目必須「不」符合",
     "flt.addCondition": "+ 條件", "flt.addGroup": "+ 群組", "flt.addNot": "+ NOT",
     "flt.dupFilter": "⧉ 複製篩選器",
@@ -2083,7 +2094,8 @@ export const I18N = {
     "ch.dragReorder": "拖曳以重新排序",
     "ch.removeBranch": "移除{side}分支…",
     "ch.definedHere": "在此定義", "ch.onDevice": "在裝置上", "ch.notDefined": "未定義",
-    "ch.deviceNote": "1000 以上的篩選器 id 由裝置端建立,不需要在此定義。",
+    "ch.deviceNote": "這些在裝置上、但不在這份設定裡：與 run.xml 一起即時載入的清單、instant 設定，或由裝置建立的篩選器(1000 以上的 id 都是),不需要在此定義。",
+    "ch.devPickSub": "在裝置上 · {n} 筆", "ch.devPickSubNone": "在裝置上",
     "ch.missingNote": "1000 以下的篩選器 id 應該在此設定中定義,這幾個尚未定義。",
     "ch.addChain": "+ 新增鏈結", "ch.dupChain": "⧉ 複製鏈結",
     "flt.validIn": "有效", "flt.issuesIn": "個問題", "flt.issueIn": "個問題",

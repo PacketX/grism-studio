@@ -157,6 +157,27 @@ group("chain validation");
   check("defined ref is not device-side", mixed.find((r) => r.id === "F1").onDevice === false);
   check("low undefined ref is not device-side", mixed.find((r) => r.id === "F5").onDevice === false);
   check("high undefined ref is device-side", mixed.find((r) => r.id === "F1000").onDevice === true);
+  // a list loaded live beside run.xml can have any id: the device's own report says it is there
+  const live = C.collectRefs({ t: "branch", fids: "F5,F6", match: { t: "out", ports: "P1" }, notmatch: C.mkUnset() },
+    new Set(), new Set(["F5"]));
+  check("a low id the device reports is device-side", live.find((r) => r.id === "F5").onDevice === true);
+  check("a low id it does not report is still missing", live.find((r) => r.id === "F6").onDevice === false);
+}
+
+/* ---------- filters the device holds beyond this document ---------- */
+group("device-only filters");
+{
+  const dev = C.deviceFilterList({ filter_counter: [
+    { id: 1, count: 0, try_count: 5, matched_count: 2 }, { id: 7211, count: 100001, try_count: 900, matched_count: 300 },
+    { id: 3, count: 0 }, { id: 7214, count: 200040 }, { id: 7211, count: 1 }, { id: "x" }] });
+  check("counters come through", dev[1].refs === 100001 && dev[1].tried === 900 && dev[1].matched === 300);
+  const extra = C.deviceOnlyFilters(dev, [{ id: 1 }], C.runXmlFilterIds('<run><filter id="3" name="a"></filter><filter name="b" id="9"/></run>'));
+  check("only what neither this document nor run.xml defines", extra.map((d) => d.id).join() === "7211,7214");
+  check("one row per id, the first report", extra[0].refs === 100001);
+  check("run.xml ids read whatever the attribute order", C.runXmlFilterIds('<filter name="b" id="9"/><filter id="3">').join() === "9,3");
+  check("nothing without the counters", C.deviceOnlyFilters([], [{ id: 1 }], []).length === 0
+    && C.deviceOnlyFilters(undefined, undefined, undefined).length === 0);
+  check("a filter added here leaves the list", C.deviceOnlyFilters(dev, [{ id: 1 }, { id: 7214 }], [3]).map((d) => d.id).join() === "7211");
 }
 
 /* ---------- whole-document round trip ---------- */

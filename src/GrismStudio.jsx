@@ -6,7 +6,7 @@ import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, REPLAY_PLAYBACK_KEYS, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
   buildArgsConfigSet, buildInTunnelsConfigSet, buildPortConfigSet, buildServicesConfigSet,
-  cUpdate, removeTestKeeping, chainProblems, changedPorts, changedServices, deviceFilterList, diffDoc, docSnapshot, isDeviceFilterId,
+  cUpdate, removeTestKeeping, chainProblems, changedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
   portDescriptions, ifacePortLabel, nextUpdatePhase, flowTableCapacity, FLOW_CACHE_NODE_TOP,
@@ -477,6 +477,25 @@ export default function GrismStudio() {
     return [...fp, ...ip, ...op, ...ap, ...cp];
   }, [doc]);
 
+  /* Filters the device runs beyond this document (deviceOnlyFilters) -- the
+     lists loaded live beside run.xml above all: the chain picker offers them and
+     the filters page lists them, read-only. Signed out there is nothing to
+     compare with. */
+  const extraFilters = useMemo(() => (login.who ? deviceOnlyFilters(deviceFilters, doc.filters, runXmlFilterIds(baseline)) : []),
+    [login.who, deviceFilters, doc.filters, baseline]);
+  const deviceIds = useMemo(() => new Set(extraFilters.map((d) => "F" + d.id)), [extraFilters]);
+  /* Those lists come and go while the Studio stays open, so the counters are read
+     again each time the filters or a chain are opened. */
+  useEffect(() => {
+    if (!login.who || (tab !== "filters" && tab !== "chain")) return undefined;
+    let gone = false;
+    fetch("/grism/task/get_filter_counter", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (!gone && j) setDeviceFilters(deviceFilterList(j)); })
+      .catch(() => { /* the last reading stands */ });
+    return () => { gone = true; };
+  }, [login.who, tab]);
+
   // non-blocking warnings — surfaced to the user but they don't prevent submit/copy
   const allWarnings = useMemo(() => {
     const w = [];
@@ -492,7 +511,7 @@ export default function GrismStudio() {
             // Not defined here. Ids at or above the device threshold are created on
             // the device itself, so referencing one is expected — only lower ids are
             // genuinely missing from this configuration.
-            if (isDeviceFilterId(id)) return;
+            if (isDeviceFilterId(id) || deviceIds.has(id)) return;
             missingF.add(id);
           });
         }
@@ -507,7 +526,7 @@ export default function GrismStudio() {
       missingO.forEach((id) => w.push({ id: `missingO-${c.cid}-${id}`, scope: `chain:${c.cid}`, label: id, msg: `output ${id} isn't defined in this config` }));
     });
     return w;
-  }, [doc.chains, definedIds, outputIds]);
+  }, [doc.chains, definedIds, outputIds, deviceIds]);
 
   // --- load the device's running config ---
   const [load, setLoad] = useState({ state: "idle", msg: "" }); // idle | loading | ok | error
@@ -1218,7 +1237,7 @@ export default function GrismStudio() {
           <FiltersTab
             doc={doc} setDoc={setDoc}
             activeFilter={activeFilter} setActiveFilter={setActiveFilter}
-            setFilterRoot={setFilterRoot} hbTargets={hbTargets} deviceFilters={deviceFilters} t={t} touched={changes?.filters?.touched}
+            setFilterRoot={setFilterRoot} hbTargets={hbTargets} deviceFilters={deviceFilters} extraFilters={extraFilters} t={t} touched={changes?.filters?.touched}
             portOptions={devicePorts ?? DEFAULT_PORTS} mgmtPorts={mgmtPorts} portDescs={portDescs} lang={lang}
           />
         )}
@@ -1237,7 +1256,8 @@ export default function GrismStudio() {
             activeChain={activeChain} setActiveChain={setActiveChain}
             t={t}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null}
-            portDescs={portDescs} hbTargets={hbTargets} deviceFilters={deviceFilters} />
+            portDescs={portDescs} hbTargets={hbTargets} deviceFilters={deviceFilters}
+            extraFilters={extraFilters} deviceIds={deviceIds} />
         )}
         {tab === "simulate" && (
           <SimulateTab doc={doc} definedIds={definedIds} portOptions={devicePorts ?? DEFAULT_PORTS} portDescs={portDescs} loopPorts={loopPorts} t={t} loggedIn={!!login.who}
@@ -8098,7 +8118,7 @@ function IdField({ prefix, id, siblingIds, onCommit }) {
 
 /* Left-hand list with drag-to-reorder and a per-item duplicate button. Reorder
    changes the underlying array order (and therefore XML output order). */
-function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReorder, onDuplicate, addLabel, dupLabel, onAdd, title, dragTitle = "Drag to reorder" }) {
+function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReorder, onDuplicate, addLabel, dupLabel, onAdd, title, dragTitle = "Drag to reorder", after = null }) {
   const [dragKey, setDragKey] = useState(null);
   const [overKey, setOverKey] = useState(null);
   const move = (fromKey, toKey) => {
@@ -8138,13 +8158,17 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
       })}
       <button className="filter-add" onClick={onAdd}>{addLabel}</button>
       {active && <button className="filter-dup" onClick={() => onDuplicate(active)}>{dupLabel}</button>}
+      {after}
     </aside>
   );
 }
 
-function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, portOptions, mgmtPorts, portDescs = {}, lang, t, touched }) {
+function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, portOptions, mgmtPorts, portDescs = {}, lang, t, touched, extraFilters = [] }) {
   const tr = t || ((k) => k);
   const [attrsOpen, setAttrsOpen] = useState(false);   // advanced attributes panel
+  // one of the device's own filters, shown instead of an editor while chosen
+  const [devSel, setDevSel] = useState(null);
+  const devF = devSel != null ? extraFilters.find((d) => Number(d.id) === devSel) ?? null : null;
   const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
   const problems = useMemo(() => f ? filterProblems(f.root, []) : [], [f]);
 
@@ -8153,6 +8177,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
     const newFilter = { id: nextId, name: "", sessionBase: "no", matchedlog: "no", root: mkGroup("or") };
     setDoc((d) => ({ ...d, filters: [...d.filters, newFilter] }));
     setActiveFilter(nextId);
+    setDevSel(null);
   };
   const delFilter = (id) => {
     setDoc((d) => ({ ...d, filters: d.filters.filter((x) => x.id !== id) }));
@@ -8186,7 +8211,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
   /* A bare button straight inside .empty-pane got none of the centring and width
      .empty-cta carries, so the one page that can legitimately start empty was
      also the one that looked broken. Same shape as inputs/outputs/actions. */
-  if (!f) return (
+  if (!f && !extraFilters.length) return (
     <div className="empty-pane">
       <div className="empty-cta">
         <p>{tr("flt.emptyMsg")}</p>
@@ -8198,13 +8223,42 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
   return (
     <div className="filters-layout">
       <SortableList dragTitle={tr("ch.dragReorder")}
-        title={tr("tab.filters")} items={doc.filters} activeKey={f.id} getKey={(x) => x.id}
+        title={tr("tab.filters")} items={doc.filters} activeKey={devF ? null : f?.id} getKey={(x) => x.id}
         renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>{tr("flt.unnamed")}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
-        onSelect={(x) => setActiveFilter(x.id)}
+        onSelect={(x) => { setActiveFilter(x.id); setDevSel(null); }}
+        after={extraFilters.length > 0 && (
+          <div className="dev-filters" role="group" aria-label={tr("flt.devHead")}>
+            <div className="chain-list-head">{tr("flt.devHead")}</div>
+            {extraFilters.map((d) => {
+              const on = devF && Number(devF.id) === Number(d.id);
+              return (
+                <div key={d.id} className={"filter-item device" + (on ? " on" : "")} title={tr("flt.devRowTip")}
+                  tabIndex={0} role="option" aria-selected={!!on}
+                  onClick={() => setDevSel(Number(d.id))}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDevSel(Number(d.id)); } }}>
+                  <span className="dev-mark" aria-hidden="true" />
+                  <b>F{d.id}</b>
+                  <span>{d.refs ? tr("flt.devRowSub").replace("{n}", d.refs.toLocaleString()) : tr("flt.devNoCount")}</span>
+                  <span className="dev-tag">{tr("flt.devTag")}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
         onReorder={(next) => setDoc((d) => ({ ...d, filters: next }))}
         onDuplicate={(x) => { const nextId = Math.max(0, ...doc.filters.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, filters: [...d.filters, copy] })); setActiveFilter(nextId); }}
         addLabel={tr("common.addFilter")} dupLabel={tr("flt.dupFilter")} onAdd={addFilter} />
 
+      {devF ? <DeviceFilterPane d={devF} t={tr} /> : !f ? (
+        <div className="filter-editor">
+          <div className="empty-pane">
+            <div className="empty-cta">
+              <p>{tr("flt.emptyMsg")}</p>
+              <button className="primary" onClick={addFilter}>{tr("common.newFilter")}</button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="filter-editor">
         <div className="filter-meta">
           <IdField prefix="F" id={f.id} siblingIds={doc.filters.map((x) => x.id)}
@@ -8306,6 +8360,32 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
           <span className="dot" />
           {problems.length ? `F${f.id} ${problems.length} ${problems.length>1?tr("flt.issuesIn"):tr("flt.issueIn")}` : `F${f.id} ${tr("flt.validIn")}`}
         </div>
+      </div>
+      )}
+    </div>
+  );
+}
+
+/* One of the device's own filters (deviceOnlyFilters). The device says nothing
+   about it but its id and counters, so that is all there is to show -- and
+   nothing to edit: this document does not hold it, and a change here would go
+   nowhere. */
+function DeviceFilterPane({ d, t }) {
+  const tr = t || ((k) => k);
+  const n = (v) => (Number(v) || 0).toLocaleString();
+  return (
+    <div className="filter-editor dev-filter-pane">
+      <div className="filter-meta">
+        <span className="dev-title"><b>F{d.id}</b> {tr("flt.devTitle")}</span>
+        <span className="dev-tag">{tr("flt.devTag")}</span>
+      </div>
+      <div className="dev-body">
+        <dl className="dev-stats">
+          <div><dt>{tr("flt.devEntries")}</dt><dd>{d.refs ? n(d.refs) : "—"}</dd></div>
+          <div><dt>{tr("flt.devTried")}</dt><dd>{n(d.tried)}</dd></div>
+          <div><dt>{tr("flt.devMatched")}</dt><dd>{n(d.matched)}</dd></div>
+        </dl>
+        <p className="insp-note">{tr("flt.devBody")}</p>
       </div>
     </div>
   );
@@ -9110,7 +9190,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
         </div>
         <div className="fid-checks">
           {items.map((it) => (
-            <label key={it.id} className={"fid-check" + (it.on ? " on" : "") + (it.neg ? " neg" : "")}>
+            <label key={it.id} className={"fid-check" + (it.on ? " on" : "") + (it.neg ? " neg" : "") + (it.dev ? " dev" : "")}>
               <input type={multi ? "checkbox" : "radio"} checked={it.on}
                 onChange={() => multi ? onToggle(it.id) : onSetOne(it.id)} />
               <b>{it.neg ? "!" + it.b : it.b}</b>
@@ -9132,7 +9212,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, deviceFilters, t, touched }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, deviceFilters, extraFilters = [], deviceIds, t, touched }) {
   const tr = t || ((k) => k);
   // {name} placeholders, so a translation can put the value where its own
   // grammar needs it rather than where English happened to put it
@@ -9167,7 +9247,10 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
     return probs;
   }, [chain]);
   const problemIds = useMemo(() => new Set(problems.map((p) => p.id)), [problems]);
-  const refs = useMemo(() => chain ? collectRefs(chain.tree, definedIds) : [], [chain, definedIds]);
+  const refs = useMemo(() => chain ? collectRefs(chain.tree, definedIds, deviceIds) : [], [chain, definedIds, deviceIds]);
+  // what the filter picker offers: this document's filters, then the device's own
+  const pickFids = useMemo(() => [...doc.filters.map((f) => "F" + f.id), ...extraFilters.map((d) => "F" + d.id)],
+    [doc.filters, extraFilters]);
   const knownNames = useMemo(() => Object.fromEntries(doc.filters.map((f) => ["F" + f.id, f.name])), [doc.filters]);
   // alt labels keyed by reference id, for the chain node captions
   const filterAlt = useMemo(() => Object.fromEntries(doc.filters.map((f) => { const lbl = f.name || f.alt || ""; return lbl ? ["F" + f.id, lbl] : null; }).filter(Boolean)), [doc.filters]);
@@ -9825,12 +9908,17 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               <CheckAccordion
                 label={tr("ch.definedFilters")}
                 t={t} joiner={sel.fidOp} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, fidOp: v }))}
-                items={doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
-                  on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) }))}
+                items={[...doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
+                  on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) })),
+                  /* the device's own, after this document's: chosen like any other,
+                     though nothing here can say what they match */
+                  ...extraFilters.map((d) => ({ id: "F" + d.id, b: "F" + d.id, dev: true,
+                    sub: d.refs ? tr("ch.devPickSub").replace("{n}", d.refs.toLocaleString()) : tr("ch.devPickSubNone"),
+                    on: fidsHas(sel.fids, "F" + d.id), neg: fidsNegated(sel.fids, "F" + d.id) }))]}
                 onToggle={(fid) => toggleFid(sel.id, sel.fids, fid)}
                 onNegate={(fid) => negateFid(sel.id, sel.fids, fid)}
-                onAll={(on) => setAllFids(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), on)}
-                onSetOne={(fid) => setOneFid(sel.id, sel.fids, doc.filters.map((f) => "F" + f.id), fid)}
+                onAll={(on) => setAllFids(sel.id, sel.fids, pickFids, on)}
+                onSetOne={(fid) => setOneFid(sel.id, sel.fids, pickFids, fid)}
                 emptyNote={tr("ch.noFiltersDefined")} />
               <div className="add-filter-group">
                 <span className="add-filter-label">{tr("ch.insertKeepTest")}</span>

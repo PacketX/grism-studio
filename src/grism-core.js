@@ -1056,7 +1056,9 @@ export function chainProblems(tree, out) {
   })(tree);
   return out;
 }
-export function collectRefs(tree, definedIds) {
+/* deviceIds: "F<id>" of filters the device reports holding (deviceOnlyFilters),
+   which are on the device whatever their number. */
+export function collectRefs(tree, definedIds, deviceIds) {
   const seen = new Map();
   (function walk(n) {
     if (!n) return;
@@ -1066,7 +1068,7 @@ export function collectRefs(tree, definedIds) {
         const defined = definedIds.has(id);
         // undefined ids at/above the threshold live on the device; below it they're
         // genuinely missing from this configuration
-        seen.set(id, { id, defined, onDevice: !defined && isDeviceFilterId(id) });
+        seen.set(id, { id, defined, onDevice: !defined && (isDeviceFilterId(id) || !!deviceIds?.has(id)) });
       }
     });
     ["child", "match", "notmatch"].forEach((k) => n[k] && walk(n[k]));
@@ -2807,7 +2809,30 @@ export function liveFindings({ doc, readings, filters, loopPorts = [], disabledP
    that is genuinely missing. */
 export const deviceFilterList = (payload) =>
   (Array.isArray(payload?.filter_counter) ? payload.filter_counter : [])
-    .map((f) => ({ id: f.id, refs: Number(f.count) || 0 }));
+    .map((f) => ({ id: f.id, refs: Number(f.count) || 0,
+      tried: Number(f.try_count) || 0, matched: Number(f.matched_count) || 0 }));
+
+/* The filter ids a run.xml defines, read straight off its text. */
+export const runXmlFilterIds = (xml) =>
+  [...String(xml ?? "").matchAll(/<filter\b[^>]*?\bid="(\d+)"/g)].map((m) => Number(m[1]));
+
+/* The filters the device runs that this document does not define -- a list
+   loaded live beside run.xml (run1.xml and up), an instant config, or one the
+   device made itself -- so that a chain can name them. The device reports
+   nothing but each one's id and counters, which is all a row can show. A
+   filter of the device's own run.xml is not among them even when this
+   document leaves it out: submitting replaces that file, so such a filter is
+   on its way out, not one to build on. */
+export function deviceOnlyFilters(deviceFilters, docFilters, runXmlIds) {
+  const own = new Set([...(docFilters ?? []).map((f) => Number(f.id)), ...(runXmlIds ?? []).map(Number)]);
+  const seen = new Set();
+  return (deviceFilters ?? []).filter((d) => {
+    const id = Number(d.id);
+    if (!Number.isInteger(id) || own.has(id) || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).sort((a, b) => Number(a.id) - Number(b.id));
+}
 
 /* Flatten flow_service into service rows with their busiest hosts.
    Each host entry is [ip, sessions, bytes]. */
