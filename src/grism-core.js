@@ -7338,6 +7338,9 @@ export const ALERT_RULE_META = {
   /* how full the MEC mapping table and its TEID and UE-address indexes are;
      one alert each, named by its subject */
   mec_table: { unit: "%", fields: ["threshold", "clear", "sustain"] },
+  /* a filter list file (run<N>.xml) the engine could not load or apply live:
+     one alert per file, cleared when the next load of that file succeeds */
+  list_load: { fields: ["sustain"] },
 };
 export const ALERT_RULE_ORDER = Object.keys(ALERT_RULE_META);
 const ALERT_LIMITS = { threshold: [0, 1000], clear: [0, 1000], sustain: [0, 86400], min_pps: [0, 100000000] };
@@ -7428,6 +7431,7 @@ export function alertValueText(a) {
     case "in_drops": return `${a.value}%` + (a.detail != null && a.detail !== "" ? ` · ${a.detail}/s` : "");
     // detail is "used/size": 1080000/1200000
     case "mec_table": return `${a.value}%` + (a.detail ? ` · ${String(a.detail).replace("/", " / ")}` : "");
+    case "list_load": return a.detail ? String(a.detail) : "";
     case "grism_zombie": return a.detail ? `Z: ${a.detail}` : "";
     default: return "";
   }

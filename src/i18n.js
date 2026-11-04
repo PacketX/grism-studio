@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.265.0";
+export const STUDIO_VERSION = "2.266.0";
 
 export const I18N = {
   en: {
@@ -170,7 +170,7 @@ export const I18N = {
     "sys.mgmtIp": "Management IP", "sys.gateway": "gateway", "sys.loginAuth": "Login authentication",
     "alert.r.cpu": "CPU (excluding the packet engine)", "alert.r.memory": "Memory", "alert.r.disk": "Disk",
     "alert.r.temperature": "Temperature", "alert.r.fan": "Fan fault", "alert.r.grism_zombie": "Packet engine zombie (Z)",
-    "alert.r.service_down": "Service not running", "alert.r.in_drops": "Input drops",
+    "alert.r.service_down": "Service not running", "alert.r.in_drops": "Input drops", "alert.r.list_load": "Filter list not applied",
     "alert.r.mec_table": "MEC table fill",
     "alert.title": "Alerts", "alert.none": "No alerts.", "alert.since": "since", "alert.ack": "Acknowledge",
     "alert.ackAll": "Acknowledge all", "alert.acked": "acknowledged", "alert.recent": "Recent events",
@@ -1216,7 +1216,7 @@ export const I18N = {
     "sys.mgmtIp": "管理 IP", "sys.gateway": "閘道", "sys.loginAuth": "登入驗證",
     "alert.r.cpu": "CPU(不含封包引擎)", "alert.r.memory": "記憶體", "alert.r.disk": "磁碟",
     "alert.r.temperature": "溫度", "alert.r.fan": "風扇故障", "alert.r.grism_zombie": "封包引擎殭屍行程 (Z)",
-    "alert.r.service_down": "服務未執行", "alert.r.in_drops": "輸入丟包",
+    "alert.r.service_down": "服務未執行", "alert.r.in_drops": "輸入丟包", "alert.r.list_load": "過濾清單未套用",
     "alert.r.mec_table": "MEC 對應表使用率",
     "alert.title": "告警", "alert.none": "目前沒有告警。", "alert.since": "開始於", "alert.ack": "確認",
     "alert.ackAll": "全部確認", "alert.acked": "已確認", "alert.recent": "最近事件",
