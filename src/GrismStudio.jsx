@@ -2933,7 +2933,12 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
 
   // The device stops responding as it powers down, so a network error here is the
   // expected outcome rather than a failure to report.
-  const [powered, setPowered] = React.useState(null);   // "reboot" | "halt" once requested
+  const [powered, setPowered] = React.useState(null);   // "reboot" | "halt" | "factory" once requested
+  /* A factory reset that keeps the management interfaces: the box comes back
+     where it is, so the session can watch for it as it does a reboot. On by
+     default -- a reset made from afar that moved the address would be the last
+     thing done with that box. */
+  const [factoryKeepIp, setFactoryKeepIp] = React.useState(true);
   /* A reboot used to end at "reload this page once it is back", leaving the
      reader to guess when that was. Watch for it instead: the uptime it
      answers with is what proves it restarted rather than never having gone
@@ -3151,7 +3156,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
     } catch { /* connection dropped -- the device is going */ }
     setSubmit({ state: "idle", msg: "" });
     setPowered(kind);
-    if (kind === "reboot") watchForReboot();
+    if (kind === "reboot" || kind === "factory") watchForReboot();
   };
 
   /* Watch for it to go away and come back. Both halves matter: right after the
@@ -5392,7 +5397,11 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
           <section className="sys-card danger-card">
             <h3 className="sys-card-title">{tr("set.bkFactory")}</h3>
             <p className="set-hint">{tr("set.bkFactoryNote")}</p>
-            <p className="set-hint">{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></p>
+            <label className="set-hint"><input type="checkbox" checked={factoryKeepIp}
+              onChange={(e) => setFactoryKeepIp(e.target.checked)} /> {tr("set.factoryKeepIp")}</label>
+            <p className="set-hint">{factoryKeepIp
+              ? tr("set.factoryKeepNote")
+              : <>{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></>}</p>
             <div className="set-actions">
               <button className="del" disabled={submit.state === "sending"}
                 onClick={() => setConfirm({ kind: "factory" })}>{tr("set.bkFactoryGo")}</button>
@@ -5549,7 +5558,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
               : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
               ? `${tr("set.confirmApplyBody")} ${tr("set.svcWebWarn")}`
-              : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : ["restoreFile","factory","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body")
+              : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : confirm.kind === "factory" ? tr(factoryKeepIp ? "set.factoryBodyKeep" : "set.factoryBody") : ["restoreFile","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body")
               : confirm.kind === "mgmtAccess" ? (confirm.entries.length
                 ? tr("set.mgmtAccessBody").replace("{list}", confirm.entries.join(", "))
                 : tr("set.mgmtAccessBodyOpen")) : tr("set.confirmApplyBody")}</p>
@@ -5561,7 +5570,9 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
             {confirm.kind === "changePw" && me &&
               <p className="modal-body"><strong>{tr("set.changePwWho").replace("{user}", me)}</strong></p>}
             {confirm.kind === "factory" &&
-              <p className="modal-body"><strong>{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></strong></p>}
+              <p className="modal-body"><strong>{factoryKeepIp
+                ? <>{tr("set.factoryIpKept")} <span className="mono">{window.location.hostname}</span></>
+                : <>{tr("set.factoryIp")} <span className="mono">{FACTORY_MGMT_IP}</span></>}</strong></p>}
             <button className="opt drop" onClick={() => {
               const k = confirm.kind;
               setConfirm(null);
@@ -5598,6 +5609,10 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                 return;
               }
               if (k === "factory") {
+                if (factoryKeepIp) {
+                  // the box comes back where it is: watched for like a reboot
+                  submitPower("/grism/task/restore?keep_mgmt=1", "factory"); return;
+                }
                 fetch("/grism/task/restore", { method: "POST", credentials: "include" }).catch(() => {});
                 // not bkRestoringBody: that one says to reload this page, which is
                 // exactly what will not work once the address has moved
@@ -5750,10 +5765,10 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
           <div className="apply-card">
             {!rebootWatch?.back && <div className="apply-spinner" />}
             <div className="apply-msg">{rebootWatch?.back ? tr("set.rebootBack")
-              : tr(powered === "reboot" ? "set.rebooting" : "set.halting")}</div>
+              : tr(powered === "halt" ? "set.halting" : powered === "factory" ? "set.bkResetting" : "set.rebooting")}</div>
             <div className="apply-sub">{rebootWatch?.back
               ? tr("set.rebootBackBody").replace("{s}", String(rebootWatch.secs))
-              : tr(powered === "reboot" ? "set.rebootingBody" : "set.haltingBody")}</div>
+              : tr(powered === "halt" ? "set.haltingBody" : powered === "factory" ? "set.factoryResetBodyKeep" : "set.rebootingBody")}</div>
             {rebootWatch && !rebootWatch.back && (
               <div className="apply-sub mono">{tr("set.rebootWaiting").replace("{s}", String(rebootWatch.secs))}</div>
             )}

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.266.0";
+export const STUDIO_VERSION = "2.267.0";
 
 export const I18N = {
   en: {
@@ -285,6 +285,11 @@ export const I18N = {
     "set.bkRestoring": "Restoring", "set.bkResetting": "Resetting",
     "set.factoryIp": "The management address returns to the factory default:",
     "set.factoryResetBody": "Every setting is being discarded and the device is restarting. It will not answer at this address again — continue at the factory address once it is back.",
+    "set.factoryKeepIp": "Keep the management addresses",
+    "set.factoryKeepNote": "The management interfaces (address, mask, gateway) stay as they are; everything else returns to the factory settings and the device reboots.",
+    "set.factoryIpKept": "The device comes back at its current address:",
+    "set.factoryBodyKeep": "Every setting but the management addresses is discarded and the device reboots. This cannot be undone — take a backup first if you may need the current configuration.",
+    "set.factoryResetBodyKeep": "Every setting but the management addresses is being discarded and the device is restarting. Sign in again once it is back — the accounts are the factory ones again too.",
     "set.bkRestoringBody": "The device is applying the configuration and restarting. Reload this page once it is back.",
     "set.chooseFile": "Choose file…", "set.noFile": "no file selected", "set.fileNameHint": "expected",
     "set.fwBuild": "Build of the day", "set.fwRevision": "Built from commit",
@@ -1331,6 +1336,11 @@ export const I18N = {
     "set.bkRestoring": "還原中", "set.bkResetting": "回復原廠中",
     "set.factoryIp": "管理位址會回復為原廠預設值:",
     "set.factoryResetBody": "所有設定正在清除,裝置重新啟動中。它不會再回應這個位址 — 完成後請改用原廠位址連線。",
+    "set.factoryKeepIp": "保留管理 IP 位址",
+    "set.factoryKeepNote": "管理介面(位址、遮罩、閘道)維持現狀,其餘設定全部回復原廠並重新開機。",
+    "set.factoryIpKept": "裝置重開後仍以目前位址連線:",
+    "set.factoryBodyKeep": "除管理位址外,所有設定都會清除並重新開機,且無法復原。若還需要目前的設定,請先建立備份。",
+    "set.factoryResetBodyKeep": "除管理位址外的設定正在清除,裝置重新啟動中。完成後請重新登入 — 帳號也已回復為原廠預設。",
     "set.bkRestoringBody": "裝置正在套用設定並重新啟動,完成後請重新整理此頁。",
     "set.chooseFile": "選擇檔案…", "set.noFile": "尚未選擇檔案", "set.fileNameHint": "預期檔名為",
     "set.fwBuild": "當天版次", "set.fwRevision": "建置自 commit",

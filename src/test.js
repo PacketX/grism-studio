@@ -484,6 +484,15 @@ for (const lang of ["en", "zh-TW"])
     !!I18N[lang]["set.factoryResetBody"] && I18N[lang]["set.factoryResetBody"] !== I18N[lang]["set.bkRestoringBody"]);
 for (const lang of ["en", "zh-TW"])
   check(`${lang} has the factory address label`, !!I18N[lang]["set.factoryIp"]);
+// a reset that keeps the management addresses has its own wording: the box
+// comes back where it is, so neither the factory address nor "continue at the
+// factory address" may appear in it
+for (const lang of ["en", "zh-TW"]) {
+  for (const k of ["set.factoryKeepIp", "set.factoryKeepNote", "set.factoryIpKept", "set.factoryBodyKeep", "set.factoryResetBodyKeep"])
+    check(`${lang} has ${k}`, !!I18N[lang][k]);
+  check(`${lang} keep-address wait body differs from the factory one`,
+    I18N[lang]["set.factoryResetBodyKeep"] !== I18N[lang]["set.factoryResetBody"]);
+}
 
 group("device request methods");
 {
