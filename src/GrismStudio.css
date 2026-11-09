@@ -1197,6 +1197,18 @@ tr.port-off .port-desc{opacity:1;}
 .set-grid .ml input, .set-grid .ml select{width:100%;}
 .set-hint{margin:0 0 14px; font-size:13.5px; line-height:1.65; color:var(--txt-dim); max-width:86ch;}
 .set-hint a{color:var(--accent-2);}
+/* the four account levels spelled out, folded by default under the accounts table */
+.priv-help{margin:0 0 16px; font-size:13.5px; line-height:1.6; color:var(--txt-dim); max-width:96ch;}
+.priv-help summary{cursor:pointer; color:var(--accent-2); font-weight:600; padding:4px 0; list-style:none;}
+.priv-help summary::-webkit-details-marker{display:none;}
+.priv-help summary::before{content:"▸ "; font-weight:400;}
+.priv-help[open] summary::before{content:"▾ ";}
+.priv-help table{border-collapse:collapse; margin:8px 0 10px; width:100%;}
+.priv-help th, .priv-help td{text-align:left; vertical-align:top; padding:6px 10px 6px 0; border-top:1px solid var(--line);}
+.priv-help th{color:var(--txt); font-weight:600;}
+.priv-help td.lvl{white-space:nowrap; color:var(--txt); font-weight:600;}
+.priv-help td.num{white-space:nowrap; font-family:var(--mono); color:var(--txt);}
+.priv-help p{margin:6px 0 0;}
 .set-check{display:flex; align-items:center; gap:8px; padding:5px 0; font-size:13px; color:var(--txt); cursor:pointer;}
 .set-checks{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:2px 18px;}
 .set-forms .set-actions{margin-top:14px; padding-top:12px; border-top:1px solid var(--line);}

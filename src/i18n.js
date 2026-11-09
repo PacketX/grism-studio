@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.267.0";
+export const STUDIO_VERSION = "2.268.0";
 
 export const I18N = {
   en: {
@@ -897,6 +897,13 @@ export const I18N = {
     "role.operator.tip": "May also run the packet path: filters, chains, replays, clearing counters and tables, bypass.",
     "role.config.tip": "May also change the device's settings -- but not accounts, sign-in servers, management access, firmware, backup and restore, or the power.",
     "role.admin.tip": "May do everything.",
+    "role.help": "What each level may do",
+    "role.help.level": "Level", "role.help.priv": "TACACS+ priv-lvl", "role.help.may": "May do",
+    "role.view.detail": "Look at everything: status, logs, the settings, the running and saved configurations, every counter and table (filters, flows, MEC, ARP/MAC, correlations, DNS), alerts and their rules, the switch and bypass state. Change nothing but their own password.",
+    "role.operator.detail": "Also run the packet path: submit, save and delete configurations (including instant and commit-confirm submits), clear counters and the MEC tables, renew the SD-WAN key, upload, download and delete pcap files, switch the bypass relays, acknowledge alerts.",
+    "role.config.detail": "Also change the device's settings: everything on this page except the management interfaces and the sign-in servers, the time zone, the SNMP community, services, alert rules and webhooks, the switch and the port speeds, debug core, restarting the engine, rebooting.",
+    "role.admin.detail": "Also decide who gets in and what the box runs: accounts and their levels, the sign-in servers, the management interfaces, the management access list and the local-login hosts, firmware updates and components, backup and restore, the factory reset, halt. An API token can never have this level.",
+    "role.help.rules": "The levels add up: each includes those below it. A TACACS+ sign-in takes the priv-lvl the server returns, rounded down to the nearest level (1, 5, 10, 15); a server that returns none makes an administrator of an account allowed \"show version\" at level 15. RADIUS has no levels: every RADIUS account is an administrator. A local account's level applies at once, even to a signed-in session; a server-authenticated account keeps the level it signed in with. The device always keeps at least one administrator.",
     "login.levelRefused": "{role} account: this needs the {need} level",
     "set.acctLevelChanged": "Level changed.", "login.readOnlyTip": "This account may look at everything and change nothing.",
     "login.readOnlyBanner": "Signed in as a read-only account — the configuration can be read but not submitted.",
@@ -1946,6 +1953,13 @@ export const I18N = {
     "role.operator.tip": "另外可以操作封包處理:篩選器、鏈結、重播、清除計數與表格、bypass。",
     "role.config.tip": "另外可以變更裝置設定;但不能管理帳號、登入伺服器、管理存取、韌體、備份與還原、關機。",
     "role.admin.tip": "可以執行所有操作。",
+    "role.help": "各權限等級能做什麼",
+    "role.help.level": "等級", "role.help.priv": "TACACS+ 權限值(priv-lvl)", "role.help.may": "可以做的事",
+    "role.view.detail": "看所有內容:系統狀態、log、各項設定、目前與已儲存的設定檔、所有計數與表格(篩選器、flow、MEC、ARP/MAC、關聯表、DNS)、告警與告警規則、交換器與 bypass 狀態。除了自己的密碼,什麼都不能改。",
+    "role.operator.detail": "另外可以操作封包處理:送出、儲存、刪除設定(含即時設定與 commit-confirm)、清除計數與 MEC 表格、更新 SD-WAN 金鑰、上傳 / 下載 / 刪除 pcap 檔、切換 bypass 繼電器、確認告警。",
+    "role.config.detail": "另外可以變更裝置設定:本頁除「管理介面」與「登入伺服器」以外的所有設定、時區、SNMP community、服務開關、告警規則與 webhook、交換器與埠速、debug core、重啟引擎、重新開機。",
+    "role.admin.detail": "另外決定誰能進來、裝置跑什麼:帳號與其權限、登入伺服器、管理介面、管理存取清單與本機登入來源、韌體更新與元件、備份與還原、回復原廠設定、關機。API token 永遠不能是這個等級。",
+    "role.help.rules": "等級是累加的:每一級包含低一級能做的事。TACACS+ 登入取伺服器回傳的 priv-lvl,往下對到最接近的等級(1、5、10、15);伺服器沒回傳時,能在 level 15 執行「show version」的帳號視為系統管理員。RADIUS 沒有等級,一律為系統管理員。本機帳號的權限變更立刻生效(已登入的連線也一樣);由伺服器驗證的帳號維持登入時取得的等級。裝置永遠保留至少一位系統管理員。",
     "login.levelRefused": "{role}帳號無法執行此操作,需要「{need}」權限",
     "set.acctLevelChanged": "權限已變更。", "login.readOnlyTip": "這個帳號可以看所有內容,但不能變更任何設定。",
     "login.readOnlyBanner": "目前以唯讀帳號登入 —— 可以讀取設定,但不能提交變更。",

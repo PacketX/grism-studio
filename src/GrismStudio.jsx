@@ -4635,6 +4635,21 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                 or someone creates one and cannot work out why it is refused. */}
             {internalAccountsNoteKey(views) &&
               <p className="set-hint warn">{tr(internalAccountsNoteKey(views))}</p>}
+            {/* The four levels spelled out, folded: the one-line tips on the
+                selects say what a level adds, this says what each may do in
+                full and how a TACACS+ priv-lvl lands on one. */}
+            <details className="priv-help">
+              <summary>{tr("role.help")}</summary>
+              <table>
+                <thead><tr><th>{tr("role.help.level")}</th><th>{tr("role.help.priv")}</th><th>{tr("role.help.may")}</th></tr></thead>
+                <tbody>
+                  {PRIV_ROLES.map(([role, p]) => (
+                    <tr key={role}><td className="lvl">{tr("role." + role)}</td><td className="num">{p}</td><td>{tr("role." + role + ".detail")}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              <p>{tr("role.help.rules")}</p>
+            </details>
 
               {users === null ? <p className="sys-note dim">{tr("set.loading")}</p> : (
                 <table className="acct-table">
