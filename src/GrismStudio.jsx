@@ -6678,7 +6678,10 @@ function TrafficCountriesTab({ loggedIn, t, lang = "en" }) {
 
   return (
     <div className="sys-wrap">
-      <TrafficHead title={tr("ctry.title")} tr={tr} poll={poll} />
+      {/* the clear is the country table's own (clear_country_counter): the port, filter
+          and flow counters stay, unlike the other pages' clear */}
+      <TrafficHead title={tr("ctry.title")} tr={tr} poll={poll}
+        onClear={() => clearCounters("/grism/task/clear_country_counter")} />
       {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
       {poll.data && <p className="sys-note dim">{tr(remote ? "ctry.modeRemote" : "ctry.modeBoth")}</p>}
 

@@ -1783,6 +1783,7 @@ group("traffic statistics");
     && /name="P1"><description>x<\/description><enable>True<\/enable><\/find>/.test(pxml));
   check("side read from the config", C.parseInterfacePorts({ interfaces: [{ type: "XFI",
     ports: [{ name: "P0", side: "WAN" }, { name: "P1" }] }] }).map((p) => p.side).join() === "wan,");
+  check("clearing the country table is an operator's call", C.minPrivForRequest("/grism/task/clear_country_counter") === C.PRIV.OPERATOR);
 
   check("country codes resolve to names", C.countryName("TW", "en") === "Taiwan" && C.countryName("JP", "en") === "Japan");
   check("country names localise", C.countryName("US", "zh-TW") === "美國");
