@@ -6671,8 +6671,12 @@ function TrafficCountriesTab({ loggedIn, t, lang = "en" }) {
   // rows arrive busiest-first, so the head of the list is the part worth showing
   const shownRows = showAll ? rows : rows.slice(0, 20);
   const hiddenRows = rows.length - shownRows.length;
-  // what is not a country, after the countries and never folded away
-  const extraRows = [["local", extras.local], ["unknown", extras.unknown], ["undirected", extras.undirected]]
+  // What is not a country, after the countries and never folded away. Only "local to local"
+  // is shown: the firmware also reports `unknown` (a remote end the database has no country
+  // for) and `undirected` (a flow neither the list nor a port side could place, counted under
+  // both countries as before), but those two raised more questions than they answered on the
+  // page and are kept to the JSON (user's call, 2026-11-10).
+  const extraRows = [["local", extras.local]]
     .filter(([, b]) => b && (b.flows > 0 || b.packets > 0));
   const cols = 4 + (remote ? 2 : 0) + (hasFlows ? 1 : 0);
 

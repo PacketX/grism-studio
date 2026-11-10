@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.270.0";
+export const STUDIO_VERSION = "2.271.0";
 
 export const I18N = {
   en: {
@@ -163,7 +163,7 @@ export const I18N = {
     "ctry.flows": "Flows", "ctry.flowsInOut": "Flows in / out", "ctry.in": "Inbound", "ctry.out": "Outbound",
     "ctry.local": "Local to local", "ctry.unknown": "Country unknown", "ctry.undirected": "Side not known",
     "ctry.modeBoth": "Each flow is counted under the country of both its ends, so a flow between two countries appears twice and this site's own public addresses show up as their country. Give the ports a side (Settings › Interfaces) or list the local networks (Settings › Packet handling › Flow tracking) to count the remote end only, with the direction.",
-    "ctry.modeRemote": "Each flow is counted once, under the country of its remote end: an address in the local networks or a private one is local, otherwise the side of the port the flow arrived on decides. Inbound is traffic from the remote end to the local one. A flow neither rule could place is listed as \"Side not known\" and counted under both countries.",
+    "ctry.modeRemote": "Each flow is counted once, under the country of its remote end: an address in the local networks or a private one is local, otherwise the side of the port the flow arrived on decides. Inbound is traffic from the remote end to the local one. A flow neither rule could place is counted under both countries, as before.",
     "tab.status": "System status",
     "tab.settings": "Settings",
     "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System",
@@ -1231,7 +1231,7 @@ export const I18N = {
     "ctry.flows": "連線數", "ctry.flowsInOut": "連線數 進 / 出", "ctry.in": "進向", "ctry.out": "出向",
     "ctry.local": "本地對本地", "ctry.unknown": "國別不明", "ctry.undirected": "無法判定內外",
     "ctry.modeBoth": "每條連線依兩端的國家各計一次,所以跨國的連線會出現在兩個國家,本站自己的公網位址也會以其國家列出。到「設定 › 介面」為埠指定 WAN/LAN 端,或在「設定 › 封包處理 › 連線追蹤」填入本地網段,就改為只計遠端並區分進出。",
-    "ctry.modeRemote": "每條連線只計一次,歸在遠端那一端的國家:位址在本地網段內或為私有位址者視為本地,否則依連線第一個封包進入埠的 WAN/LAN 端判定。「進向」是遠端送往本地的流量。兩種規則都無法判定的連線列為「無法判定內外」,並照舊計入兩端的國家。",
+    "ctry.modeRemote": "每條連線只計一次,歸在遠端那一端的國家:位址在本地網段內或為私有位址者視為本地,否則依連線第一個封包進入埠的 WAN/LAN 端判定。「進向」是遠端送往本地的流量。兩種規則都無法判定的連線照舊計入兩端的國家。",
     "tab.status": "系統狀態",
     "tab.settings": "設定",
     "ws.overview": "總覽", "ws.pipeline": "封包處理", "ws.traffic": "流量統計", "ws.system": "系統",
