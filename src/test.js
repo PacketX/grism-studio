@@ -1751,6 +1751,38 @@ group("traffic statistics");
   check("countries sorted by bytes", ctry.rows[0].iso === "TW");
   check("totals summed", ctry.totalPackets === 300420);
   check("share computed", Math.abs(ctry.rows[0].share - 189896597 / ctry.totalBytes) < 1e-9);
+  // the fields engines 2.11.44 / 2.9.47 add beside the three old ones, and an older box's answer
+  const ctry2 = C.summarizeCountries([{ iso_code: "US", packets: 10, bytes: 1000, flows: 3,
+    in_packets: 6, in_bytes: 800, out_packets: 4, out_bytes: 200, in_flows: 1, out_flows: 2 }]);
+  check("direction fields read", ctry2.rows[0].inBytes === 800 && ctry2.rows[0].outFlows === 2 && ctry2.totalFlows === 3);
+  check("an old answer reads as no flow counts", ctry.rows[0].flows === 0 && ctry.totalFlows === 0);
+  const ex = C.summarizeCountryExtras({ country_counter: [], mode: "remote",
+    local: { packets: 1, bytes: 2, flows: 3 }, unknown: { packets: 0, bytes: 0, flows: 0 } });
+  check("remote mode and its buckets", ex.mode === "remote" && ex.local.flows === 3 && ex.unknown.packets === 0 && ex.undirected === null);
+  check("an old answer is the both mode", C.summarizeCountryExtras({ country_counter: [] }).mode === "both"
+    && C.summarizeCountryExtras(undefined).local === null);
+  const nets = C.parseCountryLocalNetworks("10.0.0.0/8, 203.0.113.0/24;198.51.100.7 300.1.1.1 10.0.0.0/33 abc");
+  check("local networks parsed", nets.ok.join(" ") === "10.0.0.0/8 203.0.113.0/24 198.51.100.7"
+    && nets.bad.join(" ") === "300.1.1.1 10.0.0.0/33 abc");
+  check("no local network is no problem", C.parseCountryLocalNetworks("").bad.length === 0
+    && C.flowProblems({ flow: true, flowCacheBaseSize: 1, countryLocalNetworks: "" }).length === 0);
+  check("a bad local network is a flow problem",
+    C.flowProblems({ flow: true, flowCacheBaseSize: 1, countryLocalNetworks: "1.2.3" }).some((p) => /countryLocalNetworks/.test(p.msg)));
+  check("local networks ride with the flow args", C.FLOW_ARGS.includes("countryLocalNetworks")
+    && C.parseFlowArgs({ args: { countryLocalNetworks: "10.0.0.0/8" } }).countryLocalNetworks === "10.0.0.0/8"
+    && C.parseFlowArgs({ args: {} }).countryLocalNetworks === "");
+
+  // a port's side: read, compared, and sent only where it changed
+  const pbase = [{ name: "P0", description: "", enable: true, side: "" }, { name: "P1", description: "", enable: true, side: "wan" }];
+  const pedit = [{ name: "P0", description: "", enable: true, side: "lan" }, { name: "P1", description: "x", enable: true, side: "wan" }];
+  check("a side change is a change", C.changedPorts(pbase, pedit).length === 2
+    && C.sideChangedPorts(pbase, pedit).map((p) => p.name).join() === "P0");
+  const pxml = C.buildPortConfigSet(C.changedPorts(pbase, pedit), pbase);
+  check("side sent only where it changed",
+    /name="P0"><description><\/description><enable>True<\/enable><side>lan<\/side><\/find>/.test(pxml)
+    && /name="P1"><description>x<\/description><enable>True<\/enable><\/find>/.test(pxml));
+  check("side read from the config", C.parseInterfacePorts({ interfaces: [{ type: "XFI",
+    ports: [{ name: "P0", side: "WAN" }, { name: "P1" }] }] }).map((p) => p.side).join() === "wan,");
 
   check("country codes resolve to names", C.countryName("TW", "en") === "Taiwan" && C.countryName("JP", "en") === "Japan");
   check("country names localise", C.countryName("US", "zh-TW") === "美國");

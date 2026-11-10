@@ -6,7 +6,7 @@ import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, REPLAY_PLAYBACK_KEYS, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
   buildArgsConfigSet, buildInTunnelsConfigSet, buildPortConfigSet, buildServicesConfigSet,
-  cUpdate, removeTestKeeping, chainProblems, changedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
+  cUpdate, removeTestKeeping, chainProblems, changedPorts, sideChangedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
   portDescriptions, ifacePortLabel, nextUpdatePhase, flowTableCapacity, FLOW_CACHE_NODE_TOP,
@@ -27,7 +27,7 @@ import {
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, packetRowText, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, advancedInUse, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
-  summarizeCountries, summarizeFilterCounters, summarizeFlowServices,
+  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
   PRIV, PRIV_ROLES, isLastAdmin, minPrivForRequest, privAtLeast, privLevel, privRole, userLevelFixed,
@@ -3734,7 +3734,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                     <th className="tf-num">{tr("set.ifidx")}</th><th>{tr("set.port")}</th>
                     <th>{tr("set.portMac")}</th>
                     <th>{tr("tf.link")}</th><th>{tr("tf.speed")}</th>
-                    <th>{tr("tf.desc")}</th><th>{tr("set.enabled")}</th>
+                    <th>{tr("tf.desc")}</th><th>{tr("set.portSide")}</th><th>{tr("set.enabled")}</th>
                   </tr></thead>
                   <tbody>
                     {ports.map((p, i) => (
@@ -3770,6 +3770,16 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                             onChange={(e) => setPorts((list) => list.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
                         </td>
                         <td>
+                          {/* which side of the network the port faces: the country statistics
+                              count the remote end of a flow once any port has one */}
+                          <select className="port-side" value={p.side ?? ""} title={tr("set.portSideTip")}
+                            onChange={(e) => setPorts((list) => list.map((x, j) => j === i ? { ...x, side: e.target.value } : x))}>
+                            <option value="">{tr("set.portSideNone")}</option>
+                            <option value="wan">WAN</option>
+                            <option value="lan">LAN</option>
+                          </select>
+                        </td>
+                        <td>
                           <input type="checkbox" checked={p.enable}
                             onChange={(e) => setPorts((list) => list.map((x, j) => j === i ? { ...x, enable: e.target.checked } : x))} />
                         </td>
@@ -3781,6 +3791,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
               {/* the switch is the part that costs a restart, so say it before
                   the button rather than in the dialog only */}
               {portEnableChanged && <p className="set-hint warn">{tr("set.portsNeedReboot")}</p>}
+              {sideChangedPorts(portsBase, ports).length > 0 && <p className="set-hint">{tr("set.portsSideReload")}</p>}
               <div className="set-actions">
                 <span className="set-changed">{changedPorts(portsBase, ports).length > 0
                   ? `${changedPorts(portsBase, ports).length} ${tr("set.portsChanged")}` : ""}</span>
@@ -4164,6 +4175,17 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                   ))}
                 </div>
               </>)}
+              {/* The country page is a by-product of the flow table, and this is the
+                  one setting it needs: which addresses are this site's own. Any entry
+                  switches the page to counting the remote end of each flow. */}
+              <div className="oattr-subhead">{tr("set.ctryLocal")}</div>
+              <p className="set-hint">{tr("set.ctryLocalNote")}</p>
+              <div className="set-grid">
+                <label className="ml" style={{ flex: "1 1 420px" }}><span>{tr("set.ctryLocalNets")}</span>
+                  <input type="text" value={sys.countryLocalNetworks ?? ""}
+                    placeholder="203.0.113.0/24, 198.51.100.7"
+                    onChange={(e) => setSysField("countryLocalNetworks", e.target.value)} /></label>
+              </div>
               {flowProblems(sys).length > 0 && (
                 <ul className="problem-list">
                   {flowProblems(sys).map((p, i) => <li key={i}><code>{p.scope}</code> — {p.msg}</li>)}
@@ -5571,7 +5593,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
-              : confirm.kind === "ports" ? (portEnableChanged ? `${tr("set.confirmPortsBody")} ${tr("set.portsNeedReboot")}` : tr("set.confirmPortsBody")) : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
+              : confirm.kind === "ports" ? [tr("set.confirmPortsBody"), portEnableChanged ? tr("set.portsNeedReboot") : "", sideChangedPorts(portsBase, ports).length > 0 ? tr("set.portsSideReload") : ""].filter(Boolean).join(" ") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
               ? `${tr("set.confirmApplyBody")} ${tr("set.svcWebWarn")}`
               : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : confirm.kind === "factory" ? tr(factoryKeepIp ? "set.factoryBodyKeep" : "set.factoryBody") : ["restoreFile","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body")
               : confirm.kind === "mgmtAccess" ? (confirm.entries.length
@@ -5708,13 +5730,13 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                 return;
               }
               if (k === "ports" && portEnableChanged) {
-                submitAndReboot(buildPortConfigSet(changedPorts(portsBase, ports)),
+                submitAndReboot(buildPortConfigSet(changedPorts(portsBase, ports), portsBase),
                   { title: tr("set.portsApplying"), body: tr("set.portsApplyingBody"), phaseKey: "set.ptPhase." });
                 return;
               }
               const xml =
                 k === "ip" ? buildMgmtConfigSet(confirm.iface)
-                : k === "ports" ? buildPortConfigSet(changedPorts(portsBase, ports))
+                : k === "ports" ? buildPortConfigSet(changedPorts(portsBase, ports), portsBase)
                 : k === "services" ? buildServicesConfigSet(changedServices(svcBase, svc))
                 : k === "tunnels" ? buildInTunnelsConfigSet(Object.fromEntries(TUNNELS.map((t) => [t, !!sys["tun_" + t]])))
                 : k === "heartbeat" ? buildHeartbeatConfigSet(hb)
@@ -6640,28 +6662,45 @@ function TrafficCountriesTab({ loggedIn, t, lang = "en" }) {
   const poll = usePolledJson("/grism/task/get_country_counter", loggedIn);
 
   if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
-  const { rows, totalBytes, totalPackets } = summarizeCountries(poll.data?.country_counter);
+  const { rows, totalBytes, totalPackets, totalFlows } = summarizeCountries(poll.data?.country_counter);
+  // "both": each end's country, the way it always was; "remote": the remote end
+  // only, with the direction, once a port has a side or a local network is set
+  const extras = summarizeCountryExtras(poll.data);
+  const remote = extras.mode === "remote";
+  const hasFlows = totalFlows > 0;      // an older engine reports no flow counts
   // rows arrive busiest-first, so the head of the list is the part worth showing
   const shownRows = showAll ? rows : rows.slice(0, 20);
   const hiddenRows = rows.length - shownRows.length;
+  // what is not a country, after the countries and never folded away
+  const extraRows = [["local", extras.local], ["unknown", extras.unknown], ["undirected", extras.undirected]]
+    .filter(([, b]) => b && (b.flows > 0 || b.packets > 0));
+  const cols = 4 + (remote ? 2 : 0) + (hasFlows ? 1 : 0);
 
   return (
     <div className="sys-wrap">
       <TrafficHead title={tr("ctry.title")} tr={tr} poll={poll} />
       {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
+      {poll.data && <p className="sys-note dim">{tr(remote ? "ctry.modeRemote" : "ctry.modeBoth")}</p>}
 
-      {rows.length === 0 ? <p className="sys-note dim">{tr("ctry.none")}</p> : (
+      {rows.length === 0 && extraRows.length === 0 ? <p className="sys-note dim">{tr("ctry.none")}</p> : (
         <>
           <div className="tf-flow-line">
             <span className="tf-flow-seg"><b>{tr("ctry.packets")}</b> <span className="mono">{fmtNum(totalPackets)}</span></span>
             <span className="tf-flow-div">|</span>
             <span className="tf-flow-seg"><b>{tr("ctry.bytes")}</b> <span className="mono">{fmtBytes(totalBytes)}</span></span>
+            {hasFlows && <>
+              <span className="tf-flow-div">|</span>
+              <span className="tf-flow-seg"><b>{tr("ctry.flows")}</b> <span className="mono">{fmtNum(totalFlows)}</span></span>
+            </>}
           </div>
           <div className="tf-table-wrap">
             <table className="tf-table">
               <thead><tr>
                 <th>{tr("ctry.country")}</th><th className="tf-num">{tr("ctry.packets")}</th>
-                <th className="tf-num">{tr("ctry.bytes")}</th><th>{tr("ctry.share")}</th>
+                <th className="tf-num">{tr("ctry.bytes")}</th>
+                {remote && <><th className="tf-num">{tr("ctry.in")}</th><th className="tf-num">{tr("ctry.out")}</th></>}
+                {hasFlows && <th className="tf-num">{tr(remote ? "ctry.flowsInOut" : "ctry.flows")}</th>}
+                <th>{tr("ctry.share")}</th>
               </tr></thead>
               <tbody>
                 {shownRows.map((r) => (
@@ -6672,12 +6711,30 @@ function TrafficCountriesTab({ loggedIn, t, lang = "en" }) {
                     </td>
                     <td className="tf-num mono">{fmtNum(r.packets)}</td>
                     <td className="tf-num mono">{fmtBytes(r.bytes)}</td>
+                    {remote && <>
+                      <td className="tf-num mono">{fmtBytes(r.inBytes)}</td>
+                      <td className="tf-num mono">{fmtBytes(r.outBytes)}</td>
+                    </>}
+                    {hasFlows && <td className="tf-num mono">{remote ? `${fmtNum(r.inFlows)} / ${fmtNum(r.outFlows)}` : fmtNum(r.flows)}</td>}
                     <td>
                       <div className="tf-share">
                         <div className="tf-share-bar"><div style={{ width: (r.share * 100).toFixed(1) + "%" }} /></div>
                         <span className="mono">{(r.share * 100).toFixed(r.share >= 0.1 ? 0 : 1)}%</span>
                       </div>
                     </td>
+                  </tr>
+                ))}
+                {extraRows.length > 0 && hiddenRows > 0 && !showAll && (
+                  <tr className="ctry-extra"><td colSpan={cols} className="dim">…</td></tr>
+                )}
+                {extraRows.map(([k, b]) => (
+                  <tr key={k} className="ctry-extra">
+                    <td className="tf-name"><span className="ctry-code mono">—</span><span className="ctry-name">{tr("ctry." + k)}</span></td>
+                    <td className="tf-num mono">{fmtNum(b.packets)}</td>
+                    <td className="tf-num mono">{fmtBytes(b.bytes)}</td>
+                    {remote && <><td /><td /></>}
+                    {hasFlows && <td className="tf-num mono">{fmtNum(b.flows)}</td>}
+                    <td />
                   </tr>
                 ))}
               </tbody>

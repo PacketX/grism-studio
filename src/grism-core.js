@@ -2853,14 +2853,50 @@ export function summarizeFlowServices(fs) {
   return groups.sort((a, b) => b.bytes - a.bytes);
 }
 
-/* Country counters, busiest first, with each row's share of the total bytes. */
+/* Country counters, busiest first, with each row's share of the total bytes. The
+   firmware's list always carries iso_code / packets / bytes; since engines 2.11.44 /
+   2.9.47 each row also has its flow count and, in the remote-side mode, the split by
+   direction (in_* is remote -> local, in_flows the flows the remote end opened). A
+   field that is not there reads as 0, so an older box's answer makes the rows it
+   always did. */
 export function summarizeCountries(list) {
+  const num = (v) => Number(v) || 0;
   const rows = (Array.isArray(list) ? list : []).map((c) => ({
-    iso: c.iso_code ?? "", packets: Number(c.packets) || 0, bytes: Number(c.bytes) || 0,
+    iso: c.iso_code ?? "", packets: num(c.packets), bytes: num(c.bytes), flows: num(c.flows),
+    inPackets: num(c.in_packets), inBytes: num(c.in_bytes), outPackets: num(c.out_packets), outBytes: num(c.out_bytes),
+    inFlows: num(c.in_flows), outFlows: num(c.out_flows),
   })).sort((a, b) => b.bytes - a.bytes);
   const totalBytes = rows.reduce((n, r) => n + r.bytes, 0);
   const totalPackets = rows.reduce((n, r) => n + r.packets, 0);
-  return { rows: rows.map((r) => ({ ...r, share: totalBytes ? r.bytes / totalBytes : 0 })), totalBytes, totalPackets };
+  const totalFlows = rows.reduce((n, r) => n + r.flows, 0);
+  return { rows: rows.map((r) => ({ ...r, share: totalBytes ? r.bytes / totalBytes : 0 })), totalBytes, totalPackets, totalFlows };
+}
+
+/* The rest of get_country_counter's answer: how the box attributes a flow -- "both",
+   each end's country as always, or "remote", the remote end's alone, once a port has a
+   side or a local network is set -- and the three totals that are not a country: both
+   ends local, a remote end the database has no country for, and the flows neither a
+   list nor a port side could place (counted under both countries as before). An older
+   firmware answers none of it: mode "both", no extras. */
+export function summarizeCountryExtras(data) {
+  const num = (v) => Number(v) || 0;
+  const bucket = (b) => (b && typeof b === "object" ? { packets: num(b.packets), bytes: num(b.bytes), flows: num(b.flows) } : null);
+  const mode = data?.mode === "remote" ? "remote" : "both";
+  return { mode, local: bucket(data?.local), unknown: bucket(data?.unknown), undirected: bucket(data?.undirected) };
+}
+
+/* args.countryLocalNetworks as the device takes it: IPv4 addresses or networks, any of
+   space, comma or semicolon between them. What does not parse is reported, not dropped
+   in silence, since the device skips such an entry without a word. */
+export function parseCountryLocalNetworks(text) {
+  const ok = [], bad = [];
+  String(text ?? "").split(/[\s,;]+/).filter(Boolean).forEach((e) => {
+    const m = e.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/);
+    const octets = m ? m.slice(1, 5).map(Number) : [];
+    const prefix = m && m[5] !== undefined ? Number(m[5]) : 32;
+    if (m && octets.every((o) => o <= 255) && prefix <= 32) ok.push(e); else bad.push(e);
+  });
+  return { ok, bad };
 }
 
 /* Packet-type counters → rows, non-zero first so oddities stand out. */
@@ -3099,6 +3135,9 @@ export function parseInterfacePorts(cfg) {
         type,
         description: p.description ?? "",
         enable: p.enable !== false,
+        // "wan" / "lan" / "" -- the side of the network the port faces, which the
+        // country statistics go by; a file from before the key has none
+        side: typeof p.side === "string" ? p.side.trim().toLowerCase() : "",
         virtual: /^V/i.test(p.name),
       };
       if (row.virtual) {
@@ -3126,14 +3165,20 @@ export function mergePortStats(ports, statistics) {
 }
 
 /* Build the configSet that applies description/enable for the changed ports.
-   Mirrors the shape get_config_xml uses for port settings. */
-export function buildPortConfigSet(ports) {
-  const body = ports.map((p) =>
-    `  <interfaces><ports><find name="${esc(p.name)}">` +
-    `<description>${esc(p.description ?? "")}</description>` +
-    `<enable>${p.enable ? "True" : "False"}</enable>` +
-    `</find></ports></interfaces>`
-  ).join("\n");
+   Mirrors the shape get_config_xml uses for port settings. The side goes in only
+   where it changed (`base` is what the device reported): the engine takes a side at
+   a reload, and a description edit must not cost one. */
+export function buildPortConfigSet(ports, base) {
+  const was = new Map((base ?? []).map((p) => [p.name, p]));
+  const body = ports.map((p) => {
+    const o = was.get(p.name);
+    const sideChanged = o ? (p.side ?? "") !== (o.side ?? "") : !!p.side;
+    return `  <interfaces><ports><find name="${esc(p.name)}">` +
+      `<description>${esc(p.description ?? "")}</description>` +
+      `<enable>${p.enable ? "True" : "False"}</enable>` +
+      (sideChanged ? `<side>${esc(p.side ?? "")}</side>` : "") +
+      `</find></ports></interfaces>`;
+  }).join("\n");
   return `<configSet reboot="no">\n${body}\n</configSet>`;
 }
 
@@ -3143,8 +3188,15 @@ export function changedPorts(original, edited) {
   return (edited ?? []).filter((p) => {
     const o = base.get(p.name);
     if (!o) return false;
-    return (o.description ?? "") !== (p.description ?? "") || !!o.enable !== !!p.enable;
+    return (o.description ?? "") !== (p.description ?? "") || !!o.enable !== !!p.enable
+      || (o.side ?? "") !== (p.side ?? "");
   });
+}
+
+/* The ports whose side changed: those cost an engine reload, which the page says. */
+export function sideChangedPorts(original, edited) {
+  const base = new Map((original ?? []).map((p) => [p.name, p]));
+  return (edited ?? []).filter((p) => base.has(p.name) && (base.get(p.name).side ?? "") !== (p.side ?? ""));
 }
 
 /* ===================== generic <args> settings =====================
@@ -3906,7 +3958,10 @@ export function listToInterfaces(selected, allPorts) {
    the three timeouts that decide when a flow is considered finished are carried
    inside <netflow> in the device's XML. They belong together in the UI even
    though they're written back to two different places. */
-export const FLOW_ARGS = ["flow", "flowv6", "flowCacheBaseSize", "flowv6TableSize"];
+/* countryLocalNetworks rides with the flow card: the country statistics are a
+   by-product of the flow table, and the setting says which addresses are this
+   site's own. */
+export const FLOW_ARGS = ["flow", "flowv6", "flowCacheBaseSize", "flowv6TableSize", "countryLocalNetworks"];
 export const FLOW_TIMEOUTS = ["active_timeout", "inactive_timeout", "tcp_fin_rst_timeout"];
 
 export function parseFlowArgs(cfg) {
@@ -3916,6 +3971,7 @@ export function parseFlowArgs(cfg) {
     flowv6: a.flowv6 === true,
     flowCacheBaseSize: n_(a.flowCacheBaseSize, 0),
     flowv6TableSize: n_(a.flowv6TableSize, 0),
+    countryLocalNetworks: typeof a.countryLocalNetworks === "string" ? a.countryLocalNetworks : "",
   };
 }
 
@@ -3924,6 +3980,9 @@ export function flowProblems(flow, problems = []) {
     problems.push({ scope: "flow", msg: "IPv4 flow table size must be greater than zero" });
   if (flow.flowv6 && !(flow.flowv6TableSize > 0))
     problems.push({ scope: "flow", msg: "IPv6 flow table size must be greater than zero" });
+  const { bad } = parseCountryLocalNetworks(flow.countryLocalNetworks);
+  if (bad.length)
+    problems.push({ scope: "flow", msg: `countryLocalNetworks: not an IPv4 address or network: ${bad.join(", ")}` });
   return problems;
 }
 

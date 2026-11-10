@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.268.0";
+export const STUDIO_VERSION = "2.269.0";
 
 export const I18N = {
   en: {
@@ -160,6 +160,10 @@ export const I18N = {
     "svc.note": "Services are identified by the ports their traffic uses. Click a row to see the hosts behind it — the top 100 talkers by traffic, newest data each refresh. Public covers traffic to and from the internet; private covers traffic that stays inside your network.",
     "ctry.title": "Traffic by country", "ctry.country": "Country", "ctry.packets": "Packets",
     "ctry.bytes": "Bytes", "ctry.share": "Share", "ctry.none": "No country data reported.",
+    "ctry.flows": "Flows", "ctry.flowsInOut": "Flows in / out", "ctry.in": "Inbound", "ctry.out": "Outbound",
+    "ctry.local": "Local to local", "ctry.unknown": "Country unknown", "ctry.undirected": "Side not known",
+    "ctry.modeBoth": "Each flow is counted under the country of both its ends, so a flow between two countries appears twice and this site's own public addresses show up as their country. Give the ports a side (Settings › Interfaces) or list the local networks (Settings › Packet handling › Flow tracking) to count the remote end only, with the direction.",
+    "ctry.modeRemote": "Each flow is counted once, under the country of its remote end: an address in the local networks or a private one is local, otherwise the side of the port the flow arrived on decides. Inbound is traffic from the remote end to the local one. A flow neither rule could place is listed as \"Side not known\" and counted under both countries.",
     "tab.status": "System status",
     "tab.settings": "Settings",
     "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System",
@@ -415,6 +419,9 @@ export const I18N = {
     "set.flowSizeNote": "Neither figure is the session count. The IPv4 table holds {n} sessions per entry, so its capacity is the number above × {n}; the IPv6 table holds one.",
     "set.flowSizeNoteR": "Neither figure is the session count. The IPv4 table holds {n} sessions per entry, and both tables exist once per packet core — {cores} of them here — so the capacity is the number above × {n} × {cores} for IPv4 and × {cores} for IPv6.",
     "set.flowNote": "The device groups packets into flows so filters and exports can work per connection rather than per packet. The table sizes cap how many flows it can follow at once.",
+    "set.ctryLocal": "Traffic by country: the local side",
+    "set.ctryLocalNote": "Addresses or networks that are this site's own, public ones included. With any listed here, or a port given a side under Interfaces, the country page counts each flow once, under its remote end, and tells inbound from outbound. Private addresses are always local. Left empty, the page counts both ends as before.",
+    "set.ctryLocalNets": "Local networks",
     "set.flowTimeouts": "Flow timeouts",
     "set.flowTimeoutsNote": "When a flow is considered finished: after this long while still active, after this long idle, or once a TCP FIN/RST is seen.",
     "set.dedup": "Deduplication", "set.dedupOn": "Drop duplicate packets",
@@ -580,7 +587,10 @@ export const I18N = {
     "set.portsChanged": "changed", "set.revert": "Revert", "set.applyPorts": "Apply interface settings",
     "set.confirmPortsTitle": "Apply interface settings?",
     "set.confirmPortsBody": "The changed ports will be written to the device. Disabling a port stops traffic on it immediately.",
-    "set.portsNote": "Description and enabled state are editable; index, link state, speed and virtual-port membership come from the device. Only the ports you change are submitted.",
+    "set.portsNote": "Description, enabled state and side are editable; index, link state, speed and virtual-port membership come from the device. Only the ports you change are submitted. The side — WAN or LAN — is what the country statistics go by: once any port has one, a flow is counted under the country of its remote end.",
+    "set.portSide": "Side", "set.portSideNone": "— none —",
+    "set.portSideTip": "WAN: the port faces the outside, a flow arriving here was opened by the remote end. LAN: the port faces this site's own network.",
+    "set.portsSideReload": "Changing a port's side reloads the engine configuration; traffic pauses for a few seconds.",
     "set.iface": "Interface", "set.ip": "IP address",
     "set.eth": "NIC", "set.netmask": "Netmask", "set.gateway": "Gateway", "set.garp": "GARP interval",
     "set.role": "role", "set.applyIP": "Apply IP changes", "set.applyXml": "Submit XML",
@@ -1218,6 +1228,10 @@ export const I18N = {
     "svc.note": "服務是依流量使用的埠號辨識。點選任一列可看到其背後的主機——依流量排序的前 100 名,每次更新都是最新資料。「公開」是與網際網路往來的流量,「私有」則是留在內部網路的流量。",
     "ctry.title": "各國流量", "ctry.country": "國家", "ctry.packets": "封包數",
     "ctry.bytes": "位元組", "ctry.share": "佔比", "ctry.none": "未回報國家資料。",
+    "ctry.flows": "連線數", "ctry.flowsInOut": "連線數 進 / 出", "ctry.in": "進向", "ctry.out": "出向",
+    "ctry.local": "本地對本地", "ctry.unknown": "國別不明", "ctry.undirected": "無法判定內外",
+    "ctry.modeBoth": "每條連線依兩端的國家各計一次,所以跨國的連線會出現在兩個國家,本站自己的公網位址也會以其國家列出。到「設定 › 介面」為埠指定 WAN/LAN 端,或在「設定 › 封包處理 › 連線追蹤」填入本地網段,就改為只計遠端並區分進出。",
+    "ctry.modeRemote": "每條連線只計一次,歸在遠端那一端的國家:位址在本地網段內或為私有位址者視為本地,否則依連線第一個封包進入埠的 WAN/LAN 端判定。「進向」是遠端送往本地的流量。兩種規則都無法判定的連線列為「無法判定內外」,並照舊計入兩端的國家。",
     "tab.status": "系統狀態",
     "tab.settings": "設定",
     "ws.overview": "總覽", "ws.pipeline": "封包處理", "ws.traffic": "流量統計", "ws.system": "系統",
@@ -1473,6 +1487,9 @@ export const I18N = {
     "set.flowSizeNote": "這兩個數字都不是連線數。IPv4 連線表每筆可容納 {n} 條連線,實際容量是上面的數字 × {n};IPv6 每筆一條。",
     "set.flowSizeNoteR": "這兩個數字都不是連線數。IPv4 連線表每筆可容納 {n} 條連線,而兩張表都是每個封包核心各一份(此機為 {cores} 個),所以實際容量是上面的數字 × {n} × {cores}(IPv4)與 × {cores}(IPv6)。",
     "set.flowNote": "裝置會把封包歸納成連線,讓篩選與紀錄輸出能以連線為單位運作而非逐封包。表格大小決定同時能追蹤多少條連線。",
+    "set.ctryLocal": "各國流量:本地端",
+    "set.ctryLocalNote": "屬於本站自己的位址或網段,公網位址也算。只要這裡填了任一筆,或在「介面」為某個埠指定了 WAN/LAN 端,各國流量頁就改為每條連線只計一次、歸在遠端的國家,並區分進向與出向。私有位址一律視為本地。留空則照舊計入兩端。",
+    "set.ctryLocalNets": "本地網段",
     "set.flowTimeouts": "連線逾時",
     "set.flowTimeoutsNote": "判定連線結束的條件:持續活躍達此秒數、閒置達此秒數,或偵測到 TCP FIN/RST。",
     "set.dedup": "去重複", "set.dedupOn": "丟棄重複封包",
@@ -1638,7 +1655,10 @@ export const I18N = {
     "set.portsChanged": "筆變更", "set.revert": "還原", "set.applyPorts": "套用介面設定",
     "set.confirmPortsTitle": "套用介面設定?",
     "set.confirmPortsBody": "變更的埠會寫入裝置。停用某個埠會立即中斷該埠的流量。",
-    "set.portsNote": "描述與啟用狀態可編輯;索引、連線狀態、速度與虛擬埠成員為裝置回報的資訊。只有你變更過的埠會被送出。",
+    "set.portsNote": "描述、啟用狀態與 WAN/LAN 端可編輯;索引、連線狀態、速度與虛擬埠成員為裝置回報的資訊。只有你變更過的埠會被送出。WAN/LAN 端是各國流量統計的依據:只要任一埠指定了,連線就歸在遠端那一端的國家。",
+    "set.portSide": "WAN/LAN 端", "set.portSideNone": "— 未指定 —",
+    "set.portSideTip": "WAN:此埠面向外部,從這裡進來的連線是遠端發起的。LAN:此埠面向本站自己的網路。",
+    "set.portsSideReload": "變更埠的 WAN/LAN 端會重新載入引擎設定,流量會中斷數秒。",
     "set.iface": "介面", "set.ip": "IP 位址",
     "set.eth": "網卡", "set.netmask": "子網路遮罩", "set.gateway": "閘道", "set.garp": "GARP 間隔",
     "set.role": "角色", "set.applyIP": "套用 IP 變更", "set.applyXml": "送出 XML",
