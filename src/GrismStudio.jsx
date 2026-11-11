@@ -10048,11 +10048,6 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 onAll={(on) => setAllInPorts(portOptions, on)}
                 onSetOne={(p) => setOneInPort(portOptions, p)}
                 emptyNote={!portsFromDevice ? tr("ch.defaultPorts") : null} />
-              {/* the chain's own XML comment lives with its ingress, the chain's
-                  only node that is the chain itself rather than a step of it */}
-              <div className="filter-meta chain-comment">
-                <XmlCommentField key={"c" + cid} t={tr} value={chain._comment} onChange={setChainComment} />
-              </div>
               <CollapseSection t={tr} label={tr("ch.advancedOp")} active={!!chain.inVlan?.vlantype}>
                 <label className="fld2"><span>{tr("ch.vlanOp")}</span>
                   <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
@@ -10061,6 +10056,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 {chain.inVlan?.vlantype === "tagging" && <label className="fld2"><span>{tr("ch.vlanId")}</span>
                   <input value={chain.inVlan?.vlanid ?? ""} onChange={(e) => setInVlan({ vlanid: e.target.value })} placeholder="100" /></label>}
               </CollapseSection>
+              {/* the chain's own XML comment lives with its ingress, the chain's
+                  only node that is the chain itself rather than a step of it */}
+              <div className="filter-meta chain-comment">
+                <XmlCommentField key={"c" + cid} t={tr} value={chain._comment} onChange={setChainComment} />
+              </div>
             </>}
             {sel && isUnset(sel) && <><p className="insp-note">{tr("ch.unsetNote")}</p>
               <button className="primary" onClick={() => restoreSide(sel.id)}>{tr("ch.routeExplicitly")}</button></>}

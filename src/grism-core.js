@@ -2420,7 +2420,10 @@ const SECTION_SERIALIZERS = {
 
 function canonicalItem(item, section) {
   const ser = SECTION_SERIALIZERS[section];
-  if (ser) { try { return ser(item); } catch { /* fall through to the raw shape */ } }
+  // the comment above the element is part of what the item serialises to
+  // (serializeRun writes it), so an edited comment is a change like any other
+  const comment = item && item._comment != null ? `<!--${item._comment}-->` : "";
+  if (ser) { try { return comment + ser(item); } catch { /* fall through to the raw shape */ } }
   return JSON.stringify(item);
 }
 

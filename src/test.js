@@ -1819,6 +1819,9 @@ group("change tracking");
   check("a no-op round trip reports no changes", C.diffDoc(a, b).total === 0);
   check("filters are not marked touched", C.diffDoc(a, b).filters.touched.size === 0);
   check("chains are not marked touched", C.diffDoc(a, b).chains.touched.size === 0);
+  // a comment above an element is part of what the item writes, so editing it is a change
+  const bc = { ...b, filters: b.filters.map((f, i) => i === 0 ? { ...f, _comment: " a note " } : f) };
+  check("an edited comment counts as a change", C.diffDoc(a, bc).total === 1 && C.diffDoc(a, bc).filters.touched.has(bc.filters[0].id));
   // every section, including the advanced ones, must survive a round trip clean
   const full = '<run><filter id="1" name="a"><find><ip>1.1.1.1</ip></find></filter>' +
     '<input type="replayPcap"><port>P3</port><filepath>H1/a.pcap</filepath></input>' +
