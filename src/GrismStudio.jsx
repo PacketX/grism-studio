@@ -8199,12 +8199,8 @@ function XmlCommentField({ value, onChange, t }) {
   useEffect(() => { setText((cur) => xmlCommentText(cur) === shown ? cur : shown); }, [shown]);
   return (
     <label className="ml xcomment" title={tr("common.xmlCommentTip")}><span>{tr("common.xmlComment")}</span>
-      <span className="xcomment-wrap">
-        <code className="xcomment-mark" aria-hidden="true">&lt;!--</code>
-        <input value={text} placeholder={tr("common.optional")}
-          onChange={(e) => { setText(e.target.value); onChange(xmlCommentFromText(e.target.value)); }} />
-        <code className="xcomment-mark" aria-hidden="true">--&gt;</code>
-      </span>
+      <input value={text} placeholder={tr("common.optional")}
+        onChange={(e) => { setText(e.target.value); onChange(xmlCommentFromText(e.target.value)); }} />
     </label>
   );
 }
