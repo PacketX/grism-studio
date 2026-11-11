@@ -9346,7 +9346,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, onO
               {onNegate && it.on && (
                 <button type="button" className={"fid-neg" + (it.neg ? " on" : "")}
                   title={it.neg ? tr("ch.negOff") : tr("ch.negOn")}
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNegate(it.id); }}>!</button>
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNegate(it.id); }}>NOT</button>
               )}
               {/* a row the caller can open in place -- the chain editor's filters,
                   whose editor card pops up over the chain (not the device's own,
