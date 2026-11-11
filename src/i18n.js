@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.273.0";
+export const STUDIO_VERSION = "2.274.0";
 
 export const I18N = {
   en: {
@@ -921,6 +921,8 @@ export const I18N = {
     "common.delete": "Delete", "common.cancel": "Cancel", "common.optional": "optional",
     "common.use": "use", "common.useSuggested": "Use this name, read from what this element already does.",
     "common.name": "name", "common.type": "type",
+    "common.xmlComment": "XML comment",
+    "common.xmlCommentTip": "Written as <!-- … --> on the line above this element in the exported XML; a comment above the element in an imported XML shows here. Not sent to the packet engine.",
     "common.addFilter": "+ Add filter", "common.newFilter": "+ New filter",
     "common.addInput": "+ Add input", "common.dupInput": "⧉ Duplicate input",
     "common.addOutput": "+ Add output", "common.dupOutput": "⧉ Duplicate output",
@@ -1991,6 +1993,8 @@ export const I18N = {
     "common.delete": "刪除", "common.cancel": "取消", "common.optional": "選填",
     "common.use": "採用", "common.useSuggested": "採用這個名稱,它是從這個元素目前的內容推出來的。",
     "common.name": "名稱", "common.type": "類型",
+    "common.xmlComment": "XML 註解",
+    "common.xmlCommentTip": "會以 <!-- … --> 寫在匯出 XML 這個元素的上一行;匯入的 XML 若在元素上方有註解,也會顯示在這裡。不會送進封包引擎。",
     "common.addFilter": "+ 新增篩選器", "common.newFilter": "+ 新篩選器",
     "common.addInput": "+ 新增 input", "common.dupInput": "⧉ 複製 input",
     "common.addOutput": "+ 新增 output", "common.dupOutput": "⧉ 複製 output",

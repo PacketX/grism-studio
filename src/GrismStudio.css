@@ -1162,6 +1162,12 @@
 /* ---- compact meta rows: name field is fixed-width, attributes open below ---- */
 .ml.name{flex:1 1 300px; min-width:180px; max-width:420px;}
 .ml.name input{width:100%;}
+/* the item's XML comment: a full row of its own under the name and settings */
+.ml.xcomment{flex:1 1 100%; min-width:0; max-width:none;}
+.xcomment-wrap{display:flex; align-items:center; gap:6px;}
+.xcomment-wrap input{flex:1; min-width:0;}
+.xcomment-mark{color:var(--txt-faint); font-size:11px; font-family:var(--mono); flex:0 0 auto;}
+.chain-side .filter-meta.chain-comment{padding:8px 0 4px; border:0; background:transparent;}
 .filter-meta{gap:10px;}
 .attr-toggle{display:flex; align-items:center; gap:6px; align-self:flex-end;
   background:transparent; border:1px solid var(--line-2); border-radius:6px;

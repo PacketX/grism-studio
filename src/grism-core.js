@@ -1686,6 +1686,21 @@ export function inputProblems(inp, out) {
 }
 
 /* ===================== whole-document serialiser ===================== */
+/* ===================== XML comments on items =====================
+   A comment on the line above a <filter>, <input>, <output>, <action> or <chain>
+   rides on the item as `_comment`, the comment's inner text verbatim, so a
+   configuration that came in with comments goes out byte for byte. The editors
+   show and take the text without the padding; a text the user typed is wrapped
+   in single spaces and made legal: "--" may not appear inside a comment, so it
+   becomes "- -", which is also what stops a typed "-->" from closing it. */
+export function xmlCommentText(c) {
+  return String(c ?? "").trim();
+}
+export function xmlCommentFromText(text) {
+  const t = String(text ?? "").replace(/-{2,}/g, (m) => m.split("").join(" ")).trim();
+  return t ? ` ${t} ` : null;
+}
+
 export function serializeRun(doc) {
   const parts = [];
   // re-emit an element's attached comment (if any) on its own line before it

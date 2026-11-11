@@ -207,6 +207,17 @@ group("run round trip");
   check("chainless config parses without warnings", w.length === 0);
   check("chainless config does not grow a <chain> on re-serialise", !C.serializeRun(d).includes("<chain"));
   check("chainless round trip is byte-stable", C.serializeRun(C.parseRun(C.serializeRun(d)).doc) === C.serializeRun(d));
+
+  // XML comments on items: what the editors write, how it serialises, and that an imported one comes back
+  check("a typed comment is padded and made legal", C.xmlCommentFromText(" keep -- this --> ") === " keep - - this - -> " && C.xmlCommentFromText("  ") === null);
+  check("a comment shows without its padding", C.xmlCommentText(" hello ") === "hello" && C.xmlCommentText(undefined) === "");
+  const withC = { ...d, filters: d.filters.map((f, i) => i === 0 ? { ...f, _comment: C.xmlCommentFromText("first filter") } : f),
+    chains: (d.chains ?? []).map((c, i) => i === 0 ? { ...c, _comment: " the chain " } : c) };
+  const xmlC = C.serializeRun(withC);
+  check("the comment is written on the line above its element", /\n  <!-- first filter -->\n  <filter /.test(xmlC));
+  const backC = C.parseRun(xmlC).doc;
+  check("an imported comment lands on its item", backC.filters[0]._comment === " first filter " && (backC.filters[1] ?? {})._comment === undefined);
+  check("commented round trip is byte-stable", C.serializeRun(backC) === xmlC);
   // and an empty document stays empty rather than sprouting a starter filter
   const { doc: e } = C.parseRun("<run>\n</run>");
   check("empty run invents no filter", e.filters.length === 0);

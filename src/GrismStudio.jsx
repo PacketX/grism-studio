@@ -27,7 +27,7 @@ import {
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, packetRowText, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, advancedInUse, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
-  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices,
+  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices, xmlCommentText, xmlCommentFromText,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
   PRIV, PRIV_ROLES, isLastAdmin, minPrivForRequest, privAtLeast, privLevel, privRole, userLevelFixed,
@@ -8186,6 +8186,29 @@ function NameField({ kind, item, value, onChange, t }) {
   );
 }
 
+/* The XML comment of an item: what the exported XML writes as <!-- … --> on the
+   line above the element, and what an imported XML's comment above it shows as.
+   The box holds the typed text as typed (a trailing space included) and gives
+   the item the padded, legalised form; it is keyed by the item, so another
+   item's comment never shows through. */
+function XmlCommentField({ value, onChange, t }) {
+  const tr = t || ((k) => k);
+  const [text, setText] = useState(() => xmlCommentText(value));
+  // an import or an undo can change the item's comment under the box
+  const shown = xmlCommentText(value);
+  useEffect(() => { setText((cur) => xmlCommentText(cur) === shown ? cur : shown); }, [shown]);
+  return (
+    <label className="ml xcomment" title={tr("common.xmlCommentTip")}><span>{tr("common.xmlComment")}</span>
+      <span className="xcomment-wrap">
+        <code className="xcomment-mark" aria-hidden="true">&lt;!--</code>
+        <input value={text} placeholder={tr("common.optional")}
+          onChange={(e) => { setText(e.target.value); onChange(xmlCommentFromText(e.target.value)); }} />
+        <code className="xcomment-mark" aria-hidden="true">--&gt;</code>
+      </span>
+    </label>
+  );
+}
+
 function IdField({ prefix, id, siblingIds, onCommit }) {
   const [draft, setDraft] = useState(String(id));
   useEffect(() => { setDraft(String(id)); }, [id]);
@@ -8300,6 +8323,8 @@ function FilterEditorCard({ doc, setDoc, f, setFilterRoot, hbTargets, portOption
             onCommit={(newId) => { setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, id: newId } : x) })); onIdChange?.(newId); }} />
           <NameField kind="filter" item={f} t={t} value={f[f.labelAttr ?? "name"] ?? f.name ?? ""}
             onChange={(e) => { const k = f.labelAttr ?? "name"; patchMeta(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
+          <XmlCommentField key={"c" + f.id} t={tr} value={f._comment}
+            onChange={(c) => patchMeta({ _comment: c ?? undefined })} />
           <label className="ml" title={`sessionBase — ${tr("flt.sessionBaseTip")}`}><span>{tr("flt.sessionBase")}</span>
             <select value={f.sessionBase} onChange={(e) => patchMeta({ sessionBase: e.target.value })}>
               <option value="no">no</option><option value="yes">yes</option>
@@ -8708,6 +8733,8 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, port
                   nothing references an input by it, and it is not written out. */}
           <NameField kind="input" item={inp} t={t} value={inp[inp.labelAttr ?? "name"] ?? inp.name ?? ""}
             onChange={(e) => { const k = inp.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
+          <XmlCommentField key={"c" + inp.id} t={tr} value={inp._comment}
+            onChange={(c) => patch({ _comment: c ?? undefined })} />
           <label className="ml"><span>{tr("common.type")}</span>
             <select value={inp.type} onChange={(e) => {
               const type = e.target.value;
@@ -8875,6 +8902,8 @@ function OutputEditorCard({ doc, setDoc, o, portOptions, portDescs = {}, t, onId
             onCommit={(newId) => { setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, id: newId } : x) })); onIdChange?.(newId); }} />
           <NameField kind="output" item={o} t={t} value={o[o.labelAttr ?? "name"] ?? o.name ?? ""}
             onChange={(e) => { const k = o.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
+          <XmlCommentField key={"c" + o.id} t={tr} value={o._comment}
+            onChange={(c) => patch({ _comment: c ?? undefined })} />
           <label className="ml"><span>{tr("out.port")}</span>
             <PortSelect value={o.port} options={portOptions} descs={portDescs} onChange={(v) => patch({ port: v })}
               invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
@@ -9092,6 +9121,8 @@ function ActionsTab({ doc, setDoc, activeAction, setActiveAction, portOptions, p
               internal, as the key for selection and reordering. */}
           <NameField kind="action" item={a} t={t} value={a.name}
             onChange={(e) => patch({ name: e.target.value })} />
+          <XmlCommentField key={"c" + a.id} t={tr} value={a._comment}
+            onChange={(c) => patch({ _comment: c ?? undefined })} />
           <label className="ml"><span>{tr("common.type")}</span>
             <select value={a.type} onChange={(e) => patch({ type: e.target.value })}>
               <option value="input-packet-process">{tr("act.typeProcess")}</option>
@@ -9512,6 +9543,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   };
   const setPorts = (v) => setDoc((d) => ({ ...d, chains: d.chains.map((c) => c.cid === cid ? { ...c, ports: v } : c) }));
   const setInVlan = (patch) => setDoc((d) => ({ ...d, chains: d.chains.map((c) => c.cid === cid ? { ...c, inVlan: { ...(c.inVlan ?? {}), ...patch } } : c) }));
+  // the chain's XML comment (the line above its <chain>): kept on the chain, edited from the ingress inspector
+  const setChainComment = (c) => setDoc((d) => ({ ...d, chains: d.chains.map((x) => x.cid === cid ? { ...x, _comment: c ?? undefined } : x) }));
 
   const addChain = () => {
     const [ingress, egress] = firstTwoPorts(portOptions);
@@ -10019,6 +10052,11 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 onAll={(on) => setAllInPorts(portOptions, on)}
                 onSetOne={(p) => setOneInPort(portOptions, p)}
                 emptyNote={!portsFromDevice ? tr("ch.defaultPorts") : null} />
+              {/* the chain's own XML comment lives with its ingress, the chain's
+                  only node that is the chain itself rather than a step of it */}
+              <div className="filter-meta chain-comment">
+                <XmlCommentField key={"c" + cid} t={tr} value={chain._comment} onChange={setChainComment} />
+              </div>
               <CollapseSection t={tr} label={tr("ch.advancedOp")} active={!!chain.inVlan?.vlantype}>
                 <label className="fld2"><span>{tr("ch.vlanOp")}</span>
                   <select value={chain.inVlan?.vlantype ?? ""} onChange={(e) => setInVlan({ vlantype: e.target.value || undefined })}>
