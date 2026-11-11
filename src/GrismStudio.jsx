@@ -1255,6 +1255,7 @@ export default function GrismStudio() {
             setChainTreeFor={setChainTreeFor} setDoc={setDoc} touched={changes?.chains?.touched}
             activeChain={activeChain} setActiveChain={setActiveChain}
             setFilterRoot={setFilterRoot} mgmtPorts={mgmtPorts} lang={lang}
+            outputPortOptions={[...(devicePorts ?? DEFAULT_PORTS), ...deviceStorages]}
             t={t}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null}
             portDescs={portDescs} hbTargets={hbTargets} deviceFilters={deviceFilters}
@@ -8831,22 +8832,15 @@ function InputsTab({ doc, setDoc, activeInput, setActiveInput, portOptions, port
   );
 }
 
-function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, portDescs = {}, t, touched }) {
+/* The output editor card: the right-hand pane of the Outputs page, and the card the
+   chain editor opens over an output it sends to (ch.fidEdit on an O row). One
+   component, bound to the document's output `o` through setDoc. onDelete is
+   optional: the chain's pop-up leaves the output in place. */
+function OutputEditorCard({ doc, setDoc, o, portOptions, portDescs = {}, t, onIdChange, onDelete }) {
   const tr = t || ((k) => k);
   const [attrsOpen, setAttrsOpen] = useState(false);   // output attributes panel
-  const outputs = doc.outputs ?? [];
-  const o = outputs.find((x) => x.id === activeOutput) || outputs[0];
   const problems = useMemo(() => o ? outputProblems(o, []) : [], [o]);
 
-  const addOutput = () => {
-    const nextId = Math.max(0, ...outputs.map((x) => x.id)) + 1;
-    setDoc((d) => ({ ...d, outputs: [...(d.outputs ?? []), mkOutput(nextId)] }));
-    setActiveOutput(nextId);
-  };
-  const delOutput = (id) => {
-    setDoc((d) => ({ ...d, outputs: (d.outputs ?? []).filter((x) => x.id !== id) }));
-    setActiveOutput(selectAfterRemoval(outputs, id));
-  };
   // Which modifiers are offered for a given output type.
   //   httprequesthijack → only redirect2safeweb
   //   tcpreset          → none
@@ -8873,32 +8867,12 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, p
   const setModOp = (mid, op) => patch({ mods: o.mods.map((m) => m.id === mid ? { ...m, op } : m) });
   const setModAttr = (mid, name, v) => patch({ mods: o.mods.map((m) => m.id === mid ? { ...m, attrs: { ...(m.attrs ?? {}), [name]: v } } : m) });
   const delMod = (mid) => patch({ mods: o.mods.filter((m) => m.id !== mid) });
-
-  if (!o) return (
-    <div className="empty-pane">
-      <div className="empty-cta">
-        <p>{tr("out.emptyMsg")}</p>
-        <button className="primary" onClick={addOutput}>{tr("out.newOutput")}</button>
-      </div>
-    </div>
-  );
-
   const usedKeys = new Set((o.mods ?? []).map((m) => m.k));
-
   return (
-    <div className="filters-layout">
-      <SortableList dragTitle={tr("ch.dragReorder")}
-        title={tr("tab.outputs")} items={outputs} activeKey={o.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>O{x.id}</b><span>{x.name || <em>{x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
-        onSelect={(x) => setActiveOutput(x.id)}
-        onReorder={(next) => setDoc((d) => ({ ...d, outputs: next }))}
-        onDuplicate={(x) => { const nextId = Math.max(0, ...outputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, outputs: [...d.outputs, copy] })); setActiveOutput(nextId); }}
-        addLabel={tr("common.addOutput")} dupLabel={tr("common.dupOutput")} onAdd={addOutput} />
-
       <div className="filter-editor">
         <div className="filter-meta">
           <IdField prefix="O" id={o.id} siblingIds={doc.outputs.map((x) => x.id)}
-            onCommit={(newId) => { setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, id: newId } : x) })); setActiveOutput(newId); }} />
+            onCommit={(newId) => { setDoc((d) => ({ ...d, outputs: d.outputs.map((x) => x.id === o.id ? { ...x, id: newId } : x) })); onIdChange?.(newId); }} />
           <NameField kind="output" item={o} t={t} value={o[o.labelAttr ?? "name"] ?? o.name ?? ""}
             onChange={(e) => { const k = o.labelAttr ?? "name"; patch(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
           <label className="ml"><span>{tr("out.port")}</span>
@@ -8906,7 +8880,7 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, p
               invalid={!/^[A-Z][0-9]+$/.test(o.port)} /></label>
           <AttrToggle t={tr} open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
             label={tr("out.attrs")} active={Object.values(o.oattrs ?? {}).some((v) => v && v !== "no")} />
-          <button className="del" onClick={() => delOutput(o.id)}>{tr("common.delete")}</button>
+          {onDelete && <button className="del" onClick={() => onDelete(o.id)}>{tr("common.delete")}</button>}
         </div>
 
         {attrsOpen && (
@@ -8974,6 +8948,45 @@ function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, p
           {problems.length ? `O${o.id} ${problems.length} ${problems.length>1?tr("common.issuesIn"):tr("common.issueIn")}` : `O${o.id} ${tr("common.valid")}`}
         </div>
       </div>
+  );
+}
+
+function OutputsTab({ doc, setDoc, activeOutput, setActiveOutput, portOptions, portDescs = {}, t, touched }) {
+  const tr = t || ((k) => k);
+  const outputs = doc.outputs ?? [];
+  const o = outputs.find((x) => x.id === activeOutput) || outputs[0];
+  const addOutput = () => {
+    const nextId = Math.max(0, ...outputs.map((x) => x.id)) + 1;
+    setDoc((d) => ({ ...d, outputs: [...(d.outputs ?? []), mkOutput(nextId)] }));
+    setActiveOutput(nextId);
+  };
+  const delOutput = (id) => {
+    setDoc((d) => ({ ...d, outputs: (d.outputs ?? []).filter((x) => x.id !== id) }));
+    setActiveOutput(selectAfterRemoval(outputs, id));
+  };
+
+  if (!o) return (
+    <div className="empty-pane">
+      <div className="empty-cta">
+        <p>{tr("out.emptyMsg")}</p>
+        <button className="primary" onClick={addOutput}>{tr("out.newOutput")}</button>
+      </div>
+    </div>
+  );
+
+
+  return (
+    <div className="filters-layout">
+      <SortableList dragTitle={tr("ch.dragReorder")}
+        title={tr("tab.outputs")} items={outputs} activeKey={o.id} getKey={(x) => x.id}
+        renderLabel={(x) => <><b>O{x.id}</b><span>{x.name || <em>{x.port}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
+        onSelect={(x) => setActiveOutput(x.id)}
+        onReorder={(next) => setDoc((d) => ({ ...d, outputs: next }))}
+        onDuplicate={(x) => { const nextId = Math.max(0, ...outputs.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, outputs: [...d.outputs, copy] })); setActiveOutput(nextId); }}
+        addLabel={tr("common.addOutput")} dupLabel={tr("common.dupOutput")} onAdd={addOutput} />
+
+      <OutputEditorCard doc={doc} setDoc={setDoc} o={o} portOptions={portOptions} portDescs={portDescs} t={tr}
+        onIdChange={setActiveOutput} onDelete={delOutput} />
     </div>
   );
 }
@@ -9324,7 +9337,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, onO
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, deviceFilters, extraFilters = [], deviceIds, t, touched, setFilterRoot, mgmtPorts = [], lang }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, deviceFilters, extraFilters = [], deviceIds, t, touched, setFilterRoot, mgmtPorts = [], lang, outputPortOptions }) {
   const tr = t || ((k) => k);
   // {name} placeholders, so a translation can put the value where its own
   // grammar needs it rather than where English happened to put it
@@ -9337,8 +9350,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const [selId, setSelId] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [chipConfirm, setChipConfirm] = useState(null); // { field: "fids"|"ports", from, to, nodeId }
-  // the id of this document's filter whose editor card is open over the chain (ch.fidEdit)
+  // the id of this document's filter / output whose editor card is open over the chain (ch.fidEdit)
   const [fidEdit, setFidEdit] = useState(null);
+  const [oidEdit, setOidEdit] = useState(null);
   const chains = doc.chains ?? [];
   // resolve active chain (fall back to first)
   const chain = chains.find((c) => c.cid === activeChain) || chains[0];
@@ -9445,6 +9459,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
       id: "O" + o.id,
       label: o.port ? `O${o.id}(${o.port})` : "O" + o.id,
       sub: String(o.name || o.alt || "").trim(),
+      edit: true,     // this document's: its editor card can open over the chain
     })),
     ...SOLO_OUTS.map((x) => ({ id: x.id, sub: tr(x.subKey), solo: true })),
   ], [portOptions, portDescs, doc.outputs, tr]);
@@ -10068,8 +10083,9 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                   items={[...outChoices,
                           ...portChoices([], sel.ports).filter((p2) => !outChoices.some((c) => c.id === p2))
                             .map((p2) => ({ id: p2, sub: portDescs[p2] ?? "" }))]
-                    .map((c) => ({ id: c.id, b: c.label ?? c.id, sub: c.sub, on: listHas(sel.ports, c.id) }))}
+                    .map((c) => ({ id: c.id, b: c.label ?? c.id, sub: c.sub, edit: c.edit, on: listHas(sel.ports, c.id) }))}
                   onToggle={(p2) => toggleOutChoice(sel.id, sel.ports, p2)}
+                  onOpen={(oid) => setOidEdit(Number(String(oid).replace(/^O/, "")))}
                   onAll={(on) => setAllOutPorts(sel.id, sel.ports, outChoices.filter((c) => !c.solo).map((c) => c.id), on)}
                   onSetOne={(p2) => setOneOutPort(sel.id, sel.ports, outChoices.map((c) => c.id), p2)}
                   joiner={sel.mode} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, mode: v }))}
@@ -10152,6 +10168,24 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               <FilterEditorCard doc={doc} setDoc={setDoc} f={ef} setFilterRoot={setFilterRoot} hbTargets={hbTargets}
                 portOptions={portOptions} mgmtPorts={mgmtPorts} portDescs={portDescs} lang={lang} t={tr}
                 onIdChange={(nid) => setFidEdit(nid)} />
+            </div>
+          </div>
+        );
+      })()}
+      {/* the same for an output the chain sends to: the Outputs page's card, over the chain */}
+      {oidEdit != null && (() => {
+        const eo = (doc.outputs ?? []).find((x) => x.id === oidEdit);
+        if (!eo) return null;
+        return (
+          <div className="modal-scrim" onClick={() => setOidEdit(null)}>
+            <div className="modal modal-filter" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <div className="modal-title">{fill(tr("ch.oidEditTitle"), { id: eo.id })}</div>
+                <button className="copy-btn" onClick={() => setOidEdit(null)}>{tr("common.close")}</button>
+              </div>
+              <p className="modal-note">{tr("ch.oidEditNote")}</p>
+              <OutputEditorCard doc={doc} setDoc={setDoc} o={eo} portOptions={outputPortOptions ?? portOptions} portDescs={portDescs} t={tr}
+                onIdChange={(nid) => setOidEdit(nid)} />
             </div>
           </div>
         );

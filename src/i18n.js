@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.272.0";
+export const STUDIO_VERSION = "2.273.0";
 
 export const I18N = {
   en: {
@@ -992,6 +992,7 @@ export const I18N = {
     "ch.definedFilters": "defined filters", "ch.noFiltersDefined": "No filters defined yet.",
     "ch.fidEdit": "Details", "ch.fidEditTip": "Open this filter's editor here -- the same card as on the Filters page; a change is a change to the filter itself",
     "ch.fidEditTitle": "Filter F{id}", "ch.fidEditNote": "This is the document's filter: what you change here is what the Filters page shows, and what the chain tests.",
+    "ch.oidEditTitle": "Output O{id}", "ch.oidEditNote": "This is the document's output: what you change here is what the Outputs page shows, and where the chain sends.",
     "common.close": "Close",
     "ch.insertKeepTest": "Insert filter above — keep this filter on:",
     "ch.insertKeepOutput": "Insert filter above — keep this output on:",
@@ -2061,6 +2062,7 @@ export const I18N = {
     "ch.definedFilters": "已定義的篩選器", "ch.noFiltersDefined": "尚未定義任何篩選器。",
     "ch.fidEdit": "內容", "ch.fidEditTip": "在這裡打開這個篩選器的編輯卡片,與「篩選器」頁右側的是同一張;改了就是改篩選器本身",
     "ch.fidEditTitle": "篩選器 F{id}", "ch.fidEditNote": "這就是這份設定裡的篩選器:在這裡改的,「篩選器」頁看到的和鏈結實際比對的都會跟著變。",
+    "ch.oidEditTitle": "輸出 O{id}", "ch.oidEditNote": "這就是這份設定裡的輸出:在這裡改的,「輸出」頁看到的和鏈結實際送往的都會跟著變。",
     "common.close": "關閉",
     "ch.insertKeepTest": "在上方插入篩選器 — 將此篩選器保留在:",
     "ch.insertKeepOutput": "在上方插入篩選器 — 將此輸出保留在:",
