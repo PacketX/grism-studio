@@ -1254,6 +1254,7 @@ export default function GrismStudio() {
           <ChainTab doc={doc} definedIds={definedIds} outputIds={outputIds}
             setChainTreeFor={setChainTreeFor} setDoc={setDoc} touched={changes?.chains?.touched}
             activeChain={activeChain} setActiveChain={setActiveChain}
+            setFilterRoot={setFilterRoot} mgmtPorts={mgmtPorts} lang={lang}
             t={t}
             portOptions={devicePorts ?? DEFAULT_PORTS} portsFromDevice={devicePorts !== null}
             portDescs={portDescs} hbTargets={hbTargets} deviceFilters={deviceFilters}
@@ -8257,26 +8258,15 @@ function SortableList({ items, activeKey, getKey, renderLabel, onSelect, onReord
   );
 }
 
-function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, portOptions, mgmtPorts, portDescs = {}, lang, t, touched, extraFilters = [] }) {
+/* The filter editor card: the right-hand pane of the Filters page, and the same
+   card the chain editor opens over a filter it references (ch.fidEdit). One
+   component so that both show and edit exactly the same thing -- the document's
+   filter `f`, through setDoc / setFilterRoot. onDelete is optional: the chain's
+   pop-up leaves the filter in place, since the chain is pointing at it. */
+function FilterEditorCard({ doc, setDoc, f, setFilterRoot, hbTargets, portOptions, mgmtPorts, portDescs = {}, lang, t, onIdChange, onDelete }) {
   const tr = t || ((k) => k);
   const [attrsOpen, setAttrsOpen] = useState(false);   // advanced attributes panel
-  // one of the device's own filters, shown instead of an editor while chosen
-  const [devSel, setDevSel] = useState(null);
-  const devF = devSel != null ? extraFilters.find((d) => Number(d.id) === devSel) ?? null : null;
-  const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
   const problems = useMemo(() => f ? filterProblems(f.root, []) : [], [f]);
-
-  const addFilter = () => {
-    const nextId = Math.max(0, ...doc.filters.map((x) => x.id)) + 1;
-    const newFilter = { id: nextId, name: "", sessionBase: "no", matchedlog: "no", root: mkGroup("or") };
-    setDoc((d) => ({ ...d, filters: [...d.filters, newFilter] }));
-    setActiveFilter(nextId);
-    setDevSel(null);
-  };
-  const delFilter = (id) => {
-    setDoc((d) => ({ ...d, filters: d.filters.filter((x) => x.id !== id) }));
-    setActiveFilter(selectAfterRemoval(doc.filters, id));
-  };
   const patchMeta = (patch) => setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, ...patch } : x) }));
   const patchFattr = (name, v) => patchMeta({ fattrs: { ...(f.fattrs ?? {}), [name]: v } });
 
@@ -8302,61 +8292,11 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
   const onAddNot = (id) => mutate(id, (n) => ({ ...n, children: [...(n.children ?? []), mkNot()] }));
   const onRemove = (id) => setFilterRoot(f.id, (root) => tRemove(root, id));
 
-  /* A bare button straight inside .empty-pane got none of the centring and width
-     .empty-cta carries, so the one page that can legitimately start empty was
-     also the one that looked broken. Same shape as inputs/outputs/actions. */
-  if (!f && !extraFilters.length) return (
-    <div className="empty-pane">
-      <div className="empty-cta">
-        <p>{tr("flt.emptyMsg")}</p>
-        <button className="primary" onClick={addFilter}>{tr("common.newFilter")}</button>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="filters-layout">
-      <SortableList dragTitle={tr("ch.dragReorder")}
-        title={tr("tab.filters")} items={doc.filters} activeKey={devF ? null : f?.id} getKey={(x) => x.id}
-        renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>{tr("flt.unnamed")}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
-        onSelect={(x) => { setActiveFilter(x.id); setDevSel(null); }}
-        after={extraFilters.length > 0 && (
-          <div className="dev-filters" role="group" aria-label={tr("flt.devHead")}>
-            <div className="chain-list-head">{tr("flt.devHead")}</div>
-            {extraFilters.map((d) => {
-              const on = devF && Number(devF.id) === Number(d.id);
-              return (
-                <div key={d.id} className={"filter-item device" + (on ? " on" : "")} title={tr("flt.devRowTip")}
-                  tabIndex={0} role="option" aria-selected={!!on}
-                  onClick={() => setDevSel(Number(d.id))}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDevSel(Number(d.id)); } }}>
-                  <span className="dev-mark" aria-hidden="true" />
-                  <b>F{d.id}</b>
-                  <span>{d.refs ? tr("flt.devRowSub").replace("{n}", d.refs.toLocaleString()) : tr("flt.devNoCount")}</span>
-                  <span className="dev-tag">{tr("flt.devTag")}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        onReorder={(next) => setDoc((d) => ({ ...d, filters: next }))}
-        onDuplicate={(x) => { const nextId = Math.max(0, ...doc.filters.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, filters: [...d.filters, copy] })); setActiveFilter(nextId); }}
-        addLabel={tr("common.addFilter")} dupLabel={tr("flt.dupFilter")} onAdd={addFilter} />
-
-      {devF ? <DeviceFilterPane d={devF} t={tr} /> : !f ? (
-        <div className="filter-editor">
-          <div className="empty-pane">
-            <div className="empty-cta">
-              <p>{tr("flt.emptyMsg")}</p>
-              <button className="primary" onClick={addFilter}>{tr("common.newFilter")}</button>
-            </div>
-          </div>
-        </div>
-      ) : (
       <div className="filter-editor">
         <div className="filter-meta">
           <IdField prefix="F" id={f.id} siblingIds={doc.filters.map((x) => x.id)}
-            onCommit={(newId) => { setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, id: newId } : x) })); setActiveFilter(newId); }} />
+            onCommit={(newId) => { setDoc((d) => ({ ...d, filters: d.filters.map((x) => x.id === f.id ? { ...x, id: newId } : x) })); onIdChange?.(newId); }} />
           <NameField kind="filter" item={f} t={t} value={f[f.labelAttr ?? "name"] ?? f.name ?? ""}
             onChange={(e) => { const k = f.labelAttr ?? "name"; patchMeta(k === "alt" ? { alt: e.target.value } : { name: e.target.value }); }} />
           <label className="ml" title={`sessionBase — ${tr("flt.sessionBaseTip")}`}><span>{tr("flt.sessionBase")}</span>
@@ -8373,7 +8313,7 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
             </select></label>
           <AttrToggle t={tr} open={attrsOpen} onToggle={() => setAttrsOpen((v) => !v)}
             label={tr("flt.advAttrs")} active={Object.values(f.fattrs ?? {}).some((v) => v && v !== "no")} />
-          <button className="del" onClick={() => delFilter(f.id)}>{tr("common.delete")}</button>
+          {onDelete && <button className="del" onClick={() => onDelete(f.id)}>{tr("common.delete")}</button>}
         </div>
 
         {attrsOpen && (
@@ -8432,7 +8372,6 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
             onAddCond={onAddCond} onAddGroup={onAddGroup} onAddNot={onAddNot} onRemove={onRemove} />
         </div>
 
-
         {isEmptyFilter(f) && (
           <div className="empty-note">
             <div className="empty-note-body">
@@ -8455,6 +8394,81 @@ function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot,
           {problems.length ? `F${f.id} ${problems.length} ${problems.length>1?tr("flt.issuesIn"):tr("flt.issueIn")}` : `F${f.id} ${tr("flt.validIn")}`}
         </div>
       </div>
+  );
+}
+
+function FiltersTab({ doc, setDoc, activeFilter, setActiveFilter, setFilterRoot, hbTargets, portOptions, mgmtPorts, portDescs = {}, lang, t, touched, extraFilters = [] }) {
+  const tr = t || ((k) => k);
+  // one of the device's own filters, shown instead of an editor while chosen
+  const [devSel, setDevSel] = useState(null);
+  const devF = devSel != null ? extraFilters.find((d) => Number(d.id) === devSel) ?? null : null;
+  const f = doc.filters.find((x) => x.id === activeFilter) || doc.filters[0];
+
+  const addFilter = () => {
+    const nextId = Math.max(0, ...doc.filters.map((x) => x.id)) + 1;
+    const newFilter = { id: nextId, name: "", sessionBase: "no", matchedlog: "no", root: mkGroup("or") };
+    setDoc((d) => ({ ...d, filters: [...d.filters, newFilter] }));
+    setActiveFilter(nextId);
+    setDevSel(null);
+  };
+  const delFilter = (id) => {
+    setDoc((d) => ({ ...d, filters: d.filters.filter((x) => x.id !== id) }));
+    setActiveFilter(selectAfterRemoval(doc.filters, id));
+  };
+  /* A bare button straight inside .empty-pane got none of the centring and width
+     .empty-cta carries, so the one page that can legitimately start empty was
+     also the one that looked broken. Same shape as inputs/outputs/actions. */
+  if (!f && !extraFilters.length) return (
+    <div className="empty-pane">
+      <div className="empty-cta">
+        <p>{tr("flt.emptyMsg")}</p>
+        <button className="primary" onClick={addFilter}>{tr("common.newFilter")}</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="filters-layout">
+      <SortableList dragTitle={tr("ch.dragReorder")}
+        title={tr("tab.filters")} items={doc.filters} activeKey={devF ? null : f?.id} getKey={(x) => x.id}
+        renderLabel={(x) => <><b>F{x.id}</b><span>{x.name || <em>{tr("flt.unnamed")}</em>}</span>{touched?.has(x.id) && <span className="row-changed" title={tr("chg.rowTip")} />}</>}
+        onSelect={(x) => { setActiveFilter(x.id); setDevSel(null); }}
+        after={extraFilters.length > 0 && (
+          <div className="dev-filters" role="group" aria-label={tr("flt.devHead")}>
+            <div className="chain-list-head">{tr("flt.devHead")}</div>
+            {extraFilters.map((d) => {
+              const on = devF && Number(devF.id) === Number(d.id);
+              return (
+                <div key={d.id} className={"filter-item device" + (on ? " on" : "")} title={tr("flt.devRowTip")}
+                  tabIndex={0} role="option" aria-selected={!!on}
+                  onClick={() => setDevSel(Number(d.id))}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDevSel(Number(d.id)); } }}>
+                  <span className="dev-mark" aria-hidden="true" />
+                  <b>F{d.id}</b>
+                  <span>{d.refs ? tr("flt.devRowSub").replace("{n}", d.refs.toLocaleString()) : tr("flt.devNoCount")}</span>
+                  <span className="dev-tag">{tr("flt.devTag")}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        onReorder={(next) => setDoc((d) => ({ ...d, filters: next }))}
+        onDuplicate={(x) => { const nextId = Math.max(0, ...doc.filters.map((y) => y.id)) + 1; const copy = { ...cloneForDup(x), id: nextId }; setDoc((d) => ({ ...d, filters: [...d.filters, copy] })); setActiveFilter(nextId); }}
+        addLabel={tr("common.addFilter")} dupLabel={tr("flt.dupFilter")} onAdd={addFilter} />
+
+      {devF ? <DeviceFilterPane d={devF} t={tr} /> : !f ? (
+        <div className="filter-editor">
+          <div className="empty-pane">
+            <div className="empty-cta">
+              <p>{tr("flt.emptyMsg")}</p>
+              <button className="primary" onClick={addFilter}>{tr("common.newFilter")}</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+      <FilterEditorCard doc={doc} setDoc={setDoc} f={f} setFilterRoot={setFilterRoot} hbTargets={hbTargets}
+        portOptions={portOptions} mgmtPorts={mgmtPorts} portDescs={portDescs} lang={lang} t={tr}
+        onIdChange={setActiveFilter} onDelete={delFilter} />
       )}
     </div>
   );
@@ -9214,7 +9228,7 @@ function CollapseSection({ label, active, children, t }) {
   );
 }
 
-function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emptyNote, defaultOpen = false,
+function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, onOpen, emptyNote, defaultOpen = false,
   alwaysMulti = false, joiner, onJoiner, joinerOptions, joinerLabel, joinerText, prefix, extra, t }) {
   const tr = t || ((k) => k);
   // the chosen rows, named, for the header -- listed up to a few, then counted
@@ -9294,6 +9308,13 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
                   title={it.neg ? tr("ch.negOff") : tr("ch.negOn")}
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNegate(it.id); }}>!</button>
               )}
+              {/* a row the caller can open in place -- the chain editor's filters,
+                  whose editor card pops up over the chain (not the device's own,
+                  which this document cannot edit) */}
+              {onOpen && it.edit && (
+                <button type="button" className="fid-open" title={tr("ch.fidEditTip")}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(it.id); }}>{tr("ch.fidEdit")}</button>
+              )}
             </label>
           ))}
         </div>
@@ -9303,7 +9324,7 @@ function CheckAccordion({ label, items, onToggle, onAll, onSetOne, onNegate, emp
   );
 }
 
-function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, deviceFilters, extraFilters = [], deviceIds, t, touched }) {
+function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeChain, setActiveChain, portOptions, portsFromDevice, portDescs = {}, hbTargets, deviceFilters, extraFilters = [], deviceIds, t, touched, setFilterRoot, mgmtPorts = [], lang }) {
   const tr = t || ((k) => k);
   // {name} placeholders, so a translation can put the value where its own
   // grammar needs it rather than where English happened to put it
@@ -9316,6 +9337,8 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
   const [selId, setSelId] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [chipConfirm, setChipConfirm] = useState(null); // { field: "fids"|"ports", from, to, nodeId }
+  // the id of this document's filter whose editor card is open over the chain (ch.fidEdit)
+  const [fidEdit, setFidEdit] = useState(null);
   const chains = doc.chains ?? [];
   // resolve active chain (fall back to first)
   const chain = chains.find((c) => c.cid === activeChain) || chains[0];
@@ -9999,7 +10022,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
               <CheckAccordion
                 label={tr("ch.definedFilters")}
                 t={t} joiner={sel.fidOp} onJoiner={(v) => mutate(sel.id, (n) => ({ ...n, fidOp: v }))}
-                items={[...doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"),
+                items={[...doc.filters.map((f) => ({ id: "F" + f.id, b: "F" + f.id, sub: f.name || tr("flt.unnamed"), edit: true,
                   on: fidsHas(sel.fids, "F" + f.id), neg: fidsNegated(sel.fids, "F" + f.id) })),
                   /* the device's own, after this document's: chosen like any other,
                      though nothing here can say what they match */
@@ -10010,6 +10033,7 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
                 onNegate={(fid) => negateFid(sel.id, sel.fids, fid)}
                 onAll={(on) => setAllFids(sel.id, sel.fids, pickFids, on)}
                 onSetOne={(fid) => setOneFid(sel.id, sel.fids, pickFids, fid)}
+                onOpen={setFilterRoot ? (fid) => setFidEdit(Number(String(fid).replace(/^F/, ""))) : undefined}
                 emptyNote={tr("ch.noFiltersDefined")} />
               <div className="add-filter-group">
                 <span className="add-filter-label">{tr("ch.insertKeepTest")}</span>
@@ -10111,6 +10135,27 @@ function ChainTab({ doc, definedIds, outputIds, setChainTreeFor, setDoc, activeC
           <button className="opt-cancel" onClick={() => setConfirm(null)}>{tr("common.cancel")}</button>
         </div>
       </div>}
+
+      {/* the editor of a filter this chain references -- the Filters page's own
+          card, shared -- over the chain: a change here is a change to the filter */}
+      {fidEdit != null && (() => {
+        const ef = doc.filters.find((x) => x.id === fidEdit);
+        if (!ef) return null;
+        return (
+          <div className="modal-scrim" onClick={() => setFidEdit(null)}>
+            <div className="modal modal-filter" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <div className="modal-title">{fill(tr("ch.fidEditTitle"), { id: ef.id })}</div>
+                <button className="copy-btn" onClick={() => setFidEdit(null)}>{tr("common.close")}</button>
+              </div>
+              <p className="modal-note">{tr("ch.fidEditNote")}</p>
+              <FilterEditorCard doc={doc} setDoc={setDoc} f={ef} setFilterRoot={setFilterRoot} hbTargets={hbTargets}
+                portOptions={portOptions} mgmtPorts={mgmtPorts} portDescs={portDescs} lang={lang} t={tr}
+                onIdChange={(nid) => setFidEdit(nid)} />
+            </div>
+          </div>
+        );
+      })()}
 
       {chipConfirm && <div className="modal-scrim" onClick={() => setChipConfirm(null)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>

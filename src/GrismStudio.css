@@ -2146,6 +2146,15 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .ex-diff-body .dl.gap{color:var(--txt-faint); font-style:italic;}
 .cap-warn-act{margin-top:9px;}
 .modal-wide{max-width:640px;}
+/* the chain editor's pop-up over one of the filters it references: the Filters
+   page's editor card, as wide and tall as the page allows */
+.modal-filter{width:min(1100px,100%); max-height:calc(100% - 24px); display:flex; flex-direction:column; gap:10px; padding:14px 16px;}
+.modal-filter .filter-editor{flex:1; min-height:0; max-height:70vh;}
+.modal-filter .modal-head{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+.modal-filter .modal-head .modal-title{margin:0;}
+.modal-filter .modal-note{font-size:12px; color:var(--txt-faint); margin:-4px 0 0;}
+.fid-open{margin-left:auto; font-size:11px; padding:1px 7px; border-radius:6px; border:1px solid var(--line-2); background:var(--bg); color:var(--txt); cursor:pointer; white-space:nowrap;}
+.fid-open:hover{border-color:var(--accent); color:var(--accent);}
 .fix-plan{margin:10px 0 0; padding:9px 11px; border-radius:8px; background:var(--bg); border:1px solid var(--line-2);}
 .fix-plan-head{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--txt-faint);
   font-weight:600; margin-bottom:6px;}
