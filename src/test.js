@@ -5532,6 +5532,37 @@ group("manager: formatting and forms");
   const c = MG.summaryCounts({ nodes: 5, status: { online: 2, offline: 2, unknown: 1 }, alerts: 3 });
   check("summary counts", c.total === 5 && c.online === 2 && c.problem === 2 && c.unknown === 1 && c.alerts === 3);
 }
+group("manager: firmware and backups");
+{
+  check("release numbers compare part by part", MG.versionCompare("7.6.261111.10", "7.6.261111.9") === 1
+    && MG.versionCompare("6.6.261111.1", "7.6.261028.1") === -1 && MG.versionCompare("7.6.1.1", "7.6.1.1") === 0);
+  const imgs = [{ id: 1, model: "Q16", version: "7.6.261028.1", uploaded: 1 }, { id: 2, model: "Q16", version: "7.6.261111.1", uploaded: 2 },
+                { id: 3, model: "HL1", version: "7.6.261112.1", revision: "6d7ad4c8563c", uploaded: 3 }];
+  check("images for a model, newest first", MG.imagesFor(imgs, "Q16").map((i) => i.id).join() === "2,1" && MG.imagesFor(imgs, "G8S").length === 0);
+  const nodes = [{ id: 10, name: "q", model: "Q16", firmware: "7.6.261110.3", revision: "7ff0661a697e" },
+                 { id: 11, name: "h", model: "HL1", firmware: "7.6.261112.1", revision: "6d7ad4c8563c4c15" },
+                 { id: 12, name: "g", model: "G8S", firmware: "6.6.261111.1" }];
+  const plan = MG.firmwarePlan(nodes, [10, 11, 12], imgs);
+  check("a plan: the newest image a model has", plan[0].image.id === 2 && !plan[0].same);
+  check("a plan: a node already on it", plan[1].same === true);
+  check("a plan: a model without an image", plan[2].image === null);
+  check("a plan: a chosen image wins", MG.firmwarePlan(nodes, [10], imgs, { Q16: 1 })[0].image.id === 1);
+  check("a plan: unselected nodes are out", MG.firmwarePlan(nodes, [11], imgs).length === 1);
+  check("one image a model goes to the job", MG.planImages(plan).sort().join() === "2,3");
+  check("revisions, shortened or not", MG.sameRevision("6d7ad4c8563c", "6d7ad4c8563c4c15") && !MG.sameRevision("6d7ad4c", "7ff0661")
+    && MG.sameRevision("", "abc") && !MG.sameRevision("abc", "abd"));
+  check("job tones", MG.jobTone("done") === "ok" && MG.jobTone("failed") === "bad" && MG.jobTone("running") === "run"
+    && MG.jobTone("cancelled") === "dim" && MG.jobTone("skipped") === "ok");
+  check("upload percent", MG.uploadPercent({ stage: "upload", sent: 50, total: 200 }) === 25
+    && MG.uploadPercent({ stage: "apply", sent: 1, total: 2 }) === null && MG.uploadPercent(null) === null);
+  check("durations", MG.fmtDurationS(42) === "42 s" && MG.fmtDurationS(125) === "2 min 05 s");
+  check("the schedule in the browser's time: Taiwan", MG.utcMinuteToLocal(18 * 60, 480) === "02:00"
+    && MG.localToUtcMinute("02:00", 480) === 18 * 60);
+  check("the schedule round trip, west of UTC too", MG.localToUtcMinute(MG.utcMinuteToLocal(75, -300), -300) === 75
+    && MG.utcMinuteToLocal(0, 0) === "00:00");
+  check("a time that is not one", MG.localToUtcMinute("25:00", 0) === null && MG.localToUtcMinute("ab", 0) === null);
+}
+
 group("manager: every word in both languages");
 {
   const src = readFileSync(new URL("./manager/Manager.jsx", import.meta.url), "utf8");
@@ -5541,7 +5572,9 @@ group("manager: every word in both languages");
     "st.": MG.NODE_STATUSES, "sev.": ["info", "warning", "critical"], "pw.prob.": ["length", "classes", "name"],
     "add.prob.": ["name", "nameLong", "address", "addressBad", "port", "username", "password", "managerAddress"],
     "add.err.": ["unreachable", "cert", "login", "not_admin", "old_firmware", "http", "bad_answer", "auth"],
-    "acc.levelHint.": ["view", "operator", "config", "admin"] };
+    "acc.levelHint.": ["view", "operator", "config", "admin"], "st.maint.": ["firmware"], "job.": ["firmware", "backup"],
+    "jst.": ["running", "done", "failed", "cancelled", "interrupted", "pending", "skipped"],
+    "stage.": ["check", "upload", "apply", "restart", "backup", "download"] };
   for (const [p, vals] of Object.entries(dyn)) vals.forEach((v) => keys.add(p + v));
   const missEn = [...keys].filter((k) => !(k in MI18N.en)), missZh = [...keys].filter((k) => !(k in MI18N["zh-TW"]));
   if (missEn.length || missZh.length) console.log("  missing en:", missEn.join(" "), "| zh-TW:", missZh.join(" "));

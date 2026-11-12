@@ -102,6 +102,10 @@ or it reaches the manager instead of the device. On the device neither global
 is set and none of it changes anything. The topbar shows `← Manager <node>`
 when `GRISM_MANAGER` is set.
 
+The manager's pages carry the manager's version (`GET /api/v1/version`), not
+`STUDIO_VERSION`: a change under `src/manager/` alone leaves the device bundle as
+it was, so it does not bump the Studio's number or need a device deploy.
+
 The manager answers `/direct_login`, `/logout` and `get_current_user` itself
 (the account is the manager's), and refuses the device's account and token
 calls; everything else goes to the device with a credential of the signed-in

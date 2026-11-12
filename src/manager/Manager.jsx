@@ -4,7 +4,7 @@
    through the manager at /n/<id>/grism-studio/.
    ============================================================ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fmtSpeed, fmtUptime } from "../grism-core.js";
+import { fmtBytes, fmtSpeed, fmtUptime } from "../grism-core.js";
 import { STUDIO_VERSION } from "../i18n.js";
 import { makeMT } from "./manager-i18n.js";
 import * as M from "./mgr-core.js";
@@ -64,7 +64,7 @@ export default function Manager() {
   }, [t]);
 
   const admin = me && me.priv >= 15;
-  const TABS = [["nodes", 1], ["events", 1], ["accounts", 15], ["audit", 15], ["settings", 1]];
+  const TABS = [["nodes", 1], ["events", 1], ["firmware", 15], ["backups", 15], ["accounts", 15], ["audit", 15], ["settings", 1]];
 
   return (
     <div className={"gs-root mgr" + (theme === "light" ? " light" : "")}>
@@ -96,6 +96,8 @@ export default function Manager() {
             <main className="mgr-main">
               {tab === "nodes" && <NodesView t={t} call={call} me={me} />}
               {tab === "events" && <EventsView t={t} call={call} />}
+              {tab === "firmware" && admin && <FirmwareView t={t} call={call} />}
+              {tab === "backups" && admin && <BackupsView t={t} call={call} />}
               {tab === "accounts" && admin && <AccountsView t={t} call={call} me={me} />}
               {tab === "audit" && admin && <AuditView t={t} call={call} />}
               {tab === "settings" && <SettingsView t={t} call={call} me={me} />}
@@ -309,7 +311,8 @@ function NodesView({ t, call, me }) {
                     return (
                       <tr key={n.id} className={(openId === n.id ? "on " : "") + (M.isProblem(n) ? "mgr-problem" : "")}
                         onClick={() => setOpenId(n.id)}>
-                        <td><StatusDot t={t} status={st.status} /></td>
+                        <td>{n.maintenance ? <span className="mgr-st run"><i />{t("st.maint." + n.maintenance)}</span>
+                          : <StatusDot t={t} status={st.status} />}</td>
                         <td className="mgr-name">{n.name}{(n.tags || []).map((g) => <span key={g} className="mgr-tag">{g}</span>)}</td>
                         <td className="mono">{n.address}</td>
                         <td>{n.model}<span className="mgr-line">{M.lineName(n)}</span></td>
@@ -624,6 +627,416 @@ function EventsView({ t, call }) {
         </tbody>
       </table>
       {shown.length === 0 && <p className="mgr-dim">{t("ev.none")}</p>}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ batch jobs */
+const STAGES = ["check", "upload", "apply", "restart", "backup", "download"];
+
+/* One job's items as they go: polled every two seconds while it runs. */
+function JobPanel({ t, call, id, onClose, onEnded }) {
+  const [j, setJ] = useState(null);
+  const [err, setErr] = useState("");
+  const ended = useRef(false);
+  const endRef = useRef(onEnded);
+  endRef.current = onEnded;
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      while (!stop) {
+        try {
+          const r = await call(`/api/v1/jobs/${id}`, { background: true });
+          if (stop) return;
+          setJ(r); setErr("");
+          if (r.state !== "running") {
+            if (!ended.current) { ended.current = true; endRef.current?.(r); }
+            return;
+          }
+        } catch (e) { if (e.status === 401 || e.status === 404) return; setErr(e.message); }
+        await sleep(2000);
+      }
+    })();
+    return () => { stop = true; };
+  }, [call, id]);
+  if (!j) return <div className="sys-card"><p className="mgr-dim">{err || t("app.loading")}</p></div>;
+  const pending = (j.counts.pending || 0) > 0;
+  const now = Date.now() / 1000;
+  return (
+    <div className="sys-card mgr-job">
+      <div className="mgr-toolbar">
+        <h3 className="sys-card-title">{t("job." + j.kind)} #{j.id}
+          <span className={"mgr-jst " + M.jobTone(j.state)}>{t("jst." + j.state)}</span></h3>
+        <span className="mgr-dim">{M.fmtTime(j.created)} · {j.created_by === "schedule" ? t("bk.bySchedule") : j.created_by}</span>
+        <span className="mgr-spacer" />
+        {j.state === "running" && pending && <button className="copy-btn" onClick={() => call(`/api/v1/jobs/${id}/cancel`, { method: "POST", body: {} }).catch((e) => setErr(e.message))}>
+          {t("job.cancel")}</button>}
+        {onClose && <button className="copy-btn" onClick={onClose} aria-label={t("common.close")}>✕</button>}
+      </div>
+      {err && <p className="set-hint err">{err}</p>}
+      <table className="acct-table mgr-table">
+        <thead><tr><th>{t("ev.node")}</th><th>{t("job.state")}</th><th>{t("job.stage")}</th>
+          {j.kind === "firmware" && <th>{t("fw.fromTo")}</th>}<th>{t("job.message")}</th><th>{t("job.took")}</th></tr></thead>
+        <tbody>
+          {j.items.map((it) => {
+            const pct = M.uploadPercent(it);
+            const took = it.started ? (it.finished || now) - it.started : null;
+            return (
+              <tr key={it.id}>
+                <td className="mgr-name">{it.node_name}</td>
+                <td><span className={"mgr-jst " + M.jobTone(it.state)}>{t("jst." + it.state)}</span></td>
+                <td className="mgr-nowrap">
+                  {pct != null ? <span className="mgr-bar"><i style={{ width: pct + "%" }} /><b>{t("stage.upload")} {pct}%</b></span>
+                    : it.state === "running" && STAGES.includes(it.stage) ? t("stage." + it.stage) : ""}
+                </td>
+                {j.kind === "firmware" && <td className="mono mgr-nowrap">{it.before}{it.after && it.after !== it.before ? " → " + it.after : ""}</td>}
+                <td className="mgr-msg">{it.message}</td>
+                <td className="mono mgr-nowrap">{took != null ? M.fmtDurationS(took) : ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {j.state === "running" && j.kind === "firmware" && <p className="set-hint dim">{t("fw.runningHint")}</p>}
+    </div>
+  );
+}
+
+function JobList({ t, jobs, onOpen }) {
+  if (!jobs || !jobs.length) return <p className="mgr-dim">{t("job.none")}</p>;
+  return (
+    <table className="acct-table mgr-table">
+      <thead><tr><th>#</th><th>{t("ev.time")}</th><th>{t("audit.who")}</th><th>{t("job.state")}</th><th>{t("job.result")}</th><th /></tr></thead>
+      <tbody>
+        {jobs.map((j) => (
+          <tr key={j.id}>
+            <td className="mono">{j.id}</td>
+            <td className="mono mgr-nowrap">{M.fmtTime(j.created)}</td>
+            <td>{j.created_by === "schedule" ? t("bk.bySchedule") : j.created_by}</td>
+            <td><span className={"mgr-jst " + M.jobTone(j.state)}>{t("jst." + j.state)}</span></td>
+            <td className="mgr-dim">{Object.entries(j.counts || {}).map(([k, v]) => `${t("jst." + k)} ${v}`).join(" · ")}</td>
+            <td className="mgr-act"><button className="copy-btn" onClick={() => onOpen(j.id)}>{t("job.open")}</button></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function uploadImage(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", "/api/v1/images?filename=" + encodeURIComponent(file.name));
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let d = null;
+      try { d = JSON.parse(x.responseText); } catch { d = { detail: x.responseText }; }
+      if (x.status === 200) resolve(d); else reject(new ApiError(x.status, d));
+    };
+    x.onerror = () => reject(new Error("the upload broke off"));
+    x.send(file);
+  });
+}
+
+function FirmwareView({ t, call }) {
+  const [images, setImages] = useState(null);
+  const [nodes, setNodes] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [sel, setSel] = useState(() => new Set());
+  const [choice, setChoice] = useState({});
+  const [opts, setOpts] = useState({ concurrency: 1, stop: true, force: false });
+  const [up, setUp] = useState(null);             // {name, pct, phase} while an image goes up
+  const [ask, setAsk] = useState(false);
+  const [delImg, setDelImg] = useState(null);
+  const [job, setJob] = useState(null);
+  const [err, setErr] = useState("");
+  const fileRef = useRef(null);
+  const load = useCallback(async () => {
+    try {
+      const [i, n, j] = await Promise.all([call("/api/v1/images"), call("/api/v1/nodes"), call("/api/v1/jobs?kind=firmware&limit=10")]);
+      setImages(i.images); setNodes(n.nodes); setJobs(j.jobs); setErr("");
+      const run = j.jobs.find((x) => x.state === "running");
+      if (run) setJob((cur) => cur ?? run.id);
+    } catch (e) { if (e.status !== 401) setErr(e.message); }
+  }, [call]);
+  useEffect(() => { load(); }, [load]);
+  const plan = useMemo(() => M.firmwarePlan(nodes, [...sel], images || [], choice), [nodes, sel, images, choice]);
+  const models = [...new Set(plan.map((p) => p.node.model))];
+  const runnable = plan.filter((p) => p.image && (opts.force || !p.same));
+  const toggle = (id) => setSel((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
+  const updatable = nodes.filter((n) => M.imagesFor(images, n.model).length);
+  const pick = async (file) => {
+    if (!file) return;
+    setErr(""); setUp({ name: file.name, pct: 0, phase: "send" });
+    try {
+      const r = await uploadImage(file, (f) => setUp({ name: file.name, pct: Math.round(f * 100), phase: f >= 1 ? "check" : "send" }));
+      setUp(null);
+      if (!r.new) setErr(t("fw.already").replace("{v}", `${r.model} ${r.version}`));
+      load();
+    } catch (e) { setUp(null); setErr(e.message); }
+    if (fileRef.current) fileRef.current.value = "";
+  };
+  const start = async () => {
+    setAsk(false); setErr("");
+    try {
+      const r = await call("/api/v1/firmware/jobs", { method: "POST", body: {
+        nodes: plan.map((p) => p.node.id), images: M.planImages(plan), concurrency: Number(opts.concurrency),
+        stop_on_failure: opts.stop, force: opts.force } });
+      setJob(r.id); setSel(new Set()); load();
+    } catch (e) { setErr(e.message); }
+  };
+  return (
+    <section className="mgr-pane mgr-stack">
+      {err && <p className="set-hint err">{err}</p>}
+      {job && <JobPanel key={job} t={t} call={call} id={job} onClose={() => setJob(null)} onEnded={() => load()} />}
+
+      <div className="sys-card">
+        <div className="mgr-toolbar">
+          <h3 className="sys-card-title">{t("fw.images")}</h3>
+          <span className="mgr-spacer" />
+          <input ref={fileRef} type="file" accept=".tgz,.tar.gz,application/gzip" hidden onChange={(e) => pick(e.target.files[0])} />
+          <button className="sys-refresh" disabled={!!up} onClick={() => fileRef.current?.click()}>{t("fw.upload")}</button>
+        </div>
+        <p className="set-hint">{t("fw.imagesLead")}</p>
+        {up && <p><span className="mgr-bar wide"><i style={{ width: up.pct + "%" }} />
+          <b>{up.name} · {up.phase === "check" ? t("fw.checking") : up.pct + "%"}</b></span></p>}
+        {images && images.length === 0 && <p className="mgr-dim">{t("fw.noImages")}</p>}
+        {images && images.length > 0 && (
+          <table className="acct-table mgr-table">
+            <thead><tr><th>{t("col.model")}</th><th>{t("col.firmware")}</th><th>{t("node.revision")}</th><th>{t("fw.arch")}</th>
+              <th>{t("fw.size")}</th><th>{t("fw.uploaded")}</th><th>{t("fw.file")}</th><th /></tr></thead>
+            <tbody>
+              {images.map((i) => (
+                <tr key={i.id}>
+                  <td><b>{i.model}</b></td><td className="mono">{i.version}</td><td className="mono">{(i.revision || "").slice(0, 12)}</td>
+                  <td className="mono">{i.arch}</td><td className="mono">{fmtBytes(i.size)}</td>
+                  <td className="mgr-dim mgr-nowrap">{M.fmtTime(i.uploaded)} · {i.uploaded_by}</td>
+                  <td className="mgr-dim mgr-trunc" title={i.filename}>{i.filename}</td>
+                  <td className="mgr-act"><button className="del" onClick={() => setDelImg(i)}>{t("common.delete")}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("fw.batch")}</h3>
+        <p className="set-hint">{t("fw.batchLead")}</p>
+        <table className="acct-table mgr-table">
+          <thead><tr>
+            <th><input type="checkbox" checked={updatable.length > 0 && updatable.every((n) => sel.has(n.id))}
+              onChange={(e) => setSel(e.target.checked ? new Set(updatable.map((n) => n.id)) : new Set())} /></th>
+            <th>{t("col.name")}</th><th>{t("col.model")}</th><th>{t("fw.current")}</th><th>{t("fw.to")}</th><th>{t("col.status")}</th>
+          </tr></thead>
+          <tbody>
+            {nodes.map((n) => {
+              const p = plan.find((x) => x.node.id === n.id);
+              const has = M.imagesFor(images, n.model).length > 0;
+              return (
+                <tr key={n.id} className={has ? "" : "mgr-dim"}>
+                  <td><input type="checkbox" disabled={!has} checked={sel.has(n.id)} onChange={() => toggle(n.id)} /></td>
+                  <td className="mgr-name">{n.name}</td><td>{n.model}<span className="mgr-line">{M.lineName(n)}</span></td>
+                  <td className="mono">{n.firmware}</td>
+                  <td className="mono">{!has ? t("fw.noImageFor") : p ? (p.same && !opts.force ? t("fw.sameSkip") : p.image.version) : ""}</td>
+                  <td>{n.maintenance ? t("st.maint." + n.maintenance) : <StatusDot t={t} status={n.state?.status} />}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {models.some((m) => M.imagesFor(images, m).length > 1) && (
+          <div className="set-grid">
+            {models.map((m) => {
+              const list = M.imagesFor(images, m);
+              if (list.length < 2) return null;
+              return (
+                <label className="ml" key={m}><span>{t("fw.imageFor").replace("{m}", m)}</span>
+                  <select value={choice[m] ?? list[0].id} onChange={(e) => setChoice({ ...choice, [m]: Number(e.target.value) })}>
+                    {list.map((i) => <option key={i.id} value={i.id}>{i.version} ({(i.revision || "").slice(0, 8)})</option>)}
+                  </select></label>
+              );
+            })}
+          </div>
+        )}
+        <div className="mgr-opts">
+          <label className="ml"><span>{t("fw.concurrency")}</span>
+            <select value={opts.concurrency} onChange={(e) => setOpts({ ...opts, concurrency: Number(e.target.value) })}>
+              {[1, 2, 4, 8].map((k) => <option key={k} value={k}>{k}</option>)}
+            </select></label>
+          <label className="mgr-check"><input type="checkbox" checked={opts.stop} onChange={(e) => setOpts({ ...opts, stop: e.target.checked })} />{t("fw.stopOnFailure")}</label>
+          <label className="mgr-check"><input type="checkbox" checked={opts.force} onChange={(e) => setOpts({ ...opts, force: e.target.checked })} />{t("fw.force")}</label>
+          <span className="mgr-spacer" />
+          <button className="sys-refresh" disabled={!runnable.length || jobs.some((x) => x.state === "running")}
+            onClick={() => setAsk(true)}>{t("fw.start").replace("{n}", runnable.length)}</button>
+        </div>
+      </div>
+
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("fw.jobs")}</h3>
+        <JobList t={t} jobs={jobs} onOpen={setJob} />
+      </div>
+
+      {ask && (
+        <Modal title={t("fw.confirmTitle").replace("{n}", runnable.length)} onClose={() => setAsk(false)} warn>
+          <div className="modal-body">
+            <p>{t("fw.confirmBody")}</p>
+            <ul className="mgr-plan">
+              {plan.map((p) => (
+                <li key={p.node.id}><b>{p.node.name}</b> {p.node.firmware} → {p.image ? p.image.version : "–"}
+                  {p.same && !opts.force && <span className="mgr-dim"> · {t("fw.sameSkip")}</span>}</li>
+              ))}
+            </ul>
+            <p className="mgr-dim">{opts.concurrency === 1 ? t("fw.oneAtATime") : t("fw.nAtATime").replace("{n}", opts.concurrency)}
+              {opts.stop ? " " + t("fw.stopsOnFailure") : ""}</p>
+          </div>
+          <div className="mgr-buttons">
+            <button className="copy-btn" onClick={() => setAsk(false)}>{t("common.cancel")}</button>
+            <button className="del" onClick={start}>{t("fw.go")}</button>
+          </div>
+        </Modal>
+      )}
+      {delImg && (
+        <Modal title={t("fw.deleteTitle").replace("{v}", `${delImg.model} ${delImg.version}`)} onClose={() => setDelImg(null)} warn>
+          <div className="mgr-buttons">
+            <button className="copy-btn" onClick={() => setDelImg(null)}>{t("common.cancel")}</button>
+            <button className="del" onClick={async () => {
+              try { await call(`/api/v1/images/${delImg.id}`, { method: "DELETE" }); } catch (e) { setErr(e.message); }
+              setDelImg(null); load();
+            }}>{t("common.delete")}</button>
+          </div>
+        </Modal>
+      )}
+    </section>
+  );
+}
+
+function BackupsView({ t, call }) {
+  const [nodes, setNodes] = useState([]);
+  const [rows, setRows] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [sched, setSched] = useState(null);
+  const [form, setForm] = useState(null);
+  const [sel, setSel] = useState(null);           // null: every node
+  const [only, setOnly] = useState("");
+  const [job, setJob] = useState(null);
+  const [del, setDel] = useState(null);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const offset = -new Date().getTimezoneOffset();
+  const load = useCallback(async () => {
+    try {
+      const [n, b, j, s] = await Promise.all([call("/api/v1/nodes"), call("/api/v1/backups"),
+        call("/api/v1/jobs?kind=backup&limit=10"), call("/api/v1/settings/backup-schedule")]);
+      setNodes(n.nodes); setRows(b.backups); setJobs(j.jobs); setSched(s); setErr("");
+      setForm((f) => f ?? { enabled: s.enabled, time: M.utcMinuteToLocal(s.utc_minute, offset), keep: s.keep });
+      const run = j.jobs.find((x) => x.state === "running");
+      if (run) setJob((cur) => cur ?? run.id);
+    } catch (e) { if (e.status !== 401) setErr(e.message); }
+  }, [call, offset]);
+  useEffect(() => { load(); }, [load]);
+  const chosen = sel ?? new Set(nodes.map((n) => n.id));
+  const toggle = (id) => setSel(() => { const x = new Set(chosen); if (x.has(id)) x.delete(id); else x.add(id); return x; });
+  const backupNow = async () => {
+    setErr("");
+    try {
+      const all = chosen.size === nodes.length;
+      const r = await call("/api/v1/backups/jobs", { method: "POST", body: { nodes: all ? [] : [...chosen] } });
+      setJob(r.id);
+    } catch (e) { setErr(e.message); }
+  };
+  const saveSched = async () => {
+    setErr(""); setMsg("");
+    const um = M.localToUtcMinute(form.time, offset);
+    if (um == null) { setErr(t("bk.badTime")); return; }
+    try {
+      const s = await call("/api/v1/settings/backup-schedule", { method: "PUT",
+        body: { enabled: form.enabled, utc_minute: um, keep: Number(form.keep) } });
+      setSched(s); setMsg(t("common.saved"));
+    } catch (e) { setErr(e.message); }
+  };
+  const shown = (rows || []).filter((b) => !only || String(b.node_id) === only);
+  return (
+    <section className="mgr-pane mgr-stack">
+      {err && <p className="set-hint err">{err}</p>}
+      {job && <JobPanel key={job} t={t} call={call} id={job} onClose={() => setJob(null)} onEnded={() => load()} />}
+      <div className="mgr-settings">
+        <div className="sys-card">
+          <h3 className="sys-card-title">{t("bk.now")}</h3>
+          <p className="set-hint">{t("bk.nowLead")}</p>
+          <div className="mgr-checks">
+            {nodes.map((n) => (
+              <label key={n.id} className="mgr-check"><input type="checkbox" checked={chosen.has(n.id)} onChange={() => toggle(n.id)} />{n.name}</label>
+            ))}
+          </div>
+          <button className="sys-refresh" disabled={!chosen.size || jobs.some((x) => x.state === "running")} onClick={backupNow}>
+            {t("bk.go").replace("{n}", chosen.size)}</button>
+        </div>
+        <div className="sys-card">
+          <h3 className="sys-card-title">{t("bk.daily")}</h3>
+          {form && (
+            <>
+              <label className="mgr-check"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />{t("bk.dailyOn")}</label>
+              <div className="set-grid">
+                <label className="ml"><span>{t("bk.time")}</span>
+                  <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} /></label>
+                <label className="ml"><span>{t("bk.keep")}</span>
+                  <input type="number" min={1} max={1000} value={form.keep} onChange={(e) => setForm({ ...form, keep: e.target.value })} /></label>
+              </div>
+              <p className="set-hint dim">{t("bk.dailyHint")}{sched?.last_day ? " " + t("bk.lastDay").replace("{d}", sched.last_day) : ""}</p>
+              <button className="sys-refresh" onClick={saveSched}>{t("common.save")}</button>{msg && <span className="mgr-ok"> {msg}</span>}
+            </>
+          )}
+        </div>
+      </div>
+      <div className="sys-card">
+        <div className="mgr-toolbar">
+          <h3 className="sys-card-title">{t("bk.list")}</h3>
+          <span className="mgr-spacer" />
+          <select value={only} onChange={(e) => setOnly(e.target.value)}>
+            <option value="">{t("bk.allNodes")}</option>
+            {nodes.map((n) => <option key={n.id} value={String(n.id)}>{n.name}</option>)}
+          </select>
+        </div>
+        {rows && shown.length === 0 && <p className="mgr-dim">{t("bk.none")}</p>}
+        {shown.length > 0 && (
+          <table className="acct-table mgr-table">
+            <thead><tr><th>{t("ev.node")}</th><th>{t("ev.time")}</th><th>{t("fw.size")}</th><th>{t("col.firmware")}</th><th>{t("bk.by")}</th><th /></tr></thead>
+            <tbody>
+              {shown.map((b) => (
+                <tr key={b.id}>
+                  <td className="mgr-name">{b.node_name}</td>
+                  <td className="mono mgr-nowrap">{M.fmtTime(b.ts)}</td>
+                  <td className="mono">{fmtBytes(b.size)}</td>
+                  <td className="mono">{b.firmware}</td>
+                  <td>{b.origin === "schedule" ? t("bk.bySchedule") : b.origin}</td>
+                  <td className="mgr-act">
+                    <a className="copy-btn" href={`/api/v1/backups/${b.id}/download`}>{t("bk.download")}</a>
+                    <button className="del" onClick={() => setDel(b)}>{t("common.delete")}</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="set-hint dim">{t("bk.restoreHint")}</p>
+      </div>
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("bk.jobs")}</h3>
+        <JobList t={t} jobs={jobs} onOpen={setJob} />
+      </div>
+      {del && (
+        <Modal title={t("bk.deleteTitle").replace("{n}", del.node_name).replace("{d}", M.fmtTime(del.ts))} onClose={() => setDel(null)} warn>
+          <div className="mgr-buttons">
+            <button className="copy-btn" onClick={() => setDel(null)}>{t("common.cancel")}</button>
+            <button className="del" onClick={async () => {
+              try { await call(`/api/v1/backups/${del.id}`, { method: "DELETE" }); } catch (e) { setErr(e.message); }
+              setDel(null); load();
+            }}>{t("common.delete")}</button>
+          </div>
+        </Modal>
+      )}
     </section>
   );
 }

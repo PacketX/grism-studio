@@ -151,3 +151,82 @@ export function summaryCounts(s) {
   return { total, online, problem: total - online - Number(st.unknown || 0), unknown: Number(st.unknown || 0),
            alerts: Number(s?.alerts || 0) };
 }
+
+/* ---------------- firmware ---------------- */
+
+/* Release numbers compare as numbers, part by part: 7.6.261111.1 < 7.6.261111.10. */
+export function versionCompare(a, b) {
+  const pa = String(a || "").split(".").map((x) => parseInt(x, 10) || 0);
+  const pb = String(b || "").split(".").map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+/* The images there are for one model, newest release first (then newest upload). */
+export function imagesFor(images, model) {
+  return (images || []).filter((i) => i.model === model)
+    .sort((a, b) => versionCompare(b.version, a.version) || (b.uploaded || 0) - (a.uploaded || 0));
+}
+
+/* What a batch update would do: per selected node, the image its model gets
+   (the one chosen for that model, else the newest), and whether the node runs it
+   already. `choice` maps a model to an image id. */
+export function firmwarePlan(nodes, selected, images, choice = {}) {
+  const sel = new Set(selected || []);
+  return (nodes || []).filter((n) => sel.has(n.id)).map((n) => {
+    const list = imagesFor(images, n.model);
+    const img = list.find((i) => i.id === choice[n.model]) || list[0] || null;
+    const same = !!img && img.version === n.firmware && sameRevision(img.revision, n.revision);
+    return { node: n, image: img, same };
+  });
+}
+
+/* Two revisions, either possibly shortened, name one commit (the manager's same_revision). */
+export function sameRevision(a, b) {
+  const x = String(a || "").trim(), y = String(b || "").trim();
+  if (!x || !y) return true;
+  const n = Math.min(x.length, y.length, 40);
+  return n >= 7 && x.slice(0, n) === y.slice(0, n);
+}
+
+/* The image per model a plan sends to /api/v1/firmware/jobs. */
+export function planImages(plan) {
+  const out = {};
+  (plan || []).forEach((p) => { if (p.image) out[p.node.model] = p.image.id; });
+  return Object.values(out);
+}
+
+export function jobTone(state) {
+  return state === "done" || state === "skipped" ? "ok" : state === "failed" || state === "interrupted" ? "bad"
+    : state === "running" ? "run" : "dim";
+}
+
+/* An item's upload, 0-100, or null when it is not uploading. */
+export function uploadPercent(item) {
+  if (!item || item.stage !== "upload" || !item.total) return null;
+  return Math.max(0, Math.min(100, Math.round((100 * (item.sent || 0)) / item.total)));
+}
+
+export function fmtDurationS(s) {
+  const x = Math.max(0, Math.round(Number(s) || 0));
+  if (x < 60) return x + " s";
+  return Math.floor(x / 60) + " min " + String(x % 60).padStart(2, "0") + " s";
+}
+
+/* ---------------- the daily backup ---------------- */
+
+/* The schedule is kept as a minute of the UTC day; the page shows and takes it in
+   the browser's own time. `offset` is minutes east of UTC (-Date#getTimezoneOffset()). */
+export function utcMinuteToLocal(utcMinute, offset) {
+  const m = (((Number(utcMinute) || 0) + (Number(offset) || 0)) % 1440 + 1440) % 1440;
+  return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+}
+
+export function localToUtcMinute(hhmm, offset) {
+  const mt = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || "").trim());
+  if (!mt || Number(mt[1]) > 23 || Number(mt[2]) > 59) return null;
+  return (((Number(mt[1]) * 60 + Number(mt[2]) - (Number(offset) || 0)) % 1440) + 1440) % 1440;
+}
