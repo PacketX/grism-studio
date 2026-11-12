@@ -2989,6 +2989,20 @@ export const signedInUser = (cookieString) => readCookie(USERNAME_COOKIE, cookie
 /* Pull a username out of whatever get_current_user returns. The endpoint may hand
    back a bare string, or an object using any of a few plausible key names, so we
    accept the common shapes rather than depending on one exact contract. */
+/* A Studio that GRISM Manager serves runs under /n/<id>/grism-studio/, and the
+   device it works on is behind the manager at /n/<id>/... -- `base` is that
+   "/n/<id>" (empty on the device itself, where nothing changes). Every absolute
+   path the Studio asks for is the device's, except its own files under
+   /grism-studio/, which the manager serves as they are. A full URL, a
+   protocol-relative one and a path already under the base are left alone. */
+export function prefixApiPath(url, base) {
+  if (!base || typeof url !== "string") return url;
+  if (!url.startsWith("/") || url.startsWith("//")) return url;
+  if (url === base || url.startsWith(base + "/") || url.startsWith(base + "?")) return url;
+  if (url === "/grism-studio" || url.startsWith("/grism-studio/")) return url;
+  return base + url;
+}
+
 export function extractUsername(payload) {
   if (payload == null) return "";
   if (typeof payload === "string") {

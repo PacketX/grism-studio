@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffect } from "react";
 import "./GrismStudio.css";
 import { STUDIO_VERSION, makeT } from "./i18n.js";
+import { apiUrl, MANAGER } from "./api-base.js";
 import { PacketxLogo } from "./PacketxLogo.jsx";
 import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, REPLAY_PLAYBACK_KEYS, NODE_W, NODE_H, PH_H,
@@ -1054,6 +1055,13 @@ export default function GrismStudio() {
           </div>
         )}
         {login.who && <AlertBell alerts={alerts} t={t} canAck={privAtLeast(login.priv, PRIV.OPERATOR)} onAck={ackAlert} />}
+        {/* Served by GRISM Manager: which node this is, and the way back to the list. */}
+        {MANAGER && (
+          <a className="mgr-back" href={MANAGER.home || "/"} title={t("mgr.backTip")}>
+            <span className="mgr-back-arrow" aria-hidden="true">←</span>{t("mgr.back")}
+            {MANAGER.node?.name && <span className="mgr-node" title={t("mgr.node") + " · " + t("mgr.via")}>{MANAGER.node.name}</span>}
+          </a>
+        )}
         {/* Account menu: session, language and theme live behind one control so the
             topbar stays focused on the work rather than on settings. */}
         <div className="acct-wrap">
@@ -2012,7 +2020,7 @@ function SystemLogTab({ loggedIn, t }) {
             onChange={(e) => setFollow(e.target.checked)} /> {tr("log.follow")}</label>
           <button className="sys-refresh" onClick={() => load(viewing)} disabled={state === "loading"}>
             {state === "loading" ? tr("sys.refreshing") : tr("sys.refresh")}</button>
-          {files.length > 0 && <a className="copy-btn log-zip" href="/grism/task/download_logs"
+          {files.length > 0 && <a className="copy-btn log-zip" href={apiUrl("/grism/task/download_logs")}
             title={tr("log.downloadAllTip")}>{tr("log.downloadAll")}</a>}
           <button className="del" onClick={() => setConfirmClear(true)}>{tr("log.clear")}</button>
         </div>
@@ -2223,7 +2231,7 @@ function DebugCard({ tr, onReboot }) {
         {(st.cores ?? []).length > 0 && (
           <p className="set-hint">
             {tr("dbg.manifestHint")}{" "}
-            <a className="copy-btn" href="/grism/task/get_core_file?name=MANIFEST.txt" download>{"MANIFEST.txt"}</a>
+            <a className="copy-btn" href={apiUrl("/grism/task/get_core_file?name=MANIFEST.txt")} download>{"MANIFEST.txt"}</a>
           </p>
         )}
         {(st.cores ?? []).length > 0 && (
@@ -2236,7 +2244,7 @@ function DebugCard({ tr, onReboot }) {
                   <td className="mono">{fmtBytes(c.size)}</td>
                   <td>{new Date(c.mtime * 1000).toLocaleString()}</td>
                   <td className="acct-act">
-                    <a className="copy-btn" href={"/grism/task/get_core_file?name=" + encodeURIComponent(c.name)}
+                    <a className="copy-btn" href={apiUrl("/grism/task/get_core_file?name=" + encodeURIComponent(c.name))}
                       download>{tr("dbg.download")}</a>{" "}
                     <button className="del" disabled={!!busy} onClick={() => setAsk({ del: c.name })}>{tr("common.delete")}</button>
                   </td>
@@ -5352,7 +5360,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
 
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.snmp")}</h3>
-              <p className="set-hint">{tr("set.snmpNote")} <a href="/data/PACKETX-MIB.txt" download>PACKETX-MIB.txt</a></p>
+              <p className="set-hint">{tr("set.snmpNote")} <a href={apiUrl("/data/PACKETX-MIB.txt")} download>PACKETX-MIB.txt</a></p>
               <div className="set-grid">
                 <label className="ml"><span>{tr("set.readCommunity")}</span>
                   <input value={community} onChange={(e) => setCommunity(e.target.value)} /></label>

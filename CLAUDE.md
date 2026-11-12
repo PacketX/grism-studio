@@ -16,6 +16,8 @@ Everything below lives in `src/`.
 | `i18n.js` | `en` / `zh-TW` dictionaries, `makeT`, `STUDIO_VERSION` |
 | `test.js` | 549 assertions across 45 groups. Imports the real modules |
 | `eslint.config.js` | Deliberately minimal — see "The linter earns its keep" |
+| `api-base.js` | Under GRISM Manager: prefixes the device calls (see below) |
+| `manager/` | GRISM Manager's pages, a build of their own (see below) |
 
 ## Commands
 
@@ -78,6 +80,32 @@ prefix and 404 everything else, which is what reveals path bugs that the device'
 nginx would paper over; and intercept `/grism/**` so device flows can be driven
 without a device — including failure, by aborting the requests to simulate one
 going away.
+
+## GRISM Manager's pages are the second build of this repo
+
+`manager.html` + `src/manager/` (`Manager.jsx`, `mgr-core.js` -- tested in
+`test.js` like core --, `manager-i18n.js`, `manager.css`) are the pages of GRISM
+Manager (`/data/grism-manager`, its own repo: the Python side). `npm run
+build:manager` (`vite.manager.config.js`, base `/`) writes `dist-manager/`; the
+device build is untouched by it -- nothing under `src/manager/` is imported by
+the Studio. The manager serves both builds: its pages at `/`, the Studio at
+`/n/<id>/grism-studio/` for every node.
+
+**A Studio the manager serves reaches its device through the manager.** The
+manager injects `window.GRISM_API_BASE = "/n/<id>"` (and `GRISM_MANAGER`, the
+node's name and the way back) into `index.html`. `src/api-base.js`, imported
+first by `main.jsx`, then prefixes every absolute fetch and XHR path with it
+(`prefixApiPath()` in core: the Studio's own `/grism-studio/...` files and paths
+already under the base are left alone). A link the browser follows itself --
+the download `<a href>`s -- is not a fetch: write it as `apiUrl("/grism/...")`,
+or it reaches the manager instead of the device. On the device neither global
+is set and none of it changes anything. The topbar shows `← Manager <node>`
+when `GRISM_MANAGER` is set.
+
+The manager answers `/direct_login`, `/logout` and `get_current_user` itself
+(the account is the manager's), and refuses the device's account and token
+calls; everything else goes to the device with a credential of the signed-in
+account's level, so the device's own 401s still apply.
 
 ## How the pieces fit
 

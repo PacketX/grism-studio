@@ -13,6 +13,8 @@ import * as C from "./grism-core.js";
 import { DOMParser as XmlDomParser } from "linkedom";
 C.setDomParser(XmlDomParser);   // browsers have DOMParser; Node needs one injected
 import { I18N, makeT } from "./i18n.js";
+import * as MG from "./manager/mgr-core.js";
+import { MI18N } from "./manager/manager-i18n.js";
 import { readFileSync } from "node:fs";
 
 let _pass = 0, _fail = 0;
@@ -5468,6 +5470,86 @@ group("pcap live view");
   }
 }
 
+/* ---------- served by GRISM Manager ---------- */
+group("API base under GRISM Manager");
+{
+  const P = C.prefixApiPath, B = "/n/3";
+  check("no base: every path as it is", P("/grism/task/get_config", "") === "/grism/task/get_config" && P("/x", undefined) === "/x");
+  check("a device call goes under the node's prefix", P("/grism/task/get_config", B) === "/n/3/grism/task/get_config");
+  check("the query string stays with it", P("/grism/task/get_core_file?name=a b", B) === "/n/3/grism/task/get_core_file?name=a b");
+  check("sign-in and sign-out too", P("/direct_login", B) === "/n/3/direct_login" && P("/logout", B) === "/n/3/logout");
+  check("a device file too", P("/data/PACKETX-MIB.txt", B) === "/n/3/data/PACKETX-MIB.txt");
+  check("the Studio's own files are the manager's", P("/grism-studio/assets/x.js", B) === "/grism-studio/assets/x.js"
+    && P("/grism-studio", B) === "/grism-studio");
+  check("a path already under the base is not doubled", P("/n/3/grism/task/x", B) === "/n/3/grism/task/x" && P("/n/3", B) === "/n/3");
+  check("another node's prefix is not this one", P("/n/31/grism/task/x", B) === "/n/3/n/31/grism/task/x");
+  check("full and protocol-relative URLs are left alone", P("https://a/b", B) === "https://a/b" && P("//a/b", B) === "//a/b");
+  check("a relative path is left alone", P("grism/task/x", B) === "grism/task/x");
+  check("not a string: left alone", P(null, B) === null);
+}
+
+/* ---------- GRISM Manager's pages ---------- */
+group("manager: node list");
+{
+  const n = (name, status, extra = {}) => ({ name, address: extra.address || "10.0.0.1", model: extra.model || "Q16",
+    firmware: extra.firmware || "7.6.261111.1", line: extra.line || "dpdk", tags: extra.tags || [],
+    state: status ? { status, alerts: extra.alerts || [], in_mbps: extra.in || 0, out_mbps: 0, system: extra.system || {} } : null });
+  const list = [n("b-node", "online"), n("a-node", "offline"), n("c-node", "online", { alerts: [{ id: 1 }] }),
+                n("d-node", null, { firmware: "6.6.261111.1", line: "master", model: "G8S", tags: ["site-a"] })];
+  check("status tones", MG.statusTone("online") === "ok" && MG.statusTone("offline") === "bad"
+    && MG.statusTone("cert") === "bad" && MG.statusTone("unknown") === "dim" && MG.statusTone(undefined) === "dim");
+  check("a node with no state yet is unknown", MG.nodeStatus(list[3]) === "unknown");
+  check("problems: not online, or an alert", MG.isProblem(list[1]) && MG.isProblem(list[2]) && MG.isProblem(list[3]) && !MG.isProblem(list[0]));
+  check("line names from the firmware", MG.lineName(list[0]) === "ARM64" && MG.lineName(list[3]) === "MIPS64"
+    && MG.lineName({ line: "dpdk" }) === "ARM64" && MG.lineName({}) === "");
+  check("search: every word somewhere", MG.filterNodes(list, "g8s site-a").length === 1
+    && MG.filterNodes(list, "arm64").length === 3 && MG.filterNodes(list, "").length === 4 && MG.filterNodes(list, "nothing").length === 0);
+  check("show problems only", MG.filterNodes(list, "", "problems").map((x) => x.name).join() === "a-node,c-node,d-node");
+  check("sort by status: online last, the rest by name", MG.sortNodes(list, "status").map((x) => x.name).join() === "a-node,d-node,b-node,c-node");
+  check("sort by name, both ways", MG.sortNodes(list, "name").map((x) => x.name).join() === "a-node,b-node,c-node,d-node"
+    && MG.sortNodes(list, "name", -1)[0].name === "d-node");
+  check("sort by address numerically", MG.sortNodes([n("x", "online", { address: "10.0.0.10" }), n("y", "online", { address: "10.0.0.9" })], "address")[0].name === "y");
+  check("an unknown sort key sorts by name", MG.sortNodes(list, "nope")[0].name === "a-node");
+}
+group("manager: formatting and forms");
+{
+  check("rates", MG.fmtMbps(0) === "0" && MG.fmtMbps(0.5) === "500 kb/s" && MG.fmtMbps(12.345) === "12.3 Mb/s"
+    && MG.fmtMbps(2500) === "2.50 Gb/s" && MG.fmtMbps(-1) === "0");
+  check("ago", MG.fmtAgo(100, 130) === "30 s" && MG.fmtAgo(100, 100 + 3600 * 2) === "2 h" && MG.fmtAgo(0, 5) === ""
+    && MG.fmtAgo(200, 100) === "0 s");
+  check("time stamp", /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(MG.fmtTime(1794464400)) && MG.fmtTime(0) === "");
+  const ok = { name: "hl1", address: "192.168.2.100", port: 443, username: "packetx", password: "x" };
+  check("a complete add-node form", MG.nodeFormProblems(ok).length === 0);
+  check("add-node form: what is missing", MG.nodeFormProblems({ ...ok, name: " ", address: "", port: 0 }).join() === "name,address,port");
+  check("add-node form: a bad address and manager address", MG.nodeFormProblems({ ...ok, address: "a b", manager_address: "x/y" }).join() === "addressBad,managerAddress");
+  check("an IPv6 node address is fine", MG.nodeFormProblems({ ...ok, address: "fe80::1" }).length === 0);
+  const pol = { min_length: 8, min_classes: 2 };
+  check("password rules as the server's", MG.passwordProblems("short", "u", pol).join() === "length,classes"
+    && MG.passwordProblems("longenough1", "u", pol).length === 0 && MG.passwordProblems("Admin123", "admin123", pol).join() === "name");
+  check("API errors as text", MG.errorText({ detail: "no" }, 400) === "no" && MG.errorText({ detail: { code: "login", message: "refused" } }) === "refused"
+    && MG.errorText(null, 502) === "HTTP 502" && MG.errorCode({ detail: { code: "login" } }) === "login" && MG.errorCode({ detail: "x" }) === "");
+  check("roles", MG.roleOf(15) === "admin" && MG.roleOf(5) === "operator" && MG.roleOf(99) === "view");
+  const c = MG.summaryCounts({ nodes: 5, status: { online: 2, offline: 2, unknown: 1 }, alerts: 3 });
+  check("summary counts", c.total === 5 && c.online === 2 && c.problem === 2 && c.unknown === 1 && c.alerts === 3);
+}
+group("manager: every word in both languages");
+{
+  const src = readFileSync(new URL("./manager/Manager.jsx", import.meta.url), "utf8");
+  const keys = new Set([...src.matchAll(/\bt\("([a-zA-Z0-9_.]+)"\)/g)].map((m) => m[1]));
+  // keys made up at run time: a prefix and the values it is completed with
+  const dyn = { "tab.": ["nodes", "events", "accounts", "audit", "settings"], "role.": ["view", "operator", "config", "admin"],
+    "st.": MG.NODE_STATUSES, "sev.": ["info", "warning", "critical"], "pw.prob.": ["length", "classes", "name"],
+    "add.prob.": ["name", "nameLong", "address", "addressBad", "port", "username", "password", "managerAddress"],
+    "add.err.": ["unreachable", "cert", "login", "not_admin", "old_firmware", "http", "bad_answer", "auth"],
+    "acc.levelHint.": ["view", "operator", "config", "admin"] };
+  for (const [p, vals] of Object.entries(dyn)) vals.forEach((v) => keys.add(p + v));
+  const missEn = [...keys].filter((k) => !(k in MI18N.en)), missZh = [...keys].filter((k) => !(k in MI18N["zh-TW"]));
+  if (missEn.length || missZh.length) console.log("  missing en:", missEn.join(" "), "| zh-TW:", missZh.join(" "));
+  check("every key the pages use is in English and in Chinese", keys.size > 100 && !missEn.length && !missZh.length);
+  const extra = Object.keys(MI18N.en).filter((k) => !(k in MI18N["zh-TW"])).concat(Object.keys(MI18N["zh-TW"]).filter((k) => !(k in MI18N.en)));
+  check("the two dictionaries hold the same keys", extra.length === 0);
+}
+
 /* ---------- lint (catches what the suite cannot) ---------- */
 group("lint");
 {
@@ -5476,7 +5558,8 @@ group("lint");
   const { execFileSync } = await import("node:child_process");
   let out = "", failed = false;
   try {
-    execFileSync("npx", ["eslint", "GrismStudio.jsx", "grism-core.js", "i18n.js", "test.js"],
+    execFileSync("npx", ["eslint", "GrismStudio.jsx", "grism-core.js", "i18n.js", "test.js", "api-base.js", "main.jsx",
+      "manager/Manager.jsx", "manager/mgr-core.js", "manager/manager-i18n.js", "manager/main.jsx"],
       { cwd: new URL(".", import.meta.url).pathname, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) { failed = true; out = String(e.stdout || "") + String(e.stderr || ""); }
   if (failed) console.log(out.split("\n").filter((l) => l.trim()).slice(0, 12).join("\n"));
