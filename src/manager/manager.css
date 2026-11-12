@@ -101,6 +101,10 @@
 .mgr-wide-card{grid-column:1/-1;}
 .mgr-seg{margin:6px 0 12px;}
 .mgr-check{display:flex; align-items:center; gap:8px; margin:8px 0;}
+.mgr-filebtn{cursor:pointer; display:inline-flex; align-items:center;}
+.mgr-pending{display:flex; align-items:center; gap:12px; padding:10px 12px; margin:8px 0; border-radius:8px;
+  background:var(--warn-bg, #fff4e0); border:1px solid var(--warn-border, #f0b860);}
+.mgr-table input.mono{width:100%; min-width:110px;}
 .mgr-row2 > .del.mgr-rowdel{align-self:flex-end; margin-bottom:2px;}
 
 /* batch jobs */

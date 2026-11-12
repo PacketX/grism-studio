@@ -5595,6 +5595,26 @@ group("manager: the sign-in server");
   check("source names", MG.sourceName("tacacs") === "TACACS+" && MG.sourceName("radius") === "RADIUS");
 }
 
+group("manager: the host's management interfaces");
+{
+  const ifs = [{ iface: "enp5s0", state: "UP", addresses: ["192.168.1.151/24"], gateway: "192.168.1.1", card: false },
+               { iface: "enp6s0", state: "DOWN", addresses: [], gateway: "", card: false },
+               { iface: "enp1s0", state: "UP", addresses: ["192.168.2.101/24"], gateway: "", card: true }];
+  const rows = MG.mgmtToForm(ifs, {});
+  check("the cards' links are left out", rows.length === 2 && rows.every((r) => r.iface !== "enp1s0"));
+  check("system by default, the address in force offered", rows[0].mode === "system" && rows[0].address === "192.168.1.151/24"
+    && rows[0].gateway === "192.168.1.1");
+  check("nothing set, nothing changed", !MG.mgmtChanged(rows, {}) && JSON.stringify(MG.formToMgmt(rows)) === "{}");
+  const edited = rows.map((r) => (r.iface === "enp5s0" ? { ...r, mode: "static", address: "192.168.1.159/24", dns: "8.8.8.8, 1.1.1.1" }
+    : { ...r, mode: "dhcp" }));
+  const m = MG.formToMgmt(edited);
+  check("to the settings", m.enp5s0.address === "192.168.1.159/24" && m.enp5s0.dns.length === 2 && m.enp6s0.mode === "dhcp");
+  check("a change is seen", MG.mgmtChanged(edited, {}));
+  const back = MG.mgmtToForm(ifs, m);
+  check("what is set comes back as it was", back[0].mode === "static" && back[0].address === "192.168.1.159/24"
+    && back[0].dns === "8.8.8.8, 1.1.1.1" && back[1].mode === "dhcp" && !MG.mgmtChanged(back, m));
+}
+
 group("manager: every word in both languages");
 {
   const src = readFileSync(new URL("./manager/Manager.jsx", import.meta.url), "utf8");

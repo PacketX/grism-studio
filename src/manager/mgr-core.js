@@ -303,3 +303,45 @@ export function formToAuth(f) {
   if (f.secret) out.secret = f.secret;      // none: the one the manager keeps
   return out;
 }
+
+/* ---------------- the host's management interfaces ---------------- */
+
+/* One row per interface that is not a card's link: what it has now, and what
+   the manager is to set (system = the installer's own file decides). */
+export function mgmtToForm(interfaces, mgmt) {
+  return (interfaces || []).filter((x) => !x.card).map((x) => {
+    const m = (mgmt || {})[x.iface];
+    const cur = (x.addresses || [])[0] || "";
+    return {
+      iface: x.iface, state: x.state, addresses: x.addresses || [], gateway_now: x.gateway || "",
+      mode: m ? m.mode : "system",
+      address: m && m.mode === "static" ? m.address : cur,
+      gateway: m && m.mode === "static" ? m.gateway || "" : x.gateway || "",
+      dns: m && m.mode === "static" ? (m.dns || []).join(", ") : "",
+    };
+  });
+}
+
+export function formToMgmt(rows) {
+  const out = {};
+  for (const r of rows || []) {
+    if (r.mode === "dhcp") out[r.iface] = { mode: "dhcp" };
+    else if (r.mode === "static") {
+      out[r.iface] = { mode: "static", address: String(r.address || "").trim(), gateway: String(r.gateway || "").trim(),
+        dns: String(r.dns || "").split(/[,\s]+/).map((v) => v.trim()).filter(Boolean) };
+    }
+  }
+  return out;
+}
+
+export function mgmtChanged(rows, mgmt) {
+  return JSON.stringify(formToMgmt(rows)) !== JSON.stringify(normMgmt(mgmt));
+}
+
+function normMgmt(mgmt) {
+  const out = {};
+  for (const [k, m] of Object.entries(mgmt || {})) {
+    out[k] = m.mode === "dhcp" ? { mode: "dhcp" } : { mode: "static", address: m.address, gateway: m.gateway || "", dns: m.dns || [] };
+  }
+  return out;
+}

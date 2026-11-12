@@ -726,9 +726,13 @@ function JobList({ t, jobs, onOpen }) {
 }
 
 function uploadImage(file, onProgress) {
+  return uploadFile("/api/v1/images?filename=" + encodeURIComponent(file.name), file, onProgress);
+}
+
+function uploadFile(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
-    x.open("POST", "/api/v1/images?filename=" + encodeURIComponent(file.name));
+    x.open("POST", url);
     x.setRequestHeader("Content-Type", "application/octet-stream");
     x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
     x.onload = () => {
@@ -924,6 +928,9 @@ function BackupsView({ t, call }) {
   const [only, setOnly] = useState("");
   const [job, setJob] = useState(null);
   const [del, setDel] = useState(null);
+  const [restore, setRestore] = useState(null);
+  const [restarting, setRestarting] = useState(false);
+  const [hostBusy, setHostBusy] = useState("");
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const offset = -new Date().getTimezoneOffset();
@@ -959,9 +966,36 @@ function BackupsView({ t, call }) {
     } catch (e) { setErr(e.message); }
   };
   const shown = (rows || []).filter((b) => !only || String(b.node_id) === only);
+  const hostNow = async () => {
+    setErr(""); setHostBusy("make");
+    try { await call("/api/v1/host-backups", { method: "POST" }); await load(); }
+    catch (e) { setErr(e.message); } finally { setHostBusy(""); }
+  };
+  const hostUpload = async (file) => {
+    if (!file) return;
+    setErr(""); setHostBusy("upload");
+    try { await uploadFile("/api/v1/host-backups/upload", file, () => {}); await load(); }
+    catch (e) { setErr(e.message); } finally { setHostBusy(""); }
+  };
+  const doRestore = async () => {
+    const b = restore;
+    setRestore(null); setErr("");
+    try {
+      await call(`/api/v1/backups/${b.id}/restore`, { method: "POST" });
+      setRestarting(true);
+      await sleep(4000);
+      for (let i = 0; i < 60; i++) {
+        try { const r = await fetch("/api/v1/version", { cache: "no-store" }); if (r.ok) break; } catch { /* restarting */ }
+        await sleep(1000);
+      }
+      window.location.reload();
+    } catch (e) { setErr(e.message); setRestarting(false); }
+  };
+  const nodeName = (b) => (b.node_id === 0 ? t("bk.hostName") : b.node_name);
   return (
     <section className="mgr-pane mgr-stack">
       {err && <p className="set-hint err">{err}</p>}
+      {restarting && <p className="set-hint">{t("bk.restarting")}</p>}
       {job && <JobPanel key={job} t={t} call={call} id={job} onClose={() => setJob(null)} onEnded={() => load()} />}
       <div className="mgr-settings">
         <div className="sys-card">
@@ -991,6 +1025,17 @@ function BackupsView({ t, call }) {
             </>
           )}
         </div>
+        <div className="sys-card">
+          <h3 className="sys-card-title">{t("bk.host")}</h3>
+          <p className="set-hint">{t("bk.hostLead")}</p>
+          <div className="mgr-buttons left">
+            <button className="sys-refresh" disabled={!!hostBusy} onClick={hostNow}>{hostBusy === "make" ? t("bk.hostMaking") : t("bk.hostNow")}</button>
+            <label className="copy-btn mgr-filebtn">{hostBusy === "upload" ? t("bk.hostUploading") : t("bk.hostUpload")}
+              <input type="file" accept=".tgz,application/gzip" hidden disabled={!!hostBusy}
+                onChange={(e) => { const f = e.target.files[0]; e.target.value = ""; hostUpload(f); }} /></label>
+          </div>
+          <p className="set-hint dim">{t("bk.hostHint")}</p>
+        </div>
       </div>
       <div className="sys-card">
         <div className="mgr-toolbar">
@@ -998,6 +1043,7 @@ function BackupsView({ t, call }) {
           <span className="mgr-spacer" />
           <select value={only} onChange={(e) => setOnly(e.target.value)}>
             <option value="">{t("bk.allNodes")}</option>
+            <option value="0">{t("bk.hostName")}</option>
             {nodes.map((n) => <option key={n.id} value={String(n.id)}>{n.name}</option>)}
           </select>
         </div>
@@ -1008,13 +1054,14 @@ function BackupsView({ t, call }) {
             <tbody>
               {shown.map((b) => (
                 <tr key={b.id}>
-                  <td className="mgr-name">{b.node_name}</td>
+                  <td className="mgr-name">{nodeName(b)}</td>
                   <td className="mono mgr-nowrap">{M.fmtTime(b.ts)}</td>
                   <td className="mono">{fmtBytes(b.size)}</td>
                   <td className="mono">{b.firmware}</td>
-                  <td>{b.origin === "schedule" ? t("bk.bySchedule") : b.origin}</td>
+                  <td>{b.origin === "schedule" ? t("bk.bySchedule") : b.origin === "found on disk" ? t("bk.foundOnDisk") : b.origin}</td>
                   <td className="mgr-act">
                     <a className="copy-btn" href={`/api/v1/backups/${b.id}/download`}>{t("bk.download")}</a>
+                    {b.node_id === 0 && <button className="copy-btn" disabled={restarting} onClick={() => setRestore(b)}>{t("bk.restore")}</button>}
                     <button className="del" onClick={() => setDel(b)}>{t("common.delete")}</button>
                   </td>
                 </tr>
@@ -1029,13 +1076,22 @@ function BackupsView({ t, call }) {
         <JobList t={t} jobs={jobs} onOpen={setJob} />
       </div>
       {del && (
-        <Modal title={t("bk.deleteTitle").replace("{n}", del.node_name).replace("{d}", M.fmtTime(del.ts))} onClose={() => setDel(null)} warn>
+        <Modal title={t("bk.deleteTitle").replace("{n}", nodeName(del)).replace("{d}", M.fmtTime(del.ts))} onClose={() => setDel(null)} warn>
           <div className="mgr-buttons">
             <button className="copy-btn" onClick={() => setDel(null)}>{t("common.cancel")}</button>
             <button className="del" onClick={async () => {
               try { await call(`/api/v1/backups/${del.id}`, { method: "DELETE" }); } catch (e) { setErr(e.message); }
               setDel(null); load();
             }}>{t("common.delete")}</button>
+          </div>
+        </Modal>
+      )}
+      {restore && (
+        <Modal title={t("bk.restoreTitle").replace("{d}", M.fmtTime(restore.ts))} onClose={() => setRestore(null)} warn>
+          <p>{t("bk.restoreBody")}</p>
+          <div className="mgr-buttons">
+            <button className="copy-btn" onClick={() => setRestore(null)}>{t("common.cancel")}</button>
+            <button className="del" onClick={doRestore}>{t("bk.restore")}</button>
           </div>
         </Modal>
       )}
@@ -1288,6 +1344,11 @@ function SignInServerCard({ t, call }) {
    that went. */
 function HostSettingsCard({ t, call }) {
   const [form, setForm] = useState(null);
+  const [saved, setSaved] = useState(null);
+  const [ifs, setIfs] = useState([]);
+  const [mg, setMg] = useState([]);
+  const [nat, setNat] = useState(null);
+  const [now, setNow] = useState(Date.now() / 1000);
   const [status, setStatus] = useState(null);
   const [you, setYou] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1297,9 +1358,32 @@ function HostSettingsCard({ t, call }) {
     try {
       const r = await call("/api/v1/settings/host");
       setForm(M.hostSettingsToForm(r.settings)); setStatus(r.status); setYou(r.you || "");
+      setSaved(r.settings); setIfs(r.interfaces || []); setMg(M.mgmtToForm(r.interfaces || [], r.settings.mgmt || {}));
+      setNat(r.card_nat || null);
     } catch (e) { setErr(e.message); }
   }, [call]);
   useEffect(() => { load(); }, [load]);
+  const pending = status && status.mgmt_pending;
+  useEffect(() => {
+    if (!pending) return undefined;
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, [pending]);
+  const putHost = async (patch, okMsg) => {
+    setBusy(true); setErr(""); setMsg("");
+    try {
+      await call("/api/v1/settings/host", { method: "PUT", body: { ...saved, ...patch } });
+      setMsg(okMsg);
+      await sleep(2500);
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const confirmMgmt = async () => {
+    setBusy(true); setErr("");
+    try { await call("/api/v1/settings/host/confirm-mgmt", { method: "POST" }); await sleep(1500); await load(); setMsg(t("host.mgmtConfirmed")); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const mrow = (i, patch) => setMg(mg.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const save = async () => {
     setBusy(true); setErr(""); setMsg("");
     try {
@@ -1351,6 +1435,49 @@ function HostSettingsCard({ t, call }) {
         <button className="sys-refresh" disabled={busy} onClick={save}>{busy ? t("common.saving") : t("common.save")}</button>
         {msg && <span className="mgr-ok">{msg}</span>}
       </div>
+
+      <h4 className="mgr-h4">{t("host.mgmt")}</h4>
+      {pending && (
+        <div className="mgr-pending">
+          <span>{t("host.mgmtPending").replace("{s}", Math.max(0, Math.round(pending.deadline - now)))}</span>
+          <button className="sys-refresh" disabled={busy || pending.deadline < now} onClick={confirmMgmt}>{t("host.mgmtConfirm")}</button>
+        </div>
+      )}
+      <table className="acct-table mgr-table">
+        <thead><tr><th>{t("host.iface")}</th><th>{t("host.now")}</th><th>{t("host.mode")}</th><th>{t("host.addr")}</th><th>{t("host.gw")}</th><th>{t("host.dns")}</th></tr></thead>
+        <tbody>
+          {mg.map((x, i) => (
+            <tr key={x.iface}>
+              <td className="mono"><b>{x.iface}</b> <span className={"mgr-badge" + (x.state === "UP" ? "" : " warn")}>{x.state || "?"}</span></td>
+              <td className="mono mgr-dim">{(x.addresses || []).join(", ") || "-"}{x.gateway_now ? ` via ${x.gateway_now}` : ""}</td>
+              <td><select value={x.mode} onChange={(e) => mrow(i, { mode: e.target.value })}>
+                <option value="system">{t("host.modeSystem")}</option><option value="static">{t("host.modeStatic")}</option><option value="dhcp">DHCP</option>
+              </select></td>
+              <td><input className="mono" disabled={x.mode !== "static"} value={x.address} placeholder="a.b.c.d/nn" onChange={(e) => mrow(i, { address: e.target.value })} /></td>
+              <td><input className="mono" disabled={x.mode !== "static"} value={x.gateway} onChange={(e) => mrow(i, { gateway: e.target.value })} /></td>
+              <td><input className="mono" disabled={x.mode !== "static"} value={x.dns} onChange={(e) => mrow(i, { dns: e.target.value })} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="set-hint dim">{t("host.mgmtHint")}</p>
+      <div className="mgr-buttons left">
+        <button className="sys-refresh" disabled={busy || !!pending || !M.mgmtChanged(mg, saved?.mgmt || {})}
+          onClick={() => putHost({ mgmt: M.formToMgmt(mg), confirm: 120 }, t("host.mgmtApplied"))}>{t("host.mgmtApply")}</button>
+      </div>
+
+      {nat && nat.cards && nat.cards.length > 0 && (
+        <>
+          <h4 className="mgr-h4">{t("host.nat")}</h4>
+          <p className="set-hint">{t("host.natLead").replace("{cards}", nat.cards.join(", "))}</p>
+          <p className="set-hint">{t(nat.enabled ? "host.natOn" : "host.natOff")}{nat.enabled && !nat.forwarding ? " " + t("host.natNoFwd") : ""}</p>
+          <div className="mgr-buttons left">
+            <button className={nat.enabled ? "del" : "sys-refresh"} disabled={busy}
+              onClick={() => putHost({ card_nat: { enabled: !nat.enabled } }, t("host.saved"))}>{t(nat.enabled ? "host.natTurnOff" : "host.natTurnOn")}</button>
+          </div>
+          <p className="set-hint dim">{t("host.natHint")}</p>
+        </>
+      )}
       {err && <p className="set-hint err">{err}</p>}
       {status && (
         <p className={"set-hint " + (status.ok ? "" : "err")}>
