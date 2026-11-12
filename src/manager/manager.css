@@ -134,3 +134,19 @@
   .mgr-drawer{flex:1 1 auto; max-width:none; width:100%; position:static; max-height:none;}
   .mgr-main{padding:12px;}
 }
+
+/* this host */
+.mgr-hostsum{display:flex; align-items:flex-start; gap:12px; padding:12px 14px; border-radius:10px; border:1px solid var(--line);}
+.mgr-hostsum.ok{border-color:var(--ok, #3a9b5c);}
+.mgr-hostsum.warn{border-color:var(--warn, #e0a030);}
+.mgr-hostsum.bad{border-color:var(--bad, #d04a3a);}
+.mgr-hostsum ul{margin:0; padding:0; list-style:none; flex:1;}
+.mgr-hostsum li{margin:3px 0;}
+.mgr-hostsum-time{margin-left:auto; white-space:nowrap;}
+.mgr-badge.bad{background:var(--bad, #d04a3a); color:#fff;}
+.mgr-cores{display:inline-flex; align-items:flex-end; gap:2px; height:18px; margin-left:10px; vertical-align:middle;}
+.mgr-cores span{width:6px; background:var(--accent); border-radius:1px;}
+.mgr-bar{display:inline-block; width:120px; height:8px; border-radius:4px; background:var(--line); vertical-align:middle; overflow:hidden;}
+.mgr-bar span{display:block; height:100%; background:var(--accent);}
+.mgr-bar span.warn{background:var(--warn, #e0a030);}
+.mgr-compact td{padding-top:3px; padding-bottom:3px;}

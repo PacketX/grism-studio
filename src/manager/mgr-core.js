@@ -345,3 +345,27 @@ function normMgmt(mgmt) {
   }
   return out;
 }
+
+/* ---------------- this host ---------------- */
+
+export function fmtBps(v) {
+  if (v == null) return "–";
+  const units = [["Gbps", 1e9], ["Mbps", 1e6], ["kbps", 1e3]];
+  for (const [u, d] of units) if (v >= d) return `${(v / d).toFixed(v >= d * 100 ? 0 : 1)} ${u}`;
+  return `${Math.round(v)} bps`;
+}
+
+/* "8.0 GT/s x4 (of 32.0 GT/s x4)" from sysfs's link fields; the maximum only when it differs. */
+export function pcieText(p) {
+  if (!p) return "–";
+  const sp = (x) => String(x || "").replace(" PCIe", "");
+  const now = `${sp(p.speed)} x${p.width}`;
+  const max = `${sp(p.max_speed)} x${p.max_width}`;
+  return now === max || !p.max_speed ? now : `${now} (${max})`;
+}
+
+/* What a vendor leaves in an unset DMI serial field. */
+export function placeholderSerial(s) {
+  const v = String(s || "").trim();
+  return !v || /^0123456789/.test(v) || /^(to be filled|default string|not specified|system serial number)/i.test(v) || /^0+$/.test(v);
+}

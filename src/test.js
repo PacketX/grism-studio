@@ -5615,6 +5615,18 @@ group("manager: the host's management interfaces");
     && back[0].dns === "8.8.8.8, 1.1.1.1" && back[1].mode === "dhcp" && !MG.mgmtChanged(back, m));
 }
 
+group("manager: this host");
+{
+  check("bits per second", MG.fmtBps(null) === "–" && MG.fmtBps(512) === "512 bps" && MG.fmtBps(1500) === "1.5 kbps"
+    && MG.fmtBps(2.5e9) === "2.5 Gbps" && MG.fmtBps(350e6) === "350 Mbps");
+  check("a card's link, downgraded", MG.pcieText({ speed: "8.0 GT/s PCIe", width: "4", max_speed: "32.0 GT/s PCIe", max_width: "4" })
+    === "8.0 GT/s x4 (32.0 GT/s x4)");
+  check("placeholder serials", MG.placeholderSerial("01234567890123456789AB") && MG.placeholderSerial("To be filled by O.E.M.")
+    && !MG.placeholderSerial("HG3P6200002"));
+  check("a card's link at full speed", MG.pcieText({ speed: "16.0 GT/s PCIe", width: "8", max_speed: "16.0 GT/s PCIe", max_width: "8" })
+    === "16.0 GT/s x8");
+}
+
 group("manager: every word in both languages");
 {
   const src = readFileSync(new URL("./manager/Manager.jsx", import.meta.url), "utf8");

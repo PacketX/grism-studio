@@ -64,7 +64,7 @@ export default function Manager() {
   }, [t]);
 
   const admin = me && me.priv >= 15;
-  const TABS = [["nodes", 1], ["events", 1], ["firmware", 15], ["backups", 15], ["accounts", 15], ["audit", 15], ["settings", 1]];
+  const TABS = [["nodes", 1], ["host", 1], ["events", 1], ["firmware", 15], ["backups", 15], ["accounts", 15], ["audit", 15], ["settings", 1]];
 
   return (
     <div className={"gs-root mgr" + (theme === "light" ? " light" : "")}>
@@ -95,6 +95,7 @@ export default function Manager() {
             </header>
             <main className="mgr-main">
               {tab === "nodes" && <NodesView t={t} call={call} me={me} />}
+              {tab === "host" && <HostView t={t} call={call} />}
               {tab === "events" && <EventsView t={t} call={call} />}
               {tab === "firmware" && admin && <FirmwareView t={t} call={call} />}
               {tab === "backups" && admin && <BackupsView t={t} call={call} />}
@@ -1240,6 +1241,154 @@ function AuditView({ t, call }) {
           ))}
         </tbody>
       </table>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ this host */
+/* The host the manager runs on -- for the user, the box itself: identity, CPU,
+   memory, the BMC's sensors, disks, network ports and the cards' PCIe links,
+   services, time, and what is wrong. Read every 10 s. */
+function HostView({ t, call }) {
+  const [h, setH] = useState(null);
+  const [err, setErr] = useState("");
+  const load = useCallback(async (background) => {
+    try { setH(await call("/api/v1/host/status", { background })); setErr(""); }
+    catch (e) { if (e.status !== 401) setErr(e.message); }
+  }, [call]);
+  useEffect(() => {
+    load(false);
+    const id = setInterval(() => load(true), 10000);
+    return () => clearInterval(id);
+  }, [load]);
+  if (!h) return <section className="mgr-pane"><p className="mgr-dim">{err || t("app.loading")}</p></section>;
+  const sy = h.system || {}, dmi = sy.dmi || {}, mem = h.memory || {}, se = h.sensors || {};
+  const ipmi = se.ipmi || [];
+  const group = (kind) => ipmi.filter((x) => x.kind === kind && x.status !== "absent");
+  const badge = (st) => <span className={"mgr-badge" + (st === "crit" ? " bad" : st === "warn" ? " warn" : "")}>{t("hs.st." + (st || "ok"))}</span>;
+  const sensorTable = (kind, title) => {
+    const rows = group(kind);
+    if (!rows.length) return null;
+    return (
+      <>
+        <h4 className="mgr-h4">{title}</h4>
+        <table className="acct-table mgr-table mgr-compact">
+          <tbody>{rows.map((x) => (
+            <tr key={x.name}><td className="mono">{x.name}</td>
+              <td className="mono">{x.value != null ? `${x.value} ${x.unit === "C" ? "°C" : x.unit}` : x.reading}</td><td>{badge(x.status)}</td></tr>
+          ))}</tbody>
+        </table>
+      </>
+    );
+  };
+  const probs = h.problems || [];
+  return (
+    <section className="mgr-pane mgr-stack">
+      {err && <p className="set-hint err">{err}</p>}
+      <div className={"mgr-hostsum " + (probs.some((p) => p.level === "crit") ? "bad" : probs.length ? "warn" : "ok")}>
+        {probs.length === 0 ? t("hs.allGood") : (
+          <ul>{probs.map((p) => <li key={p.key}>{badge(p.level)} {p.text}</li>)}</ul>
+        )}
+        <span className="mgr-dim mgr-hostsum-time">{t("hs.taken").replace("{t}", M.fmtTime(h.taken))}</span>
+      </div>
+      <div className="mgr-settings">
+        <div className="sys-card">
+          <h3 className="sys-card-title">{t("hs.system")}</h3>
+          <dl className="mgr-kv">
+            <dt>{t("hs.hostname")}</dt><dd className="mono">{sy.hostname}</dd>
+            <dt>{t("hs.machine")}</dt><dd>{[dmi.sys_vendor, dmi.product_name].filter(Boolean).join(" ") || "–"}</dd>
+            {se.serials?.product_serial && <><dt>{t("hs.serial")}</dt><dd className="mono">{se.serials.product_serial}
+              {M.placeholderSerial(se.serials.product_serial) && <span className="mgr-dim"> ({t("hs.serialUnset")})</span>}</dd></>}
+            {se.serials?.board_serial && <><dt>{t("hs.boardSerial")}</dt><dd className="mono">{se.serials.board_serial}</dd></>}
+            <dt>{t("hs.bios")}</dt><dd className="mono">{[dmi.bios_version, dmi.bios_date].filter(Boolean).join(" · ") || "–"}</dd>
+            <dt>{t("hs.os")}</dt><dd>{sy.os} <span className="mgr-dim mono">{sy.kernel}</span></dd>
+            <dt>{t("node.uptime")}</dt><dd className="mono">{fmtUptime(sy.uptime_s || 0)}</dd>
+            <dt>{t("hs.load")}</dt><dd className="mono">{(sy.load || []).join(" ")}</dd>
+            <dt>{t("hs.cpu")}</dt><dd>{sy.cpu_model} <span className="mgr-dim">× {sy.cpus}</span></dd>
+            <dt>{t("hs.cpuUse")}</dt><dd>
+              <span className="mono">{h.cpu?.total}%</span>
+              <span className="mgr-cores">{(h.cpu?.cores || []).map((c, i) => <span key={i} title={`${i}: ${c}%`} style={{ height: `${Math.max(2, c)}%` }} />)}</span>
+            </dd>
+            <dt>{t("node.memory")}</dt><dd className="mono">{mem.used_pct}% · {fmtBytes(mem.total - mem.available)} / {fmtBytes(mem.total)}</dd>
+            {(h.cpu_temps || []).length > 0 && <><dt>{t("hs.cpuTemp")}</dt>
+              <dd className="mono">{Math.max(...h.cpu_temps.map((x) => x.value))} °C <span className="mgr-dim">({t("hs.hottest")})</span></dd></>}
+          </dl>
+        </div>
+        <div className="sys-card">
+          <h3 className="sys-card-title">{t("hs.sensors")}</h3>
+          {!se.collected && <p className="set-hint">{t("hs.noSensors")}</p>}
+          {se.ipmi_error && <p className="set-hint dim">{se.ipmi_error}</p>}
+          {sensorTable("fan", t("hs.fans"))}
+          {sensorTable("temperature", t("hs.temps"))}
+          {sensorTable("power", t("hs.power"))}
+          {sensorTable("voltage", t("hs.volts"))}
+          {se.collected && <p className="set-hint dim">{t("hs.read").replace("{t}", M.fmtTime(se.collected))}</p>}
+        </div>
+        <div className="sys-card">
+          <h3 className="sys-card-title">{t("hs.services")}</h3>
+          <table className="acct-table mgr-table mgr-compact">
+            <tbody>{(h.services || []).map((x) => (
+              <tr key={x.name}><td className="mono">{x.name}</td><td>{badge(x.active === "active" ? "ok" : x.enabled === "enabled" ? "crit" : "warn")}
+                <span className="mgr-dim"> {x.active}{x.enabled === "enabled" ? "" : ` · ${x.enabled}`}</span></td></tr>
+            ))}</tbody>
+          </table>
+          <h4 className="mgr-h4">{t("hs.time")}</h4>
+          <p className="set-hint">{badge(h.time?.synchronized ? "ok" : "warn")} {h.time?.synchronized ? t("hs.synced").replace("{s}", h.time.server || "?") : t("hs.notSynced")}
+            <span className="mgr-dim"> · {h.time?.timezone}</span></p>
+        </div>
+      </div>
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("hs.network")}</h3>
+        <table className="acct-table mgr-table">
+          <thead><tr><th>{t("host.iface")}</th><th>{t("hs.link")}</th><th>{t("hs.speed")}</th><th>{t("host.addr")}</th><th>{t("hs.rx")}</th><th>{t("hs.tx")}</th><th>{t("hs.errors")}</th></tr></thead>
+          <tbody>{(h.interfaces || []).map((x) => (
+            <tr key={x.name}>
+              <td className="mono"><b>{x.name}</b>{x.card && <span className="mgr-tag">{t("hs.cardLink")}</span>}<div className="mgr-dim">{x.mac}</div></td>
+              <td>{badge(x.state === "up" ? "ok" : x.card ? "crit" : "warn")} <span className="mgr-dim">{x.state}</span></td>
+              <td className="mono">{x.card && x.pcie ? M.pcieText(x.pcie) : x.speed ? fmtSpeed(x.speed) : "–"}</td>
+              <td className="mono">{(x.addresses || []).join(", ") || "–"}</td>
+              <td className="mono">{M.fmtBps(x.rx_bps)}</td><td className="mono">{M.fmtBps(x.tx_bps)}</td>
+              <td className="mono">{x.rx_errors + x.tx_errors}{x.rx_dropped ? ` · ${t("hs.dropped")} ${x.rx_dropped}` : ""}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("hs.storage")}</h3>
+        <table className="acct-table mgr-table">
+          <thead><tr><th>{t("hs.mount")}</th><th>{t("hs.used")}</th><th>{t("hs.free")}</th><th>{t("hs.size")}</th></tr></thead>
+          <tbody>{(h.filesystems || []).map((f) => (
+            <tr key={f.mount}><td className="mono">{f.mount} <span className="mgr-dim">{f.type}</span></td>
+              <td><span className="mgr-bar"><span className={f.used_pct >= 90 ? "warn" : ""} style={{ width: `${f.used_pct}%` }} /></span> <span className="mono">{f.used_pct}%</span></td>
+              <td className="mono">{fmtBytes(f.free)}</td><td className="mono">{fmtBytes(f.total)}</td></tr>
+          ))}</tbody>
+        </table>
+        {(se.disks || []).length > 0 && (
+          <table className="acct-table mgr-table">
+            <thead><tr><th>{t("hs.disk")}</th><th>{t("hs.size")}</th><th>{t("hs.health")}</th><th>{t("hs.diskTemp")}</th><th>{t("hs.hours")}</th><th>{t("hs.sectors")}</th></tr></thead>
+            <tbody>{se.disks.map((d) => (
+              <tr key={d.device}><td><span className="mono">{d.device}</span> {d.model}<div className="mgr-dim mono">{d.serial}</div></td>
+                <td className="mono">{d.bytes ? fmtBytes(d.bytes) : "–"}</td>
+                <td>{badge(d.passed === false ? "crit" : (d.pending || d.uncorrectable) ? "warn" : "ok")} <span className="mgr-dim">{d.passed === false ? "FAILED" : d.passed ? "PASSED" : "?"}</span></td>
+                <td className="mono">{d.temperature != null ? d.temperature + " °C" : "–"}</td>
+                <td className="mono">{d.hours != null ? d.hours.toLocaleString() : "–"}</td>
+                <td className="mono">{[d.reallocated, d.pending, d.uncorrectable].map((v) => v ?? "–").join(" / ")}</td></tr>
+            ))}</tbody>
+          </table>
+        )}
+        {se.disks_error && <p className="set-hint dim">{se.disks_error}</p>}
+        {(se.disks || []).length > 0 && <p className="set-hint dim">{t("hs.sectorsHint")}</p>}
+      </div>
+      {(se.sel || []).length > 0 && (
+        <div className="sys-card">
+          <h3 className="sys-card-title">{t("hs.sel")}</h3>
+          <table className="acct-table mgr-table mgr-compact">
+            <tbody>{se.sel.slice().reverse().map((x) => (
+              <tr key={x.id}><td className="mono mgr-nowrap">{x.when}</td><td>{x.sensor}</td><td>{x.event}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
