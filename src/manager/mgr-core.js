@@ -276,3 +276,30 @@ export function accessAdmits(access, ip, port) {
     return inNet && (!ports.length || ports.includes(String(port)));
   });
 }
+
+/* ---------------- the sign-in server ---------------- */
+
+const SOURCE_NAMES = { local: "local", tacacs: "TACACS+", radius: "RADIUS" };
+export function sourceName(s) { return SOURCE_NAMES[s] || s || ""; }
+
+export function authToForm(a) {
+  const x = a || {};
+  const servers = (x.servers || []).map((s) => ({ host: s.host || "", port: String(s.port || "") }));
+  return {
+    mode: x.mode || "local", servers: servers.length ? servers : [{ host: "", port: "" }], secret: "",
+    timeout: String(x.timeout || 5), default_priv: Number(x.default_priv) || 1, fallback: x.fallback !== false,
+    require_ma: x.require_ma !== false, local_hosts: (x.local_hosts || []).join(", "),
+  };
+}
+
+export function formToAuth(f) {
+  const out = {
+    mode: f.mode,
+    servers: (f.servers || []).filter((s) => String(s.host || "").trim())
+      .map((s) => ({ host: String(s.host).trim(), port: Number(s.port) || (f.mode === "tacacs" ? 49 : 1812) })),
+    timeout: Number(f.timeout) || 5, default_priv: Number(f.default_priv) || 1, fallback: !!f.fallback,
+    require_ma: !!f.require_ma, local_hosts: String(f.local_hosts || "").split(/[,\s]+/).map((v) => v.trim()).filter(Boolean),
+  };
+  if (f.secret) out.secret = f.secret;      // none: the one the manager keeps
+  return out;
+}

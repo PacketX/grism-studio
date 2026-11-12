@@ -5581,6 +5581,20 @@ group("manager: the host's settings");
   check("not an address", !MG.accessAdmits([{ src: "x" }], "1.2.3.4", 443) && !MG.accessAdmits([{ src: "10.0.0.0/8" }], "nope", 443));
 }
 
+group("manager: the sign-in server");
+{
+  const f = MG.authToForm({ mode: "tacacs", servers: [{ host: "10.0.0.1", port: 49 }], timeout: 5, default_priv: 5,
+    fallback: true, require_ma: true, local_hosts: ["10.9.0.0/16"], has_secret: true });
+  check("to the form: no secret on it", f.secret === "" && f.servers[0].port === "49" && f.local_hosts === "10.9.0.0/16");
+  check("local mode still offers one blank server row", MG.authToForm({ mode: "local" }).servers.length === 1);
+  const b = MG.formToAuth({ ...f, servers: [...f.servers, { host: " ", port: "" }], local_hosts: "10.9.0.0/16, 10.8.0.1" });
+  check("from the form: blank servers dropped, the kept secret not sent", b.servers.length === 1 && !("secret" in b)
+    && b.local_hosts.length === 2 && b.default_priv === 5);
+  check("a typed secret is sent", MG.formToAuth({ ...f, secret: "x" }).secret === "x");
+  check("a port left blank takes the protocol's", MG.formToAuth({ ...f, mode: "radius", servers: [{ host: "r", port: "" }] }).servers[0].port === 1812);
+  check("source names", MG.sourceName("tacacs") === "TACACS+" && MG.sourceName("radius") === "RADIUS");
+}
+
 group("manager: every word in both languages");
 {
   const src = readFileSync(new URL("./manager/Manager.jsx", import.meta.url), "utf8");

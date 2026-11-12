@@ -211,8 +211,10 @@ function UserMenu({ t, me, call, lang, setLang, theme, setTheme, onLogout, onMe 
           <div className="acct-scrim" onClick={() => setOpen(false)} />
           <div className="mgr-menu">
             <div className="mgr-menu-who"><span className="mgr-dim">{t("menu.signedIn")}</span> <b>{me.username}</b>
-              <span className="mgr-role">{t("role." + M.roleOf(me.priv))}</span></div>
-            <button className="mgr-menu-item" onClick={() => { setOpen(false); setPw(true); }}>{t("menu.password")}</button>
+              <span className="mgr-role">{t("role." + M.roleOf(me.priv))}</span>
+              {me.signed_in_by && me.signed_in_by !== "local" && <span className="mgr-role">{M.sourceName(me.signed_in_by)}</span>}</div>
+            {(!me.signed_in_by || me.signed_in_by === "local") &&
+              <button className="mgr-menu-item" onClick={() => { setOpen(false); setPw(true); }}>{t("menu.password")}</button>}
             <div className="mgr-menu-row"><span>{t("menu.language")}</span>
               <span className="acct-seg">
                 <button className={lang === "zh-TW" ? "on" : ""} onClick={() => setLang("zh-TW")}>中文</button>
@@ -1066,15 +1068,18 @@ function AccountsView({ t, call, me }) {
       {err && <p className="set-hint err">{err}</p>}
       {users && (
         <table className="acct-table mgr-table">
-          <thead><tr><th>{t("acc.name")}</th><th>{t("acc.level")}</th><th>{t("acc.lastLogin")}</th><th>{t("acc.state")}</th><th /></tr></thead>
+          <thead><tr><th>{t("acc.name")}</th><th>{t("acc.source")}</th><th>{t("acc.level")}</th><th>{t("acc.lastLogin")}</th><th>{t("acc.state")}</th><th /></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td><b>{u.username}</b>{u.id === me.id && <span className="mgr-tag">{t("acc.you")}</span>}</td>
+                <td className={u.source === "local" ? "mgr-dim" : ""}>{u.source === "local" ? t("acc.local") : M.sourceName(u.source)}</td>
                 <td>
-                  <select value={u.priv} onChange={(e) => patch(u, { priv: Number(e.target.value) })}>
-                    {M.PRIV_LEVELS.map((p) => <option key={p} value={p}>{t("role." + M.roleOf(p))}</option>)}
-                  </select>
+                  {u.source === "local" ? (
+                    <select value={u.priv} onChange={(e) => patch(u, { priv: Number(e.target.value) })}>
+                      {M.PRIV_LEVELS.map((p) => <option key={p} value={p}>{t("role." + M.roleOf(p))}</option>)}
+                    </select>
+                  ) : <span title={t("acc.serverLevel")}>{t("role." + M.roleOf(u.priv))}</span>}
                 </td>
                 <td className="mgr-dim">{u.last_login ? `${M.fmtTime(u.last_login)} · ${u.last_from}` : t("acc.never")}</td>
                 <td>
@@ -1084,7 +1089,7 @@ function AccountsView({ t, call, me }) {
                 </td>
                 <td className="mgr-act">
                   {u.locked && <button className="copy-btn" onClick={() => patch(u, { unlock: true })}>{t("acc.unlock")}</button>}
-                  <button className="copy-btn" onClick={() => setReset({ u, password: "" })}>{t("acc.reset")}</button>
+                  {u.source === "local" && <button className="copy-btn" onClick={() => setReset({ u, password: "" })}>{t("acc.reset")}</button>}
                   {u.id !== me.id && <button className="copy-btn" onClick={() => patch(u, { disabled: !u.disabled })}>
                     {u.disabled ? t("acc.enable") : t("acc.disable")}</button>}
                   {u.id !== me.id && <button className="del" onClick={() => setDel(u)}>{t("common.delete")}</button>}
@@ -1184,6 +1189,100 @@ function AuditView({ t, call }) {
 }
 
 /* ------------------------------------------------------------------ settings */
+/* Who checks passwords: the local accounts, or a TACACS+ / RADIUS server first.
+   A try button asks the server about an account with the settings on the form,
+   saved or not, so a server can be checked before anyone depends on it. */
+function SignInServerCard({ t, call }) {
+  const [f, setF] = useState(null);
+  const [hasSecret, setHasSecret] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const [probe, setProbe] = useState({ username: "", password: "" });
+  const [probeOut, setProbeOut] = useState(null);
+  const load = useCallback(async () => {
+    try { const r = await call("/api/v1/settings/auth"); setF(M.authToForm(r)); setHasSecret(!!r.has_secret); }
+    catch (e) { setErr(e.message); }
+  }, [call]);
+  useEffect(() => { load(); }, [load]);
+  if (!f) return <div className="sys-card"><p className="mgr-dim">{err || t("app.loading")}</p></div>;
+  const save = async () => {
+    setBusy(true); setErr(""); setMsg("");
+    try { const r = await call("/api/v1/settings/auth", { method: "PUT", body: M.formToAuth(f) });
+      setF(M.authToForm(r)); setHasSecret(!!r.has_secret); setMsg(t("common.saved")); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const tryIt = async () => {
+    setBusy(true); setProbeOut(null);
+    try { setProbeOut(await call("/api/v1/settings/auth/test", { method: "POST", body: { ...M.formToAuth(f), ...probe } })); }
+    catch (e) { setProbeOut({ result: "error", detail: e.message }); } finally { setBusy(false); }
+  };
+  const remote = f.mode !== "local";
+  const setSrv = (i, patch) => setF({ ...f, servers: f.servers.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  return (
+    <div className="sys-card mgr-wide-card">
+      <h3 className="sys-card-title">{t("auth.title")}</h3>
+      <p className="set-hint">{t("auth.lead")}</p>
+      <div className="acct-seg mgr-seg">
+        {["local", "tacacs", "radius"].map((m) => (
+          <button key={m} className={f.mode === m ? "on" : ""} onClick={() => setF({ ...f, mode: m })}>{t("auth.mode." + m)}</button>
+        ))}
+      </div>
+      {remote && (
+        <>
+          {f.servers.map((x, i) => (
+            <div className="mgr-row2" key={i}>
+              <label className="ml"><span>{t("auth.server")} {i + 1}</span><input value={x.host} onChange={(e) => setSrv(i, { host: e.target.value })} /></label>
+              <label className="ml mgr-port"><span>{t("host.port")}</span>
+                <input value={x.port} placeholder={f.mode === "tacacs" ? "49" : "1812"} onChange={(e) => setSrv(i, { port: e.target.value })} /></label>
+              {f.servers.length > 1 && <button className="del mgr-rowdel" onClick={() => setF({ ...f, servers: f.servers.filter((_, j) => j !== i) })}>{t("common.delete")}</button>}
+            </div>
+          ))}
+          <button className="copy-btn" disabled={f.servers.length >= 3} onClick={() => setF({ ...f, servers: [...f.servers, { host: "", port: "" }] })}>{t("auth.addServer")}</button>
+          <div className="set-grid">
+            <label className="ml"><span>{t("auth.secret")}</span>
+              <input type="password" autoComplete="new-password" value={f.secret} placeholder={hasSecret ? t("auth.secretKept") : ""}
+                onChange={(e) => setF({ ...f, secret: e.target.value })} /></label>
+            <label className="ml"><span>{t("auth.timeout")}</span>
+              <input type="number" min={1} max={30} value={f.timeout} onChange={(e) => setF({ ...f, timeout: e.target.value })} /></label>
+            <label className="ml"><span>{t("auth.defaultPriv")}</span>
+              <select value={f.default_priv} onChange={(e) => setF({ ...f, default_priv: Number(e.target.value) })}>
+                {M.PRIV_LEVELS.map((p) => <option key={p} value={p}>{t("role." + M.roleOf(p))}</option>)}
+              </select></label>
+          </div>
+          <p className="set-hint dim">{t("auth.levelHint." + f.mode)}</p>
+          <label className="mgr-check"><input type="checkbox" checked={f.fallback} onChange={(e) => setF({ ...f, fallback: e.target.checked })} /> {t("auth.fallback")}</label>
+          {f.mode === "radius" && (
+            <label className="mgr-check"><input type="checkbox" checked={f.require_ma} onChange={(e) => setF({ ...f, require_ma: e.target.checked })} /> {t("auth.requireMa")}</label>
+          )}
+          <label className="ml"><span>{t("auth.localHosts")}</span>
+            <input value={f.local_hosts} placeholder="192.168.1.0/24, 10.0.0.5" onChange={(e) => setF({ ...f, local_hosts: e.target.value })} /></label>
+          <p className="set-hint dim">{t("auth.localHostsHint")}</p>
+          <h4 className="mgr-h4">{t("auth.try")}</h4>
+          <div className="mgr-row2">
+            <label className="ml"><span>{t("acc.name")}</span><input value={probe.username} autoComplete="off" onChange={(e) => setProbe({ ...probe, username: e.target.value })} /></label>
+            <label className="ml"><span>{t("login.password")}</span><input type="password" autoComplete="new-password" value={probe.password}
+              onChange={(e) => setProbe({ ...probe, password: e.target.value })} /></label>
+            <button className="copy-btn mgr-rowdel" disabled={busy || !probe.username || !probe.password} onClick={tryIt}>{t("auth.tryBtn")}</button>
+          </div>
+          {probeOut && (
+            <p className={"set-hint " + (probeOut.result === "accepted" ? "" : "err")}>
+              {t("auth.result." + probeOut.result) + (probeOut.role ? " — " + t("role." + probeOut.role) : "")}
+              <span className="mgr-dim"> {probeOut.detail}</span>
+            </p>
+          )}
+        </>
+      )}
+      <p className="set-hint dim">{t("auth.recover")}</p>
+      <div className="mgr-buttons left">
+        <button className="sys-refresh" disabled={busy} onClick={save}>{t("common.save")}</button>
+        {msg && <span className="mgr-ok">{msg}</span>}
+      </div>
+      {err && <p className="set-hint err">{err}</p>}
+    </div>
+  );
+}
+
 /* The host's own time servers, syslog targets and management access list: the
    manager writes them, root applies them (grism-host-apply), the card shows how
    that went. */
@@ -1300,6 +1399,7 @@ function SettingsView({ t, call, me }) {
         {msg && <span className="mgr-ok"> {msg}</span>}
         {err && <p className="set-hint err">{err}</p>}
       </div>
+      {admin && <SignInServerCard t={t} call={call} />}
       {admin && <HostSettingsCard t={t} call={call} />}
       <div className="sys-card">
         <h3 className="sys-card-title">{t("set.about")}</h3>
