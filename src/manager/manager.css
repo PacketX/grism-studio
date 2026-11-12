@@ -98,6 +98,8 @@
 .mgr-sev.critical{background:rgba(248,81,73,.16); color:var(--notmatch);}
 .mgr-settings{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:14px; align-items:start;}
 .mgr-settings input[type=number]{width:110px;}
+.mgr-wide-card{grid-column:1/-1;}
+.mgr-row2 > .del.mgr-rowdel{align-self:flex-end; margin-bottom:2px;}
 
 /* batch jobs */
 .mgr-stack{display:flex; flex-direction:column; gap:14px;}

@@ -5563,6 +5563,24 @@ group("manager: firmware and backups");
   check("a time that is not one", MG.localToUtcMinute("25:00", 0) === null && MG.localToUtcMinute("ab", 0) === null);
 }
 
+group("manager: the host's settings");
+{
+  const f = MG.hostSettingsToForm({ ntp: ["a.example", "10.0.0.1"], syslog: [{ host: "10.0.0.9", port: 514, proto: "tcp" }],
+    access: [{ src: "192.168.1.0/24", sport: "", dport: "22,443" }] });
+  check("to the form", f.ntp === "a.example, 10.0.0.1" && f.syslog[0].port === "514" && f.access[0].dport === "22,443");
+  const back = MG.hostFormToSettings({ ...f, syslog: [...f.syslog, { host: " ", port: "1", proto: "udp" }], access: [...f.access, { src: "", sport: "", dport: "" }] });
+  check("from the form: blank rows dropped, numbers numbers", back.ntp.length === 2 && back.syslog.length === 1 && back.syslog[0].port === 514
+    && back.access.length === 1);
+  check("an empty list lets everyone", MG.accessAdmits([], "1.2.3.4", 443));
+  check("a network lets its own", MG.accessAdmits([{ src: "192.168.1.0/24", dport: "" }], "192.168.1.56", 443)
+    && !MG.accessAdmits([{ src: "192.168.1.0/24", dport: "" }], "192.168.2.1", 443));
+  check("ports limit it", !MG.accessAdmits([{ src: "192.168.1.0/24", dport: "22" }], "192.168.1.56", 443)
+    && MG.accessAdmits([{ src: "192.168.1.0/24", dport: "22,443" }], "192.168.1.56", 443));
+  check("a single address, and /0", MG.accessAdmits([{ src: "10.0.0.5" }], "10.0.0.5", 443) && !MG.accessAdmits([{ src: "10.0.0.5" }], "10.0.0.6", 443)
+    && MG.accessAdmits([{ src: "0.0.0.0/0" }], "8.8.8.8", 443));
+  check("not an address", !MG.accessAdmits([{ src: "x" }], "1.2.3.4", 443) && !MG.accessAdmits([{ src: "10.0.0.0/8" }], "nope", 443));
+}
+
 group("manager: every word in both languages");
 {
   const src = readFileSync(new URL("./manager/Manager.jsx", import.meta.url), "utf8");

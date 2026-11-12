@@ -230,3 +230,49 @@ export function localToUtcMinute(hhmm, offset) {
   if (!mt || Number(mt[1]) > 23 || Number(mt[2]) > 59) return null;
   return (((Number(mt[1]) * 60 + Number(mt[2]) - (Number(offset) || 0)) % 1440) + 1440) % 1440;
 }
+
+/* ---------------- the host's settings ---------------- */
+
+/* The settings as the page edits them: the time servers as one line, every
+   number a string. */
+export function hostSettingsToForm(s) {
+  const x = s || {};
+  return {
+    ntp: (x.ntp || []).join(", "),
+    syslog: (x.syslog || []).map((t) => ({ host: t.host || "", port: String(t.port || 514), proto: t.proto || "udp" })),
+    access: (x.access || []).map((r) => ({ src: r.src || "", sport: r.sport || "", dport: r.dport || "" })),
+  };
+}
+
+export function hostFormToSettings(f) {
+  return {
+    ntp: String(f.ntp || "").split(/[,\s]+/).map((v) => v.trim()).filter(Boolean),
+    syslog: (f.syslog || []).filter((t) => String(t.host || "").trim())
+      .map((t) => ({ host: String(t.host).trim(), port: Number(t.port) || 514, proto: t.proto === "tcp" ? "tcp" : "udp" })),
+    access: (f.access || []).filter((r) => String(r.src || "").trim())
+      .map((r) => ({ src: String(r.src).trim(), sport: String(r.sport || "").trim(), dport: String(r.dport || "").trim() })),
+  };
+}
+
+function ipv4ToInt(ip) {
+  const p = String(ip || "").trim().split(".");
+  if (p.length !== 4 || p.some((x) => !/^\d{1,3}$/.test(x) || Number(x) > 255)) return null;
+  return p.reduce((a, x) => a * 256 + Number(x), 0);
+}
+
+/* Whether an access list lets `ip` reach `port` -- the manager's own check
+   (hostcfg.admits), so the page warns before the save is refused. */
+export function accessAdmits(access, ip, port) {
+  if (!access || !access.length) return true;
+  const a = ipv4ToInt(ip);
+  if (a == null) return false;
+  return access.some((r) => {
+    const [net, bits = "32"] = String(r.src || "").trim().split("/");
+    const n = ipv4ToInt(net), b = Number(bits);
+    if (n == null || !(b >= 0 && b <= 32)) return false;
+    const mask = b === 0 ? 0 : (0xffffffff << (32 - b)) >>> 0;
+    const inNet = ((a & mask) >>> 0) === ((n & mask) >>> 0);
+    const ports = String(r.dport || "").split(/[,\s]+/).filter(Boolean);
+    return inNet && (!ports.length || ports.includes(String(port)));
+  });
+}

@@ -1184,6 +1184,85 @@ function AuditView({ t, call }) {
 }
 
 /* ------------------------------------------------------------------ settings */
+/* The host's own time servers, syslog targets and management access list: the
+   manager writes them, root applies them (grism-host-apply), the card shows how
+   that went. */
+function HostSettingsCard({ t, call }) {
+  const [form, setForm] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [you, setYou] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const load = useCallback(async () => {
+    try {
+      const r = await call("/api/v1/settings/host");
+      setForm(M.hostSettingsToForm(r.settings)); setStatus(r.status); setYou(r.you || "");
+    } catch (e) { setErr(e.message); }
+  }, [call]);
+  useEffect(() => { load(); }, [load]);
+  const save = async () => {
+    setBusy(true); setErr(""); setMsg("");
+    try {
+      await call("/api/v1/settings/host", { method: "PUT", body: M.hostFormToSettings(form) });
+      setMsg(t("host.saved"));
+      await sleep(2500);
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  if (!form) return <div className="sys-card"><p className="mgr-dim">{err || t("app.loading")}</p></div>;
+  const row = (list, key, i, patch) => setForm({ ...form, [key]: list.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  return (
+    <div className="sys-card mgr-wide-card">
+      <h3 className="sys-card-title">{t("host.title")}</h3>
+      <p className="set-hint">{t("host.lead")}</p>
+
+      <h4 className="mgr-h4">{t("host.ntp")}</h4>
+      <label className="ml"><span>{t("host.ntpServers")}</span>
+        <input value={form.ntp} onChange={(e) => setForm({ ...form, ntp: e.target.value })} placeholder="time.google.com, 216.239.35.0" /></label>
+      <p className="set-hint dim">{t("host.ntpHint")}</p>
+
+      <h4 className="mgr-h4">{t("host.syslog")}</h4>
+      {form.syslog.map((x, i) => (
+        <div className="mgr-row2" key={i}>
+          <label className="ml"><span>{t("host.server")}</span><input value={x.host} onChange={(e) => row(form.syslog, "syslog", i, { host: e.target.value })} /></label>
+          <label className="ml mgr-port"><span>{t("host.port")}</span><input value={x.port} onChange={(e) => row(form.syslog, "syslog", i, { port: e.target.value })} /></label>
+          <label className="ml mgr-port"><span>{t("host.proto")}</span>
+            <select value={x.proto} onChange={(e) => row(form.syslog, "syslog", i, { proto: e.target.value })}><option value="udp">UDP</option><option value="tcp">TCP</option></select></label>
+          <button className="del mgr-rowdel" onClick={() => setForm({ ...form, syslog: form.syslog.filter((_, j) => j !== i) })}>{t("common.delete")}</button>
+        </div>
+      ))}
+      <button className="copy-btn" disabled={form.syslog.length >= 4} onClick={() => setForm({ ...form, syslog: [...form.syslog, { host: "", port: "514", proto: "udp" }] })}>{t("host.addSyslog")}</button>
+      <p className="set-hint dim">{t("host.syslogHint")}</p>
+
+      <h4 className="mgr-h4">{t("host.access")}</h4>
+      {form.access.map((x, i) => (
+        <div className="mgr-row2" key={i}>
+          <label className="ml"><span>{t("host.src")}</span><input value={x.src} onChange={(e) => row(form.access, "access", i, { src: e.target.value })} placeholder="192.168.1.0/24" /></label>
+          <label className="ml mgr-port"><span>{t("host.sport")}</span><input value={x.sport} onChange={(e) => row(form.access, "access", i, { sport: e.target.value })} placeholder={t("host.any")} /></label>
+          <label className="ml mgr-port"><span>{t("host.dport")}</span><input value={x.dport} onChange={(e) => row(form.access, "access", i, { dport: e.target.value })} placeholder="22,443" /></label>
+          <button className="del mgr-rowdel" onClick={() => setForm({ ...form, access: form.access.filter((_, j) => j !== i) })}>{t("common.delete")}</button>
+        </div>
+      ))}
+      <button className="copy-btn" disabled={form.access.length >= 64} onClick={() => setForm({ ...form, access: [...form.access, { src: "", sport: "", dport: "" }] })}>{t("host.addAccess")}</button>
+      <p className="set-hint dim">{t("host.accessHint").replace("{ip}", you || "?")}</p>
+      {form.access.length > 0 && !M.accessAdmits(form.access, you, 443) && <p className="set-hint err">{t("host.lockout").replace("{ip}", you)}</p>}
+
+      <div className="mgr-buttons left">
+        <button className="sys-refresh" disabled={busy} onClick={save}>{busy ? t("common.saving") : t("common.save")}</button>
+        {msg && <span className="mgr-ok">{msg}</span>}
+      </div>
+      {err && <p className="set-hint err">{err}</p>}
+      {status && (
+        <p className={"set-hint " + (status.ok ? "" : "err")}>
+          {t("host.applied").replace("{t}", M.fmtTime(status.applied))}
+          {status.ok ? "" : " — " + (status.errors || []).join("; ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SettingsView({ t, call, me }) {
   const [p, setP] = useState(null);
   const [ver, setVer] = useState("");
@@ -1221,6 +1300,7 @@ function SettingsView({ t, call, me }) {
         {msg && <span className="mgr-ok"> {msg}</span>}
         {err && <p className="set-hint err">{err}</p>}
       </div>
+      {admin && <HostSettingsCard t={t} call={call} />}
       <div className="sys-card">
         <h3 className="sys-card-title">{t("set.about")}</h3>
         <dl className="mgr-kv">
