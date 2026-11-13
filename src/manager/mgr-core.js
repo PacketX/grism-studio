@@ -445,3 +445,23 @@ export function fmtCount(v) {
   if (a >= 1e4) return (v / 1e3).toFixed(1) + "K";
   return String(Math.round(v * 10) / 10);
 }
+
+/* The BMC's LAN: the form starts from what the manager set, else from what the BMC has now. */
+export function bmcToForm(lan, set) {
+  if (!lan) return null;
+  const prefix = (mask) => (mask || "").split(".").reduce((n, o) => n + ((Number(o) >>> 0).toString(2).match(/1/g) || []).length, 0);
+  if (set) return { lan, mode: set.mode, address: set.address || "", gateway: set.gateway || "" };
+  const has = lan.ip && lan.ip !== "0.0.0.0";
+  return { lan, mode: lan.source === "dhcp" ? "dhcp" : "static", address: has ? `${lan.ip}/${prefix(lan.mask)}` : "",
+    gateway: lan.gateway && lan.gateway !== "0.0.0.0" ? lan.gateway : "" };
+}
+
+export function bmcFromForm(f) {
+  return f.mode === "dhcp" ? { mode: "dhcp" } : { mode: "static", address: f.address.trim(), gateway: f.gateway.trim() };
+}
+
+/* Whether the form says something other than what is set (or, with nothing set, than what the BMC has). */
+export function bmcChanged(f, set) {
+  const want = JSON.stringify(bmcFromForm(f));
+  return want !== JSON.stringify(bmcFromForm(bmcToForm(f.lan, set)));
+}

@@ -96,7 +96,7 @@ export default function Manager() {
             <main className="mgr-main">
               {tab === "nodes" && <NodesView t={t} call={call} me={me} />}
               {tab === "traffic" && <TrafficView t={t} call={call} me={me} />}
-              {tab === "host" && <HostView t={t} call={call} />}
+              {tab === "host" && <HostView t={t} call={call} me={me} />}
               {tab === "events" && <EventsView t={t} call={call} />}
               {tab === "firmware" && admin && <FirmwareView t={t} call={call} />}
               {tab === "backups" && admin && <BackupsView t={t} call={call} />}
@@ -1577,7 +1577,7 @@ function TrafficView({ t, call, me }) {
 /* The host the manager runs on -- for the user, the box itself: identity, CPU,
    memory, the BMC's sensors, disks, network ports and the cards' PCIe links,
    services, time, and what is wrong. Read every 10 s. */
-function HostView({ t, call }) {
+function HostView({ t, call, me }) {
   const [h, setH] = useState(null);
   const [err, setErr] = useState("");
   const load = useCallback(async (background) => {
@@ -1717,7 +1717,79 @@ function HostView({ t, call }) {
           </table>
         </div>
       )}
+      {me.priv >= 15 && <PowerCard t={t} call={call} bmc={se.bmc_lan} />}
     </section>
+  );
+}
+
+/* Rebooting or powering the host off: a typed word, then the cards inside are halted first (poweroff),
+   then root does it. What the page can say afterwards is only what happened before the host went. */
+function PowerCard({ t, call, bmc }) {
+  const [ask, setAsk] = useState(null);           // {action, word, typed, cards, err}
+  const [run, setRun] = useState(null);           // the server's sequence state
+  const [busy, setBusy] = useState(false);
+  const going = run && run.phase !== "failed" && run.phase !== "host";
+  useEffect(() => {
+    if (!going) return undefined;
+    const id = setInterval(async () => {
+      try { setRun(await call("/api/v1/host/power", { background: true })); }
+      catch (e) { setRun((x) => ({ ...x, phase: "host" })); }        // gone: the host is going down
+    }, 2000);
+    return () => clearInterval(id);
+  }, [going, call]);
+  const noBmc = !bmc || !bmc.ip || bmc.ip === "0.0.0.0";
+  const cardText = (v) => {
+    const [k, ...why] = String(v).split(":");
+    const word = t("pw.card." + k);
+    return (word === "pw.card." + k ? v : word) + (why.length ? ` (${why.join(":").trim()})` : "");
+  };
+  const start = async () => {
+    setBusy(true);
+    try {
+      const r = await call("/api/v1/host/power", { method: "POST", body: { action: ask.action, confirm: ask.typed.trim(), cards: ask.cards } });
+      setRun({ phase: r.cards.length ? "cards" : "host", action: ask.action, cards: Object.fromEntries(r.cards.map((c) => [c, "asking"])) });
+      setAsk(null);
+    } catch (e) { setAsk((a) => ({ ...a, err: e.message })); } finally { setBusy(false); }
+  };
+  return (
+    <div className="sys-card">
+      <h3 className="sys-card-title">{t("pw.title")}</h3>
+      <p className="set-hint">{t("pw.lead")}</p>
+      <p className={"set-hint" + (noBmc ? " err" : " dim")}>{noBmc ? t("pw.noBmc") : t("pw.bmc").replace("{ip}", bmc.ip)}</p>
+      {run ? (
+        <div className="mgr-pending">
+          <div>
+            <b>{t(run.action === "reboot" ? "pw.rebooting" : "pw.poweringOff")}</b>
+            {Object.keys(run.cards || {}).length > 0 && (
+              <ul className="mgr-plain">{Object.entries(run.cards).map(([k, v]) => <li key={k}><span className="mono">{k}</span>: {cardText(v)}</li>)}</ul>
+            )}
+            {run.phase === "failed" && <p className="set-hint err">{run.error}</p>}
+            {run.phase === "host" && <p className="set-hint">{t(run.action === "reboot" ? "pw.hostReboot" : "pw.hostOff")}</p>}
+          </div>
+        </div>
+      ) : (
+        <div className="mgr-buttons left">
+          <button className="sys-refresh" onClick={() => setAsk({ action: "reboot", word: "REBOOT", typed: "", cards: true })}>{t("pw.reboot")}</button>
+          <button className="del" onClick={() => setAsk({ action: "poweroff", word: "POWEROFF", typed: "", cards: true })}>{t("pw.poweroff")}</button>
+        </div>
+      )}
+      {ask && (
+        <Modal title={t(ask.action === "reboot" ? "pw.rebootTitle" : "pw.poweroffTitle")} onClose={busy ? undefined : () => setAsk(null)} warn>
+          <p>{t(ask.action === "reboot" ? "pw.rebootBody" : "pw.poweroffBody")}</p>
+          {ask.action === "poweroff" && noBmc && <p className="set-hint err">{t("pw.noBmc")}</p>}
+          {ask.action === "poweroff" && (
+            <label className="mgr-check"><input type="checkbox" checked={ask.cards} onChange={(e) => setAsk({ ...ask, cards: e.target.checked })} />{t("pw.cardsFirst")}</label>
+          )}
+          <label className="ml"><span>{t("pw.type").replace("{w}", ask.word)}</span>
+            <input className="mono" autoFocus autoComplete="off" value={ask.typed} onChange={(e) => setAsk({ ...ask, typed: e.target.value, err: "" })} /></label>
+          {ask.err && <p className="set-hint err">{ask.err}</p>}
+          <div className="mgr-buttons">
+            <button className="copy-btn" disabled={busy} onClick={() => setAsk(null)}>{t("common.cancel")}</button>
+            <button className="del" disabled={busy || ask.typed.trim() !== ask.word} onClick={start}>{t(ask.action === "reboot" ? "pw.reboot" : "pw.poweroff")}</button>
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }
 
@@ -1825,6 +1897,7 @@ function HostSettingsCards({ t, call }) {
   const [saved, setSaved] = useState(null);
   const [mg, setMg] = useState([]);
   const [nat, setNat] = useState(null);
+  const [bmc, setBmc] = useState(null);           // {lan: what it is now, mode, address, gateway}
   const [now, setNow] = useState(Date.now() / 1000);
   const [status, setStatus] = useState(null);
   const [you, setYou] = useState("");
@@ -1836,6 +1909,7 @@ function HostSettingsCards({ t, call }) {
     fetchHost().then((r) => {
       setForm(M.hostSettingsToForm(r.settings)); setSaved(r.settings); setStatus(r.status); setYou(r.you || "");
       setMg(M.mgmtToForm(r.interfaces || [], r.settings.mgmt || {})); setNat(r.card_nat || null);
+      setBmc(M.bmcToForm(r.bmc_lan, r.settings.bmc));
     }).catch((e) => setErr({ load: e.message }));
   }, [fetchHost]);
   const pending = status && status.mgmt_pending;
@@ -1855,6 +1929,7 @@ function HostSettingsCards({ t, call }) {
       const fresh = M.hostSettingsToForm(r.settings);
       if (part in fresh) setForm((f) => ({ ...f, [part]: fresh[part] }));
       if (part === "mgmt") setMg(M.mgmtToForm(r.interfaces || [], r.settings.mgmt || {}));
+      if (part === "bmc") setBmc((b) => ({ ...(M.bmcToForm(r.bmc_lan || b?.lan, r.settings.bmc) || {}), lan: r.bmc_lan || b?.lan }));
       const failed = r.status && r.status.applied > Date.now() / 1000 - 30 && !r.status.ok;
       if (failed) setErr((e) => ({ ...e, [part]: (r.status.errors || []).join("; ") }));
       else setMsg((m) => ({ ...m, [part]: okMsg }));
@@ -1929,6 +2004,27 @@ function HostSettingsCards({ t, call }) {
               onClick={() => putHost("card_nat", { card_nat: { enabled: !nat.enabled } }, t("host.saved"))}>
               {t(nat.enabled ? "host.natTurnOff" : "host.natTurnOn")}</button>)}
             <p className="set-hint dim">{t("host.natHint")}</p>
+          </>
+        )}
+        {bmc && bmc.lan && (
+          <>
+            <h4 className="mgr-h4">{t("host.bmc")}</h4>
+            <p className="set-hint">{t("host.bmcLead")}</p>
+            <p className="set-hint mono">{t("host.now")}: {bmc.lan.source === "dhcp" ? "DHCP" : t("host.modeStatic")} · {bmc.lan.ip}/{bmc.lan.mask}
+              {bmc.lan.gateway && bmc.lan.gateway !== "0.0.0.0" ? ` via ${bmc.lan.gateway}` : ""} · MAC {bmc.lan.mac}</p>
+            <div className="mgr-row2">
+              <label className="ml mgr-port"><span>{t("host.mode")}</span>
+                <select value={bmc.mode} onChange={(e) => setBmc({ ...bmc, mode: e.target.value })}>
+                  <option value="static">{t("host.modeStatic")}</option><option value="dhcp">DHCP</option>
+                </select></label>
+              <label className="ml"><span>{t("host.addr")}</span><input className="mono" disabled={bmc.mode !== "static"} value={bmc.address}
+                placeholder="a.b.c.d/nn" onChange={(e) => setBmc({ ...bmc, address: e.target.value })} /></label>
+              <label className="ml"><span>{t("host.gw")}</span><input className="mono" disabled={bmc.mode !== "static"} value={bmc.gateway}
+                onChange={(e) => setBmc({ ...bmc, gateway: e.target.value })} /></label>
+            </div>
+            <p className="set-hint dim">{t("host.bmcHint")}</p>
+            {foot("bmc", saveBtn("bmc", () => putHost("bmc", { bmc: M.bmcFromForm(bmc) }, t("host.bmcSaved")),
+              (bmc.mode === "static" && !bmc.address.includes("/")) || !M.bmcChanged(bmc, saved?.bmc)))}
           </>
         )}
         {status && (

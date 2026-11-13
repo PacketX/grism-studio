@@ -5617,6 +5617,21 @@ group("manager: the host's management interfaces");
     && back[0].dns === "8.8.8.8, 1.1.1.1" && back[1].mode === "dhcp" && !MG.mgmtChanged(back, m));
 }
 
+group("manager: the host's BMC");
+{
+  const lan = { source: "dhcp", ip: "0.0.0.0", mask: "0.0.0.0", gateway: "0.0.0.0", mac: "fc:aa:14:af:3c:68" };
+  const f = MG.bmcToForm(lan, null);
+  check("no BMC, no form", MG.bmcToForm(null, null) === null);
+  check("DHCP with no lease: nothing offered", f.mode === "dhcp" && f.address === "" && f.gateway === "");
+  const st = MG.bmcToForm({ ...lan, source: "static", ip: "192.168.1.161", mask: "255.255.255.0", gateway: "192.168.1.1" }, null);
+  check("a fixed address comes back with its prefix", st.mode === "static" && st.address === "192.168.1.161/24" && st.gateway === "192.168.1.1");
+  check("what the manager set wins", MG.bmcToForm(lan, { mode: "static", address: "10.0.0.9/16", gateway: "" }).address === "10.0.0.9/16");
+  check("to the settings", JSON.stringify(MG.bmcFromForm({ mode: "static", address: " 192.168.1.161/24 ", gateway: "192.168.1.1" }))
+    === '{"mode":"static","address":"192.168.1.161/24","gateway":"192.168.1.1"}' && MG.bmcFromForm({ ...f }).mode === "dhcp");
+  check("unchanged until edited", !MG.bmcChanged(f, null) && MG.bmcChanged({ ...f, mode: "static", address: "192.168.1.161/24" }, null)
+    && !MG.bmcChanged(MG.bmcToForm(lan, { mode: "dhcp" }), { mode: "dhcp" }));
+}
+
 group("manager: this host");
 {
   check("bits per second", MG.fmtBps(null) === "–" && MG.fmtBps(512) === "512 bps" && MG.fmtBps(1500) === "1.5 kbps"
