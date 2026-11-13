@@ -373,9 +373,9 @@ function AddNodeDialog({ t, call, onClose, onAdded }) {
       <form className="mgr-form" onSubmit={submit}>
         <p className="modal-body">{t("add.lead")}</p>
         <div className="mgr-row2">
-          <label className="ml"><span>{t("add.name")}</span><input autoFocus value={f.name} onChange={set("name")} /></label>
-          <label className="ml"><span>{t("add.address")}</span><input value={f.address} onChange={set("address")} placeholder="192.168.2.100" /></label>
+          <label className="ml"><span>{t("add.address")}</span><input autoFocus value={f.address} onChange={set("address")} placeholder="192.168.2.100" /></label>
           <label className="ml mgr-port"><span>{t("add.port")}</span><input value={f.port} onChange={set("port")} inputMode="numeric" /></label>
+          <label className="ml"><span>{t("add.nameOptional")}</span><input value={f.name} onChange={set("name")} placeholder={t("add.namePlaceholder")} /></label>
         </div>
         <div className="mgr-row2">
           <label className="ml"><span>{t("add.user")}</span><input value={f.username} onChange={set("username")} autoComplete="off" /></label>
@@ -387,7 +387,7 @@ function AddNodeDialog({ t, call, onClose, onAdded }) {
             <input value={f.manager_address} onChange={set("manager_address")} placeholder={t("add.managerAddressAuto")} />
             <small className="mgr-dim">{t("add.managerAddressHint")}</small></label>
         )}
-        {f.name && probs.filter((k) => k !== "password" && k !== "username").length > 0 && (
+        {f.address && probs.filter((k) => k !== "password" && k !== "username").length > 0 && (
           <p className="set-hint err">{probs.map((k) => t("add.prob." + k)).join(" · ")}</p>
         )}
         {err && <p className="set-hint err">{err.code ? t("add.err." + err.code) + " — " : ""}{err.text}</p>}

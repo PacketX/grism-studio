@@ -101,8 +101,7 @@ export function fmtTime(ts) {
    (the page names them in its own language). */
 export function nodeFormProblems(f) {
   const out = [];
-  if (!String(f.name || "").trim()) out.push("name");
-  else if (String(f.name).trim().length > 64) out.push("nameLong");
+  if (String(f.name || "").trim().length > 64) out.push("nameLong");     // blank: the manager names it after its model
   const a = String(f.address || "").trim();
   if (!a) out.push("address");
   else if (!/^[0-9A-Za-z.:[\]-]+$/.test(a)) out.push("addressBad");
