@@ -5505,6 +5505,7 @@ group("manager: node list");
   check("search: every word somewhere", MG.filterNodes(list, "g8s site-a").length === 1
     && MG.filterNodes(list, "arm64").length === 3 && MG.filterNodes(list, "").length === 4 && MG.filterNodes(list, "nothing").length === 0);
   check("show problems only", MG.filterNodes(list, "", "problems").map((x) => x.name).join() === "a-node,c-node,d-node");
+  check("show online only (what the Online card counts)", MG.filterNodes(list, "", "online").map((x) => x.name).join() === "b-node,c-node");
   check("sort by status: online last, the rest by name", MG.sortNodes(list, "status").map((x) => x.name).join() === "a-node,d-node,b-node,c-node");
   check("sort by name, both ways", MG.sortNodes(list, "name").map((x) => x.name).join() === "a-node,b-node,c-node,d-node"
     && MG.sortNodes(list, "name", -1)[0].name === "d-node");

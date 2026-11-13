@@ -40,7 +40,8 @@ export function matchesQuery(n, q) {
 }
 
 export function filterNodes(nodes, q, show) {
-  return (nodes || []).filter((n) => matchesQuery(n, q) && (show !== "problems" || isProblem(n)));
+  return (nodes || []).filter((n) => matchesQuery(n, q) && (show === "problems" ? isProblem(n)
+    : show === "online" ? nodeStatus(n) === "online" : true));
 }
 
 const SORTERS = {

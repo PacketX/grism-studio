@@ -94,7 +94,7 @@ export default function Manager() {
                 onLogout={logout} onMe={setMe} />
             </header>
             <main className="mgr-main">
-              {tab === "nodes" && <NodesView t={t} call={call} me={me} />}
+              {tab === "nodes" && <NodesView t={t} call={call} me={me} goTab={setTab} />}
               {tab === "traffic" && <TrafficView t={t} call={call} me={me} />}
               {tab === "host" && <HostView t={t} call={call} me={me} />}
               {tab === "events" && <EventsView t={t} call={call} />}
@@ -245,7 +245,7 @@ function StatusDot({ t, status }) {
   return <span className={"mgr-st " + M.statusTone(status)}><i />{t("st." + (status || "unknown"))}</span>;
 }
 
-function NodesView({ t, call, me }) {
+function NodesView({ t, call, me, goTab }) {
   const [nodes, setNodes] = useState(null);
   const [summary, setSummary] = useState(null);
   const [err, setErr] = useState("");
@@ -276,17 +276,19 @@ function NodesView({ t, call, me }) {
     <div className={"mgr-split" + (openId ? " with-drawer" : "")}>
       <section className="mgr-pane">
         <div className="mgr-cards">
-          <Card label={t("sum.nodes")} value={c.total} />
-          <Card label={t("sum.online")} value={c.online} tone={c.online === c.total && c.total ? "ok" : ""} />
+          <Card label={t("sum.nodes")} value={c.total} onClick={() => setShow("all")} />
+          <Card label={t("sum.online")} value={c.online} tone={c.online === c.total && c.total ? "ok" : ""} onClick={() => setShow("online")} />
           <Card label={t("sum.problem")} value={c.problem} tone={c.problem ? "bad" : ""} onClick={() => setShow("problems")} />
           <Card label={t("sum.alerts")} value={c.alerts} tone={c.alerts ? "warn" : ""} />
           <Card label={t("sum.ports")} value={summary ? `${summary.ports_up} / ${summary.ports_total}` : "–"} />
-          <Card label={t("sum.traffic")} value={summary ? `${M.fmtMbps(summary.in_mbps)} ↓ · ${M.fmtMbps(summary.out_mbps)} ↑` : "–"} small />
+          <Card label={t("sum.traffic")} value={summary ? `${M.fmtMbps(summary.in_mbps)} ↓ · ${M.fmtMbps(summary.out_mbps)} ↑` : "–"} small
+            onClick={() => goTab("traffic")} />
         </div>
         <div className="mgr-toolbar">
           <input className="mgr-search" placeholder={t("nodes.search")} value={q} onChange={(e) => setQ(e.target.value)} />
           <span className="acct-seg">
             <button className={show === "all" ? "on" : ""} onClick={() => setShow("all")}>{t("nodes.all")}</button>
+            <button className={show === "online" ? "on" : ""} onClick={() => setShow("online")}>{t("nodes.online")}</button>
             <button className={show === "problems" ? "on" : ""} onClick={() => setShow("problems")}>{t("nodes.problems")}</button>
           </span>
           <span className="mgr-spacer" />
