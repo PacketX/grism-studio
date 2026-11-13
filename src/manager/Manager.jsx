@@ -64,7 +64,7 @@ export default function Manager() {
   }, [t]);
 
   const admin = me && me.priv >= 15;
-  const TABS = [["nodes", 1], ["host", 1], ["events", 1], ["firmware", 15], ["backups", 15], ["accounts", 15], ["audit", 15], ["settings", 1]];
+  const TABS = [["nodes", 1], ["traffic", 1], ["host", 1], ["events", 1], ["firmware", 15], ["backups", 15], ["accounts", 15], ["audit", 15], ["settings", 1]];
 
   return (
     <div className={"gs-root mgr" + (theme === "light" ? " light" : "")}>
@@ -95,6 +95,7 @@ export default function Manager() {
             </header>
             <main className="mgr-main">
               {tab === "nodes" && <NodesView t={t} call={call} me={me} />}
+              {tab === "traffic" && <TrafficView t={t} call={call} />}
               {tab === "host" && <HostView t={t} call={call} />}
               {tab === "events" && <EventsView t={t} call={call} />}
               {tab === "firmware" && admin && <FirmwareView t={t} call={call} />}
@@ -1241,6 +1242,289 @@ function AuditView({ t, call }) {
           ))}
         </tbody>
       </table>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ traffic */
+function useWidth(ref) {
+  const [w, setW] = useState(640);
+  useEffect(() => {
+    if (!ref.current || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver((es) => setW(Math.max(240, Math.floor(es[0].contentRect.width))));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
+}
+
+/* Lines over time on one axis: a legend for two or more, direct end labels for
+   up to four when they do not collide, a 10% wash under at most two, and a
+   crosshair readout of every series at the nearest time (pointer or arrow keys). */
+function LineChart({ t, series, from, to, res, height = 220, fmt = M.fmtBps, area = false }) {
+  const box = useRef(null);
+  const width = useWidth(box);
+  const [hi, setHi] = useState(null);
+  const times = useMemo(() => [...new Set(series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => a - b), [series]);
+  const lookup = useMemo(() => series.map((s) => new Map(s.points)), [series]);
+  const max = Math.max(0, ...series.flatMap((s) => s.points.map((p) => p[1])));
+  const ticks = M.niceTicks(max);
+  const top = ticks[ticks.length - 1] || 1;
+  const labelled = series.length >= 1 && series.length <= 4;
+  const pad = { l: 64, r: labelled ? 92 : 16, t: 12, b: 26 };
+  const W = width, H = height;
+  const x = (tt) => pad.l + ((tt - from) / Math.max(1, to - from)) * (W - pad.l - pad.r);
+  const y = (v) => pad.t + (1 - v / top) * (H - pad.t - pad.b);
+  const base = y(0);
+  const gap = res * 1.5;
+  // end labels: the last value of each series, all of them or none if two would collide
+  const ends = series.map((s, i) => ({ i, p: s.points[s.points.length - 1] })).filter((e) => e.p);
+  const ys = ends.map((e) => y(e.p[1])).sort((a, b) => a - b);
+  const endLabels = labelled && ends.length > 0 && ys.every((v, i) => i === 0 || v - ys[i - 1] >= 14);
+  const pick = (clientX) => {
+    const r = box.current.getBoundingClientRect();
+    const tt = from + ((clientX - r.left - pad.l) / Math.max(1, W - pad.l - pad.r)) * (to - from);
+    setHi(M.nearestIndex(times, tt));
+  };
+  const key = (e) => {
+    if (!times.length) return;
+    if (e.key === "ArrowLeft") { setHi((h) => Math.max(0, (h ?? times.length) - 1)); e.preventDefault(); }
+    if (e.key === "ArrowRight") { setHi((h) => Math.min(times.length - 1, (h ?? -1) + 1)); e.preventDefault(); }
+  };
+  const ht = hi != null && hi >= 0 ? times[hi] : null;
+  const span = to - from;
+  return (
+    <div className="mgr-chart" ref={box}>
+      {series.length >= 2 && (
+        <div className="mgr-legend">
+          {series.map((s) => <span key={s.key}><i style={{ background: `var(--viz-${s.slot})` }} />{s.label}</span>)}
+        </div>
+      )}
+      <svg width={W} height={H} role="img" aria-label={series.map((s) => s.label).join(", ")} tabIndex={0}
+        onPointerMove={(e) => pick(e.clientX)} onPointerLeave={() => setHi(null)} onKeyDown={key} onBlur={() => setHi(null)}>
+        {ticks.map((v) => (
+          <g key={v}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className={v === 0 ? "mgr-axis" : "mgr-grid"} />
+            <text x={pad.l - 8} y={y(v) + 4} textAnchor="end" className="mgr-tick">{fmt(v)}</text>
+          </g>
+        ))}
+        {M.timeTicks(from, to, W - pad.l - pad.r).map((tt) => (
+          <text key={tt} x={x(tt)} y={H - 6} textAnchor="middle" className="mgr-tick">{M.fmtTick(tt, span)}</text>
+        ))}
+        {area && series.length <= 2 && series.map((s) => {
+          const d = M.linePath(s.points, x, y, gap);
+          return d.split("M").filter(Boolean).map((seg, k) => {
+            const pts = seg.split("L");
+            const first = pts[0].split(",")[0], last = pts[pts.length - 1].split(",")[0];
+            return <path key={s.key + k} d={`M${seg}L${last},${base}L${first},${base}Z`} style={{ fill: `var(--viz-${s.slot})` }} className="mgr-area" />;
+          });
+        })}
+        {series.map((s) => <path key={s.key} d={M.linePath(s.points, x, y, gap)} style={{ stroke: `var(--viz-${s.slot})` }} className="mgr-line" />)}
+        {ends.map((e) => <circle key={e.i} cx={x(e.p[0])} cy={y(e.p[1])} r={4} style={{ fill: `var(--viz-${series[e.i].slot})` }} className="mgr-dot" />)}
+        {endLabels && ends.map((e) => (
+          <text key={"l" + e.i} x={x(e.p[0]) + 8} y={y(e.p[1]) + 4} className="mgr-endlabel">{series[e.i].label}</text>
+        ))}
+        {ht != null && (
+          <g>
+            <line x1={x(ht)} x2={x(ht)} y1={pad.t} y2={base} className="mgr-cross" />
+            {series.map((s, i) => lookup[i].has(ht) && (
+              <circle key={s.key} cx={x(ht)} cy={y(lookup[i].get(ht))} r={4} style={{ fill: `var(--viz-${s.slot})` }} className="mgr-dot" />
+            ))}
+          </g>
+        )}
+      </svg>
+      {ht != null && (
+        <div className="mgr-tip" style={{ left: Math.min(x(ht) + 12, W - 200), top: 8 + (series.length >= 2 ? 24 : 0) }}>
+          <div className="mgr-tip-when">{M.fmtWhen(ht, span)}</div>
+          {series.map((s, i) => (
+            <div key={s.key} className="mgr-tip-row"><i style={{ background: `var(--viz-${s.slot})` }} />
+              <b>{lookup[i].has(ht) ? fmt(lookup[i].get(ht)) : "–"}</b><span>{s.label}</span></div>
+          ))}
+        </div>
+      )}
+      {!times.length && <div className="mgr-chart-empty">{t("tr.noData")}</div>}
+    </div>
+  );
+}
+
+function SeriesTable({ series, span, fmt = M.fmtBps }) {
+  const times = [...new Set(series.flatMap((s) => s.points.map((p) => p[0])))].sort((a, b) => b - a);
+  const maps = series.map((s) => new Map(s.points));
+  return (
+    <div className="mgr-scroll">
+      <table className="acct-table mgr-table mgr-compact">
+        <thead><tr><th />{series.map((s) => <th key={s.key}>{s.label}</th>)}</tr></thead>
+        <tbody>{times.map((tt) => (
+          <tr key={tt}><td className="mono mgr-nowrap">{M.fmtWhen(tt, span)}</td>
+            {maps.map((m, i) => <td key={i} className="mono">{m.has(tt) ? fmt(m.get(tt)) : "–"}</td>)}</tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
+/* A chart card with its table view a click away. */
+function ChartCard({ t, title, sub, series, from, to, res, area, fmt, height }) {
+  const [asTable, setAsTable] = useState(false);
+  return (
+    <div className="sys-card">
+      <div className="mgr-toolbar">
+        <h3 className="sys-card-title">{title}</h3>
+        {sub && <span className="mgr-dim">{sub}</span>}
+        <span className="mgr-spacer" />
+        <span className="acct-seg">
+          <button className={asTable ? "" : "on"} onClick={() => setAsTable(false)}>{t("tr.chart")}</button>
+          <button className={asTable ? "on" : ""} onClick={() => setAsTable(true)}>{t("tr.table")}</button>
+        </span>
+      </div>
+      {asTable ? <SeriesTable series={series} span={to - from} fmt={fmt} />
+        : <LineChart t={t} series={series} from={from} to={to} res={res} area={area} fmt={fmt} height={height} />}
+    </div>
+  );
+}
+
+function Spark({ values }) {
+  if (!values || values.length < 2) return <span className="mgr-dim">–</span>;
+  const w = 110, h = 26, mx = Math.max(1, ...values);
+  const d = values.map((v, i) => `${i ? "L" : "M"}${((i / (values.length - 1)) * (w - 4) + 2).toFixed(1)},${(h - 3 - (v / mx) * (h - 6)).toFixed(1)}`).join("");
+  return <svg width={w} height={h} className="mgr-spark" aria-hidden="true"><path d={d} /></svg>;
+}
+
+function Meter({ pct }) {
+  if (pct == null) return <span className="mgr-dim">–</span>;
+  return (
+    <span className="mgr-meter" title={`${pct}%`}>
+      <span className="mgr-meter-track"><span className={pct >= 90 ? "bad" : pct >= 70 ? "warn" : ""} style={{ width: `${Math.min(100, pct)}%` }} /></span>
+      <em className="mono">{pct}%</em>
+    </span>
+  );
+}
+
+function TrafficView({ t, call }) {
+  const [range, setRange] = useState("24h");
+  const [scope, setScope] = useState("");             // "" | "node:<id>" | "tag:<name>"
+  const [nodes, setNodes] = useState([]);
+  const [d, setD] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [sel, setSel] = useState(null);               // {node_id, node, port}
+  const [portData, setPortData] = useState(null);
+  const query = useMemo(() => {
+    const q = new URLSearchParams({ range });
+    if (scope.startsWith("node:")) q.set("node", scope.slice(5));
+    if (scope.startsWith("tag:")) q.set("tag", scope.slice(4));
+    return q.toString();
+  }, [range, scope]);
+  const load = useCallback(async (background) => {
+    setLoading(true);
+    try { setD(await call(`/api/v1/traffic/summary?${query}`, { background })); setErr(""); }
+    catch (e) { if (e.status !== 401) setErr(e.message); }
+    finally { setLoading(false); }
+  }, [call, query]);
+  useEffect(() => {
+    load(false);
+    const id = setInterval(() => load(true), 30000);
+    return () => clearInterval(id);
+  }, [load]);
+  useEffect(() => { call("/api/v1/nodes", { background: true }).then((r) => setNodes(r.nodes)).catch(() => {}); }, [call]);
+  useEffect(() => {
+    if (!sel) { setPortData(null); return; }
+    call(`/api/v1/traffic/port?node=${sel.node_id}&port=${encodeURIComponent(sel.port)}&range=${range}`, { background: true })
+      .then(setPortData).catch((e) => setErr(e.message));
+  }, [call, sel, range]);
+  const tags = [...new Set(nodes.flatMap((n) => n.tags || []))].sort();
+  const from = d ? d.from : 0, to = d ? d.to : 0, span = to - from;
+  const inOut = (pts, ii, oi) => [
+    { key: "in", label: t("tr.in"), slot: 1, points: pts.map((p) => [p[0], p[ii]]) },
+    { key: "out", label: t("tr.out"), slot: 2, points: pts.map((p) => [p[0], p[oi]]) },
+  ];
+  return (
+    <section className="mgr-pane mgr-stack">
+      <div className="mgr-filters">
+        <span className="acct-seg">
+          {M.RANGES.map((r) => <button key={r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{t("tr.range." + r)}</button>)}
+        </span>
+        <select value={scope} onChange={(e) => { setScope(e.target.value); setSel(null); }}>
+          <option value="">{t("tr.allNodes")}</option>
+          {tags.length > 0 && <optgroup label={t("tr.byTag")}>{tags.map((g) => <option key={g} value={"tag:" + g}>{g}</option>)}</optgroup>}
+          <optgroup label={t("tr.byNode")}>{nodes.map((n) => <option key={n.id} value={"node:" + n.id}>{n.name}</option>)}</optgroup>
+        </select>
+        {d && d.since && <span className="mgr-dim">{t("tr.since").replace("{t}", M.fmtTime(d.since))}</span>}
+      </div>
+      {err && <p className="set-hint err">{err}</p>}
+      {!d ? <p className="mgr-dim">{t("app.loading")}</p> : (
+        <div className={"mgr-stack" + (loading ? " mgr-refetch" : "")}>
+          <div className="mgr-tiles">
+            <div className="mgr-tile"><span>{t("tr.nowIn")}</span><b>{M.fmtBps(d.now.in)}</b></div>
+            <div className="mgr-tile"><span>{t("tr.nowOut")}</span><b>{M.fmtBps(d.now.out)}</b></div>
+            <div className="mgr-tile"><span>{t("tr.peak")}</span><b>{M.fmtBps(Math.max(d.peak.in, d.peak.out))}</b>
+              <em>{d.peak.in >= d.peak.out ? t("tr.in") : t("tr.out")}{(d.peak.in_t || d.peak.out_t) ? " · " + M.fmtWhen(d.peak.in >= d.peak.out ? d.peak.in_t : d.peak.out_t, span) : ""}</em></div>
+            <div className="mgr-tile"><span>{t("tr.dropsErrors")}</span><b>{M.fmtCount(d.drops)} / {M.fmtCount(d.errors)}</b>
+              <em>{t("tr.inRange")}</em></div>
+            <div className="mgr-tile"><span>{t("tr.ports")}</span><b>{d.now.ports_busy} / {d.now.ports_up}</b></div>
+          </div>
+          <ChartCard t={t} title={t("tr.total")} sub={t("tr.totalSub")} series={inOut(d.total, 1, 2)} from={from} to={to} res={d.res} area />
+          <div className="sys-card">
+            <h3 className="sys-card-title">{t("tr.topPorts")}</h3>
+            {d.top_ports.length === 0 ? <p className="mgr-dim">{t("tr.noData")}</p> : (
+              <table className="acct-table mgr-table mgr-click">
+                <thead><tr><th>{t("ev.node")}</th><th>{t("tr.port")}</th><th>{t("tr.avgIn")}</th><th>{t("tr.avgOut")}</th>
+                  <th>{t("tr.peakCol")}</th><th>{t("tr.util")}</th><th>{t("tr.trend")}</th></tr></thead>
+                <tbody>{d.top_ports.map((p) => (
+                  <tr key={p.node_id + p.port} className={sel && sel.node_id === p.node_id && sel.port === p.port ? "on" : ""}
+                    tabIndex={0} onClick={() => setSel(p)} onKeyDown={(e) => e.key === "Enter" && setSel(p)}>
+                    <td>{p.node}</td><td className="mono"><b>{p.port}</b></td>
+                    <td className="mono">{M.fmtBps(p.in)}</td><td className="mono">{M.fmtBps(p.out)}</td>
+                    <td className="mono">{M.fmtBps(Math.max(p.in_max, p.out_max))}</td>
+                    <td><Meter pct={p.util_max} /></td><td><Spark values={p.spark} /></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+            <p className="set-hint dim">{t("tr.topPortsHint")}</p>
+          </div>
+          {sel && portData && (
+            <ChartCard t={t} title={`${portData.node} ${portData.port}`}
+              sub={portData.speed ? t("tr.speed").replace("{s}", fmtSpeed(portData.speed)) : ""}
+              series={inOut(portData.points, 1, 2)} from={portData.from} to={portData.to} res={portData.res} area />
+          )}
+          <div className="sys-card">
+            <h3 className="sys-card-title">{t("tr.topFilters")}</h3>
+            {d.top_filters.length === 0 ? <p className="mgr-dim">{t("tr.noFilters")}</p> : (
+              <table className="acct-table mgr-table">
+                <thead><tr><th>{t("ev.node")}</th><th>{t("tr.filter")}</th><th>{t("tr.mps")}</th><th>{t("tr.mpsMax")}</th><th>{t("tr.matched")}</th></tr></thead>
+                <tbody>{d.top_filters.map((f) => {
+                  const mx = d.top_filters[0].matched || 1;
+                  return (
+                    <tr key={f.node_id + "-" + f.fid}>
+                      <td>{f.node}</td><td><b className="mono">F{f.fid}</b>{f.name && <span className="mgr-dim"> {f.name}</span>}</td>
+                      <td className="mono">{M.fmtCount(f.mps)}</td><td className="mono">{M.fmtCount(f.mps_max)}</td>
+                      <td><span className="mgr-hbar"><span style={{ width: `${(100 * f.matched) / mx}%` }} /></span> <span className="mono">{M.fmtCount(f.matched)}</span></td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            )}
+          </div>
+          {d.tags.length > 0 ? (
+            <ChartCard t={t} title={t("tr.byTagTitle")} sub={d.tags_more ? t("tr.tagsMore").replace("{n}", d.tags_more) : t("tr.byTagSub")}
+              series={d.tags.map((g, i) => ({ key: g.tag, label: `${g.tag} (${g.nodes})`, slot: i + 1, points: g.points }))}
+              from={from} to={to} res={d.res} />
+          ) : !scope && <p className="set-hint dim">{t("tr.noTags")}</p>}
+          {d.top_drops.length > 0 && (
+            <div className="sys-card">
+              <h3 className="sys-card-title">{t("tr.drops")}</h3>
+              <table className="acct-table mgr-table">
+                <thead><tr><th>{t("ev.node")}</th><th>{t("tr.port")}</th><th>{t("tr.dropCount")}</th><th>{t("tr.errCount")}</th></tr></thead>
+                <tbody>{d.top_drops.map((p) => (
+                  <tr key={p.node_id + p.port}><td>{p.node}</td><td className="mono"><b>{p.port}</b></td>
+                    <td className="mono">{M.fmtCount(p.drops)}</td><td className="mono">{M.fmtCount(p.errors)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

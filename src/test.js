@@ -5629,6 +5629,22 @@ group("manager: this host");
     === "16.0 GT/s x8");
 }
 
+group("manager: traffic charts");
+{
+  check("nice ticks", JSON.stringify(MG.niceTicks(380e6)) === JSON.stringify([0, 1e8, 2e8, 3e8, 4e8])
+    && JSON.stringify(MG.niceTicks(9)) === JSON.stringify([0, 2.5, 5, 7.5, 10]) && JSON.stringify(MG.niceTicks(0)) === "[0,1]");
+  const tt = MG.timeTicks(1800000000, 1800003600, 660);
+  check("time ticks: round, inside, about one per 110 px", tt.length >= 4 && tt.length <= 7 && tt.every((t) => t >= 1800000000 && t <= 1800003600)
+    && tt.every((t, i) => i === 0 || t - tt[i - 1] === tt[1] - tt[0]));
+  const x = (t) => t, y = (v) => v;
+  check("a line breaks at a gap", MG.linePath([[0, 1], [60, 2], [300, 3]], x, y, 90) === "M0.0,1.0L60.0,2.0M300.0,3.0");
+  check("nearest index", MG.nearestIndex([0, 60, 120], 80) === 1 && MG.nearestIndex([0, 60, 120], 100) === 2
+    && MG.nearestIndex([], 5) === -1);
+  check("counts", MG.fmtCount(1234) === "1234" && MG.fmtCount(25600) === "25.6K" && MG.fmtCount(3.2e6) === "3.2M");
+  check("a 24-hour view a few seconds over a day still reads in hours", /^\d\d:\d\d$/.test(MG.fmtTick(1800000000, 86400 + 540)));
+  check("tick labels", /^\d\d:\d\d$/.test(MG.fmtTick(1800000000, 3600)) && /^\d+\/\d+$/.test(MG.fmtTick(1800000000, 604800)));
+}
+
 group("manager: every word in both languages");
 {
   const src = readFileSync(new URL("./manager/Manager.jsx", import.meta.url), "utf8");

@@ -368,3 +368,80 @@ export function placeholderSerial(s) {
   const v = String(s || "").trim();
   return !v || /^0123456789/.test(v) || /^(to be filled|default string|not specified|system serial number)/i.test(v) || /^0+$/.test(v);
 }
+
+/* ---------------- traffic charts ---------------- */
+
+export const RANGES = ["1h", "6h", "24h", "7d", "30d"];
+export const RANGE_SECONDS = { "1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000 };
+
+/* Clean y-axis steps from 0 to at least `max`: 1, 2, 2.5, 5 x 10^n. */
+export function niceTicks(max, count = 4) {
+  if (!(max > 0)) return [0, 1];
+  const raw = max / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const n = raw / mag;
+  const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
+  const out = [];
+  for (let i = 0; i <= count + 1; i++) {
+    const v = +(step * i).toPrecision(12);
+    out.push(v);
+    if (v >= max) break;
+  }
+  return out;
+}
+
+/* Time-axis ticks at round local times, about one per `px` pixels. */
+export function timeTicks(from, to, width, px = 110) {
+  const span = to - from;
+  if (!(span > 0) || !(width > 0)) return [];
+  const want = Math.max(2, Math.floor(width / px));
+  const steps = [300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 345600, 604800];
+  const step = steps.find((x) => span / x <= want) || 604800;
+  const tz = -new Date(from * 1000).getTimezoneOffset() * 60;   // local midnight, local hours
+  const out = [];
+  for (let t = Math.ceil((from + tz) / step) * step - tz; t <= to; t += step) out.push(t);
+  return out;
+}
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const DAYISH = 86400 * 1.05;     // a 24-hour view starts at a bucket boundary, so it spans a little more than a day
+export function fmtTick(t, span) {
+  const d = new Date(t * 1000);
+  return span <= DAYISH ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+export function fmtWhen(t, span) {
+  const d = new Date(t * 1000);
+  const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return span <= DAYISH ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
+/* A line's path: one subpath per run of points no further apart than `gap` seconds. */
+export function linePath(points, x, y, gap) {
+  let d = "", prev = null;
+  for (const [t, v] of points) {
+    d += `${prev === null || t - prev > gap ? "M" : "L"}${x(t).toFixed(1)},${y(v).toFixed(1)}`;
+    prev = t;
+  }
+  return d;
+}
+
+/* The nearest of sorted `times` to `t`. */
+export function nearestIndex(times, t) {
+  if (!times.length) return -1;
+  let lo = 0, hi = times.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] < t) lo = mid; else hi = mid;
+  }
+  return Math.abs(times[lo] - t) <= Math.abs(times[hi] - t) ? lo : hi;
+}
+
+export function fmtCount(v) {
+  if (v == null) return "–";
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(1) + "G";
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + "M";
+  if (a >= 1e4) return (v / 1e3).toFixed(1) + "K";
+  return String(Math.round(v * 10) / 10);
+}
