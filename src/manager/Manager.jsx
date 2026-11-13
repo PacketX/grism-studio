@@ -1488,153 +1488,168 @@ function SignInServerCard({ t, call }) {
   );
 }
 
-/* The host's own time servers, syslog targets and management access list: the
-   manager writes them, root applies them (grism-host-apply), the card shows how
-   that went. */
-function HostSettingsCard({ t, call }) {
+/* The host's own settings, one card each: network (management interfaces and the
+   cards' NAT), time, syslog, management access. The manager writes them, root
+   applies them (grism-host-apply). Each card saves its own part, and a save
+   leaves what another card is still editing alone. */
+function HostSettingsCards({ t, call }) {
   const [form, setForm] = useState(null);
   const [saved, setSaved] = useState(null);
-  const [ifs, setIfs] = useState([]);
   const [mg, setMg] = useState([]);
   const [nat, setNat] = useState(null);
   const [now, setNow] = useState(Date.now() / 1000);
   const [status, setStatus] = useState(null);
   const [you, setYou] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [msg, setMsg] = useState("");
-  const load = useCallback(async () => {
-    try {
-      const r = await call("/api/v1/settings/host");
-      setForm(M.hostSettingsToForm(r.settings)); setStatus(r.status); setYou(r.you || "");
-      setSaved(r.settings); setIfs(r.interfaces || []); setMg(M.mgmtToForm(r.interfaces || [], r.settings.mgmt || {}));
-      setNat(r.card_nat || null);
-    } catch (e) { setErr(e.message); }
-  }, [call]);
-  useEffect(() => { load(); }, [load]);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState({});
+  const [msg, setMsg] = useState({});
+  const fetchHost = useCallback(() => call("/api/v1/settings/host"), [call]);
+  useEffect(() => {
+    fetchHost().then((r) => {
+      setForm(M.hostSettingsToForm(r.settings)); setSaved(r.settings); setStatus(r.status); setYou(r.you || "");
+      setMg(M.mgmtToForm(r.interfaces || [], r.settings.mgmt || {})); setNat(r.card_nat || null);
+    }).catch((e) => setErr({ load: e.message }));
+  }, [fetchHost]);
   const pending = status && status.mgmt_pending;
   useEffect(() => {
     if (!pending) return undefined;
     const id = setInterval(() => setNow(Date.now() / 1000), 1000);
     return () => clearInterval(id);
   }, [pending]);
-  const putHost = async (patch, okMsg) => {
-    setBusy(true); setErr(""); setMsg("");
+  // save one part; afterwards refresh what the server says, and only that part of the forms
+  const putHost = async (part, patch, okMsg) => {
+    setBusy(part); setErr({ ...err, [part]: "" }); setMsg({ ...msg, [part]: "" });
     try {
       await call("/api/v1/settings/host", { method: "PUT", body: { ...saved, ...patch } });
-      setMsg(okMsg);
       await sleep(2500);
-      await load();
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+      const r = await fetchHost();
+      setSaved(r.settings); setStatus(r.status); setNat(r.card_nat || null);
+      const fresh = M.hostSettingsToForm(r.settings);
+      if (part in fresh) setForm((f) => ({ ...f, [part]: fresh[part] }));
+      if (part === "mgmt") setMg(M.mgmtToForm(r.interfaces || [], r.settings.mgmt || {}));
+      const failed = r.status && r.status.applied > Date.now() / 1000 - 30 && !r.status.ok;
+      if (failed) setErr((e) => ({ ...e, [part]: (r.status.errors || []).join("; ") }));
+      else setMsg((m) => ({ ...m, [part]: okMsg }));
+    } catch (e) { setErr((x) => ({ ...x, [part]: e.message })); } finally { setBusy(""); }
   };
   const confirmMgmt = async () => {
-    setBusy(true); setErr("");
-    try { await call("/api/v1/settings/host/confirm-mgmt", { method: "POST" }); await sleep(1500); await load(); setMsg(t("host.mgmtConfirmed")); }
-    catch (e) { setErr(e.message); } finally { setBusy(false); }
-  };
-  const mrow = (i, patch) => setMg(mg.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  const save = async () => {
-    setBusy(true); setErr(""); setMsg("");
+    setBusy("mgmt");
     try {
-      await call("/api/v1/settings/host", { method: "PUT", body: M.hostFormToSettings(form) });
-      setMsg(t("host.saved"));
-      await sleep(2500);
-      await load();
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+      await call("/api/v1/settings/host/confirm-mgmt", { method: "POST" });
+      await sleep(1500);
+      const r = await fetchHost();
+      setStatus(r.status); setSaved(r.settings);
+      setMsg((m) => ({ ...m, mgmt: t("host.mgmtConfirmed") }));
+    } catch (e) { setErr((x) => ({ ...x, mgmt: e.message })); } finally { setBusy(""); }
   };
-  if (!form) return <div className="sys-card"><p className="mgr-dim">{err || t("app.loading")}</p></div>;
-  const row = (list, key, i, patch) => setForm({ ...form, [key]: list.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  if (!form) return <div className="sys-card mgr-wide-card"><p className="mgr-dim">{err.load || t("app.loading")}</p></div>;
+  const row = (key, i, patch) => setForm({ ...form, [key]: form[key].map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  const mrow = (i, patch) => setMg(mg.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const foot = (part, button) => (
+    <>
+      <div className="mgr-buttons left">
+        {button}
+        {msg[part] && <span className="mgr-ok">{msg[part]}</span>}
+      </div>
+      {err[part] && <p className="set-hint err">{err[part]}</p>}
+    </>
+  );
+  const saveBtn = (part, onClick, disabled) => (
+    <button className="sys-refresh" disabled={!!busy || disabled} onClick={onClick}>{busy === part ? t("common.saving") : t("common.save")}</button>
+  );
+  const asSettings = () => M.hostFormToSettings(form);
   return (
-    <div className="sys-card mgr-wide-card">
-      <h3 className="sys-card-title">{t("host.title")}</h3>
-      <p className="set-hint">{t("host.lead")}</p>
-
-      <h4 className="mgr-h4">{t("host.ntp")}</h4>
-      <label className="ml"><span>{t("host.ntpServers")}</span>
-        <input value={form.ntp} onChange={(e) => setForm({ ...form, ntp: e.target.value })} placeholder="time.google.com, 216.239.35.0" /></label>
-      <p className="set-hint dim">{t("host.ntpHint")}</p>
-
-      <h4 className="mgr-h4">{t("host.syslog")}</h4>
-      {form.syslog.map((x, i) => (
-        <div className="mgr-row2" key={i}>
-          <label className="ml"><span>{t("host.server")}</span><input value={x.host} onChange={(e) => row(form.syslog, "syslog", i, { host: e.target.value })} /></label>
-          <label className="ml mgr-port"><span>{t("host.port")}</span><input value={x.port} onChange={(e) => row(form.syslog, "syslog", i, { port: e.target.value })} /></label>
-          <label className="ml mgr-port"><span>{t("host.proto")}</span>
-            <select value={x.proto} onChange={(e) => row(form.syslog, "syslog", i, { proto: e.target.value })}><option value="udp">UDP</option><option value="tcp">TCP</option></select></label>
-          <button className="del mgr-rowdel" onClick={() => setForm({ ...form, syslog: form.syslog.filter((_, j) => j !== i) })}>{t("common.delete")}</button>
-        </div>
-      ))}
-      <button className="copy-btn" disabled={form.syslog.length >= 4} onClick={() => setForm({ ...form, syslog: [...form.syslog, { host: "", port: "514", proto: "udp" }] })}>{t("host.addSyslog")}</button>
-      <p className="set-hint dim">{t("host.syslogHint")}</p>
-
-      <h4 className="mgr-h4">{t("host.access")}</h4>
-      {form.access.map((x, i) => (
-        <div className="mgr-row2" key={i}>
-          <label className="ml"><span>{t("host.src")}</span><input value={x.src} onChange={(e) => row(form.access, "access", i, { src: e.target.value })} placeholder="192.168.1.0/24" /></label>
-          <label className="ml mgr-port"><span>{t("host.sport")}</span><input value={x.sport} onChange={(e) => row(form.access, "access", i, { sport: e.target.value })} placeholder={t("host.any")} /></label>
-          <label className="ml mgr-port"><span>{t("host.dport")}</span><input value={x.dport} onChange={(e) => row(form.access, "access", i, { dport: e.target.value })} placeholder="22,443" /></label>
-          <button className="del mgr-rowdel" onClick={() => setForm({ ...form, access: form.access.filter((_, j) => j !== i) })}>{t("common.delete")}</button>
-        </div>
-      ))}
-      <button className="copy-btn" disabled={form.access.length >= 64} onClick={() => setForm({ ...form, access: [...form.access, { src: "", sport: "", dport: "" }] })}>{t("host.addAccess")}</button>
-      <p className="set-hint dim">{t("host.accessHint").replace("{ip}", you || "?")}</p>
-      {form.access.length > 0 && !M.accessAdmits(form.access, you, 443) && <p className="set-hint err">{t("host.lockout").replace("{ip}", you)}</p>}
-
-      <div className="mgr-buttons left">
-        <button className="sys-refresh" disabled={busy} onClick={save}>{busy ? t("common.saving") : t("common.save")}</button>
-        {msg && <span className="mgr-ok">{msg}</span>}
-      </div>
-
-      <h4 className="mgr-h4">{t("host.mgmt")}</h4>
-      {pending && (
-        <div className="mgr-pending">
-          <span>{t("host.mgmtPending").replace("{s}", Math.max(0, Math.round(pending.deadline - now)))}</span>
-          <button className="sys-refresh" disabled={busy || pending.deadline < now} onClick={confirmMgmt}>{t("host.mgmtConfirm")}</button>
-        </div>
-      )}
-      <table className="acct-table mgr-table">
-        <thead><tr><th>{t("host.iface")}</th><th>{t("host.now")}</th><th>{t("host.mode")}</th><th>{t("host.addr")}</th><th>{t("host.gw")}</th><th>{t("host.dns")}</th></tr></thead>
-        <tbody>
-          {mg.map((x, i) => (
-            <tr key={x.iface}>
-              <td className="mono"><b>{x.iface}</b> <span className={"mgr-badge" + (x.state === "UP" ? "" : " warn")}>{x.state || "?"}</span></td>
-              <td className="mono mgr-dim">{(x.addresses || []).join(", ") || "-"}{x.gateway_now ? ` via ${x.gateway_now}` : ""}</td>
-              <td><select value={x.mode} onChange={(e) => mrow(i, { mode: e.target.value })}>
-                <option value="system">{t("host.modeSystem")}</option><option value="static">{t("host.modeStatic")}</option><option value="dhcp">DHCP</option>
-              </select></td>
-              <td><input className="mono" disabled={x.mode !== "static"} value={x.address} placeholder="a.b.c.d/nn" onChange={(e) => mrow(i, { address: e.target.value })} /></td>
-              <td><input className="mono" disabled={x.mode !== "static"} value={x.gateway} onChange={(e) => mrow(i, { gateway: e.target.value })} /></td>
-              <td><input className="mono" disabled={x.mode !== "static"} value={x.dns} onChange={(e) => mrow(i, { dns: e.target.value })} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="set-hint dim">{t("host.mgmtHint")}</p>
-      <div className="mgr-buttons left">
-        <button className="sys-refresh" disabled={busy || !!pending || !M.mgmtChanged(mg, saved?.mgmt || {})}
-          onClick={() => putHost({ mgmt: M.formToMgmt(mg), confirm: 120 }, t("host.mgmtApplied"))}>{t("host.mgmtApply")}</button>
-      </div>
-
-      {nat && nat.cards && nat.cards.length > 0 && (
-        <>
-          <h4 className="mgr-h4">{t("host.nat")}</h4>
-          <p className="set-hint">{t("host.natLead").replace("{cards}", nat.cards.join(", "))}</p>
-          <p className="set-hint">{t(nat.enabled ? "host.natOn" : "host.natOff")}{nat.enabled && !nat.forwarding ? " " + t("host.natNoFwd") : ""}</p>
-          <div className="mgr-buttons left">
-            <button className={nat.enabled ? "del" : "sys-refresh"} disabled={busy}
-              onClick={() => putHost({ card_nat: { enabled: !nat.enabled } }, t("host.saved"))}>{t(nat.enabled ? "host.natTurnOff" : "host.natTurnOn")}</button>
+    <>
+      <div className="sys-card mgr-wide-card">
+        <h3 className="sys-card-title">{t("set.network")}</h3>
+        <p className="set-hint">{t("set.networkLead")}</p>
+        <h4 className="mgr-h4">{t("host.mgmt")}</h4>
+        {pending && (
+          <div className="mgr-pending">
+            <span>{t("host.mgmtPending").replace("{s}", Math.max(0, Math.round(pending.deadline - now)))}</span>
+            <button className="sys-refresh" disabled={!!busy || pending.deadline < now} onClick={confirmMgmt}>{t("host.mgmtConfirm")}</button>
           </div>
-          <p className="set-hint dim">{t("host.natHint")}</p>
-        </>
-      )}
-      {err && <p className="set-hint err">{err}</p>}
-      {status && (
-        <p className={"set-hint " + (status.ok ? "" : "err")}>
-          {t("host.applied").replace("{t}", M.fmtTime(status.applied))}
-          {status.ok ? "" : " — " + (status.errors || []).join("; ")}
-        </p>
-      )}
-    </div>
+        )}
+        <table className="acct-table mgr-table">
+          <thead><tr><th>{t("host.iface")}</th><th>{t("host.now")}</th><th>{t("host.mode")}</th><th>{t("host.addr")}</th><th>{t("host.gw")}</th><th>{t("host.dns")}</th></tr></thead>
+          <tbody>
+            {mg.map((x, i) => (
+              <tr key={x.iface}>
+                <td className="mono"><b>{x.iface}</b> <span className={"mgr-badge" + (x.state === "UP" ? "" : " warn")}>{x.state || "?"}</span></td>
+                <td className="mono mgr-dim">{(x.addresses || []).join(", ") || "-"}{x.gateway_now ? ` via ${x.gateway_now}` : ""}</td>
+                <td><select value={x.mode} onChange={(e) => mrow(i, { mode: e.target.value })}>
+                  <option value="system">{t("host.modeSystem")}</option><option value="static">{t("host.modeStatic")}</option><option value="dhcp">DHCP</option>
+                </select></td>
+                <td><input className="mono" disabled={x.mode !== "static"} value={x.address} placeholder="a.b.c.d/nn" onChange={(e) => mrow(i, { address: e.target.value })} /></td>
+                <td><input className="mono" disabled={x.mode !== "static"} value={x.gateway} onChange={(e) => mrow(i, { gateway: e.target.value })} /></td>
+                <td><input className="mono" disabled={x.mode !== "static"} value={x.dns} onChange={(e) => mrow(i, { dns: e.target.value })} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="set-hint dim">{t("host.mgmtHint")}</p>
+        {foot("mgmt", <button className="sys-refresh" disabled={!!busy || !!pending || !M.mgmtChanged(mg, saved?.mgmt || {})}
+          onClick={() => putHost("mgmt", { mgmt: M.formToMgmt(mg), confirm: 120 }, t("host.mgmtApplied"))}>
+          {busy === "mgmt" ? t("common.saving") : t("host.mgmtApply")}</button>)}
+
+        {nat && nat.cards && nat.cards.length > 0 && (
+          <>
+            <h4 className="mgr-h4">{t("host.nat")}</h4>
+            <p className="set-hint">{t("host.natLead").replace("{cards}", nat.cards.join(", "))}</p>
+            <p className="set-hint">{t(nat.enabled ? "host.natOn" : "host.natOff")}{nat.enabled && !nat.forwarding ? " " + t("host.natNoFwd") : ""}</p>
+            {foot("card_nat", <button className={nat.enabled ? "del" : "sys-refresh"} disabled={!!busy}
+              onClick={() => putHost("card_nat", { card_nat: { enabled: !nat.enabled } }, t("host.saved"))}>
+              {t(nat.enabled ? "host.natTurnOff" : "host.natTurnOn")}</button>)}
+            <p className="set-hint dim">{t("host.natHint")}</p>
+          </>
+        )}
+        {status && (
+          <p className={"set-hint dim" + (status.ok ? "" : " err")}>
+            {t("host.applied").replace("{t}", M.fmtTime(status.applied))}{status.ok ? "" : " — " + (status.errors || []).join("; ")}
+          </p>
+        )}
+      </div>
+
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("host.ntp")}</h3>
+        <label className="ml"><span>{t("host.ntpServers")}</span>
+          <input value={form.ntp} onChange={(e) => setForm({ ...form, ntp: e.target.value })} placeholder="time.google.com, 216.239.35.0" /></label>
+        <p className="set-hint dim">{t("host.ntpHint")}</p>
+        {foot("ntp", saveBtn("ntp", () => putHost("ntp", { ntp: asSettings().ntp }, t("host.saved"))))}
+      </div>
+
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("host.syslog")}</h3>
+        {form.syslog.map((x, i) => (
+          <div className="mgr-row2" key={i}>
+            <label className="ml"><span>{t("host.server")}</span><input value={x.host} onChange={(e) => row("syslog", i, { host: e.target.value })} /></label>
+            <label className="ml mgr-port"><span>{t("host.port")}</span><input value={x.port} onChange={(e) => row("syslog", i, { port: e.target.value })} /></label>
+            <label className="ml mgr-port"><span>{t("host.proto")}</span>
+              <select value={x.proto} onChange={(e) => row("syslog", i, { proto: e.target.value })}><option value="udp">UDP</option><option value="tcp">TCP</option></select></label>
+            <button className="del mgr-rowdel" onClick={() => setForm({ ...form, syslog: form.syslog.filter((_, j) => j !== i) })}>{t("common.delete")}</button>
+          </div>
+        ))}
+        <button className="copy-btn" disabled={form.syslog.length >= 4} onClick={() => setForm({ ...form, syslog: [...form.syslog, { host: "", port: "514", proto: "udp" }] })}>{t("host.addSyslog")}</button>
+        <p className="set-hint dim">{t("host.syslogHint")}</p>
+        {foot("syslog", saveBtn("syslog", () => putHost("syslog", { syslog: asSettings().syslog }, t("host.saved"))))}
+      </div>
+
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("host.access")}</h3>
+        {form.access.map((x, i) => (
+          <div className="mgr-row2" key={i}>
+            <label className="ml"><span>{t("host.src")}</span><input value={x.src} onChange={(e) => row("access", i, { src: e.target.value })} placeholder="192.168.1.0/24" /></label>
+            <label className="ml mgr-port"><span>{t("host.sport")}</span><input value={x.sport} onChange={(e) => row("access", i, { sport: e.target.value })} placeholder={t("host.any")} /></label>
+            <label className="ml mgr-port"><span>{t("host.dport")}</span><input value={x.dport} onChange={(e) => row("access", i, { dport: e.target.value })} placeholder="22,443" /></label>
+            <button className="del mgr-rowdel" onClick={() => setForm({ ...form, access: form.access.filter((_, j) => j !== i) })}>{t("common.delete")}</button>
+          </div>
+        ))}
+        <button className="copy-btn" disabled={form.access.length >= 64} onClick={() => setForm({ ...form, access: [...form.access, { src: "", sport: "", dport: "" }] })}>{t("host.addAccess")}</button>
+        <p className="set-hint dim">{t("host.accessHint").replace("{ip}", you || "?")}</p>
+        {form.access.length > 0 && !M.accessAdmits(form.access, you, 443) && <p className="set-hint err">{t("host.lockout").replace("{ip}", you)}</p>}
+        {foot("access", saveBtn("access", () => putHost("access", { access: asSettings().access }, t("host.saved"))))}
+      </div>
+    </>
   );
 }
 
@@ -1655,9 +1670,12 @@ function SettingsView({ t, call, me }) {
       setMsg(t("common.saved")); }
     catch (e) { setErr(e.message); }
   };
+  // basics first (network, time, logging), then who may get in, then accounts' rules, then what this is
   return (
-    <section className="mgr-pane mgr-settings">
-      <div className="sys-card">
+    <section className="mgr-pane mgr-settings mgr-settings3">
+      {admin && <HostSettingsCards t={t} call={call} />}
+      {admin && <SignInServerCard t={t} call={call} />}
+      <div className="sys-card mgr-span2">
         <h3 className="sys-card-title">{t("set.policy")}</h3>
         <p className="set-hint">{t("set.policyLead")}</p>
         {p && (
@@ -1675,8 +1693,6 @@ function SettingsView({ t, call, me }) {
         {msg && <span className="mgr-ok"> {msg}</span>}
         {err && <p className="set-hint err">{err}</p>}
       </div>
-      {admin && <SignInServerCard t={t} call={call} />}
-      {admin && <HostSettingsCard t={t} call={call} />}
       <div className="sys-card">
         <h3 className="sys-card-title">{t("set.about")}</h3>
         <dl className="mgr-kv">

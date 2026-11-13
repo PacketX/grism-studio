@@ -99,6 +99,13 @@
 .mgr-settings{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:14px; align-items:start;}
 .mgr-settings input[type=number]{width:110px;}
 .mgr-wide-card{grid-column:1/-1;}
+/* the settings page: three columns; wide cards take a row, the policy two columns */
+.mgr-settings.mgr-settings3{grid-template-columns:repeat(3,minmax(0,1fr));}
+.mgr-settings3 > .mgr-span2{grid-column:span 2;}
+@media (max-width:1100px){
+  .mgr-settings.mgr-settings3{grid-template-columns:minmax(0,1fr);}
+  .mgr-settings3 > .mgr-span2{grid-column:auto;}
+}
 .mgr-seg{margin:6px 0 12px;}
 .mgr-check{display:flex; align-items:center; gap:8px; margin:8px 0;}
 .mgr-filebtn{cursor:pointer; display:inline-flex; align-items:center;}
