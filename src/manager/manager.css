@@ -157,3 +157,7 @@
 .mgr-bar span{display:block; height:100%; background:var(--accent);}
 .mgr-bar span.warn{background:var(--warn, #e0a030);}
 .mgr-compact td{padding-top:3px; padding-bottom:3px;}
+
+.mgr-danger-card{border-color:var(--bad, #d04a3a);}
+.mgr-list{margin:4px 0 8px 18px; padding:0;}
+.mgr-list li{margin:3px 0;}

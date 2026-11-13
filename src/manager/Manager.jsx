@@ -1653,6 +1653,74 @@ function HostSettingsCards({ t, call }) {
   );
 }
 
+/* Factory settings with this host's management address kept: the manager
+   restarts, everyone signs in again with the administrator named here. */
+function FactoryResetCard({ t, call, me }) {
+  const [f, setF] = useState({ user: me.username, pw: "", pw2: "", cards: false, confirm: "" });
+  const [cards, setCards] = useState([]);
+  const [ask, setAsk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(null);
+  useEffect(() => { call("/api/v1/settings/host").then((r) => setCards((r.card_nat && r.card_nat.cards) || [])).catch(() => {}); }, [call]);
+  const ready = f.user.trim() && f.pw && f.pw === f.pw2 && f.confirm.trim() === "RESET";
+  const go = async () => {
+    setAsk(false); setBusy(true); setErr("");
+    try {
+      const r = await call("/api/v1/factory-reset", { method: "POST",
+        body: { admin_user: f.user.trim(), admin_password: f.pw, cards: f.cards, confirm: f.confirm.trim() } });
+      setDone(r);
+      await sleep(4000);
+      for (let i = 0; i < 60; i++) {
+        try { const v = await fetch("/api/v1/version", { cache: "no-store" }); if (v.ok) break; } catch { /* restarting */ }
+        await sleep(1000);
+      }
+      window.location.reload();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return (
+    <div className="sys-card mgr-wide-card mgr-danger-card">
+      <h3 className="sys-card-title">{t("fr.title")}</h3>
+      <p className="set-hint">{t("fr.lead")}</p>
+      <ul className="set-hint mgr-list">
+        <li>{t("fr.reset")}</li>
+        <li>{t("fr.kept")}</li>
+      </ul>
+      {cards.length > 0 && (
+        <label className="mgr-check"><input type="checkbox" checked={f.cards} onChange={(e) => setF({ ...f, cards: e.target.checked })} />
+          {t("fr.cards").replace("{cards}", cards.join(", "))}</label>
+      )}
+      <div className="set-grid">
+        <label className="ml"><span>{t("fr.admin")}</span><input value={f.user} autoComplete="off" onChange={(e) => setF({ ...f, user: e.target.value })} /></label>
+        <label className="ml"><span>{t("fr.pw")}</span><input type="password" autoComplete="new-password" value={f.pw} onChange={(e) => setF({ ...f, pw: e.target.value })} /></label>
+        <label className="ml"><span>{t("fr.pw2")}</span><input type="password" autoComplete="new-password" value={f.pw2} onChange={(e) => setF({ ...f, pw2: e.target.value })} /></label>
+        <label className="ml"><span>{t("fr.typeReset")}</span><input value={f.confirm} placeholder="RESET" autoComplete="off" onChange={(e) => setF({ ...f, confirm: e.target.value })} /></label>
+      </div>
+      {f.pw && f.pw2 && f.pw !== f.pw2 && <p className="set-hint err">{t("fr.pwDiffer")}</p>}
+      <div className="mgr-buttons left">
+        <button className="del" disabled={!ready || busy} onClick={() => setAsk(true)}>{busy ? t("fr.going") : t("fr.go")}</button>
+      </div>
+      {err && <p className="set-hint err">{err}</p>}
+      {done && (
+        <p className="set-hint">{t("fr.restarting")}
+          {(done.cards_reset || []).length > 0 && " " + t("fr.cardsReset").replace("{cards}", done.cards_reset.join(", "))}
+          {Object.keys(done.cards_failed || {}).length > 0 && " " + t("fr.cardsFailed").replace("{cards}", Object.keys(done.cards_failed).join(", "))}
+        </p>
+      )}
+      {ask && (
+        <Modal title={t("fr.askTitle")} onClose={() => setAsk(false)} warn>
+          <p>{t("fr.askBody").replace("{user}", f.user.trim())}</p>
+          {f.cards && <p>{t("fr.askCards")}</p>}
+          <div className="mgr-buttons">
+            <button className="copy-btn" onClick={() => setAsk(false)}>{t("common.cancel")}</button>
+            <button className="del" onClick={go}>{t("fr.go")}</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function SettingsView({ t, call, me }) {
   const [p, setP] = useState(null);
   const [ver, setVer] = useState("");
@@ -1701,6 +1769,7 @@ function SettingsView({ t, call, me }) {
         </dl>
         <p className="set-hint">{t("set.aboutBody")}</p>
       </div>
+      {admin && <FactoryResetCard t={t} call={call} me={me} />}
     </section>
   );
 }
