@@ -206,3 +206,8 @@
 .mgr-meter em{font-style:normal; font-size:12px; color:var(--txt-dim);}
 .mgr-hbar{display:inline-block; width:90px; height:6px; border-radius:3px; background:var(--line); vertical-align:middle; overflow:hidden;}
 .mgr-hbar span{display:block; height:100%; background:var(--viz-1); border-radius:0 3px 3px 0;}
+
+.mgr-menu-wrap{position:relative;}
+.mgr-menu.mgr-menu-down{top:34px; right:0; width:280px;}
+a.mgr-menu-item{display:block; text-decoration:none; color:var(--txt);}
+.mgr-menu-note{padding:8px 12px 4px; font-size:12px; color:var(--txt-faint); border-top:1px solid var(--line); margin-top:4px;}

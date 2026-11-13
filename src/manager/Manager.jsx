@@ -95,7 +95,7 @@ export default function Manager() {
             </header>
             <main className="mgr-main">
               {tab === "nodes" && <NodesView t={t} call={call} me={me} />}
-              {tab === "traffic" && <TrafficView t={t} call={call} />}
+              {tab === "traffic" && <TrafficView t={t} call={call} me={me} />}
               {tab === "host" && <HostView t={t} call={call} />}
               {tab === "events" && <EventsView t={t} call={call} />}
               {tab === "firmware" && admin && <FirmwareView t={t} call={call} />}
@@ -1400,8 +1400,10 @@ function Meter({ pct }) {
   );
 }
 
-function TrafficView({ t, call }) {
+function TrafficView({ t, call, me }) {
   const [range, setRange] = useState("24h");
+  const [menu, setMenu] = useState(false);
+  const [clearing, setClearing] = useState(null);     // {counters, busy, done}
   const [scope, setScope] = useState("");             // "" | "node:<id>" | "tag:<name>"
   const [nodes, setNodes] = useState([]);
   const [d, setD] = useState(null);
@@ -1433,6 +1435,21 @@ function TrafficView({ t, call }) {
       .then(setPortData).catch((e) => setErr(e.message));
   }, [call, sel, range]);
   const tags = [...new Set(nodes.flatMap((n) => n.tags || []))].sort();
+  const scopeName = scope.startsWith("node:") ? (nodes.find((n) => String(n.id) === scope.slice(5)) || {}).name
+    : scope.startsWith("tag:") ? t("tr.tagScope").replace("{tag}", scope.slice(4)) : t("tr.allNodes");
+  const exportHref = (kind) => `/api/v1/traffic/export?kind=${kind}&${query}&tzoff=${-new Date().getTimezoneOffset()}`;
+  const doClear = async () => {
+    setClearing((c) => ({ ...c, busy: true }));
+    const body = { node_counters: !!clearing.counters };
+    if (scope.startsWith("node:")) body.node = Number(scope.slice(5));
+    if (scope.startsWith("tag:")) body.tag = scope.slice(4);
+    try {
+      const r = await call("/api/v1/traffic/clear", { method: "POST", body });
+      setClearing(null); setSel(null);
+      setErr(Object.keys(r.counters_failed || {}).length ? t("tr.clearCountersFailed").replace("{nodes}", Object.keys(r.counters_failed).join(", ")) : "");
+      await load(false);
+    } catch (e) { setErr(e.message); setClearing(null); }
+  };
   const from = d ? d.from : 0, to = d ? d.to : 0, span = to - from;
   const inOut = (pts, ii, oi) => [
     { key: "in", label: t("tr.in"), slot: 1, points: pts.map((p) => [p[0], p[ii]]) },
@@ -1450,7 +1467,34 @@ function TrafficView({ t, call }) {
           <optgroup label={t("tr.byNode")}>{nodes.map((n) => <option key={n.id} value={"node:" + n.id}>{n.name}</option>)}</optgroup>
         </select>
         {d && d.since && <span className="mgr-dim">{t("tr.since").replace("{t}", M.fmtTime(d.since))}</span>}
+        <span className="mgr-spacer" />
+        <span className="mgr-menu-wrap">
+          <button className="copy-btn" onClick={() => setMenu((v) => !v)} aria-expanded={menu}>{t("tr.export")} ▾</button>
+          {menu && (
+            <>
+              <div className="acct-scrim" onClick={() => setMenu(false)} />
+              <div className="mgr-menu mgr-menu-down">
+                {["ports", "filters", "total"].map((k) => (
+                  <a key={k} className="mgr-menu-item" href={exportHref(k)} onClick={() => setMenu(false)}>{t("tr.export." + k)}</a>
+                ))}
+                <div className="mgr-menu-note">{t("tr.exportNote")}</div>
+              </div>
+            </>
+          )}
+        </span>
+        {me.priv >= 10 && <button className="del" onClick={() => setClearing({ counters: false })}>{t("tr.clear")}</button>}
       </div>
+      {clearing && (
+        <Modal title={t("tr.clearTitle").replace("{scope}", scopeName || "?")} onClose={clearing.busy ? undefined : () => setClearing(null)} warn>
+          <p>{t("tr.clearBody")}</p>
+          <label className="mgr-check"><input type="checkbox" checked={!!clearing.counters}
+            onChange={(e) => setClearing({ ...clearing, counters: e.target.checked })} />{t("tr.clearCounters")}</label>
+          <div className="mgr-buttons">
+            <button className="copy-btn" disabled={clearing.busy} onClick={() => setClearing(null)}>{t("common.cancel")}</button>
+            <button className="del" disabled={clearing.busy} onClick={doClear}>{clearing.busy ? t("tr.clearing") : t("tr.clear")}</button>
+          </div>
+        </Modal>
+      )}
       {err && <p className="set-hint err">{err}</p>}
       {!d ? <p className="mgr-dim">{t("app.loading")}</p> : (
         <div className={"mgr-stack" + (loading ? " mgr-refetch" : "")}>
