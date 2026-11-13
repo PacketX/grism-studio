@@ -1913,6 +1913,26 @@ check("readonly unknown", C.isReadOnlyPriv(null) === false);
 check("submitxml is a write", C.isWriteRequest("/grism/task/submitxml", "POST") === true);
 check("submit_instant is a write", C.isWriteRequest("/grism/task/submit_instant", "POST") === true);
 check("set_switch_interface is a write", C.isWriteRequest("/grism/task/set_switch_interface", "POST") === true);
+{
+  const row = (name, speed, fec, extra = {}) => ({ name, speed, fec, enable: true, fecSupport: ["None", "FC", "RS", "RS-544"], fecBySpeed: null, state: "", ...extra });
+  check("switch FEC: 100G takes None or RS only", C.switchFecChoices(row("0/13", "100000", "FC")).join() === "None,RS"
+    && C.switchFecChoices(row("0/4", "10000", "None")).join() === "None,FC"
+    && C.switchFecChoices(row("0/8", "25000", "RS")).join() === "None,FC,RS");
+  check("switch FEC: what the device names wins", C.switchFecChoices(row("0/13", "100000", "None", { fecBySpeed: { "100000": ["None"] } })).join() === "None");
+  check("switch FEC: a speed change keeps a FEC it can run, else none",
+    C.switchSpeedPatch(row("0/13", "25000", "RS"), "100000").fec === "RS"
+    && C.switchSpeedPatch(row("0/13", "25000", "FC"), "100000").fec === "None");
+  const lent = new Set(["0/12"]);
+  check("switch FEC: the impossible pairs, lent and disabled ports aside",
+    C.switchFecProblems([row("0/13", "100000", "FC"), row("0/12", "25000", "RS-544"), row("0/4", "10000", "FC"),
+      row("0/5", "10000", "RS", { enable: false })], lent).map((r) => r.name).join() === "0/13");
+  check("switch: a port in reset was not built", C.switchPortNotBuilt(row("0/13", "100000", "FC", { state: "Reset" }))
+    && !C.switchPortNotBuilt(row("0/13", "100000", "None", { state: "Link-Up" }))
+    && !C.switchPortNotBuilt(row("0/12", "25000", "None", { state: "Reset", enable: false })));
+  const parsed = C.parseSwitchInterfaces({ interfaces: [{ name: "0/13", speed: "100000", fec: "None", fec_oper: "None", state: "Link-Up",
+    fec_support: ["None", "RS"], fec_support_by_speed: { "25000": ["None", "FC", "RS"], "100000": ["None", "RS"] } }] })[0];
+  check("switch: the new fields are read", parsed.fecOper === "None" && parsed.state === "Link-Up" && parsed.fecBySpeed["25000"].length === 3);
+}
 check("del_storage_file is a write", C.isWriteRequest("/grism/task/del_storage_file?name=a", "POST") === true);
 check("save_xml is a write", C.isWriteRequest("/grism/task/save_xml", "POST") === true);
 check("reboot is a write", C.isWriteRequest("/grism/task/reboot") === true);

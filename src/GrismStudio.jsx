@@ -50,6 +50,7 @@ import {
   MEC_ARG_KEYS, mecProblems, dedupProblems,
   parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
+  switchFecChoices, switchSpeedPatch, switchFecProblems, switchPortNotBuilt, SWITCH_FEC_BY_SPEED,
   parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, countryDbDate, firmwareRestartsOnly,
   XMLRPC_PORT, SNMP_EXAMPLES, snmpCommand, parseFirmwareVersion,
   FIRMWARE_RESTART_HOLD_SECONDS, firmwareHoldLeft,
@@ -3664,17 +3665,23 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                           <tr key={r.name} className={r.enable && !eaten ? "" : "port-off"}>
                             <td className="tf-name mono">{r.name}</td>
                             <td>{<span className={"tf-link " + (r.link ? "up" : "down")}>
-                              {r.link ? tr("tf.up") : tr("tf.down")}</span>}</td>
+                              {r.link ? tr("tf.up") : tr("tf.down")}</span>}
+                              {!eaten && switchPortNotBuilt(r) &&
+                                <span className="sw-notbuilt" title={tr("set.switchNotBuiltTip")}>{tr("set.switchNotBuilt")}</span>}</td>
                             <td><select value={r.speed} disabled={eaten}
-                              onChange={(e) => setRow(r.name, { speed: e.target.value })}>
+                              onChange={(e) => setRow(r.name, switchSpeedPatch(r, e.target.value))}>
                               {[...new Set([r.speed, ...r.speedSupport])].filter(Boolean)
                                 .map((v) => <option key={v} value={v}>{fmtSpeed(v)}</option>)}
                             </select></td>
                             <td><select value={r.fec} disabled={eaten}
                               onChange={(e) => setRow(r.name, { fec: e.target.value })}>
-                              {[...new Set([r.fec, ...r.fecSupport])].filter(Boolean)
-                                .map((v) => <option key={v} value={v}>{v}</option>)}
-                            </select></td>
+                              {[...new Set([r.fec, ...switchFecChoices(r)])].filter(Boolean)
+                                .map((v) => <option key={v} value={v}
+                                  disabled={v !== r.fec && !switchFecChoices(r).includes(v)}>
+                                  {switchFecChoices(r).includes(v) || !SWITCH_FEC_BY_SPEED[r.speed] ? v : `${v} ✕`}</option>)}
+                            </select>
+                            {r.fecOper && r.link && r.fecOper !== r.fec &&
+                              <div className="dim svc-ver">{tr("set.switchFecRuns").replace("{fec}", r.fecOper)}</div>}</td>
                             {/* the transceiver, as it identifies itself; empty
                                 on an empty cage, which is a dash not a blank */}
                             <td className="mono svc-ver">{r.gbicPn || <span className="dim">—</span>}</td>
@@ -3697,13 +3704,20 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                     </p>
                   ))}
                   {forced.size > 0 && <p className="set-hint">{tr("set.switchBondNote")}</p>}
+                  {switchFecProblems(swRows, forced).map((r) => (
+                    <p className="set-hint err" key={"fec" + r.name}>
+                      {tr("set.switchFecBad").replace("{port}", r.name).replace("{speed}", fmtSpeed(r.speed))
+                        .replace("{fec}", r.fec).replace("{ok}", switchFecChoices(r).join(" / "))}
+                    </p>
+                  ))}
                   <div className="set-actions">
                     <span className="set-changed">{changed.length
                       ? `${changed.length} ${tr("set.portsChanged")}` : ""}</span>
                     <button className="copy-btn" disabled={!changed.length}
                       onClick={() => setSwRows(swBase)}>{tr("set.revert")}</button>
                     <button className="sys-refresh"
-                      disabled={submit.state === "sending" || swWait > 0 || !changed.length}
+                      disabled={submit.state === "sending" || swWait > 0 || !changed.length
+                        || switchFecProblems(swRows, forced).length > 0}
                       onClick={() => setConfirm({ kind: "switchRows" })}>
                       {submit.state === "sending" ? tr("set.submitting") : tr("set.apply")}</button>
                   </div>

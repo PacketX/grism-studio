@@ -6199,12 +6199,44 @@ export function parseSwitchInterfaces(payload) {
     speedSupport: Array.isArray(r?.speed_support) ? r.speed_support.map(String) : [],
     fec: String(r?.fec ?? ""),
     fecSupport: Array.isArray(r?.fec_support) ? r.fec_support.map(String) : [],
+    fecBySpeed: r?.fec_support_by_speed && typeof r.fec_support_by_speed === "object" ? r.fec_support_by_speed : null,
+    fecOper: String(r?.fec_oper ?? ""),
+    state: String(r?.state ?? ""),
     gbicPn: String(r?.gbic_part_number ?? ""),
     gbicSn: String(r?.gbic_serial ?? ""),
     rx: String(r?.gbic_rx_power ?? ""),
     tx: String(r?.gbic_tx_power ?? ""),
   })).filter((r) => r.name);
 }
+
+/* The FEC a front port can run at each speed (lanes of 10G or 25G NRZ): FC-FEC
+   for 10G and 25G lanes, RS-FEC for 25G lanes, so 100G (4 x 25G) has RS or
+   nothing. A pair the switch cannot run leaves the port in reset and says
+   nothing -- 0/13 at 100G with FC did that on the Q16 (2026-11-13). A device
+   that names the choices (fec_support_by_speed, pywww 1.47.5) is believed;
+   an older one gets this table. */
+export const SWITCH_FEC_BY_SPEED = {
+  "1000": ["None"], "10000": ["None", "FC"], "25000": ["None", "FC", "RS"],
+  "40000": ["None", "FC"], "100000": ["None", "RS"],
+};
+
+export function switchFecChoices(row, speed = row?.speed) {
+  const by = row?.fecBySpeed?.[speed] ?? SWITCH_FEC_BY_SPEED[speed];
+  return Array.isArray(by) ? by.map(String) : (row?.fecSupport ?? []);
+}
+
+/* A changed speed keeps the FEC when the new speed can run it, else none. */
+export const switchSpeedPatch = (row, speed) =>
+  ({ speed, fec: switchFecChoices(row, speed).includes(row.fec) ? row.fec : "None" });
+
+/* Enabled ports, not lent to a bond, whose speed cannot run their FEC. */
+export function switchFecProblems(rows, lent) {
+  return (rows ?? []).filter((r) => r.enable && !(lent && lent.has(r.name)) && r.fec
+    && SWITCH_FEC_BY_SPEED[r.speed] && !switchFecChoices(r).includes(r.fec));
+}
+
+/* The switch did not build the port: what it was asked for, it refused. */
+export const switchPortNotBuilt = (r) => !!r && r.enable && /^reset$/i.test(r.state);
 
 /* Which ports this setting will take down with it, so the page can say it
    before the switch restarts rather than after. */

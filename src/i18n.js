@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.278.0";
+export const STUDIO_VERSION = "2.279.0";
 
 export const I18N = {
   en: {
@@ -563,6 +563,9 @@ export const I18N = {
     "set.switchTx": "GBIC TX power",
     "set.switchBond": "{port} at {speed} takes {ports} with it — the switch shuts those down.",
     "set.switchBondNote": "Four ports can bond four lanes into one, at 40G or 100G, using the lanes of the three beside them.",
+    "set.switchNotBuilt": "not built", "set.switchNotBuiltTip": "The switch did not build this port: it refused what the port is set to (a speed and FEC it cannot run, for one). Its link stays down until the setting is changed.",
+    "set.switchFecRuns": "runs {fec}",
+    "set.switchFecBad": "{port}: {speed} cannot run {fec} FEC, so the switch would not build the port. Choose {ok}.",
     "set.cpssSvc": "Switch service (cpss)",
     "set.cpssSvcNote": "The switch runs as a service of its own, started at boot. If it is not running, no front port has a link — restart it here.",
     "set.cpssRunning": "running", "set.cpssStopped": "not running", "set.cpssUnknown": "unknown",
@@ -1639,6 +1642,9 @@ export const I18N = {
     "set.switchTx": "GBIC TX 功率",
     "set.switchBond": "{port} 設為 {speed} 會佔用 {ports} — 交換器會把它們關閉。",
     "set.switchBondNote": "有四個埠可以把四條通道綁成一個埠(40G 或 100G),會用掉旁邊三個埠的通道。",
+    "set.switchNotBuilt": "未建立", "set.switchNotBuiltTip": "交換器沒有建起這個埠:它不接受這個埠的設定(例如速率與 FEC 的組合跑不了)。設定改好之前,這個埠不會連線。",
+    "set.switchFecRuns": "實際 {fec}",
+    "set.switchFecBad": "{port}:{speed} 不能用 {fec} FEC,交換器不會建起這個埠。請改成 {ok}。",
     "set.cpssSvc": "交換器服務 (cpss)",
     "set.cpssSvcNote": "交換器本身是一個服務,開機會自動啟動。如果服務沒有正常啟動,所有前面板連接埠都會沒有連線 — 可在這裡重新啟動。",
     "set.cpssRunning": "執行中", "set.cpssStopped": "未執行", "set.cpssUnknown": "無法取得",
