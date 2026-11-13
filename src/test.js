@@ -5618,6 +5618,10 @@ group("manager: the host's management interfaces");
     && back[0].dns === "8.8.8.8, 1.1.1.1" && back[1].mode === "dhcp" && !MG.mgmtChanged(back, m));
 }
 
+group("manager: certificate fingerprints");
+check("as a browser shows them", MG.fmtFingerprint("ab01" + "0".repeat(60)).startsWith("AB:01:00:") && MG.fmtFingerprint("ab01" + "0".repeat(60)).length === 95
+  && MG.fmtFingerprint("") === "–" && MG.fmtFingerprint(null) === "–");
+
 group("manager: the host's BMC");
 {
   const lan = { source: "dhcp", ip: "0.0.0.0", mask: "0.0.0.0", gateway: "0.0.0.0", mac: "fc:aa:14:af:3c:68" };

@@ -213,3 +213,5 @@ a.mgr-menu-item{display:block; text-decoration:none; color:var(--txt);}
 .mgr-menu-note{padding:8px 12px 4px; font-size:12px; color:var(--txt-faint); border-top:1px solid var(--line); margin-top:4px;}
 .mgr-plain{list-style:none; padding:0; margin:6px 0 0;}
 .mgr-plain li{padding:2px 0;}
+.mgr-certbox{border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0;}
+.mgr-fp{word-break:break-all; font-size:12px; line-height:1.5;}

@@ -427,6 +427,27 @@ function NodeDrawer({ t, call, me, id, onClose, onChanged, onRemoved }) {
     setBusy(what); setErr("");
     try { await fn(); } catch (ex) { setErr(ex.message); } finally { setBusy(""); }
   };
+  // a changed certificate: what the node presents now, to compare before trusting it
+  const certStatus = n?.state?.status;
+  const loadCert = useCallback(async () => {
+    try { setCert(await call(`/api/v1/nodes/${id}/certificate`)); }
+    catch (ex) { setCert({ error: ex.message }); }
+  }, [call, id]);
+  useEffect(() => {
+    if (certStatus === "cert" && me.priv >= 15) loadCert(); else setCert(null);
+  }, [certStatus, loadCert, me.priv]);
+  const trust = async () => {
+    setBusy("trust");
+    try {
+      await call(`/api/v1/nodes/${id}/trust-certificate`, { method: "POST", body: { sha256: cert.presented } });
+      setAsk(null); setCert(null); load(false);
+    } catch (ex) {
+      setCert((c) => ({ ...c, trustErr: ex.message }));
+      if (ex.status === 409) {                        // it changed again since it was shown: show the new one
+        try { const r = await call(`/api/v1/nodes/${id}/certificate`); setCert({ ...r, trustErr: ex.message }); } catch (e2) { /* keep */ }
+      }
+    } finally { setBusy(""); }
+  };
   if (!n) return <aside className="mgr-drawer"><p className="mgr-dim">{err || t("app.loading")}</p></aside>;
   const st = n.state || {};
   const sys = st.system || {};
@@ -441,8 +462,29 @@ function NodeDrawer({ t, call, me, id, onClose, onChanged, onRemoved }) {
         </div>
         <button className="copy-btn" onClick={onClose} aria-label={t("common.close")}>✕</button>
       </div>
-      {st.error && st.status !== "online" && <p className="set-hint err">{st.error}</p>}
+      {st.error && st.status !== "online" && st.status !== "cert" && <p className="set-hint err">{st.error}</p>}
       {err && <p className="set-hint err">{err}</p>}
+      {st.status === "cert" && (
+        <div className="mgr-certbox">
+          <p className="set-hint err">{t("node.certChanged")}</p>
+          {me.priv < 15 ? <p className="set-hint">{t("node.certAdmin")}</p> : (
+            <>
+              <dl className="mgr-kv">
+                <dt>{t("node.certPinned")}</dt><dd className="mono mgr-fp">{M.fmtFingerprint(n.cert_sha256)}</dd>
+                <dt>{t("node.certPresented")}</dt><dd className="mono mgr-fp">
+                  {!cert ? t("app.loading") : cert.error ? <span style={{ color: "var(--notmatch)" }}>{cert.error}</span> : M.fmtFingerprint(cert.presented)}</dd>
+              </dl>
+              {cert && cert.match && <p className="set-hint">{t("node.certSame")}</p>}
+              <p className="set-hint dim">{t("node.certCompare").replace("{url}", `https://${n.address}${n.port && n.port !== 443 ? ":" + n.port : ""}/`)}</p>
+              <div className="mgr-buttons left">
+                {cert && cert.error && <button className="copy-btn" onClick={loadCert}>{t("node.certAgain")}</button>}
+                {cert && cert.presented && !cert.match &&
+                  <button className="sys-refresh" onClick={() => setAsk("trust")}>{t("node.certTrust")}</button>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div className="mgr-buttons left">
         <a className="sys-refresh" href={`/n/${n.id}/grism-studio/`}>{t("node.open")}</a>
         {me.priv >= 5 && <button className="copy-btn" disabled={!!busy}
@@ -511,14 +553,8 @@ function NodeDrawer({ t, call, me, id, onClose, onChanged, onRemoved }) {
         <dt>{t("node.added")}</dt><dd>{M.fmtTime(n.added)} · {n.added_by}</dd>
       </dl>
       {n.shared_certificate && <p className="set-hint warn">{t("node.sharedCert")}</p>}
-      {cert && <p className={"set-hint " + (cert.match ? "" : "err")}>
-        {cert.match ? t("node.certSame") : t("node.certDiffers").replace("{fp}", cert.presented.slice(0, 24))}</p>}
       {me.priv >= 15 && (
         <div className="mgr-buttons left">
-          <button className="copy-btn" disabled={!!busy} onClick={() => act("cert", async () => setCert(await call(`/api/v1/nodes/${id}/certificate`)))}>
-            {t("node.certCheck")}</button>
-          {(st.status === "cert" || (cert && !cert.match)) &&
-            <button className="copy-btn" onClick={() => setAsk("trust")}>{t("node.certTrust")}</button>}
           <span className="mgr-spacer" />
           <button className="del" onClick={() => setAsk("remove")}>{t("node.remove")}</button>
         </div>
@@ -535,14 +571,15 @@ function NodeDrawer({ t, call, me, id, onClose, onChanged, onRemoved }) {
           </div>
         </Modal>
       )}
-      {ask === "trust" && (
-        <Modal title={t("node.certTrust")} onClose={() => setAsk(null)} warn>
+      {ask === "trust" && cert && cert.presented && (
+        <Modal title={t("node.certTrust")} onClose={busy ? undefined : () => setAsk(null)} warn>
           <p className="modal-body">{t("node.certTrustBody")}</p>
+          <p className="set-hint">{t("node.certTrustThis")}</p>
+          <p className="mono mgr-fp">{M.fmtFingerprint(cert.presented)}</p>
+          {cert.trustErr && <p className="set-hint err">{cert.trustErr}</p>}
           <div className="mgr-buttons">
-            <button className="copy-btn" onClick={() => setAsk(null)}>{t("common.cancel")}</button>
-            <button className="del" onClick={() => act("trust", async () => {
-              await call(`/api/v1/nodes/${id}/trust-certificate`, { method: "POST", body: {} }); setAsk(null); setCert(null); load(false);
-            })}>{t("node.certTrust")}</button>
+            <button className="copy-btn" disabled={!!busy} onClick={() => setAsk(null)}>{t("common.cancel")}</button>
+            <button className="del" disabled={!!busy || cert.match} onClick={trust}>{t("node.certTrust")}</button>
           </div>
         </Modal>
       )}

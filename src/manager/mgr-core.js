@@ -466,3 +466,9 @@ export function bmcChanged(f, set) {
   const want = JSON.stringify(bmcFromForm(f));
   return want !== JSON.stringify(bmcFromForm(bmcToForm(f.lan, set)));
 }
+
+/* A SHA-256 fingerprint as browsers show it: AB:CD:... */
+export function fmtFingerprint(hex) {
+  const h = String(hex || "").replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+  return h ? h.match(/.{1,2}/g).join(":") : "–";
+}
