@@ -1734,7 +1734,8 @@ function SettingsView({ t, call, me }) {
   const save = async () => {
     setMsg(""); setErr("");
     try { setP(await call("/api/v1/settings/password-policy", { method: "PUT", body: {
-      min_length: Number(p.min_length), min_classes: Number(p.min_classes), max_age_days: Number(p.max_age_days) } }));
+      min_length: Number(p.min_length), min_classes: Number(p.min_classes), max_age_days: Number(p.max_age_days),
+      not_username: !!p.not_username } }));
       setMsg(t("common.saved")); }
     catch (e) { setErr(e.message); }
   };
@@ -1755,6 +1756,10 @@ function SettingsView({ t, call, me }) {
             <label className="ml"><span>{t("set.maxAge")}</span>
               <input type="number" min={0} max={3650} disabled={!admin} value={p.max_age_days} onChange={(e) => setP({ ...p, max_age_days: e.target.value })} /></label>
           </div>
+        )}
+        {p && (
+          <label className="mgr-check"><input type="checkbox" disabled={!admin} checked={!!p.not_username}
+            onChange={(e) => setP({ ...p, not_username: e.target.checked })} />{t("set.notUsername")}</label>
         )}
         <p className="set-hint dim">{t("set.lockoutNote")}</p>
         {admin && <button className="sys-refresh" onClick={save}>{t("common.save")}</button>}
