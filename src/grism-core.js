@@ -7464,6 +7464,10 @@ export const ALERT_RULE_META = {
   /* a filter list file (run<N>.xml) the engine could not load or apply live:
      one alert per file, cleared when the next load of that file succeeds */
   list_load: { fields: ["sustain"] },
+  /* a packet core found a port's receive queue over three quarters full
+     (inQueueFull): it is behind, and the NIC drops frames it does not count;
+     one alert per port, kept `clear` seconds after the last time */
+  rx_queue: { fields: ["threshold", "clear", "sustain"] },
 };
 export const ALERT_RULE_ORDER = Object.keys(ALERT_RULE_META);
 const ALERT_LIMITS = { threshold: [0, 1000], clear: [0, 1000], sustain: [0, 86400], min_pps: [0, 100000000] };
@@ -7554,7 +7558,7 @@ export function alertValueText(a) {
     case "in_drops": return `${a.value}%` + (a.detail != null && a.detail !== "" ? ` · ${a.detail}/s` : "");
     // detail is "used/size": 1080000/1200000
     case "mec_table": return `${a.value}%` + (a.detail ? ` · ${String(a.detail).replace("/", " / ")}` : "");
-    case "list_load": return a.detail ? String(a.detail) : "";
+    case "list_load": case "rx_queue": return a.detail ? String(a.detail) : "";
     case "grism_zombie": return a.detail ? `Z: ${a.detail}` : "";
     default: return "";
   }
