@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.280.0";
+export const STUDIO_VERSION = "2.281.0";
 
 export const I18N = {
   en: {
@@ -15,6 +15,7 @@ export const I18N = {
     "tab.actions": "Actions", "tab.chain": "Chains", "tab.simulate": "Simulate",
     "tab.export": "Export", "tab.overview": "Overview",
     "tab.capture": "Capture",
+    "tab.modules": "Modules",
     "cap.title": "Packet capture",
     "cap.note": "Record traffic to a storage volume for a fixed number of seconds, then download it as a pcap. The capture runs alongside the current configuration and removes itself when the time is up.",
     "cap.stl": "Seconds to live", "cap.storage": "Storage", "cap.dir": "Directory", "cap.writesTo": "Writes to",
@@ -166,7 +167,7 @@ export const I18N = {
     "ctry.modeRemote": "Each flow is counted once, under the country of its remote end: an address in the local networks or a private one is local, otherwise the side of the port the flow arrived on decides. Inbound is traffic from the remote end to the local one. A flow neither rule could place is counted under both countries, as before.",
     "tab.status": "System status",
     "tab.settings": "Settings",
-    "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System",
+    "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System", "ws.modules": "Modules",
     // system status page
     "sys.loadingStatus": "Reading the device status…",
     "sys.title": "System status",
@@ -404,6 +405,23 @@ export const I18N = {
     "set.whNone": "No webhooks yet.", "set.whUrl": "URL", "set.whSecret": "Secret", "set.whKinds": "Kinds", "set.whAdd": "+ Add webhook",
     "set.whTest": "Send a test", "set.whTesting": "Sending…", "set.whSent": "delivered", "set.whFailed": "failed", "set.whBad": "A webhook needs a name and an http(s) URL.",
     "set.whSaved": "Saved.", "set.whUnavailable": "The webhooks could not be read.",
+    // modules: a feature as a few fields (device-side templates, pywww modules.py)
+    "mod.title": "Modules",
+    "mod.note": "A module is a feature described by a few fields. The device writes the filters, outputs and chains itself and keeps them apart from the rest of the configuration, marked as the module's, so an instance can be changed or removed as one thing. What it makes is still visible in the pipeline.",
+    "mod.none": "No module instance yet.", "mod.addPrefix": "+ ", "mod.new": "new",
+    "mod.colName": "Name", "mod.colModule": "Module", "mod.colSummary": "What it does", "mod.colPorts": "Ports", "mod.colElements": "Elements",
+    "mod.edit": "Edit", "mod.remove": "Remove", "mod.removeAsk": "Remove it? Its filters, outputs and chains leave the configuration; the settings it switched on stay.",
+    "mod.removeYes": "Remove", "mod.cancel": "Cancel", "mod.preview": "Preview", "mod.previewing": "Checking…", "mod.apply": "Apply", "mod.applying": "Applying…",
+    "mod.advanced": "Advanced", "mod.pick": "choose…", "mod.missing": "Still needed",
+    "mod.problems": "Problems", "mod.warnings": "Warnings", "mod.argsToChange": "Settings this apply changes", "mod.argsNone": "No setting needs changing.",
+    "mod.argsRestart": "(a setting change reloads the engine's configuration and may restart it)",
+    "mod.previewSummary": "{n} elements, ids from {ids}.", "mod.replaces": "Replaces the instance's current elements.",
+    "mod.xml": "Generated XML",
+    "mod.applied": "Applied. The device reloads its configuration.", "mod.appliedArgs": "Settings were changed too; the engine restarts for them.",
+    "mod.removed": "Removed.", "mod.rowAdd": "+ Rule", "mod.rowUp": "Move up", "mod.rowDown": "Move down", "mod.rowDel": "Remove the rule",
+    "mod.sessions": "MEC sessions", "mod.linkUp": "link up", "mod.linkDown": "link down",
+    "mod.readOnly": "Changing modules takes an operator account.", "mod.signIn": "Sign in to see the device's modules.",
+    "mod.unavailable": "The modules could not be read (the device needs pywww 1.50 / 1.48 or later).",
     "set.liveUpdate": "Live filter updates",
     "set.liveUpdateOn": "Apply filter changes without interrupting traffic",
     "set.liveUpdateNote": "Rebuilds filters in the background when they change, so large IP, DNS name, HTTP host or TLS server-name blocklists can be updated without dropping traffic or restarting the engine.",
@@ -1094,6 +1112,7 @@ export const I18N = {
     "tab.actions": "動作", "tab.chain": "鏈結", "tab.simulate": "模擬",
     "tab.export": "匯出", "tab.overview": "總覽",
     "tab.capture": "封包側錄",
+    "tab.modules": "模組",
     "cap.title": "封包側錄",
     "cap.note": "將流量錄製到儲存空間指定秒數,再以 pcap 下載。側錄會與目前設定並行運作,時間到自動結束。",
     "cap.stl": "存活秒數", "cap.storage": "儲存空間", "cap.dir": "目錄", "cap.writesTo": "寫入位置:",
@@ -1245,7 +1264,7 @@ export const I18N = {
     "ctry.modeRemote": "每條連線只計一次,歸在遠端那一端的國家:位址在本地網段內或為私有位址者視為本地,否則依連線第一個封包進入埠的 WAN/LAN 端判定。「進向」是遠端送往本地的流量。兩種規則都無法判定的連線照舊計入兩端的國家。",
     "tab.status": "系統狀態",
     "tab.settings": "設定",
-    "ws.overview": "總覽", "ws.pipeline": "封包處理", "ws.traffic": "流量統計", "ws.system": "系統",
+    "ws.overview": "總覽", "ws.pipeline": "封包處理", "ws.traffic": "流量統計", "ws.system": "系統", "ws.modules": "模組",
     // system status page
     "sys.loadingStatus": "正在讀取裝置狀態…",
     "sys.title": "系統狀態", "sys.needLogin": "登入裝置以檢視系統狀態。",
@@ -1483,6 +1502,23 @@ export const I18N = {
     "set.whNone": "尚未設定 webhook。", "set.whUrl": "網址", "set.whSecret": "密鑰", "set.whKinds": "種類", "set.whAdd": "+ 新增 webhook",
     "set.whTest": "送出測試", "set.whTesting": "送出中…", "set.whSent": "已送達", "set.whFailed": "失敗", "set.whBad": "每個 webhook 需要名稱與 http(s) 網址。",
     "set.whSaved": "已儲存。", "set.whUnavailable": "無法讀取 webhook 清單。",
+    // modules
+    "mod.title": "模組",
+    "mod.note": "模組是「用幾個欄位描述一個功能」:篩選器、輸出與鏈結由裝置自己產生,並與其他設定分開、標記為該模組所有,所以一個實例可以整個修改或移除。產生的東西在封包處理頁仍看得到。",
+    "mod.none": "尚未建立任何模組實例。", "mod.addPrefix": "+ 新增 ", "mod.new": "新增",
+    "mod.colName": "名稱", "mod.colModule": "模組", "mod.colSummary": "做什麼", "mod.colPorts": "埠", "mod.colElements": "元素數",
+    "mod.edit": "編輯", "mod.remove": "移除", "mod.removeAsk": "確定移除?它的篩選器、輸出與鏈結會從設定拿掉;它開啟的系統設定維持不變。",
+    "mod.removeYes": "移除", "mod.cancel": "取消", "mod.preview": "預覽", "mod.previewing": "檢查中…", "mod.apply": "套用", "mod.applying": "套用中…",
+    "mod.advanced": "進階", "mod.pick": "請選擇…", "mod.missing": "尚未填",
+    "mod.problems": "問題", "mod.warnings": "注意", "mod.argsToChange": "這次套用會改的系統設定", "mod.argsNone": "不需要改系統設定。",
+    "mod.argsRestart": "(改系統設定會讓引擎重新載入設定,可能重啟引擎)",
+    "mod.previewSummary": "{n} 個元素,id 從 {ids} 起。", "mod.replaces": "會取代這個實例現有的元素。",
+    "mod.xml": "產生的 XML",
+    "mod.applied": "已套用,裝置重新載入設定中。", "mod.appliedArgs": "同時改了系統設定,引擎會因此重啟。",
+    "mod.removed": "已移除。", "mod.rowAdd": "+ 規則", "mod.rowUp": "上移", "mod.rowDown": "下移", "mod.rowDel": "移除這條規則",
+    "mod.sessions": "MEC 連線數", "mod.linkUp": "連線正常", "mod.linkDown": "無連線",
+    "mod.readOnly": "修改模組需要操作者以上的帳號。", "mod.signIn": "登入後才看得到裝置的模組。",
+    "mod.unavailable": "無法讀取模組(裝置需要 pywww 1.50 / 1.48 以上)。",
     "set.liveUpdate": "篩選器即時更新",
     "set.liveUpdateOn": "更新篩選器時不中斷流量",
     "set.liveUpdateNote": "篩選器變更時在背景重建,讓 IP、DNS 名稱、HTTP host、TLS server name 等大量黑名單更新時不丟封包、也不需要重啟引擎。",

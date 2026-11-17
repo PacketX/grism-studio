@@ -3,6 +3,7 @@ import "./GrismStudio.css";
 import { STUDIO_VERSION, makeT } from "./i18n.js";
 import { apiUrl, MANAGER } from "./api-base.js";
 import { PacketxLogo } from "./PacketxLogo.jsx";
+import ModulesTab from "./ModulesTab.jsx";
 import {
   ACT_MODS, ACT_MOD_INDEX, FIELDS, FIELD_INDEX, INPUT_FIELD_INDEX, REPLAY_PLAYBACK_KEYS, NODE_W, NODE_H, PH_H,
   OUT_MODS, OUT_MOD_INDEX, TEMPLATES, VLAN_OPS, actionProblems, buildMgmtConfigSet,
@@ -183,6 +184,7 @@ export default function GrismStudio() {
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
     { id: "pipeline", tabs: ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
+    { id: "modules", tabs: ["modules"] },
     { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre", "trafficMec"] },
     { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
@@ -1235,6 +1237,10 @@ export default function GrismStudio() {
         )}
         {tab === "trafficMec" && (
           <MecTab loggedIn={!!login.who} t={t} />
+        )}
+        {tab === "modules" && (
+          <ModulesTab loggedIn={!!login.who} canOperate={privAtLeast(login.priv, PRIV.OPERATOR)} t={t} lang={lang}
+            onDeviceChanged={() => { if (!dirty) doLoadRunning(); else loadBaseline(); }} />
         )}
         {tab === "capture" && (
           <CaptureTab loggedIn={!!login.who} t={t} doc={doc} loopPorts={loopPorts}
