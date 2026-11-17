@@ -184,7 +184,6 @@ export default function GrismStudio() {
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
     { id: "pipeline", tabs: ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
-    { id: "modules", tabs: ["modules"] },
     { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre", "trafficMec"] },
     { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
@@ -1215,7 +1214,8 @@ export default function GrismStudio() {
           <SystemLogTab loggedIn={!!login.who} t={t} />
         )}
         {tab === "settings" && (
-          <SettingsTab loggedIn={!!login.who} readOnly={login.ro} priv={login.priv} t={t} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
+          <SettingsTab loggedIn={!!login.who} readOnly={login.ro} priv={login.priv} t={t} lang={lang} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
+            onDeviceChanged={() => { if (!dirty) doLoadRunning(); else loadBaseline(); }}
             onUseTemplate={(id) => applyTemplate(TEMPLATES.find((x) => x.id === id), "chain")}
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
@@ -1237,10 +1237,6 @@ export default function GrismStudio() {
         )}
         {tab === "trafficMec" && (
           <MecTab loggedIn={!!login.who} t={t} />
-        )}
-        {tab === "modules" && (
-          <ModulesTab loggedIn={!!login.who} canOperate={privAtLeast(login.priv, PRIV.OPERATOR)} t={t} lang={lang}
-            onDeviceChanged={() => { if (!dirty) doLoadRunning(); else loadBaseline(); }} />
         )}
         {tab === "capture" && (
           <CaptureTab loggedIn={!!login.who} t={t} doc={doc} loopPorts={loopPorts}
@@ -2290,7 +2286,7 @@ function DebugCard({ tr, onReboot }) {
   );
 }
 
-function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate }) {
+function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang = "en", portOptions = DEFAULT_PORTS, filterIds = [], onSignedOut, onUseTemplate, onDeviceChanged }) {
   const tr = t || ((k) => k);
   /* What this account may do here. Below config the page is the one card
      everyone gets, changing their own password -- an operator's work is on
@@ -3542,6 +3538,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
                 onClick={() => setSection("switchif")}>{tr("set.switchIf")}</button>
             )}
             <button className={section === "packet" ? "on" : ""} onClick={() => setSection("packet")}>{tr("set.packet")}</button>
+            <button className={section === "modules" ? "on" : ""} onClick={() => setSection("modules")}>{tr("set.modules")}</button>
             <button className={section === "auth" ? "on" : ""} onClick={() => setSection("auth")}>{tr("set.auth")}</button>
             <button className={section === "logging" ? "on" : ""} onClick={() => setSection("logging")}>{tr("set.logging")}</button>
             <button className={section === "services" ? "on" : ""} onClick={() => setSection("services")}>{tr("set.services")}</button>
@@ -5199,6 +5196,11 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, portO
         </div>
       )}
 
+      {/* Modules: a feature as a few fields. The device owns the catalogue and
+          the schema (pywww modules.py); the tab only draws and asks. */}
+      {section === "modules" && (
+        <ModulesTab loggedIn={loggedIn} canOperate={privAtLeast(priv, PRIV.OPERATOR)} t={tr} lang={lang} onDeviceChanged={onDeviceChanged} />
+      )}
       {section === "services" && (
         <div className="set-forms">
           {!svc ? <p className="sys-note dim">{tr("set.loading")}</p> : (<>

@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.281.0";
+export const STUDIO_VERSION = "2.282.0";
 
 export const I18N = {
   en: {
@@ -15,7 +15,6 @@ export const I18N = {
     "tab.actions": "Actions", "tab.chain": "Chains", "tab.simulate": "Simulate",
     "tab.export": "Export", "tab.overview": "Overview",
     "tab.capture": "Capture",
-    "tab.modules": "Modules",
     "cap.title": "Packet capture",
     "cap.note": "Record traffic to a storage volume for a fixed number of seconds, then download it as a pcap. The capture runs alongside the current configuration and removes itself when the time is up.",
     "cap.stl": "Seconds to live", "cap.storage": "Storage", "cap.dir": "Directory", "cap.writesTo": "Writes to",
@@ -167,7 +166,7 @@ export const I18N = {
     "ctry.modeRemote": "Each flow is counted once, under the country of its remote end: an address in the local networks or a private one is local, otherwise the side of the port the flow arrived on decides. Inbound is traffic from the remote end to the local one. A flow neither rule could place is counted under both countries, as before.",
     "tab.status": "System status",
     "tab.settings": "Settings",
-    "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System", "ws.modules": "Modules",
+    "ws.overview": "Overview", "ws.pipeline": "Pipeline", "ws.traffic": "Traffic", "ws.system": "System",
     // system status page
     "sys.loadingStatus": "Reading the device status…",
     "sys.title": "System status",
@@ -406,6 +405,7 @@ export const I18N = {
     "set.whTest": "Send a test", "set.whTesting": "Sending…", "set.whSent": "delivered", "set.whFailed": "failed", "set.whBad": "A webhook needs a name and an http(s) URL.",
     "set.whSaved": "Saved.", "set.whUnavailable": "The webhooks could not be read.",
     // modules: a feature as a few fields (device-side templates, pywww modules.py)
+    "set.modules": "Modules",
     "mod.title": "Modules",
     "mod.note": "A module is a feature described by a few fields. The device writes the filters, outputs and chains itself and keeps them apart from the rest of the configuration, marked as the module's, so an instance can be changed or removed as one thing. What it makes is still visible in the pipeline.",
     "mod.none": "No module instance yet.", "mod.addPrefix": "+ ", "mod.new": "new",
@@ -1112,7 +1112,6 @@ export const I18N = {
     "tab.actions": "動作", "tab.chain": "鏈結", "tab.simulate": "模擬",
     "tab.export": "匯出", "tab.overview": "總覽",
     "tab.capture": "封包側錄",
-    "tab.modules": "模組",
     "cap.title": "封包側錄",
     "cap.note": "將流量錄製到儲存空間指定秒數,再以 pcap 下載。側錄會與目前設定並行運作,時間到自動結束。",
     "cap.stl": "存活秒數", "cap.storage": "儲存空間", "cap.dir": "目錄", "cap.writesTo": "寫入位置:",
@@ -1264,7 +1263,7 @@ export const I18N = {
     "ctry.modeRemote": "每條連線只計一次,歸在遠端那一端的國家:位址在本地網段內或為私有位址者視為本地,否則依連線第一個封包進入埠的 WAN/LAN 端判定。「進向」是遠端送往本地的流量。兩種規則都無法判定的連線照舊計入兩端的國家。",
     "tab.status": "系統狀態",
     "tab.settings": "設定",
-    "ws.overview": "總覽", "ws.pipeline": "封包處理", "ws.traffic": "流量統計", "ws.system": "系統", "ws.modules": "模組",
+    "ws.overview": "總覽", "ws.pipeline": "封包處理", "ws.traffic": "流量統計", "ws.system": "系統",
     // system status page
     "sys.loadingStatus": "正在讀取裝置狀態…",
     "sys.title": "系統狀態", "sys.needLogin": "登入裝置以檢視系統狀態。",
@@ -1503,6 +1502,7 @@ export const I18N = {
     "set.whTest": "送出測試", "set.whTesting": "送出中…", "set.whSent": "已送達", "set.whFailed": "失敗", "set.whBad": "每個 webhook 需要名稱與 http(s) 網址。",
     "set.whSaved": "已儲存。", "set.whUnavailable": "無法讀取 webhook 清單。",
     // modules
+    "set.modules": "模組",
     "mod.title": "模組",
     "mod.note": "模組是「用幾個欄位描述一個功能」:篩選器、輸出與鏈結由裝置自己產生,並與其他設定分開、標記為該模組所有,所以一個實例可以整個修改或移除。產生的東西在封包處理頁仍看得到。",
     "mod.none": "尚未建立任何模組實例。", "mod.addPrefix": "+ 新增 ", "mod.new": "新增",
