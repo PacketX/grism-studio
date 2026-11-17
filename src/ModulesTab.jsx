@@ -20,6 +20,8 @@
 
    Field types the schema may use: port, ip, cidr_list, text, int, bool, enum,
    table (columns of the same types, minus table). Labels come as {en, zh}.
+   A field's `when: {key, value}` ties it to another field's choice (shown and
+   required only then); `wide` gives it the whole row.
    ============================================================ */
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
@@ -70,14 +72,14 @@ function formFromParams(schema, params) {
   return form;
 }
 
-function Field({ f, value, onChange, lang, tr }) {
+function Field({ f, value, onChange, lang, tr, dependent = false }) {
   const label = L(f.label, lang);
   const hint = L(f.hint, lang);
   let input;
   if (f.type === "port" || f.type === "enum") {
     input = (
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
-        {!f.required && <option value="">—</option>}
+        {!f.required && f.default == null && <option value="">—</option>}
         {f.required && !value && <option value="">{tr("mod.pick")}</option>}
         {(f.options || []).map((o) => <option key={o.value} value={o.value}>{typeof o.label === "object" ? L(o.label, lang) : (o.label ?? o.value)}</option>)}
       </select>);
@@ -93,8 +95,8 @@ function Field({ f, value, onChange, lang, tr }) {
     input = <input value={value ?? ""} placeholder={f.placeholder || ""} onChange={(e) => onChange(e.target.value)} />;
   }
   return (
-    <div className={"set-field mod-field" + (f.type === "cidr_list" ? " mod-field-wide" : "")}>
-      <span>{label}{f.required && <em className="mod-req"> *</em>}</span>
+    <div className={"set-field mod-field" + (f.type === "cidr_list" || f.wide ? " mod-field-wide" : "") + (dependent ? " mod-field-dep" : "")}>
+      <span>{dependent && <span className="mod-dep-mark" aria-hidden="true">↳ </span>}{label}{f.required && <em className="mod-req"> *</em>}</span>
       {input}
       {hint && <p className="set-hint">{hint}</p>}
     </div>);
@@ -187,16 +189,21 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const reset = () => setForm(formFromParams(module.schema, inst?.params || {}));
   const dirty = JSON.stringify(form) !== JSON.stringify(formFromParams(module.schema, inst?.params || {}));
-  const missing = fields.filter((f) => f.required && !String(form[f.key] ?? "").trim());
+  // a field with `when` belongs to another field's choice: shown, and required,
+  // only while that field has the value
+  const shown = (f) => !f.when || String(form[f.when.key] ?? "") === String(f.when.value);
+  const visible = fields.filter(shown);
+  const missing = visible.filter((f) => f.required && !String(form[f.key] ?? "").trim());
   return (
     <section className="sys-card wide mod-form-card mod-card">
       {title}
       <div className="mod-form">
-        {fields.filter((f) => f.type !== "table").map((f) => (
-          <Field key={f.key} f={f} value={form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
+        {visible.filter((f) => f.type !== "table").map((f) => (
+          <Field key={f.key} f={f} value={form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr}
+            dependent={!!f.when} />
         ))}
       </div>
-      {fields.filter((f) => f.type === "table").map((f) => (
+      {visible.filter((f) => f.type === "table").map((f) => (
         <TableField key={f.key} f={f} rows={form[f.key] || []} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
       ))}
       {withRaw && rawOpen && <RawXml tr={tr} />}
