@@ -209,6 +209,8 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
     try { setPreview(await postJson("/grism/task/preview_module", { type: sel.type, id: sel.id, params: sel.form })); }
     catch (e) { setPreview(null); setNotice({ kind: "err", msg: e.message }); }
     setBusy(null);
+    // the result lands below the form, under the pinned buttons: bring it up
+    setTimeout(() => document.querySelector(".mod-preview, .mod-form-card .set-hint.err")?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
   };
   const doApply = async () => {
     setBusy("apply"); setNotice(null);
