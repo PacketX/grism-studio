@@ -2,10 +2,17 @@
    Modules -- a feature as a few fields
 
    The device (pywww modules.py) owns the module catalogue, each module's form
-   schema, and the run.xml blocks an instance turns into; this tab only draws
-   the form the schema describes, shows the preview the device computes, and
-   asks it to apply or remove. So a new module on the device needs nothing
-   here.
+   schema, and the run.xml blocks an instance turns into; this component only
+   draws the form the schema describes and asks the device to apply or
+   remove. So a new module on the device needs nothing here.
+
+   Two places show it:
+   - Settings > Modules (mode "settings"): the instances, add one with the
+     basic fields, remove one. Applying replaces the device's packet-
+     processing configuration with the module's (the device keeps the old
+     run.xml as a pre-submit snapshot, listed on the Export tab).
+   - Pipeline > MEC (mode "detail"): the one instance's full form, the
+     advanced fields (the cell / UE / SPID rules) included, applied in place.
 
    Field types the schema may use: port, ip, cidr_list, text, int, bool, enum,
    table (columns of the same types, minus table). Labels come as {en, zh}.
@@ -66,7 +73,7 @@ function Field({ f, value, onChange, lang, tr }) {
   if (f.type === "port" || f.type === "enum") {
     input = (
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
-        {!f.required && <option value="">{f.type === "port" ? "—" : "—"}</option>}
+        {!f.required && <option value="">—</option>}
         {f.required && !value && <option value="">{tr("mod.pick")}</option>}
         {(f.options || []).map((o) => <option key={o.value} value={o.value}>{typeof o.label === "object" ? L(o.label, lang) : (o.label ?? o.value)}</option>)}
       </select>);
@@ -137,20 +144,44 @@ function TableField({ f, rows, onChange, lang, tr }) {
     </div>);
 }
 
-export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en", onDeviceChanged }) {
+/* The form for one instance (new or existing). `fields` says which of the
+   schema's fields to show; the apply goes straight to the device. */
+function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, onApply, onCancel, title }) {
+  const [form, setForm] = useState(() => formFromParams(module.schema, inst?.params || {}));
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const missing = fields.filter((f) => f.required && !String(form[f.key] ?? "").trim());
+  return (
+    <section className="sys-card wide mod-form-card">
+      {title}
+      <div className="mod-form">
+        {fields.filter((f) => f.type !== "table").map((f) => (
+          <Field key={f.key} f={f} value={form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
+        ))}
+      </div>
+      {fields.filter((f) => f.type === "table").map((f) => (
+        <TableField key={f.key} f={f} rows={form[f.key] || []} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
+      ))}
+      {notice && <p className={"set-hint " + (notice.kind === "ok" ? "ok" : "err")}>{notice.msg}</p>}
+      {missing.length > 0 && <p className="set-hint dim">{tr("mod.missing")}: {missing.map((f) => L(f.label, lang)).join(", ")}</p>}
+      <div className="set-actions">
+        {onCancel && <button className="copy-btn" disabled={busy != null} onClick={onCancel}>{tr("mod.cancel")}</button>}
+        <button className="sys-refresh" disabled={!canOperate || busy != null || missing.length > 0} onClick={() => onApply(form)}>{busy === "apply" ? tr("mod.applying") : tr("mod.apply")}</button>
+      </div>
+    </section>);
+}
+
+export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en", onDeviceChanged, mode = "settings", moduleType = "mec" }) {
   const tr = t || ((k) => k);
   const [catalogue, setCatalogue] = useState(null);     // [{type, name, description, schema, version}]
   const [instances, setInstances] = useState([]);
   const [listState, setListState] = useState("idle");  // idle | loading | ok | error
-  const [sel, setSel] = useState(null);                 // { type, id (null = new), form }
-  const [preview, setPreview] = useState(null);
-  const [busy, setBusy] = useState(null);               // "preview" | "apply" | "remove"
+  const [sel, setSel] = useState(null);                 // settings mode: { type, id (null = new) }
+  const [busy, setBusy] = useState(null);               // "apply" | "remove"
   const [notice, setNotice] = useState(null);           // { kind: ok|err, msg }
   const [removing, setRemoving] = useState(null);       // instance pending confirm
-  const [advOpen, setAdvOpen] = useState(false);
-  const [xmlOpen, setXmlOpen] = useState(false);
-  const [sessions, setSessions] = useState(null);       // MEC table count, where a MEC instance exists
-  const [portLinks, setPortLinks] = useState({});       // port name -> link up (true/false), from the statistics
+  const [sessions, setSessions] = useState(null);       // MEC table fill, where a MEC instance exists
+  const [portLinks, setPortLinks] = useState({});       // port name -> link up (true/false)
+  const [formKey, setFormKey] = useState(0);            // remounts the detail form after an apply
   const timer = useRef(null);
 
   /* an apply or remove hands run.xml to the device's watcher, which moves it
@@ -167,8 +198,8 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
   }, []);
   useEffect(() => { if (loggedIn) load(); }, [loggedIn, load]);
 
-  // live figures: each port's link, and the MEC table's size where a MEC
-  // instance exists -- once every ten seconds while the tab is open
+  // live figures: each port's link, and the MEC table's fill where a MEC
+  // instance exists -- once every ten seconds while the page is open
   useEffect(() => {
     if (!loggedIn || instances.length === 0) { setSessions(null); setPortLinks({}); return; }
     const hasMec = instances.some((i) => i.type === "mec");
@@ -190,34 +221,18 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
   }, [loggedIn, instances]);
 
   const moduleOf = (type) => (catalogue || []).find((m) => m.type === type);
+  const instPorts = (inst) => ["ran_port", "core_port", "edge_port"].map((k) => inst.params?.[k]).filter(Boolean);
+  const portChips = (inst) => instPorts(inst).map((p) => (
+    <span key={p} className={"mod-port " + (portLinks[p] === true ? "ok" : portLinks[p] === false ? "bad" : "")} title={portLinks[p] === true ? tr("mod.linkUp") : portLinks[p] === false ? tr("mod.linkDown") : ""}>{p}</span>));
 
-  const startNew = (m) => {
-    const form = formFromParams(m.schema, {});
-    setSel({ type: m.type, id: null, form }); setPreview(null); setNotice(null); setAdvOpen(false); setXmlOpen(false);
-  };
-  const startEdit = (inst) => {
-    const m = moduleOf(inst.type);
-    if (!m) return;
-    setSel({ type: inst.type, id: inst.id, form: formFromParams(m.schema, inst.params) });
-    setPreview(null); setNotice(null); setXmlOpen(false);
-    setAdvOpen(m.schema.some((f) => f.group === "advanced" && (f.type === "table" ? (inst.params?.[f.key]?.length > 0) : (inst.params?.[f.key] != null && inst.params?.[f.key] !== "" && inst.params?.[f.key] !== false))));
-  };
-  const setField = (k, v) => { setSel((s) => ({ ...s, form: { ...s.form, [k]: v } })); setPreview(null); };
-
-  const doPreview = async () => {
-    setBusy("preview"); setNotice(null);
-    try { setPreview(await postJson("/grism/task/preview_module", { type: sel.type, id: sel.id, params: sel.form })); }
-    catch (e) { setPreview(null); setNotice({ kind: "err", msg: e.message }); }
-    setBusy(null);
-    // the result lands below the form, under the pinned buttons: bring it up
-    setTimeout(() => document.querySelector(".mod-preview, .mod-form-card .set-hint.err")?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
-  };
-  const doApply = async () => {
+  const doApply = async (type, id, form) => {
     setBusy("apply"); setNotice(null);
     try {
-      const r = await postJson("/grism/task/apply_module", { type: sel.type, id: sel.id, params: sel.form });
-      setNotice({ kind: "ok", msg: tr("mod.applied") + (r.args && (Object.keys(r.args.args || {}).length || Object.keys(r.args["in-tunnels"] || {}).length) ? " " + tr("mod.appliedArgs") : "") });
-      setSel(null); setPreview(null);
+      const r = await postJson("/grism/task/apply_module", { type, id, params: form, mode: "replace" });
+      const argsChanged = r.args && (Object.keys(r.args.args || {}).length || Object.keys(r.args["in-tunnels"] || {}).length);
+      setNotice({ kind: "ok", msg: tr("mod.applied") + (argsChanged ? " " + tr("mod.appliedArgs") : "") + (r.snapshot ? " " + tr("mod.appliedSnapshot") : "") });
+      setSel(null);
+      setFormKey((k) => k + 1);
       reloadSoon(load);
       if (onDeviceChanged) setTimeout(onDeviceChanged, 3000);
     } catch (e) { setNotice({ kind: "err", msg: e.message }); }
@@ -229,21 +244,44 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
       await postJson("/grism/task/remove_module", { type: inst.type, id: inst.id });
       setNotice({ kind: "ok", msg: tr("mod.removed") });
       setRemoving(null);
-      if (sel && sel.type === inst.type && sel.id === inst.id) { setSel(null); setPreview(null); }
+      if (sel && sel.type === inst.type && sel.id === inst.id) setSel(null);
       reloadSoon(load);
       if (onDeviceChanged) setTimeout(onDeviceChanged, 3000);
     } catch (e) { setNotice({ kind: "err", msg: e.message }); }
     setBusy(null);
   };
 
-  const selModule = sel ? moduleOf(sel.type) : null;
-  const basic = useMemo(() => (selModule ? selModule.schema.filter((f) => f.group !== "advanced") : []), [selModule]);
-  const advanced = useMemo(() => (selModule ? selModule.schema.filter((f) => f.group === "advanced") : []), [selModule]);
-  const missing = selModule ? selModule.schema.filter((f) => f.required && !String(sel.form[f.key] ?? "").trim()) : [];
-  const instPorts = (inst) => ["ran_port", "core_port", "edge_port"].map((k) => inst.params?.[k]).filter(Boolean);
-
   if (!loggedIn) return <div className="set-forms"><p className="sys-note dim">{tr("mod.signIn")}</p></div>;
 
+  /* ---- Pipeline > MEC: every instance of the module, every field, applied in place ---- */
+  if (mode === "detail") {
+    const list = instances.filter((i) => i.type === moduleType);
+    const m = moduleOf(moduleType);
+    return (
+      <div className="sys-wrap set-page mod-tab">
+        {listState === "error" && <p className="set-hint err">{tr("mod.unavailable")}</p>}
+        {listState === "ok" && list.length === 0 && (
+          <section className="sys-card"><h3 className="sys-card-title">{m ? L(m.name, lang) : moduleType}</h3>
+            <p className="set-hint">{tr("mod.noInstance")}</p></section>)}
+        {m && list.map((inst) => (
+          <ModuleForm key={formKey + ":" + inst.id + ":" + JSON.stringify(inst.params)} module={m} inst={inst} fields={m.schema} lang={lang} tr={tr}
+            canOperate={canOperate} busy={busy} notice={notice}
+            onApply={(form) => doApply(inst.type, inst.id, form)}
+            title={<>
+              <h3 className="sys-card-title">{L(m.name, lang)} <span className="dim">#{inst.id}{inst.name ? " · " + inst.name : ""}</span>
+                <span className="sys-card-metric">{inst.type === "mec" && sessions != null ? tr("mod.sessions") + " " + sessions : ""}</span></h3>
+              <p className="set-hint">{L(m.description, lang)}</p>
+              <p className="set-hint"><span className="mod-ports">{portChips(inst)}</span> {inst.summary}</p>
+              <p className="set-hint dim">{tr("mod.detailNote")}</p>
+            </>} />
+        ))}
+      </div>);
+  }
+
+  /* ---- Settings > Modules: the list, add with the basic fields, remove ---- */
+  const selModule = sel ? moduleOf(sel.type) : null;
+  const selInst = sel && sel.id ? instances.find((i) => i.type === sel.type && i.id === sel.id) : null;
+  const basicFields = useMemo(() => (selModule ? selModule.schema.filter((f) => f.group !== "advanced") : []), [selModule]);
   return (
     <div className="set-forms mod-tab">
       <section className="sys-card">
@@ -269,11 +307,10 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
                         {inst.problems?.length > 0 && <div className="set-hint err mod-inline">{inst.problems.join("; ")}</div>}
                         {inst.type === "mec" && sessions != null && <div className="dim mod-inline">{tr("mod.sessions")}: {sessions}</div>}
                       </td>
-                      <td className="mod-ports">{instPorts(inst).map((p) => (
-                        <span key={p} className={"mod-port " + (portLinks[p] === true ? "ok" : portLinks[p] === false ? "bad" : "")} title={portLinks[p] === true ? tr("mod.linkUp") : portLinks[p] === false ? tr("mod.linkDown") : ""}>{p}</span>))}</td>
+                      <td className="mod-ports">{portChips(inst)}</td>
                       <td className="dim">{inst.elements}</td>
                       <td className="mod-row-btns">
-                        <button className="copy-btn" disabled={!m || inst.problems?.some((p) => /missing/.test(p))} onClick={() => startEdit(inst)}>{tr("mod.edit")}</button>
+                        <button className="copy-btn" disabled={!m || !canOperate || inst.problems?.some((p) => /missing/.test(p))} onClick={() => { setSel({ type: inst.type, id: inst.id }); setNotice(null); }}>{tr("mod.edit")}</button>
                         {" "}
                         {removing && removing.type === inst.type && removing.id === inst.id ? (
                           <span className="mod-confirm">
@@ -294,7 +331,7 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
         {catalogue && catalogue.length > 0 && (
           <div className="add-row mod-add-row">
             {catalogue.map((m) => (
-              <button key={m.type} className="add-btn" disabled={!canOperate} onClick={() => startNew(m)}>{tr("mod.addPrefix")}{L(m.name, lang)}</button>
+              <button key={m.type} className="add-btn" disabled={!canOperate} onClick={() => { setSel({ type: m.type, id: null }); setNotice(null); }}>{tr("mod.addPrefix")}{L(m.name, lang)}</button>
             ))}
             {!canOperate && <span className="dim mod-ro">{tr("mod.readOnly")}</span>}
           </div>
@@ -303,58 +340,16 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
       </section>
 
       {sel && selModule && (
-        <section className="sys-card wide mod-form-card">
-          <h3 className="sys-card-title">{L(selModule.name, lang)} <span className="dim">{sel.id ? "#" + sel.id : tr("mod.new")}</span></h3>
-          <p className="set-hint">{L(selModule.description, lang)}</p>
-          <div className="mod-form">
-            {basic.filter((f) => f.type !== "table").map((f) => (
-              <Field key={f.key} f={f} value={sel.form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
-            ))}
-          </div>
-          {basic.filter((f) => f.type === "table").map((f) => (
-            <TableField key={f.key} f={f} rows={sel.form[f.key] || []} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
-          ))}
-          {advanced.length > 0 && (
-            <div className="mod-advanced">
-              <button className="link-btn" onClick={() => setAdvOpen((v) => !v)} aria-expanded={advOpen}>{advOpen ? "▾" : "▸"} {tr("mod.advanced")}</button>
-              {advOpen && (<>
-                <div className="mod-form">
-                  {advanced.filter((f) => f.type !== "table").map((f) => (
-                    <Field key={f.key} f={f} value={sel.form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
-                  ))}
-                </div>
-                {advanced.filter((f) => f.type === "table").map((f) => (
-                  <TableField key={f.key} f={f} rows={sel.form[f.key] || []} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
-                ))}
-              </>)}
-            </div>
-          )}
-
-          {preview && (
-            <div className="mod-preview">
-              {preview.validate?.problems?.length > 0 && (
-                <div className="set-hint err"><b>{tr("mod.problems")}</b>: {preview.validate.problems.map((p) => (p.where ? p.where + ": " : "") + p.msg).join("; ")}</div>)}
-              {preview.warnings?.length > 0 && (
-                <div className="set-hint warn"><b>{tr("mod.warnings")}</b>: {preview.warnings.join("; ")}</div>)}
-              {(() => {
-                const a = preview.args || {}; const keys = [...Object.keys(a.args || {}), ...Object.keys(a["in-tunnels"] || {}).map((k) => "in-tunnels/" + k)];
-                return keys.length
-                  ? <div className="set-hint"><b>{tr("mod.argsToChange")}</b>: {keys.map((k) => <code key={k}>{k}={String(k.startsWith("in-tunnels/") ? a["in-tunnels"][k.slice(11)] : a.args[k])} </code>)} <span className="dim">{tr("mod.argsRestart")}</span></div>
-                  : <div className="set-hint ok">{tr("mod.argsNone")}</div>;
-              })()}
-              <div className="set-hint">{tr("mod.previewSummary").replace("{n}", String((preview.xml.match(/<!-- grism-module/g) || []).length)).replace("{ids}", preview.slot != null ? String(8000 + 100 * preview.slot + 1) + "+" : "")}{preview.replaces && " " + tr("mod.replaces")}</div>
-              <button className="link-btn" onClick={() => setXmlOpen((v) => !v)}>{xmlOpen ? "▾" : "▸"} {tr("mod.xml")}</button>
-              {xmlOpen && <pre className="mod-xml">{preview.xml}</pre>}
-            </div>
-          )}
-          {notice && <p className={"set-hint " + (notice.kind === "ok" ? "ok" : "err")}>{notice.msg}</p>}
-          {missing.length > 0 && <p className="set-hint dim">{tr("mod.missing")}: {missing.map((f) => L(f.label, lang)).join(", ")}</p>}
-          <div className="set-actions">
-            <button className="copy-btn" disabled={busy != null} onClick={() => { setSel(null); setPreview(null); setNotice(null); }}>{tr("mod.cancel")}</button>
-            <button className="copy-btn" disabled={busy != null || missing.length > 0} onClick={doPreview}>{busy === "preview" ? tr("mod.previewing") : tr("mod.preview")}</button>
-            <button className="sys-refresh" disabled={!canOperate || busy != null || missing.length > 0 || !preview || !preview.validate?.valid} onClick={doApply}>{busy === "apply" ? tr("mod.applying") : tr("mod.apply")}</button>
-          </div>
-        </section>
+        <ModuleForm key={sel.type + ":" + (sel.id || "new")} module={selModule} inst={selInst} fields={basicFields} lang={lang} tr={tr}
+          canOperate={canOperate} busy={busy} notice={notice}
+          onApply={(form) => doApply(sel.type, sel.id, form)}
+          onCancel={() => { setSel(null); setNotice(null); }}
+          title={<>
+            <h3 className="sys-card-title">{L(selModule.name, lang)} <span className="dim">{sel.id ? "#" + sel.id : tr("mod.new")}</span></h3>
+            <p className="set-hint">{L(selModule.description, lang)}</p>
+            <p className="set-hint warn">{tr("mod.replaceNote")}</p>
+            <p className="set-hint dim">{tr("mod.detailWhere")}</p>
+          </>} />
       )}
     </div>
   );

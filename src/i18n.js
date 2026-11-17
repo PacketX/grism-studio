@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.283.0";
+export const STUDIO_VERSION = "2.284.0";
 
 export const I18N = {
   en: {
@@ -15,6 +15,7 @@ export const I18N = {
     "tab.actions": "Actions", "tab.chain": "Chains", "tab.simulate": "Simulate",
     "tab.export": "Export", "tab.overview": "Overview",
     "tab.capture": "Capture",
+    "tab.mec": "MEC",
     "cap.title": "Packet capture",
     "cap.note": "Record traffic to a storage volume for a fixed number of seconds, then download it as a pcap. The capture runs alongside the current configuration and removes itself when the time is up.",
     "cap.stl": "Seconds to live", "cap.storage": "Storage", "cap.dir": "Directory", "cap.writesTo": "Writes to",
@@ -407,7 +408,12 @@ export const I18N = {
     // modules: a feature as a few fields (device-side templates, pywww modules.py)
     "set.modules": "Modules",
     "mod.title": "Modules",
-    "mod.note": "A module is a feature described by a few fields. The device writes the filters, outputs and chains itself and keeps them apart from the rest of the configuration, marked as the module's, so an instance can be changed or removed as one thing. What it makes is still visible in the pipeline.",
+    "mod.note": "A module is a feature described by a few fields: the device writes the filters, outputs and chains itself. With a MEC module applied, the pipeline shows its MEC settings and the packet capture.",
+    "mod.replaceNote": "Apply replaces the device's packet-processing configuration (run.xml) with the module's. The configuration it replaces is kept as a pre-submit snapshot on the Export tab.",
+    "mod.detailWhere": "The detailed settings -- the cell / UE / SPID rules -- are under Pipeline > MEC once the module is applied.",
+    "mod.detailNote": "Changes here are applied to the device as they are. Removing the module is done under Settings > Modules.",
+    "mod.noInstance": "No MEC module applied yet: add one under Settings > Modules.",
+    "mod.appliedSnapshot": "The configuration it replaced is kept as a pre-submit snapshot (Export tab).",
     "mod.none": "No module instance yet.", "mod.addPrefix": "+ ", "mod.new": "new",
     "mod.colName": "Name", "mod.colModule": "Module", "mod.colSummary": "What it does", "mod.colPorts": "Ports", "mod.colElements": "Elements",
     "mod.edit": "Edit", "mod.remove": "Remove", "mod.removeAsk": "Remove it? Its filters, outputs and chains leave the configuration; the settings it switched on stay.",
@@ -1112,6 +1118,7 @@ export const I18N = {
     "tab.actions": "動作", "tab.chain": "鏈結", "tab.simulate": "模擬",
     "tab.export": "匯出", "tab.overview": "總覽",
     "tab.capture": "封包側錄",
+    "tab.mec": "MEC",
     "cap.title": "封包側錄",
     "cap.note": "將流量錄製到儲存空間指定秒數,再以 pcap 下載。側錄會與目前設定並行運作,時間到自動結束。",
     "cap.stl": "存活秒數", "cap.storage": "儲存空間", "cap.dir": "目錄", "cap.writesTo": "寫入位置:",
@@ -1504,7 +1511,12 @@ export const I18N = {
     // modules
     "set.modules": "模組",
     "mod.title": "模組",
-    "mod.note": "模組是「用幾個欄位描述一個功能」:篩選器、輸出與鏈結由裝置自己產生,並與其他設定分開、標記為該模組所有,所以一個實例可以整個修改或移除。產生的東西在封包處理頁仍看得到。",
+    "mod.note": "模組是「用幾個欄位描述一個功能」:篩選器、輸出與鏈結由裝置自己產生。套用 MEC 模組後,封包處理頁只剩 MEC 設定與封包側錄。",
+    "mod.replaceNote": "套用會以模組產生的設定取代裝置目前的封包處理設定(run.xml);被取代的設定會存成匯出頁的「提交前快照」。",
+    "mod.detailWhere": "細部設定(cell / UE / SPID 規則)在套用後的 封包處理 → MEC。",
+    "mod.detailNote": "這裡的修改按套用即生效。要移除模組請到 設定 → 模組。",
+    "mod.noInstance": "尚未套用 MEC 模組:到 設定 → 模組 新增。",
+    "mod.appliedSnapshot": "被取代的設定已存成提交前快照(匯出頁)。",
     "mod.none": "尚未建立任何模組實例。", "mod.addPrefix": "+ 新增 ", "mod.new": "新增",
     "mod.colName": "名稱", "mod.colModule": "模組", "mod.colSummary": "做什麼", "mod.colPorts": "埠", "mod.colElements": "元素數",
     "mod.edit": "編輯", "mod.remove": "移除", "mod.removeAsk": "確定移除?它的篩選器、輸出與鏈結會從設定拿掉;它開啟的系統設定維持不變。",

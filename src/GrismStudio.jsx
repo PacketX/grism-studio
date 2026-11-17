@@ -181,9 +181,22 @@ export default function GrismStudio() {
   // --- two-level navigation: workspaces contain tabs ---
   // Overview is a standalone page. Config holds the editing/build tabs. System
   // holds device status pages. Future feature pages become new workspaces.
+  /* The module instances on the device (Settings > Modules). With a MEC
+     instance applied, the pipeline is the module's: its tabs are the MEC
+     settings and the capture, the chain editor stays out of the way. */
+  const [modInstances, setModInstances] = useState([]);
+  const loadModules = useCallback(async () => {
+    try {
+      const res = await fetch("/grism/task/get_module_instances", { credentials: "include" });
+      if (!res.ok) { setModInstances([]); return; }
+      const d = await res.json();
+      setModInstances(Array.isArray(d?.instances) ? d.instances : []);
+    } catch { setModInstances([]); }
+  }, []);
+  const moduleMode = modInstances.some((i) => i.type === "mec");
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
-    { id: "pipeline", tabs: ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
+    { id: "pipeline", tabs: moduleMode ? ["mec", "capture"] : ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
     { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre", "trafficMec"] },
     { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
@@ -197,6 +210,10 @@ export default function GrismStudio() {
     if (workspace !== "pipeline") { setHealthOpen(false); setAdvOpen(false); }
   }, [workspace]);
   const gotoWorkspace = (wid) => { const w = WORKSPACES.find((x) => x.id === wid); if (w) setTab(w.tabs[0]); };
+  useEffect(() => {
+    if (moduleMode && ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export"].includes(tab)) setTab("mec");
+    if (!moduleMode && tab === "mec") setTab("chain");
+  }, [moduleMode, tab]);
 
   // --- per-section undo/redo history (filters / inputs / outputs / actions / chains) ---
   // Each section keeps its own past/future stacks of JSON snapshots. We snapshot a
@@ -715,6 +732,7 @@ export default function GrismStudio() {
       if (priv == null) fetchCurrentUser().then(({ priv: p }) => setLogin((l) => ({ ...l, ro: isReadOnlyPriv(p), priv: p })));
       setTimeout(() => setLogin((l) => ({ ...l, ok: false })), 2500);
       loadDevicePorts();   // interface/port list for the pickers
+      loadModules();
       // loadRunning() replaces the document and sets the baseline itself. It only
       // does that straight away when there's nothing to lose; if it has to ask
       // first, fetch the baseline separately so the sync indicator is still right.
@@ -743,6 +761,7 @@ export default function GrismStudio() {
         // doesn't answer, fall back to the cookie and then to a generic marker.
         setLogin((l) => ({ ...l, who: signedInUser() || "signed in" }));
         loadDevicePorts(cfg);
+        loadModules();
         fetchCurrentUser().then(({ name, priv }) => {
           if (cancelled) return;
           setLogin((l) => (l.who ? { ...l, who: name || l.who, ro: isReadOnlyPriv(priv), priv } : l));
@@ -754,6 +773,7 @@ export default function GrismStudio() {
   }, [loadDevicePorts, doLoadRunning, fetchCurrentUser]);
 
   const doLogout = useCallback(async (notice = "") => {
+    setModInstances([]);      // the pipeline goes back to its editor until the next sign-in says otherwise
     setSignedOutNotice(notice);
     try {
       await fetch("/logout", { method: "POST", credentials: "include" });
@@ -903,6 +923,15 @@ export default function GrismStudio() {
                         <span className="tab-changed" title={t("chg.tabTip")} aria-label={t("chg.tabTip")} />}
                     </button>
                   );
+                  if (moduleMode) {
+                    return (
+                      <nav className="tabs ws-tabs">
+                        {tabBtn("mec")}
+                        <span className="tab-divider" aria-hidden="true" />
+                        {tabBtn("capture")}
+                      </nav>
+                    );
+                  }
                   return (
                     <nav className="tabs ws-tabs">
                       {tabBtn("chain")}
@@ -1215,7 +1244,7 @@ export default function GrismStudio() {
         )}
         {tab === "settings" && (
           <SettingsTab loggedIn={!!login.who} readOnly={login.ro} priv={login.priv} t={t} lang={lang} portOptions={devicePorts ?? DEFAULT_PORTS} onSignedOut={doLogout}
-            onDeviceChanged={() => { if (!dirty) doLoadRunning(); else loadBaseline(); }}
+            onDeviceChanged={() => { loadModules(); if (!dirty) doLoadRunning(); else loadBaseline(); }}
             onUseTemplate={(id) => applyTemplate(TEMPLATES.find((x) => x.id === id), "chain")}
             filterIds={doc.filters.map((f) => ({ id: "F" + f.id, label: filterLabel(f) }))} />
         )}
@@ -1237,6 +1266,10 @@ export default function GrismStudio() {
         )}
         {tab === "trafficMec" && (
           <MecTab loggedIn={!!login.who} t={t} />
+        )}
+        {tab === "mec" && (
+          <ModulesTab mode="detail" moduleType="mec" loggedIn={!!login.who} canOperate={privAtLeast(login.priv, PRIV.OPERATOR)} t={t} lang={lang}
+            onDeviceChanged={() => { loadModules(); if (!dirty) doLoadRunning(); else loadBaseline(); }} />
         )}
         {tab === "capture" && (
           <CaptureTab loggedIn={!!login.who} t={t} doc={doc} loopPorts={loopPorts}
