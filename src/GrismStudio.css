@@ -2383,3 +2383,10 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .mod-ro{font-size:12px;}
 .mod-confirm{white-space:normal;}
 .copy-btn.danger{border-color:var(--notmatch); color:var(--notmatch);}
+
+/* the module confirms sit over the whole window, not the settings page's scroll box */
+.modal-scrim.mod-fixed{position:fixed;}
+.mod-status{display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px; border-radius:10px; border:1px solid var(--line-2); color:var(--txt-dim); margin-left:8px; vertical-align:middle;}
+.mod-status.on{border-color:var(--match); color:var(--match);}
+.mod-raw{margin:6px 0 12px;}
+.mod-raw .set-actions{position:static; margin:0 0 6px; padding:0; border:0; justify-content:flex-start; gap:10px;}
