@@ -8,15 +8,17 @@
 
    Two places show it:
    - Settings > Modules (mode "settings"): one card per module of the
-     catalogue, there from the start, with the basic fields, an active /
-     not-applied badge, Cancel (discards edits), Apply and Release. Apply and
-     Release ask first: an apply replaces the device's packet-processing
-     configuration with the module's (the device keeps the old run.xml as a
-     pre-submit snapshot, listed on the Export tab).
+     catalogue, there from the start, with an active / not-applied badge and
+     two buttons, Apply and Release, each behind a confirm. Apply puts an
+     empty instance on the device (kept there on one inert filter), which is
+     what turns the pipeline page into the module's; Release takes it off.
+     No field is set here.
    - Pipeline > MEC (mode "detail"): every instance's full form, the advanced
-     fields (the cell / UE / SPID rules) included, applied in place after the
-     same confirm, and a Raw XML button that shows the device's running
-     run.xml.
+     fields (the cell / UE / SPID rules) included, applied in place after a
+     confirm -- the apply that first configures an instance replaces the
+     device's packet-processing configuration with the module's (the device
+     keeps the old run.xml as a pre-submit snapshot, listed on the Export
+     tab) -- and a Raw XML button that shows the device's running run.xml.
 
    Field types the schema may use: port, ip, cidr_list, text, int, bool, enum,
    table (columns of the same types, minus table). Labels come as {en, zh}.
@@ -180,10 +182,10 @@ function RawXml({ tr }) {
     </div>);
 }
 
-/* The form for one module (its instance, or none yet). `fields` says which
-   of the schema's fields to show. Apply and Release go through the confirm
-   the parent shows; Cancel puts the fields back to what the device holds. */
-function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, onApply, onRelease, title, withRaw = false }) {
+/* The form for one instance. `fields` says which of the schema's fields to
+   show. Apply goes through the confirm the parent shows; Cancel puts the
+   fields back to what the device holds. */
+function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, onApply, title, withRaw = false }) {
   const [form, setForm] = useState(() => formFromParams(module.schema, inst?.params || {}));
   const [rawOpen, setRawOpen] = useState(false);
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -212,7 +214,6 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
       <div className="set-actions">
         {withRaw && <button className="copy-btn" onClick={() => setRawOpen((v) => !v)} aria-expanded={rawOpen}>{rawOpen ? "▾ " : "▸ "}{tr("mod.rawXml")}</button>}
         <button className="copy-btn" disabled={busy != null || !dirty} onClick={reset}>{tr("mod.cancel")}</button>
-        {onRelease && inst && <button className="copy-btn danger" disabled={!canOperate || busy != null} onClick={onRelease}>{busy === "release" ? tr("mod.releasing") : tr("mod.release")}</button>}
         <button className="sys-refresh" disabled={!canOperate || busy != null || missing.length > 0} onClick={() => onApply(form)}>{busy === "apply" ? tr("mod.applying") : tr("mod.apply")}</button>
       </div>
     </section>);
@@ -229,6 +230,7 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
   const [sessions, setSessions] = useState(null);       // MEC table fill, where a MEC instance exists
   const [portLinks, setPortLinks] = useState({});       // port name -> link up (true/false)
   const [formKey, setFormKey] = useState(0);            // remounts the forms after an apply or release
+  const [handwritten, setHandwritten] = useState(false); // run.xml still holds configuration outside the modules
   const timer = useRef(null);
 
   /* an apply or release hands run.xml to the device's watcher, which moves it
@@ -240,6 +242,7 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
       const [cat, inst] = await Promise.all([getJson("/grism/task/get_modules"), getJson("/grism/task/get_module_instances")]);
       setCatalogue(cat.modules || []);
       setInstances(inst.instances || []);
+      setHandwritten(!!inst.handwritten);
       setListState("ok");
     } catch { setListState("error"); }
   }, []);
@@ -285,6 +288,20 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
     } catch (e) { setNotice({ type, kind: "err", msg: e.message }); }
     setBusy(null);
   };
+  /* Settings > Modules' Apply: an empty instance, which the device keeps on
+     one inert filter beside whatever runs now -- the pipeline page is the
+     module's from here, and the fields are set there */
+  const doEnable = async (type) => {
+    setBusy("apply"); setNotice(null);
+    try {
+      await postJson("/grism/task/apply_module", { type, params: {}, mode: "merge" });
+      setNotice({ type, kind: "ok", msg: tr("mod.enabled") });
+      setFormKey((k) => k + 1);
+      reloadSoon(load);
+      if (onDeviceChanged) setTimeout(onDeviceChanged, 3000);
+    } catch (e) { setNotice({ type, kind: "err", msg: e.message }); }
+    setBusy(null);
+  };
   const doRelease = async (type, id) => {
     setBusy("release"); setNotice(null);
     try {
@@ -299,17 +316,19 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
   const runConfirm = () => {
     const c = confirm; setConfirm(null);
     if (!c) return;
-    if (c.kind === "apply") doApply(c.type, c.id, c.form); else doRelease(c.type, c.id);
+    if (c.kind === "apply") doApply(c.type, c.id, c.form);
+    else if (c.kind === "enable") doEnable(c.type);
+    else doRelease(c.type, c.id);
   };
 
   const confirmModal = confirm && (
     <div className="modal-scrim mod-fixed" onClick={() => setConfirm(null)}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-title">{tr(confirm.kind === "apply" ? "mod.applyAskTitle" : "mod.releaseAskTitle").replace("{name}", confirm.name)}</div>
-        <p className="modal-body">{confirm.kind === "apply" ? tr(confirm.update ? "mod.applyAskBodyUpdate" : "mod.applyAskBody") : tr("mod.releaseAskBody")}</p>
+        <div className="modal-title">{tr(confirm.kind === "release" ? "mod.releaseAskTitle" : "mod.applyAskTitle").replace("{name}", confirm.name)}</div>
+        <p className="modal-body">{confirm.kind === "release" ? tr(confirm.blank ? "mod.releaseAskBodyBlank" : "mod.releaseAskBody") : confirm.kind === "enable" ? tr("mod.enableAskBody") : tr(confirm.update ? "mod.applyAskBodyUpdate" : "mod.applyAskBody")}</p>
         <button className="opt drop" onClick={runConfirm}>
-          <span className="opt-name">{tr(confirm.kind === "apply" ? "mod.applyGo" : "mod.releaseGo")}</span>
-          <span className="opt-desc">{tr(confirm.kind === "apply" ? "mod.applyGoDesc" : "mod.releaseGoDesc")}</span>
+          <span className="opt-name">{tr(confirm.kind === "release" ? "mod.releaseGo" : "mod.applyGo")}</span>
+          <span className="opt-desc">{tr(confirm.kind === "release" ? "mod.releaseGoDesc" : confirm.kind === "enable" ? "mod.enableGoDesc" : "mod.applyGoDesc")}</span>
         </button>
         <button className="opt-cancel" onClick={() => setConfirm(null)}>{tr("mod.cancel")}</button>
       </div>
@@ -330,12 +349,14 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
         {m && list.map((inst) => (
           <ModuleForm key={formKey + ":" + inst.id + ":" + JSON.stringify(inst.params)} module={m} inst={inst} fields={m.schema} lang={lang} tr={tr}
             canOperate={canOperate} busy={busy} notice={noticeFor(inst.type)} withRaw
-            onApply={(form) => setConfirm({ kind: "apply", type: inst.type, id: inst.id, form, name: L(m.name, lang), update: true })}
+            onApply={(form) => setConfirm({ kind: "apply", type: inst.type, id: inst.id, form, name: L(m.name, lang), update: !handwritten })}
             title={<>
               <h3 className="sys-card-title">{L(m.name, lang)} <span className="dim">#{inst.id}{inst.name ? " · " + inst.name : ""}</span>
                 <span className="sys-card-metric">{inst.type === "mec" && sessions != null ? tr("mod.sessions") + " " + sessions : ""}</span></h3>
               <p className="set-hint">{L(m.description, lang)}</p>
-              <p className="set-hint"><span className="mod-ports">{portChips(inst)}</span> {inst.summary}</p>
+              {inst.configured === false
+                ? <p className="set-hint warn">{tr("mod.unconfiguredHere")}</p>
+                : <p className="set-hint"><span className="mod-ports">{portChips(inst)}</span> {inst.summary}</p>}
               <p className="set-hint dim">{tr("mod.detailNote")}</p>
             </>} />
         ))}
@@ -343,7 +364,7 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
       </div>);
   }
 
-  /* ---- Settings > Modules: one card per module of the catalogue ---- */
+  /* ---- Settings > Modules: one card per module of the catalogue, Apply and Release only ---- */
   return (
     <div className="set-forms mod-tab">
       <section className="sys-card">
@@ -358,23 +379,28 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
       {(catalogue || []).map((m) => {
         const mine = instances.filter((i) => i.type === m.type);
         const inst = mine[0] || null;
-        const basic = m.schema.filter((f) => f.group !== "advanced");
+        const unconfigured = !!inst && inst.configured === false;
+        const n = noticeFor(m.type);
+        const name = L(m.name, lang);
         return (
-          <ModuleForm key={m.type + ":" + formKey + ":" + (inst ? inst.id + ":" + JSON.stringify(inst.params) : "none")} module={m} inst={inst} fields={basic} lang={lang} tr={tr}
-            canOperate={canOperate} busy={busy} notice={noticeFor(m.type)}
-            onApply={(form) => setConfirm({ kind: "apply", type: m.type, id: inst ? inst.id : null, form, name: L(m.name, lang), update: !!inst })}
-            onRelease={inst ? () => setConfirm({ kind: "release", type: m.type, id: inst.id, name: L(m.name, lang) }) : null}
-            title={<>
-              <h3 className="sys-card-title">{L(m.name, lang)}
-                <span className={"mod-status" + (inst ? " on" : "")}>{inst ? tr("mod.active") : tr("mod.inactive")}</span>
-                <span className="sys-card-metric">{inst && inst.type === "mec" && sessions != null ? tr("mod.sessions") + " " + sessions : ""}</span></h3>
-              <p className="set-hint">{L(m.description, lang)}</p>
-              {inst && <p className="set-hint"><span className="mod-ports">{portChips(inst)}</span> #{inst.id}{inst.name ? " · " + inst.name : ""} — {inst.summary}
-                {inst.problems?.length > 0 && <span className="err"> {inst.problems.join("; ")}</span>}</p>}
-              {mine.length > 1 && <p className="set-hint warn">{tr("mod.otherInstances").replace("{n}", String(mine.length - 1))}</p>}
-              <p className="set-hint warn">{tr("mod.replaceNote")}</p>
-              <p className="set-hint dim">{tr("mod.detailWhere")}</p>
-            </>} />);
+          <section key={m.type} className="sys-card wide mod-card">
+            <h3 className="sys-card-title">{name}
+              <span className={"mod-status" + (inst ? (unconfigured ? " on part" : " on") : "")}>{inst ? tr(unconfigured ? "mod.activeUnconfigured" : "mod.active") : tr("mod.inactive")}</span>
+              <span className="sys-card-metric">{inst && inst.type === "mec" && sessions != null ? tr("mod.sessions") + " " + sessions : ""}</span></h3>
+            <p className="set-hint">{L(m.description, lang)}</p>
+            {inst && !unconfigured && <p className="set-hint"><span className="mod-ports">{portChips(inst)}</span> #{inst.id}{inst.name ? " · " + inst.name : ""} — {inst.summary}
+              {inst.problems?.length > 0 && <span className="err"> {inst.problems.join("; ")}</span>}</p>}
+            {unconfigured && <p className="set-hint warn">{tr("mod.unconfigured")}</p>}
+            {mine.length > 1 && <p className="set-hint warn">{tr("mod.otherInstances").replace("{n}", String(mine.length - 1))}</p>}
+            <p className="set-hint dim">{tr(inst ? "mod.detailWhere" : "mod.replaceNote")}</p>
+            {n && <p className={"set-hint " + (n.kind === "ok" ? "ok" : "err")}>{n.msg}</p>}
+            <div className="set-actions">
+              <button className="copy-btn danger" disabled={!canOperate || busy != null || !inst}
+                onClick={() => inst && setConfirm({ kind: "release", type: m.type, id: inst.id, name, blank: unconfigured })}>{busy === "release" ? tr("mod.releasing") : tr("mod.release")}</button>
+              <button className="sys-refresh" disabled={!canOperate || busy != null || !!inst}
+                onClick={() => setConfirm({ kind: "enable", type: m.type, name })}>{busy === "apply" ? tr("mod.applying") : tr("mod.apply")}</button>
+            </div>
+          </section>);
       })}
       {confirmModal}
     </div>

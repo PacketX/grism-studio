@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.286.0";
+export const STUDIO_VERSION = "2.287.0";
 
 export const I18N = {
   en: {
@@ -408,12 +408,19 @@ export const I18N = {
     // modules: a feature as a few fields (device-side templates, pywww modules.py)
     "set.modules": "Modules",
     "mod.title": "Modules",
-    "mod.note": "A module is a feature described by a few fields. The modules are listed here from the start: fill in the basic fields and press Apply, and the device writes the filters, outputs and chains itself. With a MEC module applied, the pipeline shows its MEC settings and the packet capture.",
-    "mod.replaceNote": "Apply replaces the device's packet-processing configuration (run.xml) with the module's. The configuration it replaces is kept as a pre-submit snapshot on the Export tab.",
-    "mod.detailWhere": "The detailed settings -- the cell / UE / SPID rules -- are under Pipeline > MEC once the module is applied.",
+    "mod.note": "A module is a feature described by a few fields. The modules are listed here from the start: Apply puts one on the device and the pipeline page becomes its -- the module's fields are set under Pipeline > MEC and applied there. Release takes it off again.",
+    "mod.replaceNote": "Once applied, the pipeline shows this module's settings and the packet capture only. The device's packet-processing configuration (run.xml) is replaced when the fields under Pipeline > MEC are applied; what it replaces is kept as a pre-submit snapshot on the Export tab.",
+    "mod.detailWhere": "Every field, the cell / UE / SPID rules included, is set under Pipeline > MEC.",
     "mod.detailNote": "Changes here are applied to the device as they are. Releasing the module is done under Settings > Modules.",
     "mod.noInstance": "No MEC module applied yet: apply one under Settings > Modules.",
     "mod.active": "active", "mod.inactive": "not applied",
+    "mod.activeUnconfigured": "applied, not set up yet",
+    "mod.unconfigured": "Not set up yet: fill in the fields under Pipeline > MEC and apply them. Until then the device runs its earlier configuration.",
+    "mod.unconfiguredHere": "Not set up yet: fill in the fields and apply. The device keeps running its earlier configuration until then; that apply replaces it (kept as a snapshot on the Export tab).",
+    "mod.enableAskBody": "The module is put on the device and the pipeline page becomes its: the chain editor gives way to the module's settings and the capture. What the device forwards does not change yet -- its packet-processing configuration is replaced when the fields under Pipeline > MEC are applied.",
+    "mod.enableGoDesc": "Then set its fields under Pipeline > MEC.",
+    "mod.enabled": "Applied. Set the module's fields under Pipeline > MEC and apply them there.",
+    "mod.releaseAskBodyBlank": "The module is taken off the device; the pipeline returns to the editor with the configuration as it is now, which the module never replaced.",
     "mod.otherInstances": "{n} more instance(s) of this module exist, made through the API; this page shows the first.",
     "mod.cancel": "Cancel", "mod.apply": "Apply", "mod.applying": "Applying…", "mod.release": "Release", "mod.releasing": "Releasing…",
     "mod.applyAskTitle": "Apply the {name} module?",
@@ -1514,12 +1521,19 @@ export const I18N = {
     // modules
     "set.modules": "模組",
     "mod.title": "模組",
-    "mod.note": "模組是「用幾個欄位描述一個功能」。模組一開始就列在這裡:填好基本欄位按套用,篩選器、輸出與鏈結由裝置自己產生。套用 MEC 模組後,封包處理頁只剩 MEC 設定與封包側錄。",
-    "mod.replaceNote": "套用會以模組產生的設定取代裝置目前的封包處理設定(run.xml);被取代的設定會存成匯出頁的「提交前快照」。",
-    "mod.detailWhere": "細部設定(cell / UE / SPID 規則)在套用後的 封包處理 → MEC。",
+    "mod.note": "模組是「用幾個欄位描述一個功能」。模組一開始就列在這裡:按套用把模組放上裝置,封包處理頁就只剩這個模組與封包側錄,模組的欄位都在 封包處理 → MEC 設定並套用;解除則把模組從裝置拿掉。",
+    "mod.replaceNote": "套用後,封包處理頁只剩這個模組的設定與封包側錄;在 封包處理 → MEC 填好欄位按套用時,裝置原本的封包處理設定(run.xml)才會被取代,被取代的設定會存成匯出頁的「提交前快照」。",
+    "mod.detailWhere": "所有欄位(含 cell / UE / SPID 規則)都在 封包處理 → MEC 設定。",
     "mod.detailNote": "這裡的修改按套用即生效。要解除模組請到 設定 → 模組。",
     "mod.noInstance": "尚未套用 MEC 模組:到 設定 → 模組 套用。",
     "mod.active": "啟用中", "mod.inactive": "未啟用",
+    "mod.activeUnconfigured": "已套用,尚未設定",
+    "mod.unconfigured": "尚未設定:到 封包處理 → MEC 填好欄位按套用。在那之前裝置仍照原本的設定運作。",
+    "mod.unconfiguredHere": "尚未設定:填好欄位按套用。在那之前裝置仍照原本的設定運作;套用時會取代原本的封包處理設定(存成匯出頁的快照)。",
+    "mod.enableAskBody": "模組會放上裝置,封包處理頁改成只剩模組的設定與封包側錄。裝置的轉送暫時不變:到 封包處理 → MEC 填好欄位按套用時,原本的封包處理設定才會被取代。",
+    "mod.enableGoDesc": "接著到 封包處理 → MEC 設定欄位。",
+    "mod.enabled": "已套用。請到 封包處理 → MEC 設定模組的欄位並套用。",
+    "mod.releaseAskBodyBlank": "模組會從裝置拿掉;封包處理頁回到一般編輯器,原本的設定還在(模組沒有取代過它)。",
     "mod.otherInstances": "這個模組另有 {n} 個實例是由 API 建立的,本頁只顯示第一個。",
     "mod.cancel": "取消", "mod.apply": "套用", "mod.applying": "套用中…", "mod.release": "解除", "mod.releasing": "解除中…",
     "mod.applyAskTitle": "套用「{name}」模組?",
