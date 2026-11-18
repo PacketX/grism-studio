@@ -230,3 +230,5 @@ a.mgr-menu-item{display:block; text-decoration:none; color:var(--txt);}
 .mgr-plugin-upload{display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;}
 .mgr-plugin-log{max-height:60vh; overflow:auto; font:11px/1.4 var(--mono); white-space:pre-wrap; background:var(--code-bg); color:var(--code-txt); padding:8px; border-radius:6px; margin:0;}
 .mgr-danger{border-color:var(--notmatch) !important; color:var(--notmatch) !important;}
+.mgr-plugin-actions .ws-btn,.mgr-plugin-avail .ws-btn,.mgr-plugin-upload .ws-btn{height:26px; padding:0 10px; font-weight:500; border:1px solid var(--line-2); background:var(--panel);}
+.mgr-plugin-actions .ws-btn:hover,.mgr-plugin-avail .ws-btn:hover,.mgr-plugin-upload .ws-btn:hover{background:var(--hover);}
