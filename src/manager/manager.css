@@ -215,3 +215,18 @@ a.mgr-menu-item{display:block; text-decoration:none; color:var(--txt);}
 .mgr-plain li{padding:2px 0;}
 .mgr-certbox{border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0;}
 .mgr-fp{word-break:break-all; font-size:12px; line-height:1.5;}
+
+/* plugins: the Plugins page, and a plugin's own page in a tab (an iframe filling the main area) */
+.mgr-main-px{padding:0; overflow:hidden; display:flex;}
+.mgr-plugin-frame{flex:1 1 auto; width:100%; height:100%; border:0; background:transparent; display:block;}
+.mgr-plugins-pane{display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:14px; align-items:start;}
+@media (max-width:1000px){.mgr-plugins-pane{grid-template-columns:1fr;}}
+.mgr-plugin-desc{font-size:12px; white-space:normal; max-width:560px; margin-top:2px;}
+.mgr-plugin-err{font-size:12px; white-space:normal; max-width:420px; margin-top:4px;}
+.mgr-plugin-actions{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
+.mgr-plugin-confirm{justify-content:flex-end; margin-top:12px;}
+.mgr-plugin-avail{display:flex; justify-content:space-between; gap:12px; align-items:center; padding:8px 0; border-top:1px solid var(--line);}
+.mgr-plugin-avail:first-of-type{border-top:0;}
+.mgr-plugin-upload{display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;}
+.mgr-plugin-log{max-height:60vh; overflow:auto; font:11px/1.4 var(--mono); white-space:pre-wrap; background:var(--code-bg); color:var(--code-txt); padding:8px; border-radius:6px; margin:0;}
+.mgr-danger{border-color:var(--notmatch) !important; color:var(--notmatch) !important;}

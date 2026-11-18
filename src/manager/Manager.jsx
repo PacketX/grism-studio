@@ -45,6 +45,11 @@ export default function Manager() {
   const [me, setMe] = useState(undefined);          // undefined: asking; null: signed out
   const [notice, setNotice] = useState("");
   const [tab, setTab] = useState("nodes");
+  // the plugins installed: each running one with a page gets a tab of its own
+  const [plugins, setPlugins] = useState([]);
+  const loadPlugins = useCallback(() => api("/api/v1/plugins", { background: true }).then((r) => setPlugins(r.plugins || [])).catch(() => {}), []);
+  useEffect(() => { if (me && !me.must_change) loadPlugins(); else setPlugins([]); }, [me, loadPlugins]);
+  useEffect(() => { if (tab.startsWith("px:") && !plugins.some((p) => "px:" + p.name === tab && p.running)) setTab("nodes"); }, [plugins, tab]);
 
   useEffect(() => { api("/api/v1/me").then(setMe).catch(() => setMe(null)); }, []);
   useEffect(() => { document.documentElement.lang = lang === "zh-TW" ? "zh-Hant" : "en"; writePrefs({ lang }); }, [lang]);
@@ -64,7 +69,10 @@ export default function Manager() {
   }, [t]);
 
   const admin = me && me.priv >= 15;
-  const TABS = [["nodes", 1], ["traffic", 1], ["host", 1], ["events", 1], ["firmware", 15], ["backups", 15], ["accounts", 15], ["audit", 15], ["settings", 1]];
+  const L = lang === "zh-TW" ? "zh" : "en";
+  const pluginTabs = plugins.filter((p) => p.running && p.tab).map((p) => ["px:" + p.name, p.tab.priv || 1, p.tab.label]);
+  const TABS = [["nodes", 1], ["traffic", 1], ...pluginTabs, ["host", 1], ["events", 1], ["firmware", 15], ["backups", 15], ["accounts", 15],
+    ["plugins", 15], ["audit", 15], ["settings", 1]];
 
   return (
     <div className={"gs-root mgr" + (theme === "light" ? " light" : "")}>
@@ -85,15 +93,18 @@ export default function Manager() {
             <header className="topbar mgr-top">
               <Brand onClick={() => setTab("nodes")} />
               <nav className="mgr-nav">
-                {TABS.filter(([, p]) => me.priv >= p).map(([id]) => (
-                  <button key={id} className={"ws-btn" + (tab === id ? " on" : "")} onClick={() => setTab(id)}>{t("tab." + id)}</button>
+                {TABS.filter(([, p]) => me.priv >= p).map(([id, , label]) => (
+                  <button key={id} className={"ws-btn" + (tab === id ? " on" : "")} onClick={() => setTab(id)}>
+                    {label ? (label[L] || label.en) : t("tab." + id)}</button>
                 ))}
               </nav>
               <span className="mgr-spacer" />
               <UserMenu t={t} me={me} call={call} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme}
                 onLogout={logout} onMe={setMe} />
             </header>
-            <main className="mgr-main">
+            <main className={"mgr-main" + (tab.startsWith("px:") ? " mgr-main-px" : "")}>
+              {tab.startsWith("px:") && <PluginFrame name={tab.slice(3)} lang={lang} theme={theme} />}
+              {tab === "plugins" && admin && <PluginsView t={t} call={call} lang={lang} onChange={loadPlugins} />}
               {tab === "nodes" && <NodesView t={t} call={call} me={me} goTab={setTab} />}
               {tab === "traffic" && <TrafficView t={t} call={call} me={me} />}
               {tab === "host" && <HostView t={t} call={call} me={me} />}
@@ -2238,6 +2249,136 @@ function SettingsView({ t, call, me }) {
         <p className="set-hint">{t("set.aboutBody")}</p>
       </div>
       {admin && <FactoryResetCard t={t} call={call} me={me} />}
+    </section>
+  );
+}
+
+/* ---- plugins: a feature added from a signed package, with a tab of its own ---- */
+function PluginFrame({ name, lang, theme }) {
+  const src = `/px/${encodeURIComponent(name)}/ui/index.html?lang=${lang === "zh-TW" ? "zh" : "en"}&theme=${theme}`;
+  return <iframe className="mgr-plugin-frame" title={name} src={src} />;
+}
+
+function PluginsView({ t, call, lang, onChange }) {
+  const L = lang === "zh-TW" ? "zh" : "en";
+  const lbl = (o) => (o && (o[L] || o.en)) || "";
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  const [log, setLog] = useState(null);             // {name, text}
+  const [removing, setRemoving] = useState(null);   // the plugin whose removal is being confirmed
+  const [purge, setPurge] = useState(false);
+  const [force, setForce] = useState(false);
+  const fileRef = useRef(null);
+  const load = useCallback(async () => {
+    try { setData(await call("/api/v1/plugins", { background: true })); } catch (e) { setErr(e.message); }
+  }, [call]);
+  useEffect(() => { load(); const id = setInterval(load, 3000); return () => clearInterval(id); }, [load]);
+  const act = async (label, fn) => {
+    setBusy(label); setErr("");
+    try { await fn(); } catch (e) { setErr(e.message); }
+    finally { setBusy(""); await load(); onChange(); }
+  };
+  const upload = (file) => act("upload", async () => {
+    const res = await fetch(`/api/v1/plugins/install?filename=${encodeURIComponent(file.name)}`,
+      { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/octet-stream" }, body: file });
+    const text = await res.text();
+    let body = null;
+    try { body = JSON.parse(text); } catch { body = { detail: text }; }
+    if (!res.ok) throw new ApiError(res.status, body);
+    if (fileRef.current) fileRef.current.value = "";
+  });
+  const showLog = async (name) => {
+    try {
+      const r = await fetch(`/api/v1/plugins/${encodeURIComponent(name)}/host-log`, { credentials: "same-origin" });
+      setLog({ name, text: await r.text() });
+    } catch (e) { setErr(e.message); }
+  };
+  const hostState = (p) => {
+    const h = p.host;
+    if (!h) return null;
+    const s = h.state === "ok" ? t("pl.ok") : h.state === "failed" ? t("pl.failed") : h.state === "running" ? t("pl.stepRunning") : t("pl.pending");
+    return <span className={"mgr-badge" + (h.state === "failed" ? " bad" : h.state === "ok" ? "" : " warn")}>{t("pl.host")} {h.action}: {s}</span>;
+  };
+  const plugins = data ? data.plugins : [];
+  const available = (data && data.available) || [];
+  return (
+    <section className="mgr-pane mgr-plugins-pane">
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("pl.installed")}</h3>
+        <p className="set-hint">{t("pl.lead")}</p>
+        {data && data.unsigned_allowed && <p className="set-hint mgr-bad">{t("pl.unsignedOk")}</p>}
+        {err && <p className="mgr-bad">{err}</p>}
+        {data && plugins.length === 0 && <p className="mgr-dim">{t("pl.none")}</p>}
+        {plugins.length > 0 && (
+          <div className="mgr-table-wrap"><table className="mgr-table mgr-plugins">
+            <thead><tr><th>{t("pl.col.plugin")}</th><th>{t("pl.col.version")}</th><th>{t("pl.col.state")}</th><th></th></tr></thead>
+            <tbody>{plugins.map((p) => (
+              <tr key={p.name}>
+                <td><b>{lbl(p.title)}</b><div className="mgr-dim mgr-plugin-desc">{lbl(p.description)}</div></td>
+                <td>{p.version}<div className="mgr-dim">{p.signed_by ? `${t("pl.signed")} ${p.signed_by}` : t("pl.unsigned")}</div></td>
+                <td>
+                  {p.removing ? <span className="mgr-badge warn">{t("pl.removing")}</span>
+                    : p.running ? <span className="mgr-badge">{t("pl.running")}</span>
+                      : p.enabled ? <span className="mgr-badge warn">{t("pl.notRunning")}</span> : <span className="mgr-badge">{t("pl.disabled")}</span>}
+                  {hostState(p)}
+                  {p.error && <div className="mgr-bad mgr-plugin-err">{p.error}</div>}
+                </td>
+                <td className="mgr-plugin-actions">
+                  {!p.removing && (p.enabled
+                    ? <button className="ws-btn" disabled={!!busy} onClick={() => act("disable", () => call(`/api/v1/plugins/${p.name}/disable`, { method: "POST" }))}>{t("pl.disable")}</button>
+                    : <button className="ws-btn" disabled={!!busy} onClick={() => act("enable", () => call(`/api/v1/plugins/${p.name}/enable`, { method: "POST" }))}>{t("pl.enable")}</button>)}
+                  {!p.removing && <button className="ws-btn" disabled={!!busy} onClick={() => { setRemoving(p); setPurge(false); setForce(false); }}>{t("pl.remove")}</button>}
+                  {p.host_steps && p.host_steps.length > 0 && <button className="ws-btn" onClick={() => showLog(p.name)}>{t("pl.hostLog")}</button>}
+                </td>
+              </tr>))}</tbody>
+          </table></div>
+        )}
+      </div>
+      <div className="sys-card">
+        <h3 className="sys-card-title">{t("pl.available")}</h3>
+        {data && available.length === 0 && <p className="mgr-dim">{t("pl.noneAvailable")}</p>}
+        {available.map((a) => (
+          <div key={a.file} className="mgr-plugin-avail">
+            {a.error ? <span className="mgr-bad">{a.file}: {a.error}</span> : (
+              <>
+                <div>
+                  <b>{lbl(a.title)}</b> <span className="mgr-dim">{a.version}</span>
+                  {a.installed && <span className="mgr-tag">{t("pl.installedV")} {a.installed}</span>}
+                  <div className="mgr-dim mgr-plugin-desc">{lbl(a.description)}</div>
+                  {a.host_note && <div className="mgr-dim mgr-plugin-desc">{t("pl.hostNote")} {lbl(a.host_note)}</div>}
+                </div>
+                <button className="ws-btn" disabled={!!busy}
+                  onClick={() => act("install", () => call("/api/v1/plugins/install-available", { method: "POST", body: { file: a.file } }))}>
+                  {a.installed ? (a.installed === a.version ? t("pl.reinstall") : t("pl.update")) : t("pl.install")}</button>
+              </>)}
+          </div>))}
+        <div className="mgr-plugin-upload">
+          <input type="file" accept=".gmp" ref={fileRef} />
+          <button className="ws-btn" disabled={!!busy} onClick={() => { const f = fileRef.current && fileRef.current.files[0]; if (f) upload(f); }}>{t("pl.upload")}</button>
+          {busy && <span className="mgr-dim">{t("common.working")}</span>}
+        </div>
+      </div>
+      {removing && (
+        <Modal title={t("pl.remove") + ": " + lbl(removing.title)} onClose={() => setRemoving(null)} warn>
+          <p>{t("pl.removeAsk")}</p>
+          {removing.host_steps && removing.host_steps.includes("remove") && (
+            <>
+              <label className="mgr-check"><input type="checkbox" checked={purge} onChange={(e) => setPurge(e.target.checked)} />{t("pl.purge")}</label>
+              <label className="mgr-check"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />{t("pl.force")}</label>
+            </>)}
+          <div className="mgr-plugin-actions mgr-plugin-confirm">
+            <button className="ws-btn" onClick={() => setRemoving(null)}>{t("common.cancel")}</button>
+            <button className="ws-btn mgr-danger" onClick={() => {
+              const p = removing; setRemoving(null);
+              act("remove", () => call(`/api/v1/plugins/${p.name}?purge=${purge ? 1 : 0}&force=${force ? 1 : 0}`, { method: "DELETE" }));
+            }}>{t("pl.remove")}</button>
+          </div>
+        </Modal>)}
+      {log && (
+        <Modal title={t("pl.hostLog") + ": " + log.name} onClose={() => setLog(null)}>
+          <pre className="mgr-plugin-log">{log.text || t("pl.noLog")}</pre>
+        </Modal>)}
     </section>
   );
 }
