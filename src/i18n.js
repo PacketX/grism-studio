@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.289.0";
+export const STUDIO_VERSION = "2.290.0";
 
 export const I18N = {
   en: {
@@ -433,7 +433,7 @@ export const I18N = {
     "mod.applied": "Applied. The device reloads its configuration.", "mod.appliedArgs": "Settings were changed too; the engine restarts for them.",
     "mod.appliedSnapshot": "The configuration it replaced is kept as a pre-submit snapshot (Export tab).",
     "mod.released": "Released.", "mod.pick": "choose…", "mod.missing": "Still needed",
-    "mod.rowAdd": "+ Rule", "mod.rowUp": "Move up", "mod.rowDown": "Move down", "mod.rowDel": "Remove the rule",
+    "mod.rowAdd": "+ Add a row", "mod.rowUp": "Move up", "mod.rowDown": "Move down", "mod.rowDel": "Remove the row",
     "mod.sessions": "MEC sessions", "mod.linkUp": "link up", "mod.linkDown": "link down",
     "mod.readOnly": "Changing modules takes an operator account.", "mod.signIn": "Sign in to see the device's modules.",
     "mod.unavailable": "The modules could not be read (the device needs pywww 1.50 / 1.48 or later).",
@@ -1545,7 +1545,7 @@ export const I18N = {
     "mod.applied": "已套用,裝置重新載入設定中。", "mod.appliedArgs": "同時改了系統設定,引擎會因此重啟。",
     "mod.appliedSnapshot": "被取代的設定已存成提交前快照(匯出頁)。",
     "mod.released": "已解除。", "mod.pick": "請選擇…", "mod.missing": "尚未填",
-    "mod.rowAdd": "+ 規則", "mod.rowUp": "上移", "mod.rowDown": "下移", "mod.rowDel": "移除這條規則",
+    "mod.rowAdd": "+ 新增一列", "mod.rowUp": "上移", "mod.rowDown": "下移", "mod.rowDel": "移除這一列",
     "mod.sessions": "MEC 連線數", "mod.linkUp": "連線正常", "mod.linkDown": "無連線",
     "mod.readOnly": "修改模組需要操作者以上的帳號。", "mod.signIn": "登入後才看得到裝置的模組。",
     "mod.unavailable": "無法讀取模組(裝置需要 pywww 1.50 / 1.48 以上)。",
