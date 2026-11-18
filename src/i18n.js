@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.287.0";
+export const STUDIO_VERSION = "2.288.0";
 
 export const I18N = {
   en: {
@@ -408,8 +408,8 @@ export const I18N = {
     // modules: a feature as a few fields (device-side templates, pywww modules.py)
     "set.modules": "Modules",
     "mod.title": "Modules",
-    "mod.note": "A module is a feature described by a few fields. The modules are listed here from the start: Apply puts one on the device and the pipeline page becomes its -- the module's fields are set under Pipeline > MEC and applied there. Release takes it off again.",
-    "mod.replaceNote": "Once applied, the pipeline shows this module's settings and the packet capture only. The device's packet-processing configuration (run.xml) is replaced when the fields under Pipeline > MEC are applied; what it replaces is kept as a pre-submit snapshot on the Export tab.",
+    "mod.note": "A module is a feature described by a few fields. The modules are listed here from the start: Apply puts one on the device and the pipeline gets the module's tab -- its fields are set under Pipeline > MEC and applied there. Release takes it off again.",
+    "mod.replaceNote": "Once applied, the pipeline gets a MEC tab in front of its others. The device's packet-processing configuration (run.xml) is replaced when the fields under Pipeline > MEC are applied; what it replaces is kept as a pre-submit snapshot on the Export tab.",
     "mod.detailWhere": "Every field, the cell / UE / SPID rules included, is set under Pipeline > MEC.",
     "mod.detailNote": "Changes here are applied to the device as they are. Releasing the module is done under Settings > Modules.",
     "mod.noInstance": "No MEC module applied yet: apply one under Settings > Modules.",
@@ -433,7 +433,6 @@ export const I18N = {
     "mod.applied": "Applied. The device reloads its configuration.", "mod.appliedArgs": "Settings were changed too; the engine restarts for them.",
     "mod.appliedSnapshot": "The configuration it replaced is kept as a pre-submit snapshot (Export tab).",
     "mod.released": "Released.", "mod.pick": "choose…", "mod.missing": "Still needed",
-    "mod.rawXml": "Raw XML", "mod.rawXmlNote": "The device's run.xml as it runs now.", "mod.rawXmlFailed": "The device's run.xml could not be read.", "mod.copy": "Copy", "mod.copied": "Copied",
     "mod.rowAdd": "+ Rule", "mod.rowUp": "Move up", "mod.rowDown": "Move down", "mod.rowDel": "Remove the rule",
     "mod.sessions": "MEC sessions", "mod.linkUp": "link up", "mod.linkDown": "link down",
     "mod.readOnly": "Changing modules takes an operator account.", "mod.signIn": "Sign in to see the device's modules.",
@@ -1521,8 +1520,8 @@ export const I18N = {
     // modules
     "set.modules": "模組",
     "mod.title": "模組",
-    "mod.note": "模組是「用幾個欄位描述一個功能」。模組一開始就列在這裡:按套用把模組放上裝置,封包處理頁就只剩這個模組與封包側錄,模組的欄位都在 封包處理 → MEC 設定並套用;解除則把模組從裝置拿掉。",
-    "mod.replaceNote": "套用後,封包處理頁只剩這個模組的設定與封包側錄;在 封包處理 → MEC 填好欄位按套用時,裝置原本的封包處理設定(run.xml)才會被取代,被取代的設定會存成匯出頁的「提交前快照」。",
+    "mod.note": "模組是「用幾個欄位描述一個功能」。模組一開始就列在這裡:按套用把模組放上裝置,封包處理頁就多出這個模組的分頁,模組的欄位都在 封包處理 → MEC 設定並套用;解除則把模組從裝置拿掉。",
+    "mod.replaceNote": "套用後,封包處理頁最前面多出 MEC 分頁;在 封包處理 → MEC 填好欄位按套用時,裝置原本的封包處理設定(run.xml)才會被取代,被取代的設定會存成匯出頁的「提交前快照」。",
     "mod.detailWhere": "所有欄位(含 cell / UE / SPID 規則)都在 封包處理 → MEC 設定。",
     "mod.detailNote": "這裡的修改按套用即生效。要解除模組請到 設定 → 模組。",
     "mod.noInstance": "尚未套用 MEC 模組:到 設定 → 模組 套用。",
@@ -1546,7 +1545,6 @@ export const I18N = {
     "mod.applied": "已套用,裝置重新載入設定中。", "mod.appliedArgs": "同時改了系統設定,引擎會因此重啟。",
     "mod.appliedSnapshot": "被取代的設定已存成提交前快照(匯出頁)。",
     "mod.released": "已解除。", "mod.pick": "請選擇…", "mod.missing": "尚未填",
-    "mod.rawXml": "原始 XML", "mod.rawXmlNote": "裝置目前執行中的 run.xml。", "mod.rawXmlFailed": "讀不到裝置的 run.xml。", "mod.copy": "複製", "mod.copied": "已複製",
     "mod.rowAdd": "+ 規則", "mod.rowUp": "上移", "mod.rowDown": "下移", "mod.rowDel": "移除這條規則",
     "mod.sessions": "MEC 連線數", "mod.linkUp": "連線正常", "mod.linkDown": "無連線",
     "mod.readOnly": "修改模組需要操作者以上的帳號。", "mod.signIn": "登入後才看得到裝置的模組。",

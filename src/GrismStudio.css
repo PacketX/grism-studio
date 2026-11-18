@@ -2373,7 +2373,6 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .mod-form-card .set-actions{position:sticky; bottom:0; z-index:2; background:var(--panel-2); margin:14px -18px -16px; padding:12px 18px 14px; border-top:1px solid var(--line); border-radius:0 0 12px 12px;}
 .mod-preview .set-hint{margin-bottom:8px;}
 .mod-preview code{margin-right:6px;}
-.mod-xml{max-height:420px; overflow:auto; font-size:11.5px; line-height:1.45; background:var(--bg); border:1px solid var(--line-2); border-radius:8px; padding:10px 12px; white-space:pre;}
 .mod-list td.mod-summary{max-width:360px;}
 .mod-inline{margin-top:4px; font-size:12px;}
 .mod-port{display:inline-block; font-family:var(--mono); font-size:12px; padding:1px 7px; border-radius:10px; border:1px solid var(--line-2); margin:0 4px 2px 0;}
@@ -2389,8 +2388,6 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .mod-status{display:inline-block; font-size:11.5px; font-weight:600; padding:2px 9px; border-radius:10px; border:1px solid var(--line-2); color:var(--txt-dim); margin-left:8px; vertical-align:middle;}
 .mod-status.on{border-color:var(--match); color:var(--match);}
 .mod-status.on.part{border-color:var(--warn); color:var(--warn);}
-.mod-raw{margin:6px 0 12px;}
-.mod-raw .set-actions{position:static; margin:0 0 6px; padding:0; border:0; justify-content:flex-start; gap:10px;}
 
 /* a field that belongs to the choice above it */
 .mod-field-dep{border-left:3px solid var(--accent-2); padding-left:12px; margin-top:-4px;}

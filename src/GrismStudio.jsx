@@ -182,8 +182,8 @@ export default function GrismStudio() {
   // Overview is a standalone page. Config holds the editing/build tabs. System
   // holds device status pages. Future feature pages become new workspaces.
   /* The module instances on the device (Settings > Modules). With a MEC
-     instance applied, the pipeline is the module's: its tabs are the MEC
-     settings and the capture, the chain editor stays out of the way. */
+     instance applied, the pipeline gets a MEC tab in front of its ordinary
+     tabs (the user, 2026-11-18: the editor's tabs stay; 2.287 hid them). */
   const [modInstances, setModInstances] = useState([]);
   const loadModules = useCallback(async () => {
     try {
@@ -196,7 +196,7 @@ export default function GrismStudio() {
   const moduleMode = modInstances.some((i) => i.type === "mec");
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
-    { id: "pipeline", tabs: moduleMode ? ["mec", "capture"] : ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
+    { id: "pipeline", tabs: [...(moduleMode ? ["mec"] : []), "chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
     { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre", "trafficMec"] },
     { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
@@ -210,8 +210,8 @@ export default function GrismStudio() {
     if (workspace !== "pipeline") { setHealthOpen(false); setAdvOpen(false); }
   }, [workspace]);
   const gotoWorkspace = (wid) => { const w = WORKSPACES.find((x) => x.id === wid); if (w) setTab(w.tabs[0]); };
+  // the MEC tab goes with the instance: released while it is open, the editor shows
   useEffect(() => {
-    if (moduleMode && ["chain", "inputs", "outputs", "actions", "filters", "simulate", "export"].includes(tab)) setTab("mec");
     if (!moduleMode && tab === "mec") setTab("chain");
   }, [moduleMode, tab]);
 
@@ -923,17 +923,12 @@ export default function GrismStudio() {
                         <span className="tab-changed" title={t("chg.tabTip")} aria-label={t("chg.tabTip")} />}
                     </button>
                   );
-                  if (moduleMode) {
-                    return (
-                      <nav className="tabs ws-tabs">
-                        {tabBtn("mec")}
-                        <span className="tab-divider" aria-hidden="true" />
-                        {tabBtn("capture")}
-                      </nav>
-                    );
-                  }
                   return (
                     <nav className="tabs ws-tabs">
+                      {/* the module's own page first, set apart from the editor's
+                          tabs: it rewrites the configuration they show */}
+                      {moduleMode && tabBtn("mec")}
+                      {moduleMode && <span className="tab-divider" aria-hidden="true" />}
                       {tabBtn("chain")}
                       {tabBtn("filters")}
                       <span className={"tab-group" + (hidden > 0 ? " collapsed" : "")}>

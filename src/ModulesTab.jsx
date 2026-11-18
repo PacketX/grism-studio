@@ -18,7 +18,8 @@
      confirm -- the apply that first configures an instance replaces the
      device's packet-processing configuration with the module's (the device
      keeps the old run.xml as a pre-submit snapshot, listed on the Export
-     tab) -- and a Raw XML button that shows the device's running run.xml.
+     tab). The editor's own tabs stay beside it; the Raw XML button 2.285-
+     2.287 had here went at the user's word (the Export tab shows the XML).
 
    Field types the schema may use: port, ip, cidr_list, text, int, bool, enum,
    table (columns of the same types, minus table). Labels come as {en, zh}.
@@ -152,42 +153,11 @@ function TableField({ f, rows, onChange, lang, tr }) {
     </div>);
 }
 
-/* The device's run.xml as it runs now -- what the module made -- read on
-   demand and shown read-only, with a copy button. */
-function RawXml({ tr }) {
-  const [state, setState] = useState({ text: null, err: false, copied: false });
-  useEffect(() => {
-    let gone = false;
-    (async () => {
-      try {
-        const r = await fetch("/grism/task/get_running_file?filename=run.xml", { credentials: "include" });
-        if (!r.ok && r.status !== 404) throw new Error("HTTP " + r.status);
-        const text = r.ok ? await r.text() : "";
-        if (!gone) setState({ text, err: false, copied: false });
-      } catch { if (!gone) setState({ text: null, err: true, copied: false }); }
-    })();
-    return () => { gone = true; };
-  }, []);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(state.text || ""); setState((s) => ({ ...s, copied: true })); setTimeout(() => setState((s) => ({ ...s, copied: false })), 1500); }
-    catch { /* no clipboard: the text is selectable */ }
-  };
-  return (
-    <div className="mod-raw">
-      <div className="set-actions">
-        <span className="dim">{tr("mod.rawXmlNote")}</span>
-        <button className="copy-btn" disabled={!state.text} onClick={copy}>{state.copied ? tr("mod.copied") : tr("mod.copy")}</button>
-      </div>
-      {state.err ? <p className="set-hint err">{tr("mod.rawXmlFailed")}</p> : <pre className="mod-xml">{state.text ?? "…"}</pre>}
-    </div>);
-}
-
 /* The form for one instance. `fields` says which of the schema's fields to
    show. Apply goes through the confirm the parent shows; Cancel puts the
    fields back to what the device holds. */
-function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, onApply, title, withRaw = false }) {
+function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, onApply, title }) {
   const [form, setForm] = useState(() => formFromParams(module.schema, inst?.params || {}));
-  const [rawOpen, setRawOpen] = useState(false);
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const reset = () => setForm(formFromParams(module.schema, inst?.params || {}));
   const dirty = JSON.stringify(form) !== JSON.stringify(formFromParams(module.schema, inst?.params || {}));
@@ -208,11 +178,9 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
       {visible.filter((f) => f.type === "table").map((f) => (
         <TableField key={f.key} f={f} rows={form[f.key] || []} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
       ))}
-      {withRaw && rawOpen && <RawXml tr={tr} />}
-      {notice && <p className={"set-hint " + (notice.kind === "ok" ? "ok" : "err")}>{notice.msg}</p>}
+      {notice &&<p className={"set-hint " + (notice.kind === "ok" ? "ok" : "err")}>{notice.msg}</p>}
       {missing.length > 0 && <p className="set-hint dim">{tr("mod.missing")}: {missing.map((f) => L(f.label, lang)).join(", ")}</p>}
       <div className="set-actions">
-        {withRaw && <button className="copy-btn" onClick={() => setRawOpen((v) => !v)} aria-expanded={rawOpen}>{rawOpen ? "▾ " : "▸ "}{tr("mod.rawXml")}</button>}
         <button className="copy-btn" disabled={busy != null || !dirty} onClick={reset}>{tr("mod.cancel")}</button>
         <button className="sys-refresh" disabled={!canOperate || busy != null || missing.length > 0} onClick={() => onApply(form)}>{busy === "apply" ? tr("mod.applying") : tr("mod.apply")}</button>
       </div>
@@ -348,7 +316,7 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
             <p className="set-hint">{tr("mod.noInstance")}</p></section>)}
         {m && list.map((inst) => (
           <ModuleForm key={formKey + ":" + inst.id + ":" + JSON.stringify(inst.params)} module={m} inst={inst} fields={m.schema} lang={lang} tr={tr}
-            canOperate={canOperate} busy={busy} notice={noticeFor(inst.type)} withRaw
+            canOperate={canOperate} busy={busy} notice={noticeFor(inst.type)}
             onApply={(form) => setConfirm({ kind: "apply", type: inst.type, id: inst.id, form, name: L(m.name, lang), update: !handwritten })}
             title={<>
               <h3 className="sys-card-title">{L(m.name, lang)} <span className="dim">#{inst.id}{inst.name ? " · " + inst.name : ""}</span>
