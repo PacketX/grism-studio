@@ -68,6 +68,8 @@ function formFromParams(schema, params) {
         f.columns.forEach((c) => { r[c.key] = c.type === "bool" ? !!row?.[c.key] : (row?.[c.key] == null ? (c.default ?? "") : (Array.isArray(row[c.key]) ? row[c.key].join(", ") : String(row[c.key]))); });
         return r;
       });
+      // a table that must have a row starts with one, ready to fill in
+      if (f.required && form[f.key].length === 0) form[f.key] = [emptyRow(f.columns)];
     } else if (f.type === "bool") form[f.key] = v == null ? !!f.default : !!v;
     else if (f.type === "cidr_list") form[f.key] = joinList(v);
     else form[f.key] = v == null ? (f.default ?? "") : String(v);
@@ -125,6 +127,8 @@ function TableField({ f, rows, onChange, lang, tr }) {
                     <td key={c.key}>
                       {c.type === "enum" || c.type === "port" ? (
                         <select value={row[c.key] ?? ""} onChange={(e) => patch(i, c.key, e.target.value)}>
+                          {/* an unset cell says so, rather than looking like the first option */}
+                          {!row[c.key] && <option value="">{c.required ? tr("mod.pick") : "—"}</option>}
                           {(c.options || []).map((o) => <option key={o.value} value={o.value}>{typeof o.label === "object" ? L(o.label, lang) : (o.label ?? o.value)}</option>)}
                         </select>
                       ) : c.type === "bool" ? (
@@ -165,19 +169,32 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
   // only while that field has the value
   const shown = (f) => !f.when || String(form[f.when.key] ?? "") === String(f.when.value);
   const visible = fields.filter(shown);
-  const missing = visible.filter((f) => f.required && !String(form[f.key] ?? "").trim());
+  // a required field is empty; a table is missing when it must have a row and
+  // has none, or when any row leaves a required column empty
+  const blank = (v) => !String(v ?? "").trim();
+  const missing = visible.filter((f) => (f.type === "table"
+    ? ((f.required && (form[f.key] || []).length === 0)
+      || (form[f.key] || []).some((row) => (f.columns || []).some((c) => c.required && blank(row[c.key]))))
+    : (f.required && blank(form[f.key]))));
+  // the fields in the schema's order; a table takes a row of its own between
+  // the grids of plain fields, so it sits where the schema puts it
+  const segments = [];
+  visible.forEach((f) => {
+    if (f.type === "table") segments.push({ table: f });
+    else if (segments.length && segments[segments.length - 1].fields) segments[segments.length - 1].fields.push(f);
+    else segments.push({ fields: [f] });
+  });
   return (
     <section className="sys-card wide mod-form-card mod-card">
       {title}
-      <div className="mod-form">
-        {visible.filter((f) => f.type !== "table").map((f) => (
-          <Field key={f.key} f={f} value={form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr}
-            dependent={!!f.when} />
-        ))}
-      </div>
-      {visible.filter((f) => f.type === "table").map((f) => (
-        <TableField key={f.key} f={f} rows={form[f.key] || []} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr} />
-      ))}
+      {segments.map((s, i) => (s.table
+        ? <TableField key={s.table.key} f={s.table} rows={form[s.table.key] || []} onChange={(v) => setField(s.table.key, v)} lang={lang} tr={tr} />
+        : <div key={"g" + i} className="mod-form">
+          {s.fields.map((f) => (
+            <Field key={f.key} f={f} value={form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr}
+              dependent={!!f.when} />
+          ))}
+        </div>))}
       {notice &&<p className={"set-hint " + (notice.kind === "ok" ? "ok" : "err")}>{notice.msg}</p>}
       {missing.length > 0 && <p className="set-hint dim">{tr("mod.missing")}: {missing.map((f) => L(f.label, lang)).join(", ")}</p>}
       <div className="set-actions">
@@ -239,7 +256,10 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
   }, [loggedIn, instances]);
 
   const moduleOf = (type) => (catalogue || []).find((m) => m.type === type);
-  const instPorts = (inst) => ["ran_port", "core_port", "edge_port"].map((k) => inst.params?.[k]).filter(Boolean);
+  // the RAN and core ports, then each row's edge port (version 1 instances
+  // came with edge_port; the device migrates them, but be safe)
+  const instPorts = (inst) => [...new Set([inst.params?.ran_port, inst.params?.core_port, inst.params?.edge_port,
+    ...((inst.params?.edges || []).map((e) => e?.port))].filter(Boolean))];
   const portChips = (inst) => instPorts(inst).map((p) => (
     <span key={p} className={"mod-port " + (portLinks[p] === true ? "ok" : portLinks[p] === false ? "bad" : "")} title={portLinks[p] === true ? tr("mod.linkUp") : portLinks[p] === false ? tr("mod.linkDown") : ""}>{p}</span>));
   const noticeFor = (type) => (notice && notice.type === type ? notice : null);
