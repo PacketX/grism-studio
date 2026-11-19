@@ -207,7 +207,7 @@ export default function GrismStudio() {
   const docWorkspace = workspace === "overview" || workspace === "pipeline";
   // leaving the pipeline closes its popovers and folds the advanced group back up
   useEffect(() => {
-    if (workspace !== "pipeline") { setHealthOpen(false); setAdvOpen(false); }
+    if (workspace !== "pipeline") { setHealthOpen(false); setAdvOpen(false); setEditorOpen(false); }
   }, [workspace]);
   const gotoWorkspace = (wid) => { const w = WORKSPACES.find((x) => x.id === wid); if (w) setTab(w.tabs[0]); };
   // the MEC tab goes with the instance: released while it is open, the editor shows
@@ -301,6 +301,7 @@ export default function GrismStudio() {
   const acctPos = useAnchoredPos(acctOpen, acctBtnRef, 250);
   const [navOpen, setNavOpen] = useState(true);          // sub-tabs expanded beside the workspace
   const [advOpen, setAdvOpen] = useState(false);         // advanced group revealed by clicking its label
+  const [editorOpen, setEditorOpen] = useState(false);   // module mode: the editor's tabs (chains .. export) revealed by clicking their label
   // jump to the tab (and item) a problem belongs to. Shared by the Export list and
   // the topbar health popover.
   // Navigate to a sub-tab from outside the tab bar (Overview links, problem lists).
@@ -923,12 +924,42 @@ export default function GrismStudio() {
                         <span className="tab-changed" title={t("chg.tabTip")} aria-label={t("chg.tabTip")} />}
                     </button>
                   );
+                  // In module mode the editor's tabs (chains .. export) fold away
+                  // behind one label, since what they show is what the module
+                  // made (the user, 2026-11-19: 鏈結到匯出這邊可以收納起來 需要再點開);
+                  // being on one of them keeps them open, folding from there
+                  // goes to the module's page. A pending submit still shows on
+                  // the folded label.
+                  const editorKeys = ["chain", "filters", "inputs", "outputs", "actions", "simulate", "export"];
+                  const onEditorTab = editorKeys.includes(tab);
+                  const editorShown = !moduleMode || editorOpen || onEditorTab;
+                  const foldEditor = () => { setEditorOpen(false); setAdvOpen(false); if (onEditorTab) setTab("mec"); };
+                  const editorCount = (doc.chains?.length ?? 0) + (doc.filters?.length ?? 0) + advCount;
                   return (
                     <nav className="tabs ws-tabs">
                       {/* the module's own page first, set apart from the editor's
                           tabs: it rewrites the configuration they show */}
                       {moduleMode && tabBtn("mec")}
                       {moduleMode && <span className="tab-divider" aria-hidden="true" />}
+                      {moduleMode && (
+                        <span className={"tab-group" + (editorShown ? "" : " collapsed")}>
+                          {editorShown ? (
+                            <button className="tab-group-label as-button" onClick={foldEditor}
+                              title={t("nav.editorHide")} aria-label={t("nav.editorHide")} aria-expanded={true}>
+                              {t("nav.editor")}
+                              <span className="tab-group-caret" aria-hidden="true">▲</span>
+                            </button>
+                          ) : (
+                            <button className="tab-group-label as-button" onClick={() => setEditorOpen(true)}
+                              title={t("nav.editorTip")} aria-label={t("nav.editorTip")} aria-expanded={false}>
+                              {t("nav.editor")}
+                              {editorCount > 0 && <span className="tab-badge">{editorCount}</span>}
+                              {(changes?.total ?? 0) > 0 && <span className="tab-badge pending">{changes.total}</span>}
+                              <span className="tab-group-caret" aria-hidden="true">▼</span>
+                            </button>
+                          )}
+                        </span>)}
+                      {editorShown && <>
                       {tabBtn("chain")}
                       {tabBtn("filters")}
                       <span className={"tab-group" + (hidden > 0 ? " collapsed" : "")}>
@@ -950,6 +981,7 @@ export default function GrismStudio() {
                       </span>
                       {tabBtn("simulate")}
                       {tabBtn("export")}
+                      </>}
                       {/* capture submits a temporary run of its own — set it apart
                           from the tabs that build the persistent configuration */}
                       <span className="tab-divider" aria-hidden="true" />

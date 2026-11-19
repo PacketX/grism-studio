@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.294.0";
+export const STUDIO_VERSION = "2.295.0";
 
 export const I18N = {
   en: {
@@ -691,6 +691,8 @@ export const I18N = {
     "tf.d.inRuntCrcErrorPackets": "Runt CRC errors", "tf.d.inOversizeErrorPackets": "Oversize errors",
     "tf.d.inOversizeCrcErrorPackets": "Oversize CRC errors",
     "nav.advanced": "Advanced",
+    "nav.editor": "Editor", "nav.editorTip": "Chains, filters, inputs / outputs / actions, simulate and export: the configuration the module made -- click to open",
+    "nav.editorHide": "Fold the editor's tabs away",
     "nav.advancedTip": "Inputs, outputs and actions — hover to reveal",
     "nav.advancedHide": "Fold these away",
     "ov.tmplBannerTitle": "You're viewing a template",
@@ -1811,6 +1813,8 @@ export const I18N = {
     "tf.d.inRuntCrcErrorPackets": "Runt CRC 錯誤", "tf.d.inOversizeErrorPackets": "超長錯誤",
     "tf.d.inOversizeCrcErrorPackets": "超長 CRC 錯誤",
     "nav.advanced": "進階",
+    "nav.editor": "編輯器", "nav.editorTip": "鏈結、篩選器、輸入/輸出/動作、模擬、匯出:模組產生出來的設定,點一下展開",
+    "nav.editorHide": "收起編輯器的分頁",
     "nav.advancedTip": "Inputs、outputs 與 actions — 滑鼠移過即展開",
     "nav.advancedHide": "收回",
     "ov.tmplBannerTitle": "目前顯示的是範本",
