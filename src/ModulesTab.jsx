@@ -19,7 +19,12 @@
      device's packet-processing configuration with the module's (the device
      keeps the old run.xml as a pre-submit snapshot, listed on the Export
      tab). The editor's own tabs stay beside it; the Raw XML button 2.285-
-     2.287 had here went at the user's word (the Export tab shows the XML).
+     2.287 had here (the running run.xml) went at the user's word (the Export
+     tab shows the XML). Preview XML (2.292.0, the user's ask) is a different
+     thing: what the device *would* write for the fields as they stand --
+     preview_module, nothing written -- the module's elements, the whole
+     candidate run.xml and the settings it would change, with the device's
+     validation of it.
 
    Field types the schema may use: port, ip, cidr_list, text, int, bool, enum,
    table (columns of the same types, minus table). Labels come as {en, zh}.
@@ -159,12 +164,57 @@ function TableField({ f, rows, onChange, lang, tr }) {
 
 /* The form for one instance. `fields` says which of the schema's fields to
    show. Apply goes through the confirm the parent shows; Cancel puts the
-   fields back to what the device holds. */
+   fields back to what the device holds; Preview XML asks the device what it
+   would write for the fields as they stand and shows it, writing nothing. */
 function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, onApply, title }) {
   const [form, setForm] = useState(() => formFromParams(module.schema, inst?.params || {}));
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const reset = () => setForm(formFromParams(module.schema, inst?.params || {}));
   const dirty = JSON.stringify(form) !== JSON.stringify(formFromParams(module.schema, inst?.params || {}));
+  // the preview: null, { loading }, { data } (preview_module's answer) or { err }
+  const [preview, setPreview] = useState(null);
+  const [pvView, setPvView] = useState("xml");     // xml (the module's elements) | run (the whole run.xml) | args
+  const [copied, setCopied] = useState(false);
+  const doPreview = async () => {
+    setPreview({ loading: true }); setPvView("xml"); setCopied(false);
+    try {
+      const data = await postJson("/grism/task/preview_module", { type: module.type, id: inst?.id, params: form, mode: "replace" });
+      setPreview({ data });
+    } catch (e) { setPreview({ err: e.message }); }
+  };
+  const pv = preview?.data;
+  const pvArgs = !!pv && (Object.keys(pv.args?.args || {}).length > 0 || Object.keys(pv.args?.["in-tunnels"] || {}).length > 0);
+  const pvText = pv ? (pvView === "run" ? pv.run_xml : pvView === "args" ? (pvArgs ? pv.configset : "") : pv.xml) || "" : "";
+  const copyPreview = async () => {
+    try { await navigator.clipboard.writeText(pvText); setCopied(true); setTimeout(() => setCopied(false), 1500); }
+    catch { /* no clipboard: the text is selectable */ }
+  };
+  const previewModal = preview && (
+    <div className="modal-scrim mod-fixed" onClick={() => setPreview(null)}>
+      <div className="modal mod-preview" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">{tr("mod.previewTitle").replace("{name}", L(module.name, lang))}</div>
+        {preview.loading && <p className="modal-body">{tr("mod.previewing")}</p>}
+        {preview.err && <p className="set-hint err">{tr("mod.previewFailed")} {preview.err}</p>}
+        {pv && (<>
+          <p className="modal-body">{tr("mod.previewNote")}{pv.replaced_config ? " " + tr("mod.previewReplaces") : ""}</p>
+          {pv.validate && pv.validate.valid === false && (
+            <p className="set-hint err">{tr("mod.previewInvalid")} {(pv.validate.problems || []).map((p) => (p.where ? p.where + ": " : "") + p.msg).join("; ")}</p>)}
+          {pv.warnings?.length > 0 && <p className="set-hint warn">{tr("mod.previewWarn")} {pv.warnings.join("; ")}</p>}
+          <div className="mod-pv-tabs">
+            <button className={"copy-btn" + (pvView === "xml" ? " on" : "")} onClick={() => setPvView("xml")}>{tr("mod.previewBlock")}</button>
+            <button className={"copy-btn" + (pvView === "run" ? " on" : "")} onClick={() => setPvView("run")}>{tr("mod.previewRun")}</button>
+            <button className={"copy-btn" + (pvView === "args" ? " on" : "")} onClick={() => setPvView("args")}>{tr("mod.previewArgs")}</button>
+          </div>
+          {pvView === "args" && !pvArgs
+            ? <p className="set-hint dim mod-xml-empty">{tr("mod.previewNoArgs")}</p>
+            : <pre className="mod-xml">{pvText}</pre>}
+        </>)}
+        <div className="mod-pv-actions">
+          <button className="copy-btn" disabled={!pvText} onClick={copyPreview}>{copied ? tr("mod.copied") : tr("mod.copy")}</button>
+          <button className="sys-refresh" onClick={() => setPreview(null)}>{tr("mod.close")}</button>
+        </div>
+      </div>
+    </div>);
   // a field with `when` belongs to another field's choice: shown, and required,
   // only while that field has the value
   const shown = (f) => !f.when || String(form[f.when.key] ?? "") === String(f.when.value);
@@ -198,9 +248,11 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
       {notice &&<p className={"set-hint " + (notice.kind === "ok" ? "ok" : "err")}>{notice.msg}</p>}
       {missing.length > 0 && <p className="set-hint dim">{tr("mod.missing")}: {missing.map((f) => L(f.label, lang)).join(", ")}</p>}
       <div className="set-actions">
+        <button className="copy-btn mod-preview-btn" disabled={!canOperate || busy != null || !!preview?.loading} onClick={doPreview}>{preview?.loading ? tr("mod.previewing") : tr("mod.previewXml")}</button>
         <button className="copy-btn" disabled={busy != null || !dirty} onClick={reset}>{tr("mod.cancel")}</button>
         <button className="sys-refresh" disabled={!canOperate || busy != null || missing.length > 0} onClick={() => onApply(form)}>{busy === "apply" ? tr("mod.applying") : tr("mod.apply")}</button>
       </div>
+      {previewModal}
     </section>);
 }
 
