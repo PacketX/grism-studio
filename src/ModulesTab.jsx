@@ -112,6 +112,11 @@ function Field({ f, value, onChange, lang, tr, dependent = false }) {
     </div>);
 }
 
+/* a column with `when: {key, value}` belongs to rows where that other column
+   has the value (an edge port only to a break-out rule): elsewhere its cell is
+   greyed out and not required */
+const colOn = (c, row) => !c.when || String(row?.[c.when.key] ?? "") === String(c.when.value);
+
 function TableField({ f, rows, onChange, lang, tr }) {
   const cols = f.columns || [];
   const patch = (i, k, v) => onChange(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
@@ -128,23 +133,22 @@ function TableField({ f, rows, onChange, lang, tr }) {
               {rows.map((row, i) => (
                 <tr key={i}>
                   <td className="dim">{i + 1}</td>
-                  {cols.map((c) => (
-                    <td key={c.key}>
+                  {cols.map((c) => { const on = colOn(c, row); return (
+                    <td key={c.key} className={on ? "" : "mod-cell-off"}>
                       {c.type === "enum" || c.type === "port" ? (
-                        <select value={row[c.key] ?? ""} onChange={(e) => patch(i, c.key, e.target.value)}>
+                        <select value={row[c.key] ?? ""} disabled={!on} onChange={(e) => patch(i, c.key, e.target.value)}>
                           {/* an unset cell says so, rather than looking like the first option */}
-                          {!row[c.key] && <option value="">{c.required ? tr("mod.pick") : "—"}</option>}
+                          {!row[c.key] && <option value="">{c.required && on ? tr("mod.pick") : "—"}</option>}
                           {(c.options || []).map((o) => <option key={o.value} value={o.value}>{typeof o.label === "object" ? L(o.label, lang) : (o.label ?? o.value)}</option>)}
                         </select>
                       ) : c.type === "bool" ? (
-                        <input type="checkbox" checked={!!row[c.key]} onChange={(e) => patch(i, c.key, e.target.checked)} />
+                        <input type="checkbox" checked={!!row[c.key]} disabled={!on} onChange={(e) => patch(i, c.key, e.target.checked)} />
                       ) : c.type === "int" ? (
-                        <input className="al-host mod-num" type="number" min={c.min} max={c.max} value={row[c.key] ?? ""} placeholder={c.placeholder || ""} onChange={(e) => patch(i, c.key, e.target.value)} />
+                        <input className="al-host mod-num" type="number" min={c.min} max={c.max} value={row[c.key] ?? ""} disabled={!on} placeholder={on ? (c.placeholder || "") : ""} onChange={(e) => patch(i, c.key, e.target.value)} />
                       ) : (
-                        <input className="al-host" value={row[c.key] ?? ""} placeholder={c.placeholder || ""} onChange={(e) => patch(i, c.key, e.target.value)} />
+                        <input className="al-host" value={row[c.key] ?? ""} disabled={!on} placeholder={on ? (c.placeholder || "") : ""} onChange={(e) => patch(i, c.key, e.target.value)} />
                       )}
-                    </td>
-                  ))}
+                    </td>); })}
                   <td className="mod-row-btns">
                     <button className="icon-btn" title={tr("mod.rowUp")} disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
                     <button className="icon-btn" title={tr("mod.rowDown")} disabled={i === rows.length - 1} onClick={() => move(i, 1)}>↓</button>
@@ -224,7 +228,7 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
   const blank = (v) => !String(v ?? "").trim();
   const missing = visible.filter((f) => (f.type === "table"
     ? ((f.required && (form[f.key] || []).length === 0)
-      || (form[f.key] || []).some((row) => (f.columns || []).some((c) => c.required && blank(row[c.key]))))
+      || (form[f.key] || []).some((row) => (f.columns || []).some((c) => c.required && colOn(c, row) && blank(row[c.key]))))
     : (f.required && blank(form[f.key]))));
   // the fields in the schema's order; a table takes a row of its own between
   // the grids of plain fields, so it sits where the schema puts it
@@ -311,7 +315,8 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
   // the RAN and core ports, then each row's edge port (version 1 instances
   // came with edge_port; the device migrates them, but be safe)
   const instPorts = (inst) => [...new Set([inst.params?.ran_port, inst.params?.core_port, inst.params?.edge_port,
-    ...((inst.params?.edges || []).map((e) => e?.port))].filter(Boolean))];
+    ...((inst.params?.edges || []).map((e) => e?.port)),
+    ...((inst.params?.rules || []).filter((r) => (r?.action || "breakout") === "breakout").map((r) => r?.port))].filter(Boolean))];
   const portChips = (inst) => instPorts(inst).map((p) => (
     <span key={p} className={"mod-port " + (portLinks[p] === true ? "ok" : portLinks[p] === false ? "bad" : "")} title={portLinks[p] === true ? tr("mod.linkUp") : portLinks[p] === false ? tr("mod.linkDown") : ""}>{p}</span>));
   const noticeFor = (type) => (notice && notice.type === type ? notice : null);
