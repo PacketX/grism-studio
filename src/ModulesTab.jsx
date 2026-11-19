@@ -117,23 +117,37 @@ function Field({ f, value, onChange, lang, tr, dependent = false }) {
    greyed out and not required */
 const colOn = (c, row) => !c.when || String(row?.[c.when.key] ?? "") === String(c.when.value);
 
+/* a hint may run to several lines */
+const hintLines = (text, cls = "") => (text ? String(text).split("\n").filter((ln) => ln.trim()).map((ln, i) => <p key={i} className={"set-hint " + cls}>{ln}</p>) : null);
+const blankCell = (v) => !String(v ?? "").trim();
+
 function TableField({ f, rows, onChange, lang, tr }) {
   const cols = f.columns || [];
+  // the advanced columns (cells, SPID, edge-side hosts) start hidden, unless
+  // a row already uses one
+  const advCols = cols.filter((c) => c.advanced);
+  const [showAdv, setShowAdv] = useState(() => rows.some((row) => advCols.some((c) => !blankCell(row[c.key]))));
+  const shownCols = showAdv ? cols : cols.filter((c) => !c.advanced);
   const patch = (i, k, v) => onChange(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const move = (i, d) => { const j = i + d; if (j < 0 || j >= rows.length) return; const n = rows.slice(); [n[i], n[j]] = [n[j], n[i]]; onChange(n); };
   return (
     <div className="mod-table-field">
-      <div className="oattr-subhead">{L(f.label, lang)}</div>
-      {L(f.hint, lang) && <p className="set-hint">{L(f.hint, lang)}</p>}
+      <div className="oattr-subhead mod-table-head">{L(f.label, lang)}
+        {advCols.length > 0 && (
+          <button type="button" className="copy-btn mod-adv-toggle" aria-expanded={showAdv} onClick={() => setShowAdv((v) => !v)}>
+            {showAdv ? "▾ " + tr("mod.advColsHide") : "▸ " + tr("mod.advCols")}</button>)}
+      </div>
+      {hintLines(L(f.hint, lang))}
+      {showAdv && hintLines(L(f.advanced_hint, lang), "mod-adv-hint")}
       {rows.length > 0 && (
         <div className="al-table-wrap">
           <table className="al-table mod-table">
-            <thead><tr><th>#</th>{cols.map((c) => <th key={c.key}>{L(c.label, lang)}</th>)}<th /></tr></thead>
+            <thead><tr><th>#</th>{shownCols.map((c) => <th key={c.key} className={L(c.hint, lang) ? "mod-th-hint" : ""} title={L(c.hint, lang) || undefined}>{L(c.label, lang)}</th>)}<th /></tr></thead>
             <tbody>
               {rows.map((row, i) => (
                 <tr key={i}>
                   <td className="dim">{i + 1}</td>
-                  {cols.map((c) => { const on = colOn(c, row); return (
+                  {shownCols.map((c) => { const on = colOn(c, row); return (
                     <td key={c.key} className={on ? "" : "mod-cell-off"}>
                       {c.type === "enum" || c.type === "port" ? (
                         <select value={row[c.key] ?? ""} disabled={!on} onChange={(e) => patch(i, c.key, e.target.value)}>
@@ -230,25 +244,40 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
     ? ((f.required && (form[f.key] || []).length === 0)
       || (form[f.key] || []).some((row) => (f.columns || []).some((c) => c.required && colOn(c, row) && blank(row[c.key]))))
     : (f.required && blank(form[f.key]))));
+  // the advanced fields fold away, unless one of them is set off its default
+  const isAdv = (f) => f.group === "advanced";
+  const advUsed = (f) => { const v = form[f.key]; if (f.type === "bool") return !!v !== !!f.default; if (f.type === "table") return (v || []).length > 0; return !blank(v) && String(v) !== String(f.default ?? ""); };
+  const [showAdvFields, setShowAdvFields] = useState(() => fields.filter(isAdv).some(advUsed));
+  const advFields = visible.filter(isAdv);
   // the fields in the schema's order; a table takes a row of its own between
   // the grids of plain fields, so it sits where the schema puts it
-  const segments = [];
-  visible.forEach((f) => {
-    if (f.type === "table") segments.push({ table: f });
-    else if (segments.length && segments[segments.length - 1].fields) segments[segments.length - 1].fields.push(f);
-    else segments.push({ fields: [f] });
-  });
+  const segmentsOf = (list) => {
+    const segs = [];
+    list.forEach((f) => {
+      if (f.type === "table") segs.push({ table: f });
+      else if (segs.length && segs[segs.length - 1].fields) segs[segs.length - 1].fields.push(f);
+      else segs.push({ fields: [f] });
+    });
+    return segs;
+  };
+  const renderSegments = (segs) => segs.map((s, i) => (s.table
+    ? <TableField key={s.table.key} f={s.table} rows={form[s.table.key] || []} onChange={(v) => setField(s.table.key, v)} lang={lang} tr={tr} />
+    : <div key={"g" + i} className="mod-form">
+      {s.fields.map((f) => (
+        <Field key={f.key} f={f} value={form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr}
+          dependent={!!f.when} />
+      ))}
+    </div>));
   return (
     <section className="sys-card wide mod-form-card mod-card">
       {title}
-      {segments.map((s, i) => (s.table
-        ? <TableField key={s.table.key} f={s.table} rows={form[s.table.key] || []} onChange={(v) => setField(s.table.key, v)} lang={lang} tr={tr} />
-        : <div key={"g" + i} className="mod-form">
-          {s.fields.map((f) => (
-            <Field key={f.key} f={f} value={form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr}
-              dependent={!!f.when} />
-          ))}
-        </div>))}
+      {renderSegments(segmentsOf(visible.filter((f) => !isAdv(f))))}
+      {advFields.length > 0 && (
+        <div className="mod-adv-section">
+          <button type="button" className="copy-btn mod-adv-toggle" aria-expanded={showAdvFields} onClick={() => setShowAdvFields((v) => !v)}>
+            {showAdvFields ? "▾ " + tr("mod.advFieldsHide") : "▸ " + tr("mod.advFields")}</button>
+          {showAdvFields && renderSegments(segmentsOf(advFields))}
+        </div>)}
       {notice &&<p className={"set-hint " + (notice.kind === "ok" ? "ok" : "err")}>{notice.msg}</p>}
       {missing.length > 0 && <p className="set-hint dim">{tr("mod.missing")}: {missing.map((f) => L(f.label, lang)).join(", ")}</p>}
       <div className="set-actions">

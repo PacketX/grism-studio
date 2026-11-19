@@ -2402,3 +2402,11 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 
 /* a table cell whose column does not apply to this row (an edge port on a drop rule) */
 .mod-table td.mod-cell-off input, .mod-table td.mod-cell-off select{opacity:.35; cursor:not-allowed;}
+
+/* a module table's advanced columns and a form's advanced fields fold away */
+.mod-table-head{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.mod-adv-toggle{font-size:11.5px; padding:2px 9px;}
+.mod-adv-hint{opacity:.85;}
+.mod-adv-section{margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);}
+.mod-adv-section .mod-adv-toggle{margin-bottom:6px;}
+.mod-table th.mod-th-hint{text-decoration:underline dotted; text-underline-offset:3px; cursor:help;}
