@@ -2420,3 +2420,4 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .taglist .tag-x:hover{color:var(--notmatch);}
 .taglist .tag-input{flex:1 1 60px; min-width:60px; border:none; outline:none; background:transparent; color:var(--txt); font:inherit; font-size:12.5px; padding:2px 0;}
 .mod-table td .taglist{min-width:160px;}
+.mod-adv-toggle:disabled{opacity:.55; cursor:default;}

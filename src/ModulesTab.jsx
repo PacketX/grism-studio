@@ -158,7 +158,11 @@ function TableField({ f, rows, onChange, lang, tr, suggest }) {
   // the advanced columns (cells, SPID, edge-side hosts) start hidden, unless
   // a row already uses one
   const advCols = cols.filter((c) => c.advanced);
-  const [showAdv, setShowAdv] = useState(() => rows.some((row) => advCols.some((c) => !blankCell(row[c.key]))));
+  // a row that uses an advanced column keeps them open: a value is never
+  // folded out of sight (the user, 2026-11-19: 進階欄位有值就不能收起來)
+  const advUsed = rows.some((row) => advCols.some((c) => !blankCell(row[c.key])));
+  const [advOpened, setAdvOpened] = useState(advUsed);
+  const showAdv = advOpened || advUsed;
   const shownCols = showAdv ? cols : cols.filter((c) => !c.advanced);
   const patch = (i, k, v) => onChange(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const move = (i, d) => { const j = i + d; if (j < 0 || j >= rows.length) return; const n = rows.slice(); [n[i], n[j]] = [n[j], n[i]]; onChange(n); };
@@ -170,7 +174,8 @@ function TableField({ f, rows, onChange, lang, tr, suggest }) {
           (the user, 2026-11-19: 進階欄位放在 table 附近), their explanation below it */}
       {advCols.length > 0 && (
         <div className="mod-table-tools">
-          <button type="button" className="copy-btn mod-adv-toggle" aria-expanded={showAdv} onClick={() => setShowAdv((v) => !v)}>
+          <button type="button" className="copy-btn mod-adv-toggle" aria-expanded={showAdv} disabled={advUsed}
+            title={advUsed ? tr("mod.advColsKeep") : undefined} onClick={() => setAdvOpened((v) => !v)}>
             {showAdv ? "▾ " + tr("mod.advColsHide") : "▸ " + tr("mod.advCols")}</button>
         </div>)}
       {rows.length > 0 && (
@@ -285,8 +290,10 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
   // the advanced fields fold away, unless one of them is set off its default
   const isAdv = (f) => f.group === "advanced";
   const advUsed = (f) => { const v = form[f.key]; if (f.type === "bool") return !!v !== !!f.default; if (f.type === "table") return (v || []).length > 0; return !blank(v) && String(v) !== String(f.default ?? ""); };
-  const [showAdvFields, setShowAdvFields] = useState(() => fields.filter(isAdv).some(advUsed));
   const advFields = visible.filter(isAdv);
+  const advInUse = advFields.some(advUsed);          // set off its default: stays open
+  const [advOpened, setAdvOpened] = useState(advInUse);
+  const showAdvFields = advOpened || advInUse;
   // the fields in the schema's order; a table takes a row of its own between
   // the grids of plain fields, so it sits where the schema puts it
   const segmentsOf = (list) => {
@@ -312,7 +319,8 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
       {renderSegments(segmentsOf(visible.filter((f) => !isAdv(f))))}
       {advFields.length > 0 && (
         <div className="mod-adv-section">
-          <button type="button" className="copy-btn mod-adv-toggle" aria-expanded={showAdvFields} onClick={() => setShowAdvFields((v) => !v)}>
+          <button type="button" className="copy-btn mod-adv-toggle" aria-expanded={showAdvFields} disabled={advInUse}
+            title={advInUse ? tr("mod.advFieldsKeep") : undefined} onClick={() => setAdvOpened((v) => !v)}>
             {showAdvFields ? "▾ " + tr("mod.advFieldsHide") : "▸ " + tr("mod.advFields")}</button>
           {showAdvFields && renderSegments(segmentsOf(advFields))}
         </div>)}

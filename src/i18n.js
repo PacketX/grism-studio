@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.297.0";
+export const STUDIO_VERSION = "2.298.0";
 
 export const I18N = {
   en: {
@@ -442,6 +442,7 @@ export const I18N = {
     "mod.previewWarn": "Notes:", "mod.previewFailed": "The device could not generate the XML:",
     "mod.copy": "Copy", "mod.copied": "Copied", "mod.close": "Close",
     "mod.tagHint": "Type a value and press Enter to add it; Backspace removes the last one", "mod.tagRemove": "Remove",
+    "mod.advColsKeep": "A row uses an advanced column: they stay open", "mod.advFieldsKeep": "An advanced setting is changed: they stay open",
     "mod.advCols": "Advanced columns", "mod.advColsHide": "Hide the advanced columns", "mod.advFields": "Advanced settings", "mod.advFieldsHide": "Hide the advanced settings",
     "mod.sessions": "MEC sessions", "mod.linkUp": "link up", "mod.linkDown": "link down",
     "mod.readOnly": "Changing modules takes an operator account.", "mod.signIn": "Sign in to see the device's modules.",
@@ -1565,6 +1566,7 @@ export const I18N = {
     "mod.previewWarn": "提醒:", "mod.previewFailed": "裝置無法產生 XML:",
     "mod.copy": "複製", "mod.copied": "已複製", "mod.close": "關閉",
     "mod.tagHint": "輸入一個值按 Enter 新增;Backspace 刪掉最後一個", "mod.tagRemove": "移除",
+    "mod.advColsKeep": "有列用到進階欄位,不能收起", "mod.advFieldsKeep": "進階設定有改過,不能收起",
     "mod.advCols": "進階欄位", "mod.advColsHide": "收起進階欄位", "mod.advFields": "進階設定", "mod.advFieldsHide": "收起進階設定",
     "mod.sessions": "MEC 連線數", "mod.linkUp": "連線正常", "mod.linkDown": "無連線",
     "mod.readOnly": "修改模組需要操作者以上的帳號。", "mod.signIn": "登入後才看得到裝置的模組。",
