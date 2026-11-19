@@ -147,7 +147,8 @@ function Field({ f, value, onChange, lang, tr, dependent = false, suggest }) {
 /* a column with `when: {key, value}` belongs to rows where that other column
    has the value (an edge port only to a break-out rule): elsewhere its cell is
    greyed out and not required */
-const colOn = (c, row) => !c.when || String(row?.[c.when.key] ?? "") === String(c.when.value);
+const condOn = (w, row) => ("set" in w ? !isBlank(row?.[w.key]) === !!w.set : String(row?.[w.key] ?? "") === String(w.value));
+const colOn = (c, row) => !c.when || (Array.isArray(c.when) ? c.when.every((w) => condOn(w, row)) : condOn(c.when, row));
 
 /* a hint may run to several lines */
 const hintLines = (text, cls = "") => (text ? String(text).split("\n").filter((ln) => ln.trim()).map((ln, i) => <p key={i} className={"set-hint " + cls}>{ln}</p>) : null);
@@ -278,7 +279,7 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
     </div>);
   // a field with `when` belongs to another field's choice: shown, and required,
   // only while that field has the value
-  const shown = (f) => !f.when || String(form[f.when.key] ?? "") === String(f.when.value);
+  const shown = (f) => !f.when || (Array.isArray(f.when) ? f.when.every((w) => condOn(w, form)) : condOn(f.when, form));
   const visible = fields.filter(shown);
   // a required field is empty; a table is missing when it must have a row and
   // has none, or when any row leaves a required column empty
