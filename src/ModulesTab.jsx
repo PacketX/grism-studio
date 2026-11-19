@@ -132,13 +132,15 @@ function TableField({ f, rows, onChange, lang, tr }) {
   const move = (i, d) => { const j = i + d; if (j < 0 || j >= rows.length) return; const n = rows.slice(); [n[i], n[j]] = [n[j], n[i]]; onChange(n); };
   return (
     <div className="mod-table-field">
-      <div className="oattr-subhead mod-table-head">{L(f.label, lang)}
-        {advCols.length > 0 && (
-          <button type="button" className="copy-btn mod-adv-toggle" aria-expanded={showAdv} onClick={() => setShowAdv((v) => !v)}>
-            {showAdv ? "▾ " + tr("mod.advColsHide") : "▸ " + tr("mod.advCols")}</button>)}
-      </div>
+      <div className="oattr-subhead">{L(f.label, lang)}</div>
       {hintLines(L(f.hint, lang))}
-      {showAdv && hintLines(L(f.advanced_hint, lang), "mod-adv-hint")}
+      {/* the advanced columns' switch sits right above the table it changes
+          (the user, 2026-11-19: 進階欄位放在 table 附近), their explanation below it */}
+      {advCols.length > 0 && (
+        <div className="mod-table-tools">
+          <button type="button" className="copy-btn mod-adv-toggle" aria-expanded={showAdv} onClick={() => setShowAdv((v) => !v)}>
+            {showAdv ? "▾ " + tr("mod.advColsHide") : "▸ " + tr("mod.advCols")}</button>
+        </div>)}
       {rows.length > 0 && (
         <div className="al-table-wrap">
           <table className="al-table mod-table">
@@ -177,6 +179,7 @@ function TableField({ f, rows, onChange, lang, tr }) {
       <div className="add-row">
         <button className="add-btn" disabled={f.max && rows.length >= f.max} onClick={() => onChange([...rows, emptyRow(cols)])}>{tr("mod.rowAdd")}</button>
       </div>
+      {showAdv && hintLines(L(f.advanced_hint, lang), "mod-adv-hint")}
     </div>);
 }
 
