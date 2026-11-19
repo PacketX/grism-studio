@@ -2410,3 +2410,13 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .mod-adv-section{margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);}
 .mod-adv-section .mod-adv-toggle{margin-bottom:6px;}
 .mod-table th.mod-th-hint{text-decoration:underline dotted; text-underline-offset:3px; cursor:help;}
+
+/* a list field: several values as tags, typed one at a time */
+.taglist{display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height:30px; padding:3px 6px; border:1px solid var(--line-2); border-radius:6px; background:var(--bg); cursor:text; width:100%; box-sizing:border-box;}
+.taglist:focus-within{border-color:var(--accent);}
+.taglist.off{opacity:.35; cursor:not-allowed;}
+.taglist .tag{display:inline-flex; align-items:center; gap:3px; padding:1px 6px; border-radius:4px; background:rgba(var(--accent-rgb),.14); color:var(--txt); font-size:12px; font-family:var(--mono); white-space:nowrap;}
+.taglist .tag-x{border:none; background:transparent; color:var(--txt-dim); cursor:pointer; padding:0 2px; font-size:13px; line-height:1; font-family:inherit;}
+.taglist .tag-x:hover{color:var(--notmatch);}
+.taglist .tag-input{flex:1 1 60px; min-width:60px; border:none; outline:none; background:transparent; color:var(--txt); font:inherit; font-size:12.5px; padding:2px 0;}
+.mod-table td .taglist{min-width:160px;}

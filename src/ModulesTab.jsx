@@ -56,10 +56,39 @@ async function postJson(path, body) {
 
 /* the form holds strings; the device parses lists and numbers itself */
 const joinList = (v) => (Array.isArray(v) ? v.join(", ") : (v ?? ""));
+/* a `list` field holds an array of strings (an older marker may hold a number or a comma string) */
+const splitList = (t) => String(t ?? "").split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+const asList = (v) => (Array.isArray(v) ? v.map((x) => String(x)) : (v == null || v === "" ? [] : splitList(v)));
+const isBlank = (v) => (Array.isArray(v) ? v.length === 0 : !String(v ?? "").trim());
+
+/* Several values as tags: type one and press Enter (a comma, a space or
+   leaving the field also adds it), x or Backspace removes; `suggestions`
+   (values the device has seen) come as a datalist under the input. */
+function TagList({ value, onChange, placeholder, disabled, item, suggestions, listId, tr }) {
+  const [draft, setDraft] = useState("");
+  const vals = asList(value);
+  const add = (text) => {
+    const parts = splitList(text);
+    if (parts.length) { const next = [...vals]; parts.forEach((x) => { if (!next.includes(x)) next.push(x); }); onChange(next); }
+    setDraft("");
+  };
+  const remove = (i) => onChange(vals.filter((_, j) => j !== i));
+  return (
+    <div className={"taglist" + (disabled ? " off" : "")} onClick={(e) => { if (!disabled) e.currentTarget.querySelector("input")?.focus(); }}>
+      {vals.map((v, i) => (
+        <span key={v} className="tag">{v}{!disabled && <button type="button" className="tag-x" title={tr("mod.tagRemove")} aria-label={tr("mod.tagRemove")} onClick={(e) => { e.stopPropagation(); remove(i); }}>×</button>}</span>))}
+      <input className="tag-input" list={suggestions?.length ? listId : undefined} value={draft} disabled={disabled}
+        placeholder={vals.length ? "" : (placeholder || "")} title={tr("mod.tagHint")} inputMode={item === "int" ? "numeric" : undefined}
+        onChange={(e) => { const t = e.target.value; if (/[,;\s]/.test(t)) add(t); else setDraft(t); }}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(draft); } else if (e.key === "Backspace" && !draft && vals.length) remove(vals.length - 1); }}
+        onBlur={() => add(draft)} />
+      {suggestions?.length > 0 && <datalist id={listId}>{suggestions.map((sg) => <option key={sg.value} value={sg.value}>{sg.label}</option>)}</datalist>}
+    </div>);
+}
 
 function emptyRow(columns) {
   const row = {};
-  columns.forEach((c) => { row[c.key] = c.type === "bool" ? !!c.default : (c.default ?? ""); });
+  columns.forEach((c) => { row[c.key] = c.type === "bool" ? !!c.default : c.type === "list" ? [] : (c.default ?? ""); });
   return row;
 }
 
@@ -70,19 +99,20 @@ function formFromParams(schema, params) {
     if (f.type === "table") {
       form[f.key] = (Array.isArray(v) ? v : []).map((row) => {
         const r = {};
-        f.columns.forEach((c) => { r[c.key] = c.type === "bool" ? !!row?.[c.key] : (row?.[c.key] == null ? (c.default ?? "") : (Array.isArray(row[c.key]) ? row[c.key].join(", ") : String(row[c.key]))); });
+        f.columns.forEach((c) => { r[c.key] = c.type === "bool" ? !!row?.[c.key] : c.type === "list" ? asList(row?.[c.key]) : (row?.[c.key] == null ? (c.default ?? "") : (Array.isArray(row[c.key]) ? row[c.key].join(", ") : String(row[c.key]))); });
         return r;
       });
       // a table that must have a row starts with one, ready to fill in
       if (f.required && form[f.key].length === 0) form[f.key] = [emptyRow(f.columns)];
     } else if (f.type === "bool") form[f.key] = v == null ? !!f.default : !!v;
+    else if (f.type === "list") form[f.key] = asList(v);
     else if (f.type === "cidr_list") form[f.key] = joinList(v);
     else form[f.key] = v == null ? (f.default ?? "") : String(v);
   });
   return form;
 }
 
-function Field({ f, value, onChange, lang, tr, dependent = false }) {
+function Field({ f, value, onChange, lang, tr, dependent = false, suggest }) {
   const label = L(f.label, lang);
   const hint = L(f.hint, lang);
   let input;
@@ -101,6 +131,8 @@ function Field({ f, value, onChange, lang, tr, dependent = false }) {
     return <div className="set-field mod-field mod-field-bool">{input}{hint && <p className="set-hint">{hint}</p>}</div>;
   } else if (f.type === "int") {
     input = <input type="number" min={f.min} max={f.max} value={value ?? ""} placeholder={f.placeholder || ""} onChange={(e) => onChange(e.target.value)} />;
+  } else if (f.type === "list") {
+    input = <TagList value={value} onChange={onChange} placeholder={f.placeholder} item={f.item} suggestions={suggest?.[f.suggest]} listId={"dl-" + f.key} tr={tr} />;
   } else {
     input = <input value={value ?? ""} placeholder={f.placeholder || ""} onChange={(e) => onChange(e.target.value)} />;
   }
@@ -119,9 +151,9 @@ const colOn = (c, row) => !c.when || String(row?.[c.when.key] ?? "") === String(
 
 /* a hint may run to several lines */
 const hintLines = (text, cls = "") => (text ? String(text).split("\n").filter((ln) => ln.trim()).map((ln, i) => <p key={i} className={"set-hint " + cls}>{ln}</p>) : null);
-const blankCell = (v) => !String(v ?? "").trim();
+const blankCell = isBlank;
 
-function TableField({ f, rows, onChange, lang, tr }) {
+function TableField({ f, rows, onChange, lang, tr, suggest }) {
   const cols = f.columns || [];
   // the advanced columns (cells, SPID, edge-side hosts) start hidden, unless
   // a row already uses one
@@ -157,6 +189,9 @@ function TableField({ f, rows, onChange, lang, tr }) {
                           {!row[c.key] && <option value="">{c.required && on ? tr("mod.pick") : "—"}</option>}
                           {(c.options || []).map((o) => <option key={o.value} value={o.value}>{typeof o.label === "object" ? L(o.label, lang) : (o.label ?? o.value)}</option>)}
                         </select>
+                      ) : c.type === "list" ? (
+                        <TagList value={row[c.key]} onChange={(v) => patch(i, c.key, v)} placeholder={c.placeholder} disabled={!on} item={c.item}
+                          suggestions={suggest?.[c.suggest]} listId={"dl-" + f.key + "-" + c.key + "-" + i} tr={tr} />
                       ) : c.type === "bool" ? (
                         <input type="checkbox" checked={!!row[c.key]} disabled={!on} onChange={(e) => patch(i, c.key, e.target.checked)} />
                       ) : c.type === "int" ? (
@@ -187,7 +222,7 @@ function TableField({ f, rows, onChange, lang, tr }) {
    show. Apply goes through the confirm the parent shows; Cancel puts the
    fields back to what the device holds; Preview XML asks the device what it
    would write for the fields as they stand and shows it, writing nothing. */
-function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, onApply, title }) {
+function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, onApply, title, suggest }) {
   const [form, setForm] = useState(() => formFromParams(module.schema, inst?.params || {}));
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const reset = () => setForm(formFromParams(module.schema, inst?.params || {}));
@@ -242,7 +277,7 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
   const visible = fields.filter(shown);
   // a required field is empty; a table is missing when it must have a row and
   // has none, or when any row leaves a required column empty
-  const blank = (v) => !String(v ?? "").trim();
+  const blank = isBlank;
   const missing = visible.filter((f) => (f.type === "table"
     ? ((f.required && (form[f.key] || []).length === 0)
       || (form[f.key] || []).some((row) => (f.columns || []).some((c) => c.required && colOn(c, row) && blank(row[c.key]))))
@@ -264,11 +299,11 @@ function ModuleForm({ module, inst, fields, lang, tr, canOperate, busy, notice, 
     return segs;
   };
   const renderSegments = (segs) => segs.map((s, i) => (s.table
-    ? <TableField key={s.table.key} f={s.table} rows={form[s.table.key] || []} onChange={(v) => setField(s.table.key, v)} lang={lang} tr={tr} />
+    ? <TableField key={s.table.key} f={s.table} rows={form[s.table.key] || []} onChange={(v) => setField(s.table.key, v)} lang={lang} tr={tr} suggest={suggest} />
     : <div key={"g" + i} className="mod-form">
       {s.fields.map((f) => (
         <Field key={f.key} f={f} value={form[f.key]} onChange={(v) => setField(f.key, v)} lang={lang} tr={tr}
-          dependent={!!f.when} />
+          dependent={!!f.when} suggest={suggest} />
       ))}
     </div>));
   return (
@@ -304,6 +339,7 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
   const [portLinks, setPortLinks] = useState({});       // port name -> link up (true/false)
   const [formKey, setFormKey] = useState(0);            // remounts the forms after an apply or release
   const [handwritten, setHandwritten] = useState(false); // run.xml still holds configuration outside the modules
+  const [suggest, setSuggest] = useState({});             // values the device has seen, for the list columns that name a source
   const timer = useRef(null);
 
   /* an apply or release hands run.xml to the device's watcher, which moves it
@@ -342,6 +378,24 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
     timer.current = setInterval(tick, 10000);
     return () => clearInterval(timer.current);
   }, [loggedIn, instances]);
+
+  // the cells and SPIDs the MEC table holds now, offered under the matching
+  // columns (schema `suggest`: mec_cells / mec_spids); one page of the table
+  // every 30 s while the detail page is open
+  useEffect(() => {
+    if (!loggedIn || mode !== "detail" || !instances.some((i) => i.type === "mec")) return;
+    let gone = false;
+    const pull = async () => {
+      try {
+        const d = await getJson("/grism/task/get_s1ap_items?offset=0&limit=1000");
+        const count = (key) => { const m = new Map(); (d.s1ap_items || []).forEach((it) => { const v = it?.[key]; if (v == null || v === "" || Number(v) === 0) return; m.set(String(v), (m.get(String(v)) || 0) + 1); }); return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([value, n]) => ({ value, label: `${value} · ${n} UE` })); };
+        if (!gone) setSuggest({ mec_cells: count("cellid"), mec_spids: count("spid") });
+      } catch { /* keep the last */ }
+    };
+    pull();
+    const h = setInterval(pull, 30000);
+    return () => { gone = true; clearInterval(h); };
+  }, [loggedIn, mode, instances]);
 
   const moduleOf = (type) => (catalogue || []).find((m) => m.type === type);
   // the RAN and core ports, then each row's edge port (version 1 instances
@@ -425,7 +479,7 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
             <p className="set-hint">{tr("mod.noInstance")}</p></section>)}
         {m && list.map((inst) => (
           <ModuleForm key={formKey + ":" + inst.id + ":" + JSON.stringify(inst.params)} module={m} inst={inst} fields={m.schema} lang={lang} tr={tr}
-            canOperate={canOperate} busy={busy} notice={noticeFor(inst.type)}
+            canOperate={canOperate} busy={busy} notice={noticeFor(inst.type)} suggest={suggest}
             onApply={(form) => setConfirm({ kind: "apply", type: inst.type, id: inst.id, form, name: L(m.name, lang), update: !handwritten })}
             title={<>
               <h3 className="sys-card-title">{L(m.name, lang)} <span className="dim">#{inst.id}{inst.name ? " · " + inst.name : ""}</span>
