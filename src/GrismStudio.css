@@ -2411,6 +2411,11 @@ button.tf-bypass.as-toggle:disabled{cursor:not-allowed; opacity:.6;}
 .mod-adv-section .mod-adv-toggle{margin-bottom:6px;}
 .mod-table th.mod-th-hint{text-decoration:underline dotted; text-underline-offset:3px; cursor:help;}
 
+/* a module table's fixed last row (schema `tail`): what matches no row above, drawn and never edited */
+.mod-table tfoot tr.mod-row-fixed td{color:var(--txt-dim); font-style:italic; border-top:1px dashed var(--line-2); background:rgba(var(--accent-rgb),.04); cursor:help;}
+.mod-table tfoot tr.mod-row-fixed td.mod-tail-value{font-style:normal; font-weight:600; color:var(--txt);}
+.mod-table tfoot .mod-tail-tag{display:inline-block; font-size:11px; font-style:normal; border:1px solid var(--line-2); border-radius:10px; padding:1px 7px; color:var(--txt-dim);}
+
 /* a list field: several values as tags, typed one at a time */
 .taglist{display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-height:30px; padding:3px 6px; border:1px solid var(--line-2); border-radius:6px; background:var(--bg); cursor:text; width:100%; box-sizing:border-box;}
 .taglist:focus-within{border-color:var(--accent);}

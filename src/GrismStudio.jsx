@@ -928,8 +928,9 @@ export default function GrismStudio() {
                   // behind one label, since what they show is what the module
                   // made (the user, 2026-11-19: 鏈結到匯出這邊可以收納起來 需要再點開);
                   // being on one of them keeps them open, folding from there
-                  // goes to the module's page. A pending submit still shows on
-                  // the folded label.
+                  // goes to the module's page; opening lands on the chains
+                  // (the user, 2026-11-20: 點編輯器幫我直接跳到鏈結). A pending
+                  // submit still shows on the folded label.
                   const editorKeys = ["chain", "filters", "inputs", "outputs", "actions", "simulate", "export"];
                   const onEditorTab = editorKeys.includes(tab);
                   const editorShown = !moduleMode || editorOpen || onEditorTab;
@@ -950,7 +951,7 @@ export default function GrismStudio() {
                               <span className="tab-group-caret" aria-hidden="true">▲</span>
                             </button>
                           ) : (
-                            <button className="tab-group-label as-button" onClick={() => setEditorOpen(true)}
+                            <button className="tab-group-label as-button" onClick={() => { setEditorOpen(true); setTab("chain"); }}
                               title={t("nav.editorTip")} aria-label={t("nav.editorTip")} aria-expanded={false}>
                               {t("nav.editor")}
                               {editorCount > 0 && <span className="tab-badge">{editorCount}</span>}

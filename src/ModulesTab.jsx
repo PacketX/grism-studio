@@ -154,6 +154,24 @@ const colOn = (c, row) => !c.when || (Array.isArray(c.when) ? c.when.every((w) =
 const hintLines = (text, cls = "") => (text ? String(text).split("\n").filter((ln) => ln.trim()).map((ln, i) => <p key={i} className={"set-hint " + cls}>{ln}</p>) : null);
 const blankCell = isBlank;
 
+/* The cells of a table's fixed last row (schema `tail`): the columns before
+   the first valued one merge into one cell holding the label, a valued column
+   shows its value (an enum's option label), the unvalued columns after merge
+   into one empty cell. The row is drawn, never edited. */
+const optionLabel = (c, v, lang) => { const o = (c.options || []).find((x) => String(x.value) === String(v)); return o ? (typeof o.label === "object" ? L(o.label, lang) : (o.label ?? o.value)) : String(v); };
+function tailCells(cols, tail, lang) {
+  const vals = tail.values || {};
+  const out = [];
+  let run = 0, labelDone = false;
+  const flush = (key) => { if (!run) return; out.push({ key, span: run, text: labelDone ? "" : L(tail.label, lang), label: !labelDone }); labelDone = true; run = 0; };
+  cols.forEach((c) => {
+    if (c.key in vals) { flush("pre-" + c.key); out.push({ key: c.key, span: 1, text: optionLabel(c, vals[c.key], lang), value: true }); }
+    else run++;
+  });
+  flush("post");
+  return out;
+}
+
 function TableField({ f, rows, onChange, lang, tr, suggest }) {
   const cols = f.columns || [];
   // the advanced columns (cells, SPID, edge-side hosts) start hidden, unless
@@ -179,7 +197,7 @@ function TableField({ f, rows, onChange, lang, tr, suggest }) {
             title={advUsed ? tr("mod.advColsKeep") : undefined} onClick={() => setAdvOpened((v) => !v)}>
             {showAdv ? "▾ " + tr("mod.advColsHide") : "▸ " + tr("mod.advCols")}</button>
         </div>)}
-      {rows.length > 0 && (
+      {(rows.length > 0 || f.tail) && (
         <div className="al-table-wrap">
           <table className="al-table mod-table">
             <thead><tr><th>#</th>{shownCols.map((c) => <th key={c.key} className={L(c.hint, lang) ? "mod-th-hint" : ""} title={L(c.hint, lang) || undefined}>{L(c.label, lang)}</th>)}<th /></tr></thead>
@@ -214,6 +232,18 @@ function TableField({ f, rows, onChange, lang, tr, suggest }) {
                 </tr>
               ))}
             </tbody>
+            {/* the fixed last row: what matches no row above (the MEC rules
+                table's "everything else -> to the core"), so the implicit
+                default is in sight rather than guessed; it has no controls */}
+            {f.tail && (
+              <tfoot>
+                <tr className="mod-row-fixed" title={L(f.tail.hint, lang) || tr("mod.tailTip")}>
+                  <td className="dim">—</td>
+                  {tailCells(shownCols, f.tail, lang).map((cell) => (
+                    <td key={cell.key} colSpan={cell.span} className={cell.value ? "mod-tail-value" : (cell.label ? "mod-tail-label" : "")}>{cell.text}</td>))}
+                  <td className="mod-row-btns"><span className="mod-tail-tag">{tr("mod.tailFixed")}</span></td>
+                </tr>
+              </tfoot>)}
           </table>
         </div>
       )}

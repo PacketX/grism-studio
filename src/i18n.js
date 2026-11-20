@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.299.0";
+export const STUDIO_VERSION = "2.300.0";
 
 export const I18N = {
   en: {
@@ -444,6 +444,7 @@ export const I18N = {
     "mod.tagHint": "Type a value and press Enter to add it; Backspace removes the last one", "mod.tagRemove": "Remove",
     "mod.advColsKeep": "A row uses an advanced column: they stay open", "mod.advFieldsKeep": "An advanced setting is changed: they stay open",
     "mod.advCols": "Advanced columns", "mod.advColsHide": "Hide the advanced columns", "mod.advFields": "Advanced settings", "mod.advFieldsHide": "Hide the advanced settings",
+    "mod.tailFixed": "fixed", "mod.tailTip": "A fixed last row: it cannot be changed or removed",
     "mod.sessions": "MEC sessions", "mod.linkUp": "link up", "mod.linkDown": "link down",
     "mod.readOnly": "Changing modules takes an operator account.", "mod.signIn": "Sign in to see the device's modules.",
     "mod.unavailable": "The modules could not be read (the device needs pywww 1.50 / 1.48 or later).",
@@ -693,7 +694,7 @@ export const I18N = {
     "tf.d.inRuntCrcErrorPackets": "Runt CRC errors", "tf.d.inOversizeErrorPackets": "Oversize errors",
     "tf.d.inOversizeCrcErrorPackets": "Oversize CRC errors",
     "nav.advanced": "Advanced",
-    "nav.editor": "Editor", "nav.editorTip": "Chains, filters, inputs / outputs / actions, simulate and export: the configuration the module made -- click to open",
+    "nav.editor": "Editor", "nav.editorTip": "Chains, filters, inputs / outputs / actions, simulate and export: the configuration the module made -- click to open at the chains",
     "nav.editorHide": "Fold the editor's tabs away",
     "nav.advancedTip": "Inputs, outputs and actions — hover to reveal",
     "nav.advancedHide": "Fold these away",
@@ -1568,6 +1569,7 @@ export const I18N = {
     "mod.tagHint": "輸入一個值按 Enter 新增;Backspace 刪掉最後一個", "mod.tagRemove": "移除",
     "mod.advColsKeep": "有列用到進階欄位,不能收起", "mod.advFieldsKeep": "進階設定有改過,不能收起",
     "mod.advCols": "進階欄位", "mod.advColsHide": "收起進階欄位", "mod.advFields": "進階設定", "mod.advFieldsHide": "收起進階設定",
+    "mod.tailFixed": "固定", "mod.tailTip": "固定的最後一列,不能更改或移除",
     "mod.sessions": "MEC 連線數", "mod.linkUp": "連線正常", "mod.linkDown": "無連線",
     "mod.readOnly": "修改模組需要操作者以上的帳號。", "mod.signIn": "登入後才看得到裝置的模組。",
     "mod.unavailable": "無法讀取模組(裝置需要 pywww 1.50 / 1.48 以上)。",
@@ -1817,7 +1819,7 @@ export const I18N = {
     "tf.d.inRuntCrcErrorPackets": "Runt CRC 錯誤", "tf.d.inOversizeErrorPackets": "超長錯誤",
     "tf.d.inOversizeCrcErrorPackets": "超長 CRC 錯誤",
     "nav.advanced": "進階",
-    "nav.editor": "編輯器", "nav.editorTip": "鏈結、篩選器、輸入/輸出/動作、模擬、匯出:模組產生出來的設定,點一下展開",
+    "nav.editor": "編輯器", "nav.editorTip": "鏈結、篩選器、輸入/輸出/動作、模擬、匯出:模組產生出來的設定,點一下展開並進到鏈結",
     "nav.editorHide": "收起編輯器的分頁",
     "nav.advancedTip": "Inputs、outputs 與 actions — 滑鼠移過即展開",
     "nav.advancedHide": "收回",
