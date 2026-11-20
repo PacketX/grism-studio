@@ -521,7 +521,9 @@ export default function ModulesTab({ loggedIn, canOperate = false, t, lang = "en
             canOperate={canOperate} busy={busy} notice={noticeFor(inst.type)} suggest={suggest}
             onApply={(form) => setConfirm({ kind: "apply", type: inst.type, id: inst.id, form, name: L(m.name, lang), update: !handwritten })}
             title={<>
-              <h3 className="sys-card-title">{L(m.name, lang)} <span className="dim">#{inst.id}{inst.name ? " · " + inst.name : ""}</span>
+              {/* no "#1" in the title (the user, 2026-11-20): one instance is the
+                  rule, and the slot number meant nothing to the reader */}
+              <h3 className="sys-card-title">{L(m.name, lang)}{inst.name ? <span className="dim"> · {inst.name}</span> : null}
                 <span className="sys-card-metric">{inst.type === "mec" && sessions != null ? tr("mod.sessions") + " " + sessions : ""}</span></h3>
               <p className="set-hint">{L(m.description, lang)}</p>
               {inst.configured === false
