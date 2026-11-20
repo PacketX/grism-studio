@@ -5559,7 +5559,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
           <section className="sys-card">
             <h3 className="sys-card-title">{tr("set.fwManual")}</h3>
             <p className="set-hint">{tr("set.fwManualNote")}</p>
-            <FilePick accept=".tgz" file={fwFile} onPick={setFwFile} tr={tr} hint="grism-bin.tgz / grism-bin-<model>.tgz" />
+            <FilePick accept=".tgz" file={fwFile} onPick={setFwFile} tr={tr} hint="grism-bin.tgz / grism-bin-<model>.tgz / grism-bin-<model>-<version>.tgz" />
             <div className="set-actions">
               <button className="del" disabled={!fwFile || submit.state === "sending"}
                 onClick={() => setConfirm({ kind: "fwUpload" })}>{tr("set.fwUpload")}</button>
