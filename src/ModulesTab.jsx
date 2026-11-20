@@ -76,7 +76,7 @@ function TagList({ value, onChange, placeholder, disabled, item, suggestions, li
   return (
     <div className={"taglist" + (disabled ? " off" : "")} onClick={(e) => { if (!disabled) e.currentTarget.querySelector("input")?.focus(); }}>
       {vals.map((v, i) => (
-        <span key={v} className="tag">{v}{!disabled && <button type="button" className="tag-x" title={tr("mod.tagRemove")} aria-label={tr("mod.tagRemove")} onClick={(e) => { e.stopPropagation(); remove(i); }}>×</button>}</span>))}
+        <span key={v} className="tag" title={v}>{v}{!disabled && <button type="button" className="tag-x" title={tr("mod.tagRemove")} aria-label={tr("mod.tagRemove")} onClick={(e) => { e.stopPropagation(); remove(i); }}>×</button>}</span>))}
       <input className="tag-input" list={suggestions?.length ? listId : undefined} value={draft} disabled={disabled}
         placeholder={vals.length ? "" : (placeholder || "")} title={tr("mod.tagHint")} inputMode={item === "int" ? "numeric" : undefined}
         onChange={(e) => { const t = e.target.value; if (/[,;\s]/.test(t)) add(t); else setDraft(t); }}
@@ -150,6 +150,13 @@ function Field({ f, value, onChange, lang, tr, dependent = false, suggest }) {
 const condOn = (w, row) => ("set" in w ? !isBlank(row?.[w.key]) === !!w.set : String(row?.[w.key] ?? "") === String(w.value));
 const colOn = (c, row) => !c.when || (Array.isArray(c.when) ? c.when.every((w) => condOn(w, row)) : condOn(c.when, row));
 
+/* a column's width class, by its type: the table is laid out fixed so that
+   its columns keep their widths whatever is typed into them, and so that the
+   MEC rules table with every advanced column open still fits a laptop's
+   width (the user, 2026-11-20) -- lists of numbers, choices, ports and
+   switches are narrow, the other columns share what is left */
+const colCls = (c) => "mod-col-" + c.type + (c.type === "list" ? " mod-col-list-" + (c.item || "text") : "");
+
 /* a hint may run to several lines */
 const hintLines = (text, cls = "") => (text ? String(text).split("\n").filter((ln) => ln.trim()).map((ln, i) => <p key={i} className={"set-hint " + cls}>{ln}</p>) : null);
 const blankCell = isBlank;
@@ -200,13 +207,13 @@ function TableField({ f, rows, onChange, lang, tr, suggest }) {
       {(rows.length > 0 || f.tail) && (
         <div className="al-table-wrap">
           <table className="al-table mod-table">
-            <thead><tr><th>#</th>{shownCols.map((c) => <th key={c.key} className={L(c.hint, lang) ? "mod-th-hint" : ""} title={L(c.hint, lang) || undefined}>{L(c.label, lang)}</th>)}<th /></tr></thead>
+            <thead><tr><th className="mod-col-idx">#</th>{shownCols.map((c) => <th key={c.key} className={colCls(c) + (L(c.hint, lang) ? " mod-th-hint" : "")} title={L(c.hint, lang) || undefined}>{L(c.label, lang)}</th>)}<th className="mod-row-btns" /></tr></thead>
             <tbody>
               {rows.map((row, i) => (
                 <tr key={i}>
                   <td className="dim">{i + 1}</td>
                   {shownCols.map((c) => { const on = colOn(c, row); return (
-                    <td key={c.key} className={on ? "" : "mod-cell-off"}>
+                    <td key={c.key} className={colCls(c) + (on ? "" : " mod-cell-off")}>
                       {c.type === "enum" || c.type === "port" ? (
                         <select value={row[c.key] ?? ""} disabled={!on} onChange={(e) => patch(i, c.key, e.target.value)}>
                           {/* an unset cell says so, rather than looking like the first option */}
