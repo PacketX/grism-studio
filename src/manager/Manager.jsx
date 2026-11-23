@@ -2349,7 +2349,6 @@ function PluginsView({ t, call, lang, onChange }) {
                 <div>
                   <b>{lbl(a.title)}</b> <span className="mgr-dim">{a.version}</span>
                   {a.source === "upload" && <span className="mgr-tag">{t("pl.fromUpload")}</span>}
-                  {a.installed && <span className="mgr-tag">{t("pl.installedV")} {a.installed}</span>}
                   <div className="mgr-dim mgr-plugin-desc">{lbl(a.description)}</div>
                   {a.host_note && <div className="mgr-dim mgr-plugin-desc">{t("pl.hostNote")} {lbl(a.host_note)}</div>}
                 </div>
