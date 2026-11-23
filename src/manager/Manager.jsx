@@ -2264,6 +2264,7 @@ function PluginsView({ t, call, lang, onChange }) {
   const lbl = (o) => (o && (o[L] || o.en)) || "";
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
+  const [note, setNote] = useState("");             // what the last upload did
   const [busy, setBusy] = useState("");
   const [log, setLog] = useState(null);             // {name, text}
   const [removing, setRemoving] = useState(null);   // the plugin whose removal is being confirmed
@@ -2275,18 +2276,21 @@ function PluginsView({ t, call, lang, onChange }) {
   }, [call]);
   useEffect(() => { load(); const id = setInterval(load, 3000); return () => clearInterval(id); }, [load]);
   const act = async (label, fn) => {
-    setBusy(label); setErr("");
+    setBusy(label); setErr(""); setNote("");
     try { await fn(); } catch (e) { setErr(e.message); }
     finally { setBusy(""); await load(); onChange(); }
   };
   const upload = (file) => act("upload", async () => {
-    const res = await fetch(`/api/v1/plugins/install?filename=${encodeURIComponent(file.name)}`,
+    // an upload is kept, not installed: it takes the earlier upload's place in the list below, and the row's
+    // Update / Install button is what installs it
+    const res = await fetch(`/api/v1/plugins/upload?filename=${encodeURIComponent(file.name)}`,
       { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/octet-stream" }, body: file });
     const text = await res.text();
     let body = null;
     try { body = JSON.parse(text); } catch { body = { detail: text }; }
     if (!res.ok) throw new ApiError(res.status, body);
     if (fileRef.current) fileRef.current.value = "";
+    setNote(t("pl.uploaded"));
   });
   const showLog = async (name) => {
     try {
@@ -2344,13 +2348,18 @@ function PluginsView({ t, call, lang, onChange }) {
               <>
                 <div>
                   <b>{lbl(a.title)}</b> <span className="mgr-dim">{a.version}</span>
+                  {a.source === "upload" && <span className="mgr-tag">{t("pl.fromUpload")}</span>}
                   {a.installed && <span className="mgr-tag">{t("pl.installedV")} {a.installed}</span>}
                   <div className="mgr-dim mgr-plugin-desc">{lbl(a.description)}</div>
                   {a.host_note && <div className="mgr-dim mgr-plugin-desc">{t("pl.hostNote")} {lbl(a.host_note)}</div>}
                 </div>
-                <button className="ws-btn" disabled={!!busy}
-                  onClick={() => act("install", () => call("/api/v1/plugins/install-available", { method: "POST", body: { file: a.file } }))}>
-                  {a.installed ? (a.installed === a.version ? t("pl.reinstall") : t("pl.update")) : t("pl.install")}</button>
+                <span className="mgr-plugin-actions">
+                  <button className="ws-btn" disabled={!!busy}
+                    onClick={() => act("install", () => call("/api/v1/plugins/install-available", { method: "POST", body: { file: a.file, source: a.source || "" } }))}>
+                    {a.installed ? (a.installed === a.version ? t("pl.reinstall") : t("pl.update")) : t("pl.install")}</button>
+                  {a.source === "upload" && <button className="ws-btn" disabled={!!busy}
+                    onClick={() => act("discard", () => call(`/api/v1/plugins/uploads/${encodeURIComponent(a.file)}`, { method: "DELETE" }))}>{t("pl.discard")}</button>}
+                </span>
               </>)}
           </div>))}
         <div className="mgr-plugin-upload">
@@ -2358,6 +2367,8 @@ function PluginsView({ t, call, lang, onChange }) {
           <button className="ws-btn" disabled={!!busy} onClick={() => { const f = fileRef.current && fileRef.current.files[0]; if (f) upload(f); }}>{t("pl.upload")}</button>
           {busy && <span className="mgr-dim">{t("common.working")}</span>}
         </div>
+        <p className="set-hint">{t("pl.uploadHint")}</p>
+        {note && <p className="mgr-dim">{note}</p>}
       </div>
       {removing && (
         <Modal title={t("pl.remove") + ": " + lbl(removing.title)} onClose={() => setRemoving(null)} warn>
