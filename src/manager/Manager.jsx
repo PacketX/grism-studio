@@ -2259,6 +2259,12 @@ function PluginFrame({ name, lang, theme }) {
   return <iframe className="mgr-plugin-frame" title={name} src={src} />;
 }
 
+// "1.1.10" after "1.1.9": the parts as numbers, so a bundled package older than the installed one is not offered as an update
+function verCmp(a, b) {
+  const pa = String(a).split(".").map((x) => parseInt(x, 10) || 0), pb = String(b).split(".").map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d; }
+  return 0;
+}
 function PluginsView({ t, call, lang, onChange }) {
   const L = lang === "zh-TW" ? "zh" : "en";
   const lbl = (o) => (o && (o[L] || o.en)) || "";
@@ -2355,7 +2361,7 @@ function PluginsView({ t, call, lang, onChange }) {
                 <span className="mgr-plugin-actions">
                   <button className="ws-btn" disabled={!!busy}
                     onClick={() => act("install", () => call("/api/v1/plugins/install-available", { method: "POST", body: { file: a.file, source: a.source || "" } }))}>
-                    {a.installed ? (a.installed === a.version ? t("pl.reinstall") : t("pl.update")) : t("pl.install")}</button>
+                    {a.installed ? (a.installed === a.version ? t("pl.reinstall") : verCmp(a.version, a.installed) > 0 ? t("pl.update") : t("pl.older")) : t("pl.install")}</button>
                   {a.source === "upload" && <button className="ws-btn" disabled={!!busy}
                     onClick={() => act("discard", () => call(`/api/v1/plugins/uploads/${encodeURIComponent(a.file)}`, { method: "DELETE" }))}>{t("pl.discard")}</button>}
                 </span>
