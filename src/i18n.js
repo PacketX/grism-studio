@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.306.0";
+export const STUDIO_VERSION = "2.307.0";
 
 export const I18N = {
   en: {
@@ -320,6 +320,7 @@ export const I18N = {
     "set.swErr.badSwitchPort": "the switch port has to be a number",
     "set.fwCheckingNote": "Asking the update server for the latest release…", "set.fwFound": "Update available:", "set.fwDownloadFailed": "Download failed", "set.fwUpToDate": "No newer release was offered.", "set.fwCheckFailed": "Could not check for updates", "set.fwServer": "Update server", "set.fwServerPort": "Port",
     "set.fwDownload": "Download", "set.fwInstall": "Install downloaded update",
+    "set.fwInstallRefused": "Not installed", "set.fwNoProgress": "no progress",
     "set.fwManual": "Manual update", "set.fwManualNote": "Upload a firmware archive supplied to you. An image named for the machine it was built for and its version -- grism-bin-T12S.tgz, grism-bin-T12S-MEC-6.6.261120.1.tgz -- is taken as it is; the model inside it is what decides whether it fits.",
     "set.fwUpload": "Upload and update",
     "set.fwUploadTitle": "Update the firmware?",
@@ -1445,6 +1446,7 @@ export const I18N = {
     "set.swErr.badSwitchPort": "交換器埠編號必須是數字",
     "set.fwCheckingNote": "正在向更新伺服器查詢最新版本…", "set.fwFound": "有可用更新:", "set.fwDownloadFailed": "下載失敗", "set.fwUpToDate": "目前沒有更新版本。", "set.fwCheckFailed": "無法檢查更新", "set.fwServer": "更新伺服器", "set.fwServerPort": "通訊埠",
     "set.fwDownload": "下載", "set.fwInstall": "安裝已下載的更新",
+    "set.fwInstallRefused": "未安裝", "set.fwNoProgress": "沒有進度",
     "set.fwManual": "手動更新", "set.fwManualNote": "上傳取得的韌體封存檔。檔名帶型號或版本(例如 grism-bin-T12S.tgz、grism-bin-T12S-MEC-6.6.261120.1.tgz)也可以直接上傳;能不能用是由檔案裡的型號決定。",
     "set.fwUpload": "上傳並更新",
     "set.fwUploadTitle": "更新韌體?",

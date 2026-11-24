@@ -2853,14 +2853,22 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
   }, [loggedIn, section, fw.version, getConfig]);
 
   /* Ask the device to fetch the image, then poll until the byte counts agree. */
+  const dlTok = React.useRef("");                     // names the download the device is asked to make
   const startDownload = React.useCallback((version) => {
     // Kick the transfer off and start watching straight away — the request itself
     // stays open for the whole download, so waiting on it would leave the progress
-    // bar hidden until the file had already arrived.
+    // bar hidden until the file had already arrived. The token goes with both the
+    // download and every progress check: the device answers 0,0 to a check whose
+    // token it has not seen, so a poll handled before the download request cannot
+    // read a previous download's finished image as this one's (that showed
+    // "complete" at once and let the install be asked for three seconds into the
+    // transfer, when the device had no image to install).
+    const tok = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    dlTok.current = tok;
     setDlErr("");
-    fetch(`/grism/task/update_download?version=${encodeURIComponent(version)}`, { credentials: "include" })
-      .then((res) => { if (!res.ok) { setDlErr("HTTP " + res.status); setDl(null); } })
-      .catch((e) => { warnFetch("firmware download", e); setDlErr(String(e.message || e)); setDl(null); });
+    fetch(`/grism/task/update_download?version=${encodeURIComponent(version)}&tok=${tok}`, { credentials: "include" })
+      .then(async (res) => { if (!res.ok) { const why = (await res.text().catch(() => "")) || ("HTTP " + res.status); setDlErr(tr("set.fwDownloadFailed") + ": " + why); setDl(null); } })
+      .catch((e) => { warnFetch("firmware download", e); setDlErr(tr("set.fwDownloadFailed") + ": " + String(e.message || e)); setDl(null); });
     setDl({ done: 0, total: 0, ratio: 0, complete: false });
   }, []);
   /* Key the poll on whether it should be running, not on the progress object:
@@ -2875,14 +2883,14 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
     let quiet = 0;                            // ticks with nothing to report
     const poll = async () => {
       try {
-        const res = await fetch("/grism/task/update_download_check", { credentials: "include" });
-        if (!res.ok) { if (alive) setDlErr("HTTP " + res.status); return; }
+        const res = await fetch("/grism/task/update_download_check?tok=" + dlTok.current, { credentials: "include" });
+        if (!res.ok) { if (alive) setDlErr(tr("set.fwDownloadFailed") + ": HTTP " + res.status); return; }
         if (!alive) return;
         const next = parseDownloadProgress(await res.text());
         // A download that never reports a byte is a download that is not
         // happening -- say so rather than sit at 0 B for as long as the tab is open.
         quiet = next.total > 0 ? 0 : quiet + 1;
-        if (quiet >= 30) { setDlErr("no progress"); setDl(null); return; }
+        if (quiet >= 30) { setDlErr(tr("set.fwDownloadFailed") + ": " + tr("set.fwNoProgress")); setDl(null); return; }
         setDl(next);
       } catch { /* transient — the next tick tries again */ }
     };
@@ -5610,7 +5618,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
             )}
             {/* a refused or stalled download used to leave the bar at 0 B with
                 nothing said, and the poll running for as long as the tab stayed open */}
-            {dlErr && <p className="set-hint err">{tr("set.fwDownloadFailed")}: {dlErr}</p>}
+            {dlErr && <p className="set-hint err">{dlErr}</p>}
             <div className="set-actions">
               {/* the device queries the update server, which can take a moment */}
               <button className="copy-btn" disabled={submit.state === "sending" || fwChecking}
@@ -5756,7 +5764,14 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                 // rejected by CsrfViewMiddleware before the handler ever ran, and
                 // the install silently never started. The handler reads nothing
                 // from the request and does not check the method.
-                fetch("/grism/task/update_download_update", { credentials: "include" }).catch(() => {});
+                fetch("/grism/task/update_download_update", { credentials: "include" })
+                  .then(async (r) => {
+                    if (r.ok) return;
+                    // 409: the download is still running, or there is no whole image to install
+                    const why = (await r.text().catch(() => "")) || ("HTTP " + r.status);
+                    setWait(null); setDl(null); setDlErr(tr("set.fwInstallRefused") + ": " + why);
+                  })
+                  .catch(() => {});
                 setWait(fwWait()); return;
               }
               if (k === "flow") {
