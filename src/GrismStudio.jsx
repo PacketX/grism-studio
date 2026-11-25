@@ -11,7 +11,7 @@ import {
   cUpdate, removeTestKeeping, chainProblems, changedPorts, sideChangedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
-  portDescriptions, ifacePortLabel, nextUpdatePhase, flowTableCapacity, FLOW_CACHE_NODE_TOP,
+  portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, flowTableCapacity, FLOW_CACHE_NODE_TOP,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
@@ -828,7 +828,13 @@ export default function GrismStudio() {
       try {
         const res = await real("/grism/task/get_current_user", { credentials: "include" });
         const alive = res.ok && !!extractUsername(await res.text());
-        if (!alive && authRef.current.who) doLogout(t("login.expired"));
+        /* Not while an update, restore or reset is holding the page: the device
+           is meant to go away, and it comes back with its sessions emptied, so
+           this would sign the reader out exactly as the flow it is watching
+           finishes -- taking the overlay, and the only word that it finished,
+           with it. The reload offered on "done" goes to the sign-in screen,
+           which is where a reflashed device should put them. */
+        if (!alive && authRef.current.who && !deviceRestartHold.active) doLogout(t("login.expired"));
       } catch { /* offline, not signed out -- leave the session alone */ }
       finally { sessionProbe.current.busy = false; }
     };
@@ -3145,29 +3151,62 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
 
   const [wait, setWait] = React.useState(null);
   const waitPhase = wait?.phase;
+  /* Tell the app above that the device is expected to restart, so the 404s it
+     answers with once it is back are not taken for a sign-out (grism-core's
+     deviceRestartHold). Cleared when the overlay goes, and on unmount. */
+  React.useEffect(() => {
+    deviceRestartHold.active = !!wait;
+    return () => { deviceRestartHold.active = false; };
+  }, [wait]);
   React.useEffect(() => {
     if (!waitPhase || waitPhase === "done") return;
     let alive = true;
     let downRun = 0;
     const ping = async () => {
-      let up = false, version = "";
+      let reachable = false, ok = false, version = "";
       try {
-        // no-store: a cached 200 would read as "back up" while it is still down
-        const res = await fetch("/grism/task/get_version", { credentials: "include", cache: "no-store" });
-        up = res.ok;
+        /* no-store: a cached 200 would read as "back up" while it is still
+           down. With a timeout: a device on its way down does not refuse the
+           connection, it says nothing, and a fetch left to its own devices
+           waits out the TCP timeout -- the poll that should count a failure
+           every two seconds would count one a minute. Long enough that a box
+           at 100% CPU unpacking an image is not mistaken for one that is gone. */
+        const res = await fetch("/grism/task/get_version",
+          { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(4000) });
+        /* An HTTP status -- any status -- means something answered, so the
+           device is still there: a 500 or 502 is nginx while runserver reloads
+           under the pywww the image just replaced. Taking that for a reboot is
+           what made the overlay say "finished" while the watcher was still
+           applying the configSet and about to reboot (G8S, 2026-11-25). */
+        reachable = true;
+        ok = res.ok;
         /* Parsed, not raw. get_version answers "<version>-<revision>", and
            wasVersion holds the parsed version alone -- so comparing the whole
            body against it made them differ on the very first poll, every time,
            and the update reported itself complete about a second after it was
            submitted. The arm64 line hid it behind its ten-second hold; MIPS has
            no hold, so there it finished before the upload did. */
-        if (up) version = parseFirmwareVersion(await res.text()).version;
-      } catch { up = false; }
+        if (ok) version = parseFirmwareVersion(await res.text()).version;
+      } catch { reachable = false; }
       if (!alive) return;
-      downRun = up ? 0 : downRun + 1;
+      downRun = reachable ? 0 : downRun + 1;
       const goneFor = downRun;
+      /* Only where it decides something: the device answers again and the page
+         is about to call the update finished. A session that still works means
+         it never rebooted (pywww's sessions live on the /data tmpfs), so this
+         is what tells a box that went quiet unpacking an image from one that
+         has been round. null = the probe could not tell. */
+      let sessionAlive = null;
+      if (reachable && ok && waitPhase === "rebooting") {
+        try {
+          const r = await fetch("/grism/task/get_current_user",
+            { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(4000) });
+          sessionAlive = r.ok ? /"username"/.test(await r.text()) : false;
+        } catch { sessionAlive = null; }
+        if (!alive) return;
+      }
       setWait((w) => {
-        const phase = nextUpdatePhase(w, { up, goneFor, version, now: Date.now() });
+        const phase = nextUpdatePhase(w, { reachable, ok, goneFor, version, sessionAlive, now: Date.now() });
         return !w || phase === w.phase ? w : { ...w, phase };
       });
     };
@@ -3218,10 +3257,12 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
     try {
       const fd = new FormData(); fd.append(field, file, file.name);
       const res = await fetch(url, { method: "POST", credentials: "include", body: fd });
-      // A real HTTP status means the device answered and refused: drop the hold
-      // and show why. A thrown fetch means the connection went away, which for
-      // these endpoints usually means it is already restarting — keep holding.
-      if (!res.ok) { setWait(null); throw new Error("HTTP " + res.status); }
+      /* A 4xx means the device answered and refused -- a read-only account, a
+         name it will not take: drop the hold and show why. A thrown fetch means
+         the connection went away, and a 5xx means nginx answered while pywww
+         was being replaced under it (a MIPS box applying an image kills it
+         mid-request): both mean the update is on its way, so keep holding. */
+      if (!res.ok && res.status < 500) { setWait(null); throw new Error("HTTP " + res.status); }
       setSubmit({ state: "idle", msg: "" });
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
   };

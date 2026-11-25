@@ -3334,13 +3334,44 @@ export function flowTableCapacity(value, { family, cores, perCore }) {
    had even finished. The arm64 line masked it with its ten-second hold, MIPS
    had nothing to mask it.
 
-   A run of failures, not one: applying an image rewrites pywww underneath a
-   running manage.py, which answers 500 for a few seconds, and treating that as
-   "the device went down" made the next success read as "finished". */
-export const UPDATE_DOWN_TICKS = 3;            // × 2s, comfortably past a reload
-export function nextUpdatePhase(wait, { up, goneFor, version, now }) {
+   What counts as gone is nothing answering at all -- `reachable`, not a 200.
+   An HTTP status is the device saying it is still there: applying an image
+   rewrites pywww underneath the running manage.py, and nginx then answers 500
+   (or 502 while runserver is restarting) for several seconds on a MIPS box.
+   Counting that as "it went down" is what made the next good answer read as
+   "rebooted" while the box had not begun to -- the G8S report of 2026-11-25:
+   the overlay said the update was finished while the watcher was still
+   applying the configSet, syncing and about to reboot. Nothing in that window
+   proves a boot either: `get_version` reads /data/ftproot/version, which only
+   grism_init writes, at boot, from the image's own etc/version -- so on the
+   MIPS line a changed version is itself proof the device restarted.
+
+   A run of failures, not one, and long enough that a slow box answering late
+   is not read as a reboot: unpacking an image takes a MIPS core to 100% for
+   half a minute, where nginx can miss a probe or two, while the reboot itself
+   is gone for a minute or more (109 s on .188). The arm64 line, which never
+   goes away for that long, is finished by its hold and the version instead. */
+export const UPDATE_DOWN_TICKS = 8;            // × 2s, well past any reload
+
+/* Set while an update, a restore or a factory reset holds the page.
+
+   Such a flow expects the device to go away and come back, and what it comes
+   back with is an empty session store: pywww keeps its sessions in a sqlite
+   file under /data, which is a tmpfs seeded afresh at every boot. So the first
+   authenticated poll after the device answers again gets a 404 -- and the
+   sign-out that normally follows one unmounted the whole settings tab, overlay
+   and all, leaving the reader at the sign-in screen with "session expired" and
+   no word that the update had finished. Measured on the G8S at .150 on
+   2026-11-25: the device was back at 155 s, the overlay was gone by 174 s and
+   never said done.
+
+   A mutable holder rather than React state: the fetch wrapper that acts on
+   those 404s is installed once by the app above, and the flow that knows about
+   the restart is a tab below it. Whoever sets it must clear it. */
+export const deviceRestartHold = { active: false };
+export function nextUpdatePhase(wait, { reachable, ok, goneFor, version, sessionAlive = null, now }) {
   if (!wait || wait.phase === "done") return wait?.phase ?? null;
-  if (!up) {
+  if (!reachable) {
     return goneFor >= UPDATE_DOWN_TICKS ? "rebooting" : wait.phase;
   }
   /* Still inside the hold a restart-only update keeps: say what is happening
@@ -3351,9 +3382,19 @@ export function nextUpdatePhase(wait, { up, goneFor, version, now }) {
      reports. Only useful when the image is a different build; the
      down-then-up rule below still covers a reflash of the same one. */
   if (wait.wasVersion && version && version !== wait.wasVersion) return "done";
-  /* Reachable only means finished if it had gone away first -- the device is
-     still answering for the first moments of an update. */
-  return wait.phase === "rebooting" ? "done" : wait.phase;
+  /* Back from being gone, and only once the API answers again: after a reboot
+     nginx is listening before pywww is, and a 502 then is not a finished
+     update. The device is also still answering for the first moments of an
+     update, which is why it must have gone away first. */
+  if (wait.phase !== "rebooting" || !ok) return wait.phase;
+  /* And the session says whether it really did go: pywww keeps its sessions in
+     a sqlite file under /data, a tmpfs seeded afresh at every boot, so a
+     session that still works is a device that never rebooted -- a MIPS box
+     unpacking an image answers nothing for a spell and then answers again,
+     with the configSet, the sync and the reboot still ahead of it. Say it is
+     still updating rather than finished; `null` is a probe that could not tell,
+     where coming back from a long silence is evidence enough. */
+  return sessionAlive === true ? "updating" : "done";
 }
 
 /* How long the page stays held after an update that restarts services rather

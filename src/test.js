@@ -685,45 +685,102 @@ group("the update overlay walks its three phases");
   const reboot = { phase: "updating", wasVersion: "6.6.261001.1", holdUntil: 0 };
   const T = 1000000;
   const step = (w, o) => C.nextUpdatePhase(w, { now: T, ...o });
+  const up = (version = "") => ({ reachable: true, ok: true, goneFor: 0, version });
+  const down = (goneFor) => ({ reachable: false, ok: false, goneFor, version: "" });
 
   // the raw body is exactly what used to be passed in, and must not finish it
   const RAW = "6.6.261001.1\n-d7a2f97960aa340b722767d34d1cbaa24eb0d83f";
   check("the parsed version is not the raw body",
     C.parseFirmwareVersion(RAW).version !== RAW.trim());
   check("the device answering its own version is not 'done'",
-    step(reboot, { up: true, goneFor: 0, version: C.parseFirmwareVersion(RAW).version }) === "updating");
+    step(reboot, up(C.parseFirmwareVersion(RAW).version)) === "updating");
 
   // MIPS: up → gone → back
   check("still reachable means still updating",
-    step(reboot, { up: true, goneFor: 0, version: "6.6.261001.1" }) === "updating");
+    step(reboot, up("6.6.261001.1")) === "updating");
   check("one failed read is not a reboot",
-    step(reboot, { up: false, goneFor: 1, version: "" }) === "updating"
-    && step(reboot, { up: false, goneFor: 2, version: "" }) === "updating");
+    step(reboot, down(1)) === "updating" && step(reboot, down(2)) === "updating");
   check("a run of failures is",
-    step(reboot, { up: false, goneFor: 3, version: "" }) === "rebooting");
+    step(reboot, down(C.UPDATE_DOWN_TICKS)) === "rebooting");
   const gone = { ...reboot, phase: "rebooting" };
   check("back up after being gone is done",
-    step(gone, { up: true, goneFor: 0, version: "6.6.261001.1" }) === "done");
+    step(gone, up("6.6.261001.1")) === "done");
   check("a reflash of the same version still completes",
-    step(gone, { up: true, goneFor: 0, version: reboot.wasVersion }) === "done");
+    step(gone, up(reboot.wasVersion)) === "done");
+
+  /* The G8S report of 2026-11-25: the watcher rewrites pywww under the running
+     manage.py, nginx answers 500 for several seconds, and that used to count
+     as the device going away -- so the next good answer read as "rebooted"
+     while the watcher was still applying the configSet and about to reboot.
+     An answer with a status is the device saying it is there. */
+  const reloading = { reachable: true, ok: false, version: "" };
+  check("the web service reloading is not the device going away",
+    step(reboot, { ...reloading, goneFor: 0 }) === "updating"
+    && step(reboot, { ...reloading, goneFor: 9 }) === "updating");
+  check("a 5xx run does not finish an update",
+    step({ ...reboot, phase: "rebooting" }, { ...reloading, goneFor: 0 }) === "rebooting");
+  /* And the run has to be longer than a MIPS box unpacking an image can go
+     without answering, since the reboot itself is gone for a minute or more. */
+  check("the long run of silence is what says it rebooted",
+    step(reboot, down(C.UPDATE_DOWN_TICKS - 1)) === "updating"
+    && C.UPDATE_DOWN_TICKS >= 8);
 
   // arm64: never goes away, so the version it reports is what finishes it
   const held = { phase: "updating", wasVersion: "7.6.260930.4", holdUntil: T + 5000 };
   check("inside the hold it says rebooting",
-    step(held, { up: true, goneFor: 0, version: "7.6.261001.1" }) === "rebooting");
+    step(held, up("7.6.261001.1")) === "rebooting");
   check("past the hold a new version finishes it",
-    C.nextUpdatePhase(held, { up: true, goneFor: 0, version: "7.6.261001.1", now: T + 6000 }) === "done");
+    C.nextUpdatePhase(held, { ...up("7.6.261001.1"), now: T + 6000 }) === "done");
   check("past the hold the same version does not",
-    C.nextUpdatePhase(held, { up: true, goneFor: 0, version: "7.6.260930.4", now: T + 6000 }) === "updating");
+    C.nextUpdatePhase(held, { ...up("7.6.260930.4"), now: T + 6000 }) === "updating");
 
   check("done is terminal",
-    step({ ...reboot, phase: "done" }, { up: false, goneFor: 9, version: "" }) === "done");
-  check("no wait, no phase", C.nextUpdatePhase(null, { up: true, goneFor: 0, version: "x" }) === null);
+    step({ ...reboot, phase: "done" }, down(9)) === "done");
+  check("no wait, no phase", C.nextUpdatePhase(null, up("x")) === null);
 
   // the poll must hand in a parsed version -- this is the regression itself
   const jsx3 = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
   check("the poll parses get_version before comparing",
     /version = parseFirmwareVersion\(await res\.text\(\)\)\.version/.test(jsx3));
+  // and must tell an answered status from nothing answering at all
+  check("the poll counts an HTTP status as reachable",
+    /reachable = true;\s*\n\s*ok = res\.ok;/.test(jsx3));
+  check("the poll gives its probe a timeout",
+    /get_version"[\s\S]{0,200}AbortSignal\.timeout\(/.test(jsx3));
+
+  /* The device comes back with its sessions emptied (/data is a tmpfs), and
+     the 404 that follows used to sign the reader out -- which unmounted the
+     settings tab and the overlay with it, so a correct "done" was never seen.
+     .150, 2026-11-25: back at 155 s, overlay gone by 174 s. */
+  check("a restart hold exists and starts off", C.deviceRestartHold.active === false);
+  check("the sign-out watcher honours it",
+    /!alive && authRef\.current\.who && !deviceRestartHold\.active/.test(jsx3));
+  check("the overlay sets and clears it",
+    /deviceRestartHold\.active = !!wait;/.test(jsx3)
+    && /return \(\) => \{ deviceRestartHold\.active = false; \};/.test(jsx3));
+  /* And a 5xx to the upload itself is pywww being replaced mid-request, not a
+     refusal: dropping the hold there left the flow with no overlay at all. */
+  check("only a 4xx drops the hold", /if \(!res\.ok && res\.status < 500\)/.test(jsx3));
+
+  /* The session is the proof that it rebooted. A MIPS box unpacking an image
+     answers nothing for a spell and then answers again with the configSet, the
+     sync and the reboot still ahead of it -- and its session still works,
+     because pywww's sessions sit on the /data tmpfs and only a boot empties
+     them. Measured on .150 on 2026-11-25: silent from 13 s, answering again at
+     20 s, silent again, rebooted at ~90 s, back at 158 s. */
+  check("answering again with the session intact is not a finished update",
+    step(gone, { ...up("6.6.261001.1"), sessionAlive: true }) === "updating");
+  check("answering again with the session gone is",
+    step(gone, { ...up("6.6.261001.1"), sessionAlive: false }) === "done");
+  check("a probe that cannot tell still finishes it",
+    step(gone, { ...up("6.6.261001.1"), sessionAlive: null }) === "done"
+    && step(gone, up("6.6.261001.1")) === "done");
+  check("the session says nothing while the device has not gone away",
+    step(reboot, { ...up("6.6.261001.1"), sessionAlive: false }) === "updating");
+  check("a new version finishes it whatever the session says",
+    step(gone, { ...up("6.6.261125.1"), sessionAlive: true }) === "done");
+  check("the poll probes the session only when it decides something",
+    /waitPhase === "rebooting"[\s\S]{0,400}get_current_user/.test(jsx3));
 }
 
 group("every port picker names its ports");
