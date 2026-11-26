@@ -4009,26 +4009,29 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                     <section className="sys-card" id="sec-portmode">
                       <h3 className="sys-card-title">{tr("set.portModeTitle").replace("{cage}", portMode.cage || "")}</h3>
                       <p className="set-hint">{tr("set.portModeNote")}</p>
-                      <div className="sess-grid">
+                      {/* the same figures block as the firmware card, the same table as the ports above */}
+                      <div className="sess-figures">
                         <div><span className="sess-k">{tr("set.portModeNow")}</span>
                           <span className="sess-v mono">{portModeLabel(portMode)}</span></div>
                         <div><span className="sess-k">{tr("set.portModeBoard")}</span>
                           <span className="sess-v">{portMode.board_name || portMode.board}</span></div>
                       </div>
-                      <table className="svc-table portmode-table">
-                        <thead><tr><th>{tr("set.portModeLane")}</th><th>{tr("set.portModeProto")}</th><th>{tr("set.portModeSpeed")}</th><th>{tr("set.portModeLanes")}</th><th>FEC</th></tr></thead>
-                        <tbody>
-                          {(portMode.cage_portm || []).map((p) => (
-                            <tr key={p.portm} className={p.speed ? "" : "dim"}>
-                              <td className="mono">{p.portm}</td>
-                              <td className="mono">{p.protocol}</td>
-                              <td>{laneSpeedLabel(p.speed)}</td>
-                              <td>{p.lanes || "—"}</td>
-                              <td>{p.fec || "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <div className="tf-table-wrap">
+                        <table className="tf-table portmode-table">
+                          <thead><tr><th>{tr("set.portModeLane")}</th><th>{tr("set.portModeProto")}</th><th>{tr("set.portModeSpeed")}</th><th>{tr("set.portModeLanes")}</th><th>FEC</th></tr></thead>
+                          <tbody>
+                            {(portMode.cage_portm || []).map((p) => (
+                              <tr key={p.portm} style={p.speed ? undefined : { opacity: 0.55 }}>
+                                <td className="mono">{p.portm}</td>
+                                <td className="mono">{p.protocol}</td>
+                                <td>{laneSpeedLabel(p.speed)}</td>
+                                <td>{p.lanes || "—"}</td>
+                                <td>{p.fec || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                       <p className="set-hint">{tr("set.portModeHow")}</p>
                     </section>
                   )}
