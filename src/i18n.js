@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.309.1";
+export const STUDIO_VERSION = "2.309.2";
 
 export const I18N = {
   en: {
@@ -361,7 +361,7 @@ export const I18N = {
     "set.vpErrNoVlan": "A virtual port needs a VLAN id (1–4094).",
     "set.vpErrVlan": "A VLAN id is a whole number from 1 to 4094.",
     "set.portModeTitle": "{cage} port mode", "set.portModeNow": "Mode", "set.portModeBoard": "Board",
-    "set.portModeLane": "Lane group", "set.portModeProto": "Protocol", "set.portModeSpeed": "Speed", "set.portModeLanes": "Lanes",
+    "set.portModeLane": "Lane", "set.portModeLaneN": "lane {n}", "set.portModePort": "GRISM port", "set.portModeProto": "Protocol", "set.portModeSpeed": "Speed", "set.portModeLanes": "Lanes",
     "set.portModeNote": "How the cage's four lanes are split: one 100G port, two 50G, four 25G or 10G. Read from the boot firmware's saved settings.",
     "set.portModeHow": "Changing it is still done in the boot firmware's menu over the console (B during boot → Setup → Ethernet configuration → PORTM Selection → Save Settings and Exit); the device then restarts with the new layout.",
     "set.speedTitle": "Port speed",
@@ -1491,7 +1491,7 @@ export const I18N = {
     "set.vpErrNoVlan": "虛擬埠必須填 VLAN 編號(1–4094)。",
     "set.vpErrVlan": "VLAN id 是 1 到 4094 的整數。",
     "set.portModeTitle": "{cage} 埠模式", "set.portModeNow": "目前模式", "set.portModeBoard": "板子",
-    "set.portModeLane": "通道", "set.portModeProto": "協定", "set.portModeSpeed": "速度", "set.portModeLanes": "lane 數",
+    "set.portModeLane": "Lane 編號", "set.portModeLaneN": "第 {n} 號 lane", "set.portModePort": "GRISM 埠", "set.portModeProto": "協定", "set.portModeSpeed": "速度", "set.portModeLanes": "lane 數",
     "set.portModeNote": "這個 cage 的四條 lane 怎麼拆:一個 100G、兩個 50G、四個 25G 或 10G。讀自開機韌體存下的設定。",
     "set.portModeHow": "目前變更仍要從 console 進開機韌體的選單(開機時按 B → Setup → Ethernet configuration → PORTM Selection → Save Settings and Exit),裝置會以新的配置重新啟動。",
     "set.speedTitle": "連接埠速度",

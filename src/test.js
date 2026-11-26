@@ -799,6 +799,7 @@ group("the HL1's port mode is worded from what the device read");
   const jsx4 = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
   check("the interfaces section asks the device for it and shows the card", /get_port_mode/.test(jsx4) && /id="sec-portmode"/.test(jsx4));
   check("the card says the change is still made at the console", /set\.portModeHow/.test(jsx4));
+  check("the lane column is the cage's lane number with the firmware name as a note, and the GRISM port has a column", /set\.portModeLaneN/.test(jsx4) && /set\.portModePort/.test(jsx4));
 }
 
 group("every port picker names its ports");

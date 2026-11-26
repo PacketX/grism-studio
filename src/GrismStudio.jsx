@@ -4018,11 +4018,16 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                       </div>
                       <div className="tf-table-wrap">
                         <table className="tf-table portmode-table">
-                          <thead><tr><th>{tr("set.portModeLane")}</th><th>{tr("set.portModeProto")}</th><th>{tr("set.portModeSpeed")}</th><th>{tr("set.portModeLanes")}</th><th>FEC</th></tr></thead>
+                          {/* The lane is the cage's own number (what a breakout cable's legs
+                              are labelled); the boot firmware's PORTM name is kept as a note,
+                              since its P2..P5 read like GRISM's own port names and are not --
+                              the GRISM port on each lane has its own column. */}
+                          <thead><tr><th>{tr("set.portModeLane")}</th><th>{tr("set.portModePort")}</th><th>{tr("set.portModeProto")}</th><th>{tr("set.portModeSpeed")}</th><th>{tr("set.portModeLanes")}</th><th>FEC</th></tr></thead>
                           <tbody>
                             {(portMode.cage_portm || []).map((p) => (
                               <tr key={p.portm} style={p.speed ? undefined : { opacity: 0.55 }}>
-                                <td className="mono">{p.portm}</td>
+                                <td>{tr("set.portModeLaneN").replace("{n}", String(p.lane ?? ""))}<span className="nf-faint mono" style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>{p.portm}</span></td>
+                                <td className="mono">{p.port || "—"}</td>
                                 <td className="mono">{p.protocol}</td>
                                 <td>{laneSpeedLabel(p.speed)}</td>
                                 <td>{p.lanes || "—"}</td>
