@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.310.0";
+export const STUDIO_VERSION = "2.311.0";
 
 export const I18N = {
   en: {
@@ -368,6 +368,9 @@ export const I18N = {
     "set.portModeConfirmTitle": "Change the port mode?",
     "set.portModeConfirmBody": "the boot firmware's settings are rewritten and the device restarts now. Its ports come back renumbered; traffic stops until it is back and the other end matches.",
     "set.portModeApplying": "Changing the port mode", "set.portModeApplyingBody": "The new mode is written into the boot firmware. The device is restarting to bring the cage up that way and to renumber its ports — this takes two to three minutes.",
+    "set.portModeFecNone": "none", "set.portModeFecHint": "the error correction the lanes run; both ends of the cable must use the same. 25G lanes take none, BASE-R or RS-FEC; the 50G-per-lane (PAM4) modes RS-FEC only",
+    "set.portModeFecConfirmBody": "the boot firmware's settings are rewritten and the device restarts now. The ports keep their numbers; traffic stops until it is back, and the link comes up once the other end runs the same FEC.",
+    "set.portModeFecApplyingBody": "The FEC is written into the boot firmware. The device is restarting to bring the lanes up with it — this takes two to three minutes; the ports keep their numbers.",
     "set.portModeHow": "Changing it is still done in the boot firmware's menu over the console (B during boot → Setup → Ethernet configuration → PORTM Selection → Save Settings and Exit); the device then restarts with the new layout.",
     "set.speedTitle": "Port speed",
     "set.speedNote": "Four ports share a transceiver group and change together. Set all the groups you want, then apply once: the speed is written to the boot environment and the device restarts to pick it up.",
@@ -1503,6 +1506,9 @@ export const I18N = {
     "set.portModeConfirmTitle": "要切換埠模式?",
     "set.portModeConfirmBody": "會改寫開機韌體的設定並立刻重新開機,回來後埠會重新編號;期間流量中斷,對端設成相同拆分後連線才會恢復。",
     "set.portModeApplying": "切換埠模式", "set.portModeApplyingBody": "新模式已寫入開機韌體,裝置正在重新開機以套用並重新編號埠 — 大約需要兩到三分鐘。",
+    "set.portModeFecNone": "不使用", "set.portModeFecHint": "lane 使用的錯誤更正;線的兩端必須一致。25G lane 可選不使用、BASE-R 或 RS-FEC;每 lane 50G(PAM4)的模式只能 RS-FEC",
+    "set.portModeFecConfirmBody": "會改寫開機韌體的設定並立刻重新開機;埠編號不變,期間流量中斷,對端設成相同的 FEC 後連線才會恢復。",
+    "set.portModeFecApplyingBody": "FEC 已寫入開機韌體,裝置正在重新開機以套用 — 大約需要兩到三分鐘;埠編號不變。",
     "set.portModeHow": "目前變更仍要從 console 進開機韌體的選單(開機時按 B → Setup → Ethernet configuration → PORTM Selection → Save Settings and Exit),裝置會以新的配置重新啟動。",
     "set.speedTitle": "連接埠速度",
     "set.speedNote": "每四個埠共用一組收發器,只能整組切換。三組都調好後再一次套用:速度寫入開機環境,裝置會重新開機才生效,一次套用只會重開一次。",

@@ -3424,6 +3424,29 @@ export function portModeLabel(d) {
   return active.map((p) => `${p.portm} ${laneSpeedLabel(p.speed)}`).join(" · ");
 }
 
+/* The FEC codes of the boot firmware's Setup (its own menu's words), and what
+   the port-mode card would write for a pick: the picked mode (the current one
+   when none is picked) with the FEC chosen for it -- else, when the mode stays,
+   the FEC it runs now, else the picked mode's default (the first the device
+   lists; the PAM4 modes list RS-FEC alone). `changed` is what enables Apply,
+   `label` the "was → will be" line, FEC named on both sides whenever it is
+   part of the change or not none. */
+export const FEC_NAMES = { "0": "none", "1": "BASE-R", "2": "RS-FEC", "3": "BASE-R+RS-FEC" };
+export function portModeTarget(d, pick, fec, noneWord = "none") {
+  if (!d || !d.supported) return null;
+  const mode = pick || d.mode;
+  const entry = (d.modes || []).find((m) => m.mode === mode);
+  const fecs = entry ? (entry.fecs || (entry.fec ? [entry.fec] : [])) : [];
+  const now = String(d.fec ?? "0");
+  let f = fec || (mode === d.mode ? now : fecs[0]) || fecs[0] || "0";
+  if (fecs.length && !fecs.includes(f)) f = fecs[0];
+  const changed = mode !== d.mode || f !== now;
+  const name = (m) => (m && m !== "custom" ? m.replace("x", " × ") : portModeLabel(d));
+  const sayFec = f !== now || f !== "0";
+  const word = (m, c) => name(m) + (sayFec ? ` · FEC ${c === "0" ? noneWord : (FEC_NAMES[c] || c)}` : "");
+  return { mode, fec: f, fecs, changed, label: changed ? `${word(d.mode, now)} → ${word(mode, f)}` : "" };
+}
+
 /* Which product line a device is, from the version it reports.
 
    The two lines update differently: on MIPS (6.5.x) an image needs the device

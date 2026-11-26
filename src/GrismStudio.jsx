@@ -11,7 +11,7 @@ import {
   cUpdate, removeTestKeeping, chainProblems, changedPorts, sideChangedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
-  portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, portModeLabel, laneSpeedLabel, flowTableCapacity, FLOW_CACHE_NODE_TOP,
+  portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, portModeLabel, laneSpeedLabel, portModeTarget, FEC_NAMES, flowTableCapacity, FLOW_CACHE_NODE_TOP,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
@@ -2595,18 +2595,20 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
      ports renumbered. Held like a firmware update afterwards -- the page would
      otherwise show the old ports table as if nothing had happened. */
   const submitPortMode = async () => {
-    if (!pmPick || !portMode || pmPick === portMode.mode) return;
+    const want = portModeTarget(portMode, pmPick, pmFec, tr("set.portModeFecNone"));
+    if (!want || !want.changed) return;
     setSubmit({ state: "sending", msg: "" });
     let ok = false;
     try {
       const res = await fetch("/grism/task/set_port_mode", { method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: pmPick }) });
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: want.mode, fec: want.fec }) });
       ok = res.ok;
       if (!ok) setSubmit({ state: "error", msg: (await res.text()).trim() || ("HTTP " + res.status) });
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
     if (!ok) return;
     setSubmit({ state: "idle", msg: "" });
-    setWait({ title: tr("set.portModeApplying"), body: tr("set.portModeApplyingBody"), phase: "updating" });
+    // a FEC change alone keeps the ports as they are; the device still restarts, the FEC being a boot-firmware setting too
+    setWait({ title: tr("set.portModeApplying"), body: tr(want.mode === portMode.mode ? "set.portModeFecApplyingBody" : "set.portModeApplyingBody"), phase: "updating" });
   };
 
   const submitSpeed = async () => {
@@ -3053,6 +3055,8 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
   const [rebootWatch, setRebootWatch] = React.useState(null);   // { secs, back }
   const [portMode, setPortMode] = React.useState(null);        // get_port_mode: the HL1's cage mode, or null
   const [pmPick, setPmPick] = React.useState("");            // the mode chosen on that card, before Apply
+  const [pmFec, setPmFec] = React.useState("");              // the FEC chosen with it ("" = the mode's default, or the current one when the mode stays)
+  const pmWant = portMode ? portModeTarget(portMode, pmPick, pmFec, tr("set.portModeFecNone")) : null;   // what Apply would write
   // { title, body, phase } while the device installs and restarts.
   // A clock would only ever be a guess: how long an image takes to apply varies,
   // and the number keeps counting after the device is already back. Report what
@@ -4061,20 +4065,32 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                         <>
                           <div className="sp-row">
                             <span className="sp-ports mono">{portMode.cage}</span>
-                            <span className="sp-was">{pmPick && pmPick !== portMode.mode ? `${portModeLabel(portMode)} → ${pmPick.replace("x", " × ")}` : ""}</span>
+                            <span className="sp-was">{pmWant.changed ? pmWant.label : ""}</span>
                             <span className="sp-seg">
                               {(portMode.modes || []).map((m) => (
-                                <button key={m.mode} className={"sp-opt" + ((pmPick || portMode.mode) === m.mode ? " on" : "")}
+                                <button key={m.mode} className={"sp-opt" + (pmWant.mode === m.mode ? " on" : "")}
                                   disabled={submit.state === "sending"}
                                   title={m.tried ? "" : tr("set.portModeUntried")}
-                                  onClick={() => setPmPick(m.mode)}>{m.mode.replace("x", " × ")}{m.tried ? "" : " *"}</button>
+                                  onClick={() => { setPmPick(m.mode); setPmFec(""); }}>{m.mode.replace("x", " × ")}{m.tried ? "" : " *"}</button>
+                              ))}
+                            </span>
+                          </div>
+                          {/* the FEC the lanes run: what the picked mode can take (the PAM4 modes RS-FEC alone); both ends must agree */}
+                          <div className="sp-row" id="sec-portmode-fec">
+                            <span className="sp-ports mono">FEC</span>
+                            <span className="sp-was">{tr("set.portModeFecHint")}</span>
+                            <span className="sp-seg">
+                              {pmWant.fecs.map((c) => (
+                                <button key={c} className={"sp-opt" + (pmWant.fec === c ? " on" : "")}
+                                  disabled={submit.state === "sending" || pmWant.fecs.length < 2}
+                                  onClick={() => setPmFec(c)}>{c === "0" ? tr("set.portModeFecNone") : (FEC_NAMES[c] || c)}</button>
                               ))}
                             </span>
                           </div>
                           <p className="set-hint">{tr("set.portModeWriteNote")}</p>
                           <div className="set-actions">
-                            <button className="copy-btn" disabled={!pmPick || pmPick === portMode.mode} onClick={() => setPmPick("")}>{tr("set.revert")}</button>
-                            <button className="sys-refresh" disabled={submit.state === "sending" || !pmPick || pmPick === portMode.mode}
+                            <button className="copy-btn" disabled={!pmWant.changed} onClick={() => { setPmPick(""); setPmFec(""); }}>{tr("set.revert")}</button>
+                            <button className="sys-refresh" disabled={submit.state === "sending" || !pmWant.changed}
                               onClick={() => setConfirm({ kind: "portMode" })}>
                               {submit.state === "sending" ? tr("set.submitting") : tr("set.portModeApply")}</button>
                           </div>
@@ -5831,7 +5847,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
-              : confirm.kind === "ports" ? [tr("set.confirmPortsBody"), portEnableChanged ? tr("set.portsNeedReboot") : "", sideChangedPorts(portsBase, ports).length > 0 ? tr("set.portsSideReload") : ""].filter(Boolean).join(" ") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "portMode" ? `${portModeLabel(portMode)} → ${pmPick.replace("x", " × ")} — ${tr("set.portModeConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
+              : confirm.kind === "ports" ? [tr("set.confirmPortsBody"), portEnableChanged ? tr("set.portsNeedReboot") : "", sideChangedPorts(portsBase, ports).length > 0 ? tr("set.portsSideReload") : ""].filter(Boolean).join(" ") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "portMode" ? `${pmWant ? pmWant.label : ""} — ${tr(pmWant && pmWant.mode === portMode.mode ? "set.portModeFecConfirmBody" : "set.portModeConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
               ? `${tr("set.confirmApplyBody")} ${tr("set.svcWebWarn")}`
               : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : confirm.kind === "factory" ? tr(factoryKeepIp ? "set.factoryBodyKeep" : "set.factoryBody") : ["restoreFile","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body")
               : confirm.kind === "mgmtAccess" ? (confirm.entries.length

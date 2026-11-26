@@ -803,6 +803,23 @@ group("the HL1's port mode is worded from what the device read");
   check("the mode is changed only where the device says it can write, behind a confirm, then the page holds for the reboot",
     /portMode\.writable \?/.test(jsx4) && /setConfirm\(\{ kind: "portMode" \}\)/.test(jsx4) && /set_port_mode/.test(jsx4)
     && /setWait\(\{ title: tr\("set\.portModeApplying"\)/.test(jsx4));
+  // the FEC goes with the mode: what the card would write for a pick
+  const dev = { ...four, fec: "0", modes: [{ mode: "1x100G", fec: "0", fecs: ["0", "2"] }, { mode: "4x25G", fec: "0", fecs: ["0", "1", "2"] },
+                                              { mode: "4x50G", fec: "2", fecs: ["2"] }, { mode: "4x10G", fec: "0", fecs: ["0", "1"] }] };
+  let w = C.portModeTarget(dev, "", "");
+  check("nothing picked: the current mode and FEC, nothing to apply", w.mode === "4x25G" && w.fec === "0" && !w.changed && w.label === "" && w.fecs.length === 3);
+  w = C.portModeTarget(dev, "", "2");
+  check("the FEC alone: a change, named on both sides", w.changed && w.mode === "4x25G" && w.fec === "2" && w.label === "4 × 25G · FEC none → 4 × 25G · FEC RS-FEC", w.label);
+  w = C.portModeTarget(dev, "4x50G", "");
+  check("a PAM4 mode picked: its only FEC comes with it", w.changed && w.fec === "2" && w.fecs.length === 1 && w.label === "4 × 25G · FEC none → 4 × 50G · FEC RS-FEC", w.label);
+  w = C.portModeTarget(dev, "4x10G", "2");
+  check("a FEC the picked mode cannot run falls back to its default", w.fec === "0" && w.label === "4 × 25G → 4 × 10G", w.label);
+  w = C.portModeTarget({ ...dev, fec: "2" }, "1x100G", "");
+  check("a mode picked while RS-FEC runs: the new mode's default, FEC said since it changes", w.fec === "0" && w.label === "4 × 25G · FEC RS-FEC → 1 × 100G · FEC none", w.label);
+  check("no target off an unsupported board", C.portModeTarget({ supported: false }, "4x25G", "") === null);
+  check("the card offers the FEC the picked mode can run and posts it with the mode",
+    /id="sec-portmode-fec"/.test(jsx4) && /pmWant\.fecs\.map/.test(jsx4) && /body: JSON\.stringify\(\{ mode: want\.mode, fec: want\.fec \}\)/.test(jsx4)
+    && /set\.portModeFecConfirmBody/.test(jsx4));
 }
 
 group("every port picker names its ports");
