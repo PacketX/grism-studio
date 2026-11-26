@@ -800,6 +800,9 @@ group("the HL1's port mode is worded from what the device read");
   check("the interfaces section asks the device for it and shows the card", /get_port_mode/.test(jsx4) && /id="sec-portmode"/.test(jsx4));
   check("the card says the change is still made at the console", /set\.portModeHow/.test(jsx4));
   check("the lane column is the cage's lane number with the firmware name as a note, and the GRISM port has a column", /set\.portModeLaneN/.test(jsx4) && /set\.portModePort/.test(jsx4));
+  check("the mode is changed only where the device says it can write, behind a confirm, then the page holds for the reboot",
+    /portMode\.writable \?/.test(jsx4) && /setConfirm\(\{ kind: "portMode" \}\)/.test(jsx4) && /set_port_mode/.test(jsx4)
+    && /setWait\(\{ title: tr\("set\.portModeApplying"\)/.test(jsx4));
 }
 
 group("every port picker names its ports");
@@ -5596,6 +5599,8 @@ group("manager: node list");
     && MG.statusTone("cert") === "bad" && MG.statusTone("unknown") === "dim" && MG.statusTone(undefined) === "dim");
   check("a node with no state yet is unknown", MG.nodeStatus(list[3]) === "unknown");
   check("problems: not online, or an alert", MG.isProblem(list[1]) && MG.isProblem(list[2]) && MG.isProblem(list[3]) && !MG.isProblem(list[0]));
+  // the Studio opens through the manager for an online node only; an alert is not a reason, an unchecked node is
+  check("open Studio: online nodes only", MG.canOpenStudio(list[0]) && !MG.canOpenStudio(list[1]) && MG.canOpenStudio(list[2]) && !MG.canOpenStudio(list[3]));
   check("line names from the firmware", MG.lineName(list[0]) === "ARM64" && MG.lineName(list[3]) === "MIPS64"
     && MG.lineName({ line: "dpdk" }) === "ARM64" && MG.lineName({}) === "");
   check("search: every word somewhere", MG.filterNodes(list, "g8s site-a").length === 1
@@ -5779,6 +5784,9 @@ group("manager: every word in both languages");
   check("every key the pages use is in English and in Chinese", keys.size > 100 && !missEn.length && !missZh.length);
   const extra = Object.keys(MI18N.en).filter((k) => !(k in MI18N["zh-TW"])).concat(Object.keys(MI18N["zh-TW"]).filter((k) => !(k in MI18N.en)));
   check("the two dictionaries hold the same keys", extra.length === 0);
+  // every link to a node's Studio stands behind canOpenStudio (a disabled button otherwise)
+  const links = (src.match(/\/grism-studio\/`\}/g) || []).length, guarded = (src.match(/M\.canOpenStudio\(n\) \?/g) || []).length;
+  check("every Open Studio link is behind canOpenStudio", links >= 2 && links === guarded);
 }
 
 /* ---------- lint (catches what the suite cannot) ---------- */

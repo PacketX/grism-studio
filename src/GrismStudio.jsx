@@ -2590,6 +2590,25 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
   /* All the changed groups go in one request: each one costs a reboot, and
      sending them one at a time would cost three. The endpoint leaves any group
      it is not told about alone. */
+  /* The cage's mode: written into the boot firmware's settings by the device,
+     which then reboots and comes back with the cage split that way and its
+     ports renumbered. Held like a firmware update afterwards -- the page would
+     otherwise show the old ports table as if nothing had happened. */
+  const submitPortMode = async () => {
+    if (!pmPick || !portMode || pmPick === portMode.mode) return;
+    setSubmit({ state: "sending", msg: "" });
+    let ok = false;
+    try {
+      const res = await fetch("/grism/task/set_port_mode", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: pmPick }) });
+      ok = res.ok;
+      if (!ok) setSubmit({ state: "error", msg: (await res.text()).trim() || ("HTTP " + res.status) });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+    if (!ok) return;
+    setSubmit({ state: "idle", msg: "" });
+    setWait({ title: tr("set.portModeApplying"), body: tr("set.portModeApplyingBody"), phase: "updating" });
+  };
+
   const submitSpeed = async () => {
     if (!spChanged.length) return;
     setSubmit({ state: "sending", msg: "" });
@@ -3033,6 +3052,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
      -- right after the request the old system is still answering. */
   const [rebootWatch, setRebootWatch] = React.useState(null);   // { secs, back }
   const [portMode, setPortMode] = React.useState(null);        // get_port_mode: the HL1's cage mode, or null
+  const [pmPick, setPmPick] = React.useState("");            // the mode chosen on that card, before Apply
   // { title, body, phase } while the device installs and restarts.
   // A clock would only ever be a guess: how long an image takes to apply varies,
   // and the number keeps counting after the device is already back. Report what
@@ -4037,7 +4057,29 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                           </tbody>
                         </table>
                       </div>
-                      <p className="set-hint">{tr("set.portModeHow")}</p>
+                      {portMode.writable ? (
+                        <>
+                          <div className="sp-row">
+                            <span className="sp-ports mono">{portMode.cage}</span>
+                            <span className="sp-was">{pmPick && pmPick !== portMode.mode ? `${portModeLabel(portMode)} → ${pmPick.replace("x", " × ")}` : ""}</span>
+                            <span className="sp-seg">
+                              {(portMode.modes || []).map((m) => (
+                                <button key={m.mode} className={"sp-opt" + ((pmPick || portMode.mode) === m.mode ? " on" : "")}
+                                  disabled={submit.state === "sending"}
+                                  title={m.tried ? "" : tr("set.portModeUntried")}
+                                  onClick={() => setPmPick(m.mode)}>{m.mode.replace("x", " × ")}{m.tried ? "" : " *"}</button>
+                              ))}
+                            </span>
+                          </div>
+                          <p className="set-hint">{tr("set.portModeWriteNote")}</p>
+                          <div className="set-actions">
+                            <button className="copy-btn" disabled={!pmPick || pmPick === portMode.mode} onClick={() => setPmPick("")}>{tr("set.revert")}</button>
+                            <button className="sys-refresh" disabled={submit.state === "sending" || !pmPick || pmPick === portMode.mode}
+                              onClick={() => setConfirm({ kind: "portMode" })}>
+                              {submit.state === "sending" ? tr("set.submitting") : tr("set.portModeApply")}</button>
+                          </div>
+                        </>
+                      ) : <p className="set-hint">{tr("set.portModeHow")}</p>}
                     </section>
                   )}
 
@@ -5785,11 +5827,11 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
           {/* data-kind so the read-only rule can single one out: this dialog is
               shared by every write on the tab, and changePw is the exception. */}
           <div className="modal modal-warn" data-kind={confirm.kind} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw","upload","mgmtAccess"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "portMode" ? tr("set.portModeConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw","upload","mgmtAccess"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
-              : confirm.kind === "ports" ? [tr("set.confirmPortsBody"), portEnableChanged ? tr("set.portsNeedReboot") : "", sideChangedPorts(portsBase, ports).length > 0 ? tr("set.portsSideReload") : ""].filter(Boolean).join(" ") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
+              : confirm.kind === "ports" ? [tr("set.confirmPortsBody"), portEnableChanged ? tr("set.portsNeedReboot") : "", sideChangedPorts(portsBase, ports).length > 0 ? tr("set.portsSideReload") : ""].filter(Boolean).join(" ") : confirm.kind === "raw" ? tr("set.confirmXmlBody") : confirm.kind === "reboot" ? tr("set.confirmRebootBody") : confirm.kind === "halt" ? tr("set.confirmHaltBody") : confirm.kind === "template" ? `${confirm.label} — ${tr("set.tplConfirmBody")}` : confirm.kind === "vport" ? `${vpAdds.map((a) => "+" + a.name).concat(vpDeletes.map((n) => "−" + n)).join(" ")} — ${tr("set.vportConfirmBody")}` : confirm.kind === "speed" ? `${spChanged.map((g) => `${g.ports.join(" · ")} → ${formatPortSpeed(spDraft[g.qlm])}`).join("; ")} — ${tr("set.speedConfirmBody")}` : confirm.kind === "portMode" ? `${portModeLabel(portMode)} → ${pmPick.replace("x", " × ")} — ${tr("set.portModeConfirmBody")}` : confirm.kind === "bypass" ? `${confirm.pair.ports.join(" · ")} — ${confirm.on ? tr("set.bypassConfirmOff") : tr("set.bypassConfirmOn")}` : confirm.kind === "delUser" ? `${tr("set.acctConfirmDeleteBody")} (${confirm.name})` : confirm.kind === "services" && changedServices(svcBase, svc).some((x) => x.name === "pyhttpd" && !x.enable)
               ? `${tr("set.confirmApplyBody")} ${tr("set.svcWebWarn")}`
               : confirm.kind === "upload" ? `${tr("set.uploadBody")} (${confirm.target} · ${confirm.name})` : ["fwUpload","fwOnline"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body" + (firmwareRestartsOnly(fw.version) ? "R" : "")) : confirm.kind === "factory" ? tr(factoryKeepIp ? "set.factoryBodyKeep" : "set.factoryBody") : ["restoreFile","changePw"].includes(confirm.kind) ? tr("set." + confirm.kind + "Body")
               : confirm.kind === "mgmtAccess" ? (confirm.entries.length
@@ -5827,6 +5869,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
               if (k === "cpssRestart") { restartCpss(); return; }
               if (k === "vport") { submitVports(); return; }
               if (k === "speed") { submitSpeed(); return; }
+              if (k === "portMode") { submitPortMode(); return; }
               if (k === "bypass") {
                 setBypassMode(bypassHw, confirm.pair, !confirm.on);
                 return;

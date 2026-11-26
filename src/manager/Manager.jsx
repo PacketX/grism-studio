@@ -340,7 +340,8 @@ function NodesView({ t, call, me, goTab }) {
                         <td>{M.nodeAlerts(n) ? <span className="mgr-badge warn">{M.nodeAlerts(n)}</span> : <span className="mgr-dim">0</span>}</td>
                         <td className="mgr-dim" title={M.fmtTime(st.last_ok)}>{st.last_ok ? M.fmtAgo(st.last_ok) : "–"}</td>
                         <td className="mgr-act" onClick={(e) => e.stopPropagation()}>
-                          <a className="copy-btn" href={`/n/${n.id}/grism-studio/`}>{t("node.open")}</a>
+                          {M.canOpenStudio(n) ? <a className="copy-btn" href={`/n/${n.id}/grism-studio/`}>{t("node.open")}</a>
+                            : <button className="copy-btn" disabled title={t("node.openOff").replace("{status}", t("st." + (st.status || "unknown")))}>{t("node.open")}</button>}
                         </td>
                       </tr>
                     );
@@ -497,7 +498,8 @@ function NodeDrawer({ t, call, me, id, onClose, onChanged, onRemoved }) {
         </div>
       )}
       <div className="mgr-buttons left">
-        <a className="sys-refresh" href={`/n/${n.id}/grism-studio/`}>{t("node.open")}</a>
+        {M.canOpenStudio(n) ? <a className="sys-refresh" href={`/n/${n.id}/grism-studio/`}>{t("node.open")}</a>
+          : <button className="sys-refresh" disabled title={t("node.openOff").replace("{status}", t("st." + (st.status || "unknown")))}>{t("node.open")}</button>}
         {me.priv >= 5 && <button className="copy-btn" disabled={!!busy}
           onClick={() => act("poll", async () => { setN(await call(`/api/v1/nodes/${id}/poll`, { method: "POST", body: {} })); })}>
           {busy === "poll" ? t("node.polling") : t("node.poll")}</button>}

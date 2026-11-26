@@ -19,6 +19,11 @@ export function isProblem(n) {
   return nodeStatus(n) !== "online" || nodeAlerts(n) > 0;
 }
 
+/* A node's Studio opens through the manager only while the node is online
+   (the user's rule, 2026-11-26): a page that signs in and then fails call by
+   call tells less than the status does. The manager refuses the page too. */
+export const canOpenStudio = (n) => nodeStatus(n) === "online";
+
 /* The line a node runs, named the way the release notes name it: the 7.x
    line is the arm64 one, 6.x the MIPS64 one, whatever the capabilities say. */
 export function lineName(n) {
