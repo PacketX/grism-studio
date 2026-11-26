@@ -11,7 +11,7 @@ import {
   cUpdate, removeTestKeeping, chainProblems, changedPorts, sideChangedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
-  portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, flowTableCapacity, FLOW_CACHE_NODE_TOP,
+  portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, portModeLabel, laneSpeedLabel, flowTableCapacity, FLOW_CACHE_NODE_TOP,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
@@ -3032,6 +3032,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
      answers with is what proves it restarted rather than never having gone
      -- right after the request the old system is still answering. */
   const [rebootWatch, setRebootWatch] = React.useState(null);   // { secs, back }
+  const [portMode, setPortMode] = React.useState(null);        // get_port_mode: the HL1's cage mode, or null
   // { title, body, phase } while the device installs and restarts.
   // A clock would only ever be a guess: how long an image takes to apply varies,
   // and the number keeps counting after the device is already back. Report what
@@ -3137,6 +3138,18 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
   React.useEffect(() => {
     if (loggedIn && bypassHw && section === "ports") loadBypass(bypassHw);
   }, [loggedIn, section, bypassHw, loadBypass]);
+  /* The port mode of a card whose cage can be split (the HL1's QSFP56):
+     read from the boot firmware's saved settings by the device. Every other
+     model answers 404 or supported: false, and shows nothing. */
+  React.useEffect(() => {
+    if (!loggedIn || section !== "ports") return;
+    let alive = true;
+    fetch("/grism/task/get_port_mode", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive) setPortMode(d && d.supported ? d : null); })
+      .catch(() => { if (alive) setPortMode(null); });
+    return () => { alive = false; };
+  }, [loggedIn, section]);
   /* The privilege arrives after mount (it is fetched), so this cannot be an
      initial state -- and it has to keep holding, or the section the account was
      already on stays on screen. */
@@ -3984,6 +3997,39 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                           onClick={() => setConfirm({ kind: "speed" })}>
                           {submit.state === "sending" ? tr("set.submitting") : tr("set.speedApply")}</button>
                       </div>
+                    </section>
+                  )}
+
+                  {/* The HL1's QSFP56 cage: one 100G port, two 50G, four 25G or
+                      10G ... as the boot firmware has it. Read-only for now: the
+                      device reads the firmware's saved Setup out of its boot flash
+                      and the change is still made in that firmware's console menu;
+                      the page says so rather than offering a switch it cannot make. */}
+                  {portMode && (
+                    <section className="sys-card" id="sec-portmode">
+                      <h3 className="sys-card-title">{tr("set.portModeTitle").replace("{cage}", portMode.cage || "")}</h3>
+                      <p className="set-hint">{tr("set.portModeNote")}</p>
+                      <div className="sess-grid">
+                        <div><span className="sess-k">{tr("set.portModeNow")}</span>
+                          <span className="sess-v mono">{portModeLabel(portMode)}</span></div>
+                        <div><span className="sess-k">{tr("set.portModeBoard")}</span>
+                          <span className="sess-v">{portMode.board_name || portMode.board}</span></div>
+                      </div>
+                      <table className="svc-table portmode-table">
+                        <thead><tr><th>{tr("set.portModeLane")}</th><th>{tr("set.portModeProto")}</th><th>{tr("set.portModeSpeed")}</th><th>{tr("set.portModeLanes")}</th><th>FEC</th></tr></thead>
+                        <tbody>
+                          {(portMode.cage_portm || []).map((p) => (
+                            <tr key={p.portm} className={p.speed ? "" : "dim"}>
+                              <td className="mono">{p.portm}</td>
+                              <td className="mono">{p.protocol}</td>
+                              <td>{laneSpeedLabel(p.speed)}</td>
+                              <td>{p.lanes || "—"}</td>
+                              <td>{p.fec || "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <p className="set-hint">{tr("set.portModeHow")}</p>
                     </section>
                   )}
 

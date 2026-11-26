@@ -783,6 +783,24 @@ group("the update overlay walks its three phases");
     /waitPhase === "rebooting"[\s\S]{0,400}get_current_user/.test(jsx3));
 }
 
+group("the HL1's port mode is worded from what the device read");
+{
+  const one = { supported: true, mode: "1x100G", ports: 1, speed: 100000,
+    cage_portm: [{ portm: "P2", protocol: "CAUI_4_C2M", speed: 100000, lanes: 4 }, { portm: "P3", protocol: "INACTIVE", speed: 0, lanes: 0 },
+                 { portm: "P4", protocol: "INACTIVE", speed: 0, lanes: 0 }, { portm: "P5", protocol: "INACTIVE", speed: 0, lanes: 0 }] };
+  check("one 100G port", C.portModeLabel(one) === "1 × 100G", C.portModeLabel(one));
+  const four = { ...one, mode: "4x25G", ports: 4, speed: 25000, cage_portm: ["P2", "P3", "P4", "P5"].map((p) => ({ portm: p, protocol: "25GAUI_C2M", speed: 25000, lanes: 1 })) };
+  check("four 25G ports", C.portModeLabel(four) === "4 × 25G", C.portModeLabel(four));
+  const mix = { ...one, mode: "custom", cage_portm: [{ portm: "P2", protocol: "25GAUI_C2M", speed: 25000, lanes: 1 }, { portm: "P3", protocol: "INACTIVE", speed: 0 },
+                                                       { portm: "P4", protocol: "LAUI_2_C2M", speed: 50000, lanes: 2 }, { portm: "P5", protocol: "INACTIVE", speed: 0 }] };
+  check("a mix the guide has no name for lists the lanes", C.portModeLabel(mix) === "P2 25G · P4 50G", C.portModeLabel(mix));
+  check("an unsupported board words to nothing", C.portModeLabel({ supported: false }) === "" && C.portModeLabel(null) === "");
+  check("lane speeds: 100000 -> 100G, 25000 -> 25G, 0 -> dash", C.laneSpeedLabel(100000) === "100G" && C.laneSpeedLabel(25000) === "25G" && C.laneSpeedLabel(0) === "—");
+  const jsx4 = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+  check("the interfaces section asks the device for it and shows the card", /get_port_mode/.test(jsx4) && /id="sec-portmode"/.test(jsx4));
+  check("the card says the change is still made at the console", /set\.portModeHow/.test(jsx4));
+}
+
 group("every port picker names its ports");
 /* P0..P11 are told apart by what the operator called them and by nothing else,
    so a list that offers a port to pick has to carry its description. Eight of

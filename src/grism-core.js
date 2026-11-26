@@ -3411,6 +3411,19 @@ export const firmwareHoldLeft = (holdUntil, now) => {
   return Number.isFinite(ms) && ms > 0 ? Math.ceil(ms / 1000) : 0;
 };
 
+/* The HL1's port mode as one line, from what get_port_mode answers:
+   "1 × 100G" with the firmware's protocol name beside it, or the per-lane
+   list when the cage is in a mix the guide has no name for ("custom"). The
+   backend reads it out of the boot firmware's saved Setup; this only words it. */
+export const laneSpeedLabel = (mbps) => (!mbps ? "—" : mbps >= 1000 ? `${mbps / 1000}G` : `${mbps}M`);
+export function portModeLabel(d) {
+  if (!d || !d.supported) return "";
+  const active = (d.cage_portm || []).filter((p) => p.speed > 0);
+  if (!active.length) return "—";
+  if (d.mode && d.mode !== "custom") return `${d.ports} × ${laneSpeedLabel(d.speed)}`;
+  return active.map((p) => `${p.portm} ${laneSpeedLabel(p.speed)}`).join(" · ");
+}
+
 /* Which product line a device is, from the version it reports.
 
    The two lines update differently: on MIPS (6.5.x) an image needs the device
