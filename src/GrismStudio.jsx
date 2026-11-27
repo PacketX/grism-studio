@@ -7067,6 +7067,8 @@ function TrafficBlockedTab({ loggedIn, t, filterNames = {} }) {
                 {/* exact counts: a slot count abbreviated to "1.36K" says nothing one can set */}
                 {tr("blk.capacity").replace("{filter}", "F" + x.filterId).replace("{used}", x.used.toLocaleString()).replace("{size}", x.size.toLocaleString())}
                 {x.replaced > 0 && " " + tr("blk.replaced").replace("{n}", x.replaced.toLocaleString()).replace("{ago}", String(x.replacedAgo ?? "?"))}
+                {/* the engine answers at most a few MB: a table bigger than that is listed in part */}
+                {x.rows.length < x.used * 0.95 && " " + tr("blk.listed").replace("{n}", x.rows.length.toLocaleString())}
                 {issue && " " + tr(issue === "replacing" ? "blk.tableFull" : "blk.tableNearFull").replace("{size}", x.size.toLocaleString())}
               </p>
             );
