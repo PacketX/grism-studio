@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.316.0";
+export const STUDIO_VERSION = "2.317.0";
 
 export const I18N = {
   en: {
@@ -142,6 +142,11 @@ export const I18N = {
     "l2g.staleOff": "Correlation is switched off in packet handling. These entries are what the device saw while it was on.",
     "l2g.entries": "entries", "l2g.truncated": "{n} more entries did not fit in the device's reply.",
     "sess.title": "Session tables", "sess.v4": "IPv4", "sess.v6": "IPv6",
+    "sess.blockedTitle": "Blocked by the firewall (grism_syslogd)",
+    "sess.blockedNote": "Connections grism_syslogd put into a live 5-tuple filter from the firewall's syslog, each held for a few seconds; the engine matches them in both directions. Refreshes with this page.",
+    "sess.blockedNone": "No connection is held right now ({filters}).",
+    "sess.blockedNoTable": "No filter of the running configuration has a live 5-tuple table (tuple5_live_hashtable_size), so the engine refuses what grism_syslogd pushes — check the filter id under Settings › Services.",
+    "sess.blockedSrc": "Source", "sess.blockedDst": "Destination", "sess.blockedLeft": "Seconds left",
     "sess.total": "Total sessions", "sess.concurrent": "Concurrent", "sess.netflow": "NetFlow records",
     "sess.eps": "events/sec", "sess.ofTotal": "of capacity", "sess.protocols": "Protocols", "sess.nextHdr": "Next headers",
     "sess.tcpPorts": "TCP ports", "sess.udpPorts": "UDP ports",
@@ -1293,6 +1298,11 @@ export const I18N = {
     "l2g.staleOff": "封包處理裡的關聯目前是關閉的,以下是開啟期間看到的內容。",
     "l2g.entries": "筆", "l2g.truncated": "另有 {n} 筆未能放進裝置的回應中。",
     "sess.title": "連線表", "sess.v4": "IPv4", "sess.v6": "IPv6",
+    "sess.blockedTitle": "防火牆封鎖中的連線 (grism_syslogd)",
+    "sess.blockedNote": "grism_syslogd 依防火牆的 syslog 放進 live 5-tuple 篩選器的連線,每條只停留幾秒;引擎雙向比對。隨本頁一起更新。",
+    "sess.blockedNone": "目前沒有被封鎖的連線({filters})。",
+    "sess.blockedNoTable": "執行中的設定沒有任何帶 tuple5_live_hashtable_size 的篩選器,grism_syslogd 推進來的連線都會被引擎拒絕 — 請到 設定 › 服務 檢查篩選器 ID。",
+    "sess.blockedSrc": "來源", "sess.blockedDst": "目的", "sess.blockedLeft": "剩餘秒數",
     "sess.total": "總連線數", "sess.concurrent": "在線數", "sess.netflow": "NetFlow 筆數",
     "sess.eps": "筆/秒", "sess.ofTotal": "使用率", "sess.protocols": "協定", "sess.nextHdr": "Next header",
     "sess.tcpPorts": "TCP 埠", "sess.udpPorts": "UDP 埠",

@@ -2549,6 +2549,25 @@ export const IP_PROTOCOLS = {
 };
 export const protocolName = (n) => IP_PROTOCOLS[n] ? `${IP_PROTOCOLS[n]} (${n})` : String(n);
 
+/* The engine's live 5-tuple tables (get_tuple5live): one per filter with a
+   tuple5_live_hashtable_size, holding the connections grism_syslogd pushed
+   from a firewall's blocks, each as [sip, sport, dip, dport, protocol, seconds
+   left]. The flat list is ordered by what goes first, so it reads as a
+   countdown; `tables` says which filters have a table at all. */
+export function parseTuple5Live(payload) {
+  const tables = (Array.isArray(payload?.tuple5live) ? payload.tuple5live : [])
+    .filter((t) => Number.isFinite(Number(t?.filter_id)))
+    .map((t) => ({
+      filterId: Number(t.filter_id),
+      rows: (Array.isArray(t.tuple5) ? t.tuple5 : [])
+        .filter((r) => Array.isArray(r) && r.length >= 6)
+        .map((r) => ({ filterId: Number(t.filter_id), sip: String(r[0]), sport: Number(r[1]), dip: String(r[2]),
+          dport: Number(r[3]), proto: Number(r[4]), left: Number(r[5]) })),
+    }));
+  const rows = tables.flatMap((t) => t.rows).sort((a, b) => a.left - b.left || a.sip.localeCompare(b.sip) || a.sport - b.sport);
+  return { ts: Number(payload?.ts) || null, tables, rows };
+}
+
 /* Well-known ports worth naming in the port breakdown. */
 export const PORT_SERVICES = {
   20: "FTP-data", 21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS", 67: "DHCP",

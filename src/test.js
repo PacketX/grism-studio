@@ -1068,6 +1068,13 @@ group("settings builders");
       && C.syslogdProblems({ port: "5144", filterId: "0" }).join() === "filterId");
     check("syslogd: a change is enable, port or id", !C.syslogdChanged(nu, { ...nu }) && C.syslogdChanged(nu, { ...nu, enable: true })
       && C.syslogdChanged(nu, { ...nu, port: "5145" }) && C.syslogdChanged(nu, { ...nu, filterId: "7001" }) && !C.syslogdChanged(null, nu));
+    // the engine's live 5-tuple tables, as get.tuple5live writes them (spaces after some commas included)
+    const live = C.parseTuple5Live(JSON.parse('{"ts":1795756150183,"tuple5live":[{"filter_id":7001, "tuple5":[["10.10.78.224",63763,"17.248.223.14",443, 6, 13],["1.1.1.1",1,"2.2.2.2",2, 17, 4]]},{"filter_id":7002, "tuple5":[]}]}'));
+    check("tuple5live: tables and rows, the soonest to go first", live.tables.length === 2 && live.tables[1].rows.length === 0
+      && live.rows.length === 2 && live.rows[0].sip === "1.1.1.1" && live.rows[0].left === 4 && live.rows[1].proto === 6 && live.rows[1].filterId === 7001
+      && live.rows[1].dport === 443 && live.ts === 1795756150183);
+    check("tuple5live: no table at all, and a bad payload", C.parseTuple5Live({ ts: 1, tuple5live: [] }).tables.length === 0
+      && C.parseTuple5Live(null).rows.length === 0 && C.parseTuple5Live({ tuple5live: [{ filter_id: "x" }, { filter_id: 5, tuple5: [["a"]] }] }).rows.length === 0);
   }
   const sx = C.buildServicesConfigSet([{ name: "lldpd", enable: true }]);
   check("service targeted by name", sx.includes('<find name="lldpd">'));

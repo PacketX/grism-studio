@@ -30,7 +30,7 @@ import {
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, packetRowText, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, advancedInUse, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
-  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices, xmlCommentText, xmlCommentFromText,
+  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices, parseTuple5Live, xmlCommentText, xmlCommentFromText,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
   PRIV, PRIV_ROLES, isLastAdmin, minPrivForRequest, privAtLeast, privLevel, privRole, userLevelFixed,
@@ -396,6 +396,7 @@ export default function GrismStudio() {
   // from. Declared here so hasL2gre below can see it.
   const [l2greOn, setL2greOn] = useState(false);
   const [s1cOn, setS1cOn] = useState(false);            // <args><s1cCorrelation>
+  const [syslogdOn, setSyslogdOn] = useState(false);    // the grism_syslogd service enabled: the Sessions page shows its live blocks
   const [deviceModel, setDeviceModel] = useState("");   // <args><model>, for panels that are model-specific
   useEffect(() => {
     if (workspace !== "traffic" || !login.who) return;
@@ -675,6 +676,7 @@ export default function GrismStudio() {
       // the MEC mapping table is only meaningful while S1AP/NGAP correlation
       // is on: with it off the device builds no items at all
       setS1cOn((cfg.args ?? {}).s1cCorrelation === true);
+      setSyslogdOn((cfg.services ?? []).some((s) => s?.name === "grism_syslogd" && s.enable === true));
       setDeviceModel(String((cfg.args ?? {}).model ?? ""));
       /* enable and description come along: a condition that names a target is
          read against this list, and "which hop, is it even on" is the whole
@@ -784,7 +786,7 @@ export default function GrismStudio() {
     setHbTargets([]);
     setDeviceStorages([]);
     setLoopPorts([]);
-    setL2greOn(false); setL2gre(null); setDeviceModel("");
+    setL2greOn(false); setL2gre(null); setDeviceModel(""); setSyslogdOn(false);
     setLogin((l) => ({ ...l, who: null, ok: false, pass: "", err: "", ro: false, priv: null }));
     /* The open document may be the device's running config, which is no longer
        ours to show and can no longer be reloaded. Go back to the overview on the
@@ -1287,7 +1289,7 @@ export default function GrismStudio() {
           <TrafficTab loggedIn={!!login.who} t={t} model={deviceModel} />
         )}
         {tab === "trafficSessions" && (
-          <TrafficSessionsTab loggedIn={!!login.who} t={t}
+          <TrafficSessionsTab loggedIn={!!login.who} t={t} syslogdOn={syslogdOn}
             filterNames={Object.fromEntries(doc.filters.map((f) => [f.id, f.name || f.alt || ""]))} />
         )}
         {tab === "trafficServices" && (
@@ -6818,10 +6820,14 @@ function TrafficTab({ loggedIn, t, model = "" }) {
    Traffic → Sessions: session tables, protocol/port breakdowns,
    packet types and filter hit counters
    ============================================================ */
-function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
+function TrafficSessionsTab({ loggedIn, t, filterNames = {}, syslogdOn = false }) {
   const tr = t || ((k) => k);
   const poll = usePolledJson("/grism/task/get_statistics_json", loggedIn);
   const fPoll = usePolledJson("/grism/task/get_filter_counter", loggedIn, { followSec: poll.refreshSec });
+  /* The connections grism_syslogd holds in a live 5-tuple filter from the
+     firewall's blocks -- asked for only while that service is enabled, and
+     at this page's pace, since an entry lives seconds. */
+  const t5Poll = usePolledJson("/grism/task/get_tuple5live", loggedIn && syslogdOn, { followSec: poll.refreshSec });
   // heartbeat: the status rows are positional, so the target list labels them
   /* The target list only labels the status rows, and it changes when someone
      edits the settings -- not every tick. Polling the whole configuration
@@ -6855,6 +6861,7 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
   const pkts = summarizePacketTypes(poll.data?.packet_type_counter);
   const filters = summarizeFilterCounters(fPoll.data?.filter_counter);
   const hbRows = hbOn ? heartbeatStatusRows(hbTargets, parseHeartbeatStatus(hbPoll.data)) : [];
+  const t5 = syslogdOn && t5Poll.data ? parseTuple5Live(t5Poll.data) : null;
 
   const family = (info, label, protoLabel) => info && (
     <section className="sys-card">
@@ -6933,6 +6940,40 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
               ))}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {syslogdOn && (
+        <section className="sys-card" id="sec-blocked">
+          <h3 className="sys-card-title">{tr("sess.blockedTitle")}
+            <span className="sys-card-metric">{t5 ? t5.rows.length : "—"}</span></h3>
+          <p className="set-hint">{tr("sess.blockedNote")}</p>
+          {t5Poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {t5Poll.errMsg}</div>}
+          {!t5 ? null : t5.tables.length === 0 ? (
+            /* no filter of the running configuration has a live table: the
+               engine refuses every push, which is what the empty page means */
+            <p className="sys-note warn">{tr("sess.blockedNoTable")}</p>
+          ) : t5.rows.length === 0 ? (
+            <p className="sys-note dim">{tr("sess.blockedNone").replace("{filters}", t5.tables.map((x) => "F" + x.filterId).join(", "))}</p>
+          ) : (
+            <table className="tf-table sess-blocked-table">
+              <thead><tr>
+                <th>{tr("sess.filterId")}</th><th>{tr("sess.blockedSrc")}</th><th>{tr("sess.blockedDst")}</th>
+                <th>{tr("sess.proto")}</th><th className="tf-num">{tr("sess.blockedLeft")}</th>
+              </tr></thead>
+              <tbody>
+                {t5.rows.map((r) => (
+                  <tr key={`${r.filterId}-${r.sip}-${r.sport}-${r.dip}-${r.dport}-${r.proto}`}>
+                    <td className="tf-name">F{r.filterId}{filterNames?.[r.filterId] ? <span className="dim"> · {filterNames[r.filterId]}</span> : null}</td>
+                    <td className="mono">{r.sip}:{r.sport}</td>
+                    <td className="mono">{r.dip}:{r.dport}</td>
+                    <td>{protocolName(r.proto)}</td>
+                    <td className="tf-num mono">{r.left}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
 
