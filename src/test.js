@@ -266,6 +266,21 @@ for (const tpl of C.TEMPLATES) {
   const { warnings } = C.parseRun(C.serializeRun(doc));
   check(`template "${tpl.id}" round trips`, warnings.length === 0);
 }
+{
+  // the DNS block-list sample: what it answers with, and the shape of its chain
+  const d = C.normalizeDoc(C.TEMPLATES.find((t) => t.id === "dns-blocklist").make());
+  const o2 = d.outputs.find((o) => o.id === 2), o3 = d.outputs.find((o) => o.id === 3);
+  check("dns-blocklist: O2 answers A with the IPv4, O3 AAAA with the IPv6, both on P6",
+    o2?.port === "P6" && o2.mods.some((m) => m.k === "dns_response_ipv4" && m.val === "220.134.41.144")
+    && o3?.port === "P6" && o3.mods.some((m) => m.k === "dns_response_ipv6" && m.val === "::ffff:dc86:2990"));
+  const c6 = d.chains.find((c) => c.ports === "P6");
+  check("dns-blocklist: listed name -> request -> A to O2, else AAAA to O3; not listed to P7",
+    c6?.tree.fids === "F1" && c6.tree.notmatch?.ports === "P7"
+    && c6.tree.match?.fids === "F2" && c6.tree.match.match?.fids === "F3" && c6.tree.match.match.match?.ports === "O2"
+    && c6.tree.match.match.notmatch?.fids === "F4" && c6.tree.match.match.notmatch.match?.ports === "O3");
+  check("dns-blocklist: the return path P7 -> P6 is a plain forward",
+    d.chains.find((c) => c.ports === "P7")?.tree.ports === "P6" && d.filters.length === 4);
+}
 
 /* ---------- outputs ---------- */
 group("output serialisation");

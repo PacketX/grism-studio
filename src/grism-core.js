@@ -1201,6 +1201,70 @@ export const MEC_BREAKOUT_XML = `<run>
   </chain>
 </run>`;
 
+/* A DNS block list the device answers itself -- the GRISM XML guide's sample
+   under docs/reduce ("DNS Spoofing"), with the finds in their long form. P7
+   -> P6 forwards everything. From P6, a DNS request (F2) for a name on the
+   list (F1) is answered by the device with a fixed address: an A query
+   without EDNS (F3) gets O2's IPv4, an AAAA query without EDNS (F4) O3's
+   IPv6, both back out of P6. Any other DNS packet for a listed name -- a
+   query carrying EDNS, another record type, a response -- reaches no output
+   and is discarded; everything not on the list goes on to P7. */
+export const DNS_BLOCKLIST_XML = `<run>
+  <filter id="1" name="DNS block list" sessionBase="no">
+    <or>
+      <find name="dns.qry.name" relation="==" content="www.abc.com"/>
+      <find name="dns.qry.name" relation="==" content="www.def.com"/>
+    </or>
+  </filter>
+  <filter id="2" name="DNS request" sessionBase="no">
+    <or>
+      <find name="dns.flags.response" relation="==" content="0"/>
+    </or>
+  </filter>
+  <filter id="3" name="DNS type A, not EDNS" sessionBase="no">
+    <and>
+      <find name="dns.qry.type" relation="==" content="1"/>
+      <find name="dns.count.add_rr" relation="==" content="0"/>
+    </and>
+  </filter>
+  <filter id="4" name="DNS type AAAA, not EDNS" sessionBase="no">
+    <and>
+      <find name="dns.qry.type" relation="==" content="28"/>
+      <find name="dns.count.add_rr" relation="==" content="0"/>
+    </and>
+  </filter>
+  <output id="2" name="answer A with the fixed IPv4">
+    <port>P6</port>
+    <dns_response_ipv4>220.134.41.144</dns_response_ipv4>
+  </output>
+  <output id="3" name="answer AAAA with the fixed IPv6">
+    <port>P6</port>
+    <dns_response_ipv6>::ffff:dc86:2990</dns_response_ipv6>
+  </output>
+  <chain>
+    <in>P7</in>
+    <out>P6</out>
+  </chain>
+  <chain>
+    <in>P6</in>
+    <fid>F1</fid>
+    <next>
+      <fid>F2</fid>
+      <next>
+        <fid>F3</fid>
+        <out>O2</out>
+        <next type="notmatch">
+          <fid>F4</fid>
+          <out>O3</out>
+        </next>
+      </next>
+    </next>
+    <next type="notmatch">
+      <out>P7</out>
+    </next>
+  </chain>
+</run>`;
+
 export const SDWAN_TEMPLATE_XML = {
   l2gre: sdwanRun("L2GRE", "gre", "gre", "l2gre"),
   vxlan: sdwanRun("VXLAN", "vxlan", "vxlan", "vxlan"),
@@ -1278,6 +1342,11 @@ export const TEMPLATES = [
         root: { id: nid(), t: "or", children: finds("ssl.server_name", "==", ["facebook.com"]) } }],
       chain: { ports: "P0", tree: { id: nid(), t: "branch", fids: "F1", fidOp: "or", match: mkOut("P1"), notmatch: mkOut("P2") } },
     }) },
+  { id: "dns-blocklist", title: "DNS block list, answered by the device", tag: "DNS",
+    title_zh: "DNS 封鎖清單,由裝置代答", tag_zh: "DNS",
+    blurb: "P7→P6 forwards everything. From P6, a DNS request for a name on the list is answered by the device itself with a fixed address — an A query with O2's IPv4, an AAAA query with O3's IPv6 — back out of P6. Other DNS packets for a listed name (EDNS queries, other record types, responses) are discarded; everything not on the list goes on to P7. The GRISM XML guide's sample (reduce / DNS spoofing).",
+    blurb_zh: "P7→P6 全部轉發。P6 進來、查詢名稱在清單上的 DNS 請求由裝置直接代答固定位址:A 查詢回 O2 的 IPv4,AAAA 查詢回 O3 的 IPv6,從 P6 送回。清單上名稱的其他 DNS 封包(帶 EDNS 的查詢、其他記錄類型、回應)會被丟棄;不在清單上的流量繼續送往 P7。出自 GRISM XML 指南的範例(reduce / DNS spoofing)。",
+    make: () => parseRun(DNS_BLOCKLIST_XML).doc },
   { id: "rewrite-output", title: "Rewrite via output", tag: "Output",
     title_zh: "透過 output 改寫", tag_zh: "輸出",
     blurb: "Matched traffic goes to an output (O1) that rewrites source IP and adds a VLAN tag, then leaves on P1.",
