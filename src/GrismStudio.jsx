@@ -7064,9 +7064,10 @@ function TrafficBlockedTab({ loggedIn, t, filterNames = {} }) {
             const issue = tuple5TableIssue(x);
             return (
               <p key={x.filterId} className={"set-hint blk-cap" + (issue ? " warn" : "")}>
-                {tr("blk.capacity").replace("{filter}", "F" + x.filterId).replace("{used}", fmtNum(x.used)).replace("{size}", fmtNum(x.size))}
-                {x.replaced > 0 && " " + tr("blk.replaced").replace("{n}", fmtNum(x.replaced)).replace("{ago}", String(x.replacedAgo ?? "?"))}
-                {issue && " " + tr(issue === "replacing" ? "blk.tableFull" : "blk.tableNearFull").replace("{size}", fmtNum(x.size))}
+                {/* exact counts: a slot count abbreviated to "1.36K" says nothing one can set */}
+                {tr("blk.capacity").replace("{filter}", "F" + x.filterId).replace("{used}", x.used.toLocaleString()).replace("{size}", x.size.toLocaleString())}
+                {x.replaced > 0 && " " + tr("blk.replaced").replace("{n}", x.replaced.toLocaleString()).replace("{ago}", String(x.replacedAgo ?? "?"))}
+                {issue && " " + tr(issue === "replacing" ? "blk.tableFull" : "blk.tableNearFull").replace("{size}", x.size.toLocaleString())}
               </p>
             );
           })}
