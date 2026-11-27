@@ -1033,6 +1033,25 @@ group("settings builders");
       !!I18N[l]["set.quicInit"] && !!I18N[l]["set.quicInitNote"]));
   }
 
+  // The matched-log syslog card (2.324.0): matchedLogDedup / matchedLogBlocked
+  // are read as flags, matchedLogInterval as text, an absent matchedLogDedup
+  // reads as on (the engine's default), and the card applies the three together.
+  {
+    const jsx = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
+    const pktArgs = jsx.match(/const PKT_ARGS = \[[^\]]*\]/)?.[0] ?? "";
+    const sysArgs = jsx.match(/const SYS_ARGS = \[[^\]]*\]/)?.[0] ?? "";
+    check("PKT_ARGS carries matchedLogDedup and matchedLogBlocked", pktArgs.includes('"matchedLogDedup"') && pktArgs.includes('"matchedLogBlocked"'));
+    check("SYS_ARGS carries matchedLogInterval", sysArgs.includes('"matchedLogInterval"'));
+    check("an absent matchedLogDedup reads as on", jsx.includes("shaped.matchedLogDedup = a.matchedLogDedup !== false"));
+    check("the card applies the three keys together",
+      (jsx.match(/const keys = \["matchedLogDedup", "matchedLogInterval", "matchedLogBlocked"\]/g) ?? []).length === 1);
+    check("the card's labels exist in both languages", ["en", "zh-TW"].every((l) =>
+      ["set.mlog", "set.mlogNote", "set.mlogDedupOn", "set.mlogInterval", "set.mlogIntervalBad", "set.mlogBlockedOn", "set.mlogBlockedNote"]
+        .every((k) => !!I18N[l][k])));
+    check("the interval goes out as given", C.buildArgsConfigSet({ matchedLogInterval: "120" }).includes("<matchedLogInterval>120</matchedLogInterval>"));
+    check("the blocked switch goes out as a boolean", C.buildArgsConfigSet({ matchedLogBlocked: false }).includes("<matchedLogBlocked>False</matchedLogBlocked>"));
+  }
+
   const tun = C.buildInTunnelsConfigSet({ GTP: false, GRE: true, VXLAN: false });
   check("in-tunnels nested under filters", tun.includes("<filters>") && tun.includes("<in-tunnels>"));
   check("tunnel flags written", tun.includes("<GTP>False</GTP>") && tun.includes("<GRE>True</GRE>"));
