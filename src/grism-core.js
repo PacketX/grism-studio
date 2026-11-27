@@ -2567,6 +2567,23 @@ export function parseTuple5Live(payload) {
   const rows = tables.flatMap((t) => t.rows).sort((a, b) => a.left - b.left || a.sip.localeCompare(b.sip) || a.sport - b.sport);
   return { ts: Number(payload?.ts) || null, tables, rows };
 }
+/* The Blocked page's search: a substring of either address, "ip:port", a port on
+   its own, the protocol's name or number, or the filter ("F7002" or "7002"). */
+export function filterTuple5Rows(rows, query) {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return rows ?? [];
+  return (rows ?? []).filter((r) => [
+    r.sip, r.dip, `${r.sip}:${r.sport}`, `${r.dip}:${r.dport}`, String(r.sport), String(r.dport),
+    protocolName(r.proto), `f${r.filterId}`, String(r.filterId),
+  ].some((s) => String(s).toLowerCase().includes(q)));
+}
+/* One page of a list, the page number clamped to what the list has. */
+export function pageSlice(rows, page, per) {
+  const all = rows ?? [];
+  const pages = Math.max(1, Math.ceil(all.length / per));
+  const p = Math.min(Math.max(1, Number(page) || 1), pages);
+  return { page: p, pages, rows: all.slice((p - 1) * per, p * per), total: all.length };
+}
 
 /* Well-known ports worth naming in the port breakdown. */
 export const PORT_SERVICES = {
@@ -3860,36 +3877,45 @@ export function parseServiceExtras(cfg) {
    a key only where its JSON has it, so the page writes the name it found.
    null where the device has no such service. */
 export const SYSLOGD_FILTER_KEYS = ["fortinet_5t_block_filter_id", "trend_micro_5t_block_filter_id"];
+export const SYSLOGD_LIVE_KEYS = ["fortinet_5t_block_live_seconds", "trend_micro_5t_block_live_seconds"];
 export function parseSyslogd(cfg) {
   const s = (cfg?.services ?? []).find((x) => x.name === "grism_syslogd");
   if (!s) return null;
   const filterKey = SYSLOGD_FILTER_KEYS.find((k) => k in s) ?? SYSLOGD_FILTER_KEYS[0];
+  const liveKey = SYSLOGD_LIVE_KEYS.find((k) => k in s) ?? SYSLOGD_LIVE_KEYS[0];
   return {
     enable: s.enable === true,
     port: String(s.port ?? 5144),
     filterId: String(s[filterKey] ?? 10000),
     filterKey,
-    live: Number(s.fortinet_5t_block_live_seconds ?? s.trend_micro_5t_block_live_seconds ?? 10),
+    live: String(s[liveKey] ?? 10),      // how many seconds a pushed connection stays in the table
+    liveKey,
   };
 }
-/* What stops a save: a port outside 1..65535, a filter id that is not a positive integer. */
+/* What stops a save: a port outside 1..65535, a filter id that is not a positive
+   integer, a hold time outside 1..86400 s. */
 export function syslogdProblems(d) {
   const out = [];
   const port = Number(d?.port);
   if (!/^\d+$/.test(String(d?.port ?? "")) || port < 1 || port > 65535) out.push("port");
   if (!/^\d+$/.test(String(d?.filterId ?? "")) || Number(d.filterId) < 1) out.push("filterId");
+  const live = Number(d?.live);
+  if (!/^\d+$/.test(String(d?.live ?? "")) || live < 1 || live > 86400) out.push("live");
   return out;
 }
 export function buildSyslogdConfigSet(d) {
   const key = SYSLOGD_FILTER_KEYS.includes(d.filterKey) ? d.filterKey : SYSLOGD_FILTER_KEYS[0];
+  const lkey = SYSLOGD_LIVE_KEYS.includes(d.liveKey) ? d.liveKey : SYSLOGD_LIVE_KEYS[0];
   return `<configSet reboot="no">\n  <services><find name="grism_syslogd">` +
     `<enable>${d.enable ? "True" : "False"}</enable>` +
     `<port>${Number(d.port)}</port>` +
     `<${key}>${Number(d.filterId)}</${key}>` +
+    `<${lkey}>${Number(d.live)}</${lkey}>` +
     `</find></services>\n</configSet>`;
 }
 export const syslogdChanged = (base, d) => !!base && !!d &&
-  (base.enable !== d.enable || String(base.port) !== String(d.port) || String(base.filterId) !== String(d.filterId));
+  (base.enable !== d.enable || String(base.port) !== String(d.port) || String(base.filterId) !== String(d.filterId)
+    || String(base.live) !== String(d.live));
 
 export function buildServiceExtrasConfigSet(extras) {
   const b = extras.backup ?? {};

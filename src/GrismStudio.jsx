@@ -30,7 +30,7 @@ import {
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, packetRowText, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, advancedInUse, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
-  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices, parseTuple5Live, xmlCommentText, xmlCommentFromText,
+  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices, parseTuple5Live, filterTuple5Rows, pageSlice, xmlCommentText, xmlCommentFromText,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
   PRIV, PRIV_ROLES, isLastAdmin, minPrivForRequest, privAtLeast, privLevel, privRole, userLevelFixed,
@@ -198,7 +198,7 @@ export default function GrismStudio() {
   const WORKSPACES = [
     { id: "overview", tabs: ["overview"] },
     { id: "pipeline", tabs: [...(moduleMode ? ["mec"] : []), "chain", "inputs", "outputs", "actions", "filters", "simulate", "export", "capture"] },
-    { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre", "trafficMec"] },
+    { id: "traffic", tabs: ["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries", "trafficL2gre", "trafficMec", "trafficBlocked"] },
     { id: "system", tabs: ["status", "syslog", "settings"] },
   ];
   const tabWorkspace = (tb) => (WORKSPACES.find((w) => w.tabs.includes(tb)) ?? WORKSPACES[0]).id;
@@ -420,6 +420,8 @@ export default function GrismStudio() {
   useEffect(() => { if (tab === "trafficL2gre" && !hasL2gre) setTab("trafficPorts"); }, [tab, hasL2gre]);
   // and the same for the MEC page if correlation is switched off while it is open
   useEffect(() => { if (tab === "trafficMec" && !s1cOn) setTab("trafficPorts"); }, [tab, s1cOn]);
+  // and the blocked-connections page while the grism_syslogd service is switched off
+  useEffect(() => { if (tab === "trafficBlocked" && !syslogdOn) setTab("trafficPorts"); }, [tab, syslogdOn]);
 
   // Why the session ended, when something other than the logout button ended it.
   // Set as the tab that triggered it unmounts, so it has to live out here.
@@ -1004,7 +1006,8 @@ export default function GrismStudio() {
                   <nav className="tabs ws-tabs">
                     {["trafficPorts", "trafficSessions", "trafficServices", "trafficCountries",
                       ...(hasL2gre ? ["trafficL2gre"] : []),
-                      ...(s1cOn ? ["trafficMec"] : [])].map((k) => (
+                      ...(s1cOn ? ["trafficMec"] : []),
+                      ...(syslogdOn ? ["trafficBlocked"] : [])].map((k) => (
                       <button key={k} className={"tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
                         {t("tab." + k)}
                       </button>
@@ -1289,7 +1292,7 @@ export default function GrismStudio() {
           <TrafficTab loggedIn={!!login.who} t={t} model={deviceModel} />
         )}
         {tab === "trafficSessions" && (
-          <TrafficSessionsTab loggedIn={!!login.who} t={t} syslogdOn={syslogdOn}
+          <TrafficSessionsTab loggedIn={!!login.who} t={t}
             filterNames={Object.fromEntries(doc.filters.map((f) => [f.id, f.name || f.alt || ""]))} />
         )}
         {tab === "trafficServices" && (
@@ -1303,6 +1306,10 @@ export default function GrismStudio() {
         )}
         {tab === "trafficMec" && (
           <MecTab loggedIn={!!login.who} t={t} />
+        )}
+        {tab === "trafficBlocked" && (
+          <TrafficBlockedTab loggedIn={!!login.who} t={t}
+            filterNames={Object.fromEntries(doc.filters.map((f) => [f.id, f.name || f.alt || ""]))} />
         )}
         {tab === "mec" && (
           <ModulesTab mode="detail" moduleType="mec" loggedIn={!!login.who} canOperate={privAtLeast(login.priv, PRIV.OPERATOR)} t={t} lang={lang}
@@ -3485,7 +3492,8 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
       await new Promise((r) => setTimeout(r, 500));
       try {
         const now = parseSyslogd(await getConfig(true));
-        seen = !!now && now.enable === want.enable && String(now.port) === String(want.port) && String(now.filterId) === String(want.filterId);
+        seen = !!now && now.enable === want.enable && String(now.port) === String(want.port) && String(now.filterId) === String(want.filterId)
+          && String(now.live) === String(want.live);
       } catch { /* try again */ }
     }
     const body = new URLSearchParams();
@@ -5624,6 +5632,9 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                   <label className="ml"><span>{tr("set.sdFilter")}</span>
                     <input type="number" min="1" value={sysl.filterId} className={bad.includes("filterId") ? "invalid" : ""}
                       onChange={(e) => setSysl((o) => ({ ...o, filterId: e.target.value }))} /></label>
+                  <label className="ml"><span>{tr("set.sdLive")}</span>
+                    <input type="number" min="1" max="86400" value={sysl.live} className={bad.includes("live") ? "invalid" : ""}
+                      onChange={(e) => setSysl((o) => ({ ...o, live: e.target.value }))} /></label>
                 </div>
                 {bad.length > 0 && <p className="set-hint warn">{tr("set.sdBad")}</p>}
                 {missing && <p className="set-hint warn">{tr("set.sdFilterMissing").replace("{id}", String(fid))}</p>}
@@ -6820,14 +6831,10 @@ function TrafficTab({ loggedIn, t, model = "" }) {
    Traffic → Sessions: session tables, protocol/port breakdowns,
    packet types and filter hit counters
    ============================================================ */
-function TrafficSessionsTab({ loggedIn, t, filterNames = {}, syslogdOn = false }) {
+function TrafficSessionsTab({ loggedIn, t, filterNames = {} }) {
   const tr = t || ((k) => k);
   const poll = usePolledJson("/grism/task/get_statistics_json", loggedIn);
   const fPoll = usePolledJson("/grism/task/get_filter_counter", loggedIn, { followSec: poll.refreshSec });
-  /* The connections grism_syslogd holds in a live 5-tuple filter from the
-     firewall's blocks -- asked for only while that service is enabled, and
-     at this page's pace, since an entry lives seconds. */
-  const t5Poll = usePolledJson("/grism/task/get_tuple5live", loggedIn && syslogdOn, { followSec: poll.refreshSec });
   // heartbeat: the status rows are positional, so the target list labels them
   /* The target list only labels the status rows, and it changes when someone
      edits the settings -- not every tick. Polling the whole configuration
@@ -6861,7 +6868,6 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {}, syslogdOn = false }
   const pkts = summarizePacketTypes(poll.data?.packet_type_counter);
   const filters = summarizeFilterCounters(fPoll.data?.filter_counter);
   const hbRows = hbOn ? heartbeatStatusRows(hbTargets, parseHeartbeatStatus(hbPoll.data)) : [];
-  const t5 = syslogdOn && t5Poll.data ? parseTuple5Live(t5Poll.data) : null;
 
   const family = (info, label, protoLabel) => info && (
     <section className="sys-card">
@@ -6943,40 +6949,6 @@ function TrafficSessionsTab({ loggedIn, t, filterNames = {}, syslogdOn = false }
         </section>
       )}
 
-      {syslogdOn && (
-        <section className="sys-card" id="sec-blocked">
-          <h3 className="sys-card-title">{tr("sess.blockedTitle")}
-            <span className="sys-card-metric">{t5 ? t5.rows.length : "—"}</span></h3>
-          <p className="set-hint">{tr("sess.blockedNote")}</p>
-          {t5Poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {t5Poll.errMsg}</div>}
-          {!t5 ? null : t5.tables.length === 0 ? (
-            /* no filter of the running configuration has a live table: the
-               engine refuses every push, which is what the empty page means */
-            <p className="sys-note warn">{tr("sess.blockedNoTable")}</p>
-          ) : t5.rows.length === 0 ? (
-            <p className="sys-note dim">{tr("sess.blockedNone").replace("{filters}", t5.tables.map((x) => "F" + x.filterId).join(", "))}</p>
-          ) : (
-            <table className="tf-table sess-blocked-table">
-              <thead><tr>
-                <th>{tr("sess.filterId")}</th><th>{tr("sess.blockedSrc")}</th><th>{tr("sess.blockedDst")}</th>
-                <th>{tr("sess.proto")}</th><th className="tf-num">{tr("sess.blockedLeft")}</th>
-              </tr></thead>
-              <tbody>
-                {t5.rows.map((r) => (
-                  <tr key={`${r.filterId}-${r.sip}-${r.sport}-${r.dip}-${r.dport}-${r.proto}`}>
-                    <td className="tf-name">F{r.filterId}{filterNames?.[r.filterId] ? <span className="dim"> · {filterNames[r.filterId]}</span> : null}</td>
-                    <td className="mono">{r.sip}:{r.sport}</td>
-                    <td className="mono">{r.dip}:{r.dport}</td>
-                    <td>{protocolName(r.proto)}</td>
-                    <td className="tf-num mono">{r.left}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
       <section className="sys-card">
         <h3 className="sys-card-title">{tr("sess.filters")} <span className="sys-card-metric">{filters.length}</span></h3>
         {filters.length === 0 ? <p className="sys-note dim">{tr("sess.noFilters")}</p> : (
@@ -7038,6 +7010,76 @@ function HostTable({ hosts, tr, limit = 20 }) {
         </button>
       )}
     </>
+  );
+}
+
+/* ============================================================
+   Traffic → Blocked: the connections grism_syslogd holds in a live 5-tuple
+   filter from a firewall's syslog, each with its seconds left. A page of its
+   own (the user's call), shown only while that service is enabled; twenty
+   rows a page, a search over addresses, ports, protocol and filter.
+   ============================================================ */
+const BLOCKED_PAGE = 20;
+function TrafficBlockedTab({ loggedIn, t, filterNames = {} }) {
+  const tr = t || ((k) => k);
+  // its own interval: an entry lives seconds, so 5 s by default rather than the statistics pages' 10
+  const poll = usePolledJson("/grism/task/get_tuple5live", loggedIn, { defaultSec: 5, prefKey: "refreshSecBlocked" });
+  const [query, setQuery] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  if (!loggedIn) return <div className="sys-wrap"><div className="sys-need-login">{tr("tf.needLogin")}</div></div>;
+  const live = poll.data ? parseTuple5Live(poll.data) : null;
+  const matched = live ? filterTuple5Rows(live.rows, query) : [];
+  const pg = pageSlice(matched, page, BLOCKED_PAGE);
+  const filtersOf = (l) => l.tables.map((x) => "F" + x.filterId).join(", ");
+
+  return (
+    <div className="sys-wrap">
+      <TrafficHead title={tr("blk.title")} tr={tr} poll={poll} />
+      <p className="page-note">{tr("blk.note")}</p>
+      {poll.state === "error" && <div className="sys-err">{tr("tf.loadFailed")}: {poll.errMsg}</div>}
+      {poll.state === "loading" && !poll.data ? <Spinner label={tr("blk.loading")} />
+        : !live ? null
+        : live.tables.length === 0 ? (
+          /* no filter of the running configuration has a live table: the engine
+             refuses every push, which is what an empty page would hide */
+          <p className="sys-note warn">{tr("blk.noTable")}</p>
+        ) : (<>
+          <div className="mec-pager blk-bar">
+            <label className="ml blk-search"><span>{tr("blk.search")}</span>
+              <input type="text" value={query} placeholder={tr("blk.searchPh")}
+                onChange={(e) => { setQuery(e.target.value); setPage(1); }} /></label>
+            <span className="dim blk-count">{tr("blk.count").replace("{n}", String(matched.length)).replace("{total}", String(live.rows.length)).replace("{filters}", filtersOf(live))}</span>
+            {pg.pages > 1 && (
+              <div className="mec-pager-btns">
+                <button className="copy-btn" disabled={pg.page <= 1} onClick={() => setPage(pg.page - 1)}>‹</button>
+                <span className="mono">{pg.page} / {pg.pages}</span>
+                <button className="copy-btn" disabled={pg.page >= pg.pages} onClick={() => setPage(pg.page + 1)}>›</button>
+              </div>
+            )}
+          </div>
+          {matched.length === 0 ? <p className="sys-note dim">{query ? tr("blk.noMatch") : tr("blk.none")}</p> : (
+            <div className="tf-table-wrap">
+              <table className="tf-table blk-table">
+                <thead><tr>
+                  <th>{tr("sess.filterId")}</th><th>{tr("blk.src")}</th><th>{tr("blk.dst")}</th>
+                  <th>{tr("sess.proto")}</th><th className="tf-num">{tr("blk.left")}</th>
+                </tr></thead>
+                <tbody>
+                  {pg.rows.map((r) => (
+                    <tr key={`${r.filterId}-${r.sip}-${r.sport}-${r.dip}-${r.dport}-${r.proto}`}>
+                      <td className="tf-name">F{r.filterId}{filterNames?.[r.filterId] ? <span className="dim"> · {filterNames[r.filterId]}</span> : null}</td>
+                      <td className="mono">{r.sip}:{r.sport}</td>
+                      <td className="mono">{r.dip}:{r.dport}</td>
+                      <td>{protocolName(r.proto)}</td>
+                      <td className="tf-num mono">{r.left}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>)}
+    </div>
   );
 }
 

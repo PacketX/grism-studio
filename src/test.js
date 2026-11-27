@@ -1055,19 +1055,32 @@ group("settings builders");
     // grism_syslogd's card: the new key name, the old one, and a device without the service
     const nu = C.parseSyslogd({ services: [{ name: "grism_syslogd", enable: false, port: 5144, fortinet_5t_block_filter_id: 10000, fortinet_5t_block_live_seconds: 10 }] });
     const old = C.parseSyslogd({ services: [{ name: "grism_syslogd", enable: true, port: 5145, trend_micro_5t_block_filter_id: 7001, trend_micro_5t_block_live_seconds: 7 }] });
-    check("syslogd: the entry is read with either key name", nu.enable === false && nu.port === "5144" && nu.filterId === "10000" && nu.live === 10
-      && nu.filterKey === "fortinet_5t_block_filter_id" && old.enable === true && old.filterId === "7001" && old.live === 7
+    check("syslogd: the entry is read with either key name", nu.enable === false && nu.port === "5144" && nu.filterId === "10000" && nu.live === "10"
+      && nu.filterKey === "fortinet_5t_block_filter_id" && nu.liveKey === "fortinet_5t_block_live_seconds"
+      && old.enable === true && old.filterId === "7001" && old.live === "7" && old.liveKey === "trend_micro_5t_block_live_seconds"
       && old.filterKey === "trend_micro_5t_block_filter_id" && C.parseSyslogd({ services: [{ name: "sshd" }] }) === null);
-    const xml = C.buildSyslogdConfigSet({ ...old, enable: false, port: "5146", filterId: "7002" });
-    check("syslogd: the configSet carries enable, port and the id under the key the device has",
-      xml.includes('<find name="grism_syslogd"><enable>False</enable><port>5146</port><trend_micro_5t_block_filter_id>7002</trend_micro_5t_block_filter_id></find>'));
+    const xml = C.buildSyslogdConfigSet({ ...old, enable: false, port: "5146", filterId: "7002", live: "15" });
+    check("syslogd: the configSet carries enable, port, the id and the hold time under the keys the device has",
+      xml.includes('<find name="grism_syslogd"><enable>False</enable><port>5146</port><trend_micro_5t_block_filter_id>7002</trend_micro_5t_block_filter_id><trend_micro_5t_block_live_seconds>15</trend_micro_5t_block_live_seconds></find>'));
     check("syslogd: an unknown key name falls back to the new one",
-      C.buildSyslogdConfigSet({ enable: true, port: 5144, filterId: 1, filterKey: "x" }).includes("<fortinet_5t_block_filter_id>1</fortinet_5t_block_filter_id>"));
-    check("syslogd: problems", C.syslogdProblems({ port: "5144", filterId: "10000" }).length === 0
-      && C.syslogdProblems({ port: "0", filterId: "10000" }).join() === "port" && C.syslogdProblems({ port: "70000", filterId: "x" }).join() === "port,filterId"
-      && C.syslogdProblems({ port: "5144", filterId: "0" }).join() === "filterId");
-    check("syslogd: a change is enable, port or id", !C.syslogdChanged(nu, { ...nu }) && C.syslogdChanged(nu, { ...nu, enable: true })
-      && C.syslogdChanged(nu, { ...nu, port: "5145" }) && C.syslogdChanged(nu, { ...nu, filterId: "7001" }) && !C.syslogdChanged(null, nu));
+      C.buildSyslogdConfigSet({ enable: true, port: 5144, filterId: 1, live: 10, filterKey: "x", liveKey: "y" }).includes("<fortinet_5t_block_filter_id>1</fortinet_5t_block_filter_id><fortinet_5t_block_live_seconds>10</fortinet_5t_block_live_seconds>"));
+    check("syslogd: problems", C.syslogdProblems({ port: "5144", filterId: "10000", live: "10" }).length === 0
+      && C.syslogdProblems({ port: "0", filterId: "10000", live: "10" }).join() === "port" && C.syslogdProblems({ port: "70000", filterId: "x", live: "10" }).join() === "port,filterId"
+      && C.syslogdProblems({ port: "5144", filterId: "0", live: "10" }).join() === "filterId"
+      && C.syslogdProblems({ port: "5144", filterId: "1", live: "0" }).join() === "live" && C.syslogdProblems({ port: "5144", filterId: "1", live: "90000" }).join() === "live");
+    check("syslogd: a change is enable, port, id or hold time", !C.syslogdChanged(nu, { ...nu }) && C.syslogdChanged(nu, { ...nu, enable: true })
+      && C.syslogdChanged(nu, { ...nu, port: "5145" }) && C.syslogdChanged(nu, { ...nu, filterId: "7001" }) && C.syslogdChanged(nu, { ...nu, live: "20" })
+      && !C.syslogdChanged(null, nu));
+    // the Blocked page's search and paging
+    const rows = Array.from({ length: 45 }, (_, i) => ({ filterId: i < 40 ? 7002 : 7003, sip: `10.0.${Math.floor(i / 10)}.${i}`, sport: 1000 + i,
+      dip: i % 2 ? "17.248.223.14" : "8.8.8.8", dport: i % 2 ? 443 : 53, proto: i % 2 ? 6 : 17, left: i % 10 }));
+    check("blocked: the search matches address, ip:port, port, protocol and filter",
+      C.filterTuple5Rows(rows, "").length === 45 && C.filterTuple5Rows(rows, "17.248").length === 22 && C.filterTuple5Rows(rows, "8.8.8.8:53").length === 23
+      && C.filterTuple5Rows(rows, "udp").length === 23 && C.filterTuple5Rows(rows, "F7003").length === 5 && C.filterTuple5Rows(rows, " 7003 ").length === 5
+      && C.filterTuple5Rows(rows, "1044").length === 1 && C.filterTuple5Rows(rows, "nothing").length === 0);
+    const p1 = C.pageSlice(rows, 1, 20), p3 = C.pageSlice(rows, 3, 20), p9 = C.pageSlice(rows, 9, 20), p0 = C.pageSlice([], 2, 20);
+    check("blocked: twenty a page, the page clamped to what there is",
+      p1.pages === 3 && p1.rows.length === 20 && p1.total === 45 && p3.rows.length === 5 && p3.page === 3 && p9.page === 3 && p0.pages === 1 && p0.page === 1 && p0.rows.length === 0);
     // the engine's live 5-tuple tables, as get.tuple5live writes them (spaces after some commas included)
     const live = C.parseTuple5Live(JSON.parse('{"ts":1795756150183,"tuple5live":[{"filter_id":7001, "tuple5":[["10.10.78.224",63763,"17.248.223.14",443, 6, 13],["1.1.1.1",1,"2.2.2.2",2, 17, 4]]},{"filter_id":7002, "tuple5":[]}]}'));
     check("tuple5live: tables and rows, the soonest to go first", live.tables.length === 2 && live.tables[1].rows.length === 0
