@@ -3269,16 +3269,24 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
           } catch { sessionAlive = null; }
           if (!alive) return;
         } else {
-          /* Under the manager, its reading of the node -- and only one it took
-             after the device answered again: until then "pending" keeps the
-             overlay where it is. */
+          /* Under the manager, its reading of the node -- and only a reading it
+             took after the device answered again (its last_ok moved) that
+             carries a new uptime figure (the system figures are refreshed on
+             fewer polls than the status): until then "pending" keeps the
+             overlay where it is. A manager that keeps answering with the old
+             figure for two minutes cannot tell, and coming back from the
+             silence is evidence enough then. */
           const st = await managerNodeState();
           if (!alive) return;
           const m = mgrRef.current || (mgrRef.current = { t0: Date.now(), uptime0: null, lastOkBack: null });
           if (m.lastOkBack == null) m.lastOkBack = Number(st?.last_ok) || 0;
+          const up = st?.system?.uptime_s ?? null;
+          const polledSinceBack = st && Number(st.last_ok) > m.lastOkBack;
+          if (polledSinceBack && m.backSince == null) m.backSince = Date.now();
           if (!st) sessionAlive = null;
-          else if (!(Number(st.last_ok) > m.lastOkBack)) sessionAlive = "pending";
-          else sessionAlive = managedSessionAlive(m.uptime0, st.system?.uptime_s, (Date.now() - m.t0) / 1000);
+          else if (!polledSinceBack || (up != null && up === m.uptime0 && Date.now() - m.backSince < 120000)) sessionAlive = "pending";
+          else if (up != null && up === m.uptime0) sessionAlive = null;
+          else sessionAlive = managedSessionAlive(m.uptime0, up, (Date.now() - m.t0) / 1000);
         }
       }
       setWait((w) => {
