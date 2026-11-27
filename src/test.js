@@ -2040,6 +2040,17 @@ check("set_switch_interface is a write", C.isWriteRequest("/grism/task/set_switc
   const parsed = C.parseSwitchInterfaces({ interfaces: [{ name: "0/13", speed: "100000", fec: "None", fec_oper: "None", state: "Link-Up",
     fec_support: ["None", "RS"], fec_support_by_speed: { "25000": ["None", "FC", "RS"], "100000": ["None", "RS"] } }] })[0];
   check("switch: the new fields are read", parsed.fecOper === "None" && parsed.state === "Link-Up" && parsed.fecBySpeed["25000"].length === 3);
+  check("switch: the mode is the file the switch reads", C.switchModeOfFile("normal.config") === "normal"
+    && C.switchModeOfFile("custom.config") === "custom" && C.switchModeOfFile("grism-3x50g-lag_8x25g.config") === "custom"
+    && C.switchModeOfFile("") === "" && C.switchModeOfFile(undefined) === "");
+  check("switch: the page says when <args> or the file disagree with the switch",
+    C.switchModeIssue("normal.config", "normal") === null && C.switchModeIssue("", "custom") === null
+    && C.switchModeIssue("custom.config", "normal")?.kind === "args" && C.switchModeIssue("custom.config", "normal").mode === "custom"
+    && C.switchModeIssue("custom.config", "") === null && C.switchModeIssue("normal.config", "custom")?.configured === "custom"
+    && C.switchModeIssue("grism-3x50g-lag_8x25g.config", "custom")?.kind === "file");
+  check("switch: the service answer names the file it reads",
+    C.cpssService({ active: "active", config: "custom.config", configured: "normal" }).config === "custom.config"
+    && C.cpssService({ active: "active" }).config === "" && C.cpssService(null).configured === "");
 }
 check("del_storage_file is a write", C.isWriteRequest("/grism/task/del_storage_file?name=a", "POST") === true);
 check("save_xml is a write", C.isWriteRequest("/grism/task/save_xml", "POST") === true);

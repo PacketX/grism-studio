@@ -6417,6 +6417,9 @@ export function cpssService(payload) {
     enabled: String(p.enabled ?? ""),
     since: String(p.since ?? ""),
     pid: String(p.pid ?? "0") === "0" ? "" : String(p.pid),
+    // the file the switch reads, and the mode <args> records (pywww 1.48.31; "" before)
+    config: String(p.config ?? ""),
+    configured: String(p.configured ?? ""),
     running: active === "active",
     known: active !== "unknown" && active !== "",
     /* "failed", or active with a sub-state that is not running (activating,
@@ -6451,6 +6454,27 @@ export const switchIfaceChanged = (base, cur) => {
 
 /* The file the mode maps to; the symlink is repointed at it. */
 export const switchModeFile = (mode) => (mode === "custom" ? "custom.config" : "normal.config");
+
+/* The mode the switch is in, read off the file it loads (pywww 1.48.31's
+   `config` in get_cpss_service and `active` in get_switch_interface):
+   normal.config is the per-port mode, anything else -- custom.config or one of
+   the preset files -- is edited as text. "" is not known (an older pywww, or no
+   link at all). */
+export const switchModeOfFile = (file) => (!file ? "" : file === "normal.config" ? "normal" : "custom");
+
+/* Why the mode shown may not be the one a reader expects: the switch reads a
+   file that is neither of the two this page edits, or <args> records another
+   mode than the switch is in. The page follows the switch, and says so: a Q8
+   whose link pointed at a custom.config left from months before while <args>
+   said normal had its per-port settings applied and changed nothing, since
+   the restart re-read the other file (2026-11-27). */
+export function switchModeIssue(file, configured) {
+  if (!file) return null;
+  if (file !== "normal.config" && file !== "custom.config") return { kind: "file", file };
+  const mode = switchModeOfFile(file);
+  if (configured && configured !== mode) return { kind: "args", mode, configured };
+  return null;
+}
 
 /* ============================================================
    MEC mapping table — the S1AP/NGAP item table, a page at a time

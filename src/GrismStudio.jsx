@@ -49,7 +49,7 @@ import {
   speedSwitch, groupSpeeds, PORT_SPEEDS, formatPortSpeed,
   SDWAN_ARG_KEYS, sdwanProblems, parsePortList, formatPortList, togglePortInList,
   MEC_ARG_KEYS, mecProblems, dedupProblems,
-  parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile,
+  parseSwitchInterfaces, switchInterfacePayload, switchIfaceChanged, switchModeFile, switchModeOfFile, switchModeIssue,
   bondVictims, statsBonds, bondPanelLayout, cpssService, dbmText, bondTag, portMovement,
   switchFecChoices, switchSpeedPatch, switchFecProblems, switchPortNotBuilt, SWITCH_FEC_BY_SPEED,
   parseServiceStatus, serviceRowState, ALWAYS_ON_SERVICES, COMPONENT_TARGETS, countryDbDate, firmwareRestartsOnly,
@@ -3576,12 +3576,18 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
       setCpssSvc(cpssService(await res.json()));
     } catch { setCpssSvc(cpssService(null)); }
   }, []);
+  /* The mode the page works in is the one the switch is in -- the file it
+     reads, which get_cpss_service names -- not the one <args> records: the two
+     can differ (switchModeIssue says how), and a setting applied to the file
+     the switch does not read changes nothing. An older pywww names no file,
+     and then the <args> record is all there is. */
+  const liveMode = switchModeOfFile(cpssSvc?.config) || switchMode;
   React.useEffect(() => {
     if (!loggedIn || section !== "switchif") return;
-    if (cpssSvc === null) loadCpssSvc();
-    if (switchMode === "custom") { if (swText === null) loadSwitchCustom(); }
+    if (cpssSvc === null) { loadCpssSvc(); return; }   // the mode comes from this answer first
+    if (liveMode === "custom") { if (swText === null) loadSwitchCustom(); }
     else if (swRows === null) loadSwitchIf();
-  }, [loggedIn, section, switchMode, swRows, swText, cpssSvc, loadSwitchIf, loadSwitchCustom, loadCpssSvc]);
+  }, [loggedIn, section, liveMode, swRows, swText, cpssSvc, loadSwitchIf, loadSwitchCustom, loadCpssSvc]);
 
   /* Every one of these restarts the cpss service, which takes about twenty
      seconds and drops the links while it runs. Hold the page for that long and
@@ -3604,7 +3610,8 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(switchInterfacePayload(swRows)),
       });
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      // the device's own words when it refuses (a FEC the speed cannot run; the switch in the other mode)
+      if (!res.ok) throw new Error((await res.text()).trim() || "HTTP " + res.status);
       setSubmit({ state: "idle", msg: "" });
       holdForSwitch(() => { setSwRows(null); setSwBase(null); loadSwitchIf(); });
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
@@ -3616,7 +3623,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
         method: "POST", credentials: "include",
         headers: { "Content-Type": "text/plain" }, body: swText ?? "",
       });
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (!res.ok) throw new Error((await res.text()).trim() || "HTTP " + res.status);
       setSubmit({ state: "idle", msg: "" });
       holdForSwitch(() => { setSwText(null); loadSwitchCustom(); });
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
@@ -3647,7 +3654,9 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
       if (!r.ok) throw new Error("HTTP " + r.status);
       setSubmit({ state: "idle", msg: "" });
       setSwitchMode(mode);
-      holdForSwitch(() => { setSwRows(null); setSwBase(null); setSwText(null); });
+      // the link now points at the mode's file; read the service again once the switch is back
+      setCpssSvc((s) => (s ? { ...s, config: switchModeFile(mode), configured: mode } : s));
+      holdForSwitch(() => { setSwRows(null); setSwBase(null); setSwText(null); setCpssSvc(null); });
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
   };
 
@@ -3824,16 +3833,25 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                 confirmation rather than a plain toggle. */}
             <div className="set-grid">
               <label className="ml"><span>{tr("set.switchMode")}</span>
-                <select value={switchMode} disabled={submit.state === "sending" || swWait > 0}
+                <select value={liveMode} disabled={submit.state === "sending" || swWait > 0}
                   onChange={(e) => setConfirm({ kind: "switchMode", mode: e.target.value })}>
                   {SWITCH_MODES.map((m) => <option key={m} value={m}>{tr("set.switchMode." + m)}</option>)}
                 </select></label>
             </div>
+            {(() => {
+              /* The switch reads a file other than the mode's own, or <args>
+                 records another mode: say which, since the page follows the switch. */
+              const issue = switchModeIssue(cpssSvc?.config, switchMode);
+              const modeName = (m) => (SWITCH_MODES.includes(m) ? tr("set.switchMode." + m) : m);
+              return issue && <p className="set-hint warn sw-mode-issue">{issue.kind === "file"
+                ? tr("set.switchModeOtherFile").replace("{file}", issue.file)
+                : tr("set.switchModeArgs").replace("{mode}", modeName(issue.mode)).replace("{configured}", modeName(issue.configured))}</p>;
+            })()}
             <p className="set-hint">{tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}</p>
             {swErr && <div className="sys-err">{tr("set.loadFailed")}: {swErr}</div>}
           </section>
 
-          {switchMode !== "custom" ? (
+          {liveMode !== "custom" ? (
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.switchPorts")}</h3>
               {swRows === null ? <Spinner label={tr("set.switchLoading")} /> : (() => {

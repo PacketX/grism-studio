@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.313.0";
+export const STUDIO_VERSION = "2.314.0";
 
 export const I18N = {
   en: {
@@ -613,6 +613,8 @@ export const I18N = {
     "set.switchMode.normal": "normal (per port)",
     "set.switchMode.custom": "custom (text)",
     "set.switchRestartNote": "Applying restarts the switch, which takes about {n} seconds and drops every link while it happens.",
+    "set.switchModeOtherFile": "The switch reads {file}, which is neither of the two files this page edits. Choosing a configuration above replaces it.",
+    "set.switchModeArgs": "The switch reads its {mode} configuration while the device's settings record {configured}; this page follows the switch. Choosing a configuration above sets both.",
     "set.switchPorts": "Ports",
     "set.switchPort": "Port",
     "set.switchGbicPn": "GBIC part no.",
@@ -1752,6 +1754,8 @@ export const I18N = {
     "set.switchMode.normal": "一般(逐埠設定)",
     "set.switchMode.custom": "自訂(文字)",
     "set.switchRestartNote": "套用後交換器會重新啟動,大約需要 {n} 秒,期間所有連線都會中斷。",
+    "set.switchModeOtherFile": "交換器目前讀的是 {file},不是這頁編輯的兩個檔案之一。在上方選擇設定方式會換掉它。",
+    "set.switchModeArgs": "交換器目前讀的是「{mode}」的設定檔,但裝置設定記的是「{configured}」;這頁以交換器實際讀的為準。在上方選擇設定方式會把兩者設成一致。",
     "set.switchPorts": "連接埠",
     "set.switchPort": "埠",
     "set.switchGbicPn": "GBIC 料號",
