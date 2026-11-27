@@ -10,6 +10,7 @@ import {
   buildArgsConfigSet, buildInTunnelsConfigSet, buildPortConfigSet, buildServicesConfigSet,
   cUpdate, removeTestKeeping, chainProblems, changedPorts, sideChangedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
+  parseSyslogd, syslogdProblems, buildSyslogdConfigSet, syslogdChanged,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
   portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, managedSessionAlive, PROXY_GONE_HEADER, portModeLabel, laneSpeedLabel, portModeTarget, FEC_NAMES, flowTableCapacity, FLOW_CACHE_NODE_TOP,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
@@ -2380,6 +2381,10 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
   const [zoneBase, setZoneBase] = React.useState("");
   const [svcBase, setSvcBase] = React.useState(null);
   const [svc, setSvc] = React.useState(null);
+  // grism_syslogd's own settings (enable, port, filter id), and the ids of the filters the engine runs
+  const [syslBase, setSyslBase] = React.useState(null);
+  const [sysl, setSysl] = React.useState(null);
+  const [syslFilters, setSyslFilters] = React.useState(null);
   const [community, setCommunity] = React.useState("");
   /* Management access: the allow list pywww enforces with iptables. mgmt is
      what the device answered (null before), mgmtText what is being typed. */
@@ -2793,6 +2798,15 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
       setSvcBase(list); setSvc(list);
       const ex = parseServiceExtras(cfg);
       setExtrasBase(ex); setExtras(ex);
+      const sd = parseSyslogd(cfg);
+      setSyslBase(sd); setSysl(sd);
+      if (sd) {
+        // which filters the engine runs, so the card can say when the id names none of them
+        try {
+          const r = await fetch("/grism/task/get_filter_counter", { credentials: "include" });
+          if (r.ok) setSyslFilters(((await r.json()).filter_counter ?? []).map((f) => Number(f.id)));
+        } catch { setSyslFilters(null); }
+      }
     } catch (e) { warnFetch("services", e); setSvcBase([]); setSvc([]); }
     try {
       const res = await fetch("/grism/get_snmp_read_community", { credentials: "include" });
@@ -3454,6 +3468,35 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
       getConfig(true); setPorts(null); setSys(null); setSvc(null); setHb(null); setLg(null); setViews(null);   // re-read so baselines match
       setTimeout(() => setSubmit({ state: "idle", msg: "" }), 2500);
     } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+  };
+
+  /* grism_syslogd reads its settings when it starts, so a change is the
+     configSet and then, once the device's configuration shows it (the watcher
+     applies a configSet within a second or two), a restart of the running
+     daemon -- or a stop, when it was switched off. */
+  const applySyslogd = async () => {
+    const want = sysl;
+    if (!want) return;
+    await submitConfig(buildSyslogdConfigSet(want));
+    let seen = false;
+    for (let i = 0; i < 12 && !seen; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        const now = parseSyslogd(await getConfig(true));
+        seen = !!now && now.enable === want.enable && String(now.port) === String(want.port) && String(now.filterId) === String(want.filterId);
+      } catch { /* try again */ }
+    }
+    const body = new URLSearchParams();
+    body.set("name", "grism_syslogd");
+    body.set("enable", want.enable ? "1" : "0");
+    if (want.enable) body.set("restart", "1");
+    try {
+      const r = await fetch("/grism/task/set_service_state", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status);
+      if (!seen) setSubmit({ state: "error", msg: tr("set.sdNotSeen") });
+    } catch (e) { setSubmit({ state: "error", msg: String(e.message || e) }); }
+    setSvc(null);          // the section re-reads the services, their state and this card
   };
 
   /* ---- virtual ports ------------------------------------------------
@@ -5558,6 +5601,40 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
               </div>
             </section>
 
+            {/* grism_syslogd: a firewall's syslog verdicts into a live 5-tuple
+                filter. Its own card, since a change means a restart of the
+                daemon with the new settings, not only the enable flag. */}
+            {sysl && (() => {
+              const bad = syslogdProblems(sysl);
+              const fid = Number(sysl.filterId);
+              const missing = syslFilters !== null && !bad.includes("filterId") && !syslFilters.includes(fid);
+              return (
+              <section className="sys-card" id="sec-syslogd">
+                <h3 className="sys-card-title">{tr("set.sdTitle")}</h3>
+                <p className="set-hint">{tr("set.sdNote")}</p>
+                <label className="set-check"><input type="checkbox" checked={sysl.enable}
+                  onChange={(e) => setSysl((o) => ({ ...o, enable: e.target.checked }))} />
+                  {tr("set.sdEnable")}</label>
+                <div className="set-grid">
+                  <label className="ml"><span>{tr("set.sdPort")}</span>
+                    <input type="number" min="1" max="65535" value={sysl.port} className={bad.includes("port") ? "invalid" : ""}
+                      onChange={(e) => setSysl((o) => ({ ...o, port: e.target.value }))} /></label>
+                  <label className="ml"><span>{tr("set.sdFilter")}</span>
+                    <input type="number" min="1" value={sysl.filterId} className={bad.includes("filterId") ? "invalid" : ""}
+                      onChange={(e) => setSysl((o) => ({ ...o, filterId: e.target.value }))} /></label>
+                </div>
+                {bad.length > 0 && <p className="set-hint warn">{tr("set.sdBad")}</p>}
+                {missing && <p className="set-hint warn">{tr("set.sdFilterMissing").replace("{id}", String(fid))}</p>}
+                <p className="set-hint">{tr("set.sdFilterNote").replace("{live}", String(sysl.live))}</p>
+                <div className="set-actions">
+                  <button className="copy-btn" disabled={!syslogdChanged(syslBase, sysl)}
+                    onClick={() => setSysl(syslBase)}>{tr("set.revert")}</button>
+                  <button className="sys-refresh" disabled={submit.state === "sending" || !syslogdChanged(syslBase, sysl) || bad.length > 0}
+                    onClick={() => setConfirm({ kind: "syslogd" })}>{tr("set.apply")}</button>
+                </div>
+              </section>);
+            })()}
+
             {/* Updating a component by hand: the same build that goes into a
                 firmware image, uploaded on its own. Kept beside the services
                 it updates rather than on the firmware page, which is about the
@@ -5908,7 +5985,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
           {/* data-kind so the read-only rule can single one out: this dialog is
               shared by every write on the tab, and changePw is the exception. */}
           <div className="modal modal-warn" data-kind={confirm.kind} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "portMode" ? tr("set.portModeConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw","upload","mgmtAccess"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
+            <div className="modal-title">{confirm.kind === "ip" ? tr("set.confirmTitle") : confirm.kind === "ports" ? tr("set.confirmPortsTitle") : confirm.kind === "raw" ? tr("set.confirmXmlTitle") : confirm.kind === "reboot" ? tr("set.confirmRebootTitle") : confirm.kind === "halt" ? tr("set.confirmHaltTitle") : confirm.kind === "template" ? tr("set.tplConfirmTitle") : confirm.kind === "vport" ? tr("set.vportConfirmTitle") : confirm.kind === "speed" ? tr("set.speedConfirmTitle") : confirm.kind === "portMode" ? tr("set.portModeConfirmTitle") : confirm.kind === "bypass" ? tr("set.bypassConfirmTitle") : confirm.kind === "delUser" ? tr("set.acctConfirmDeleteTitle") : ["restoreFile","factory","fwUpload","fwOnline","switchMode","switchRows","switchCustom","cpssRestart","changePw","upload","mgmtAccess","syslogd"].includes(confirm.kind) ? tr("set." + confirm.kind + "Title") : tr("set.confirmApplyTitle")}</div>
             <p className="modal-body">{confirm.kind === "ip" ? `${confirm.iface.fields.name || confirm.iface.role} (${confirm.iface.fields.ip || "—"}) — ${tr("set.confirmBody")}`
               : ["switchMode", "switchRows", "switchCustom", "cpssRestart"].includes(confirm.kind)
               ? `${tr("set." + confirm.kind + "Body")} ${tr("set.switchRestartNote").replace("{n}", String(SWITCH_RESTART_SECONDS))}`
@@ -6039,6 +6116,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                  the service running right now is a separate thing, and until
                  now the page changed only the first. Apply both, so the row
                  the user just ticked matches what is actually running. */
+              if (k === "syslogd") { applySyslogd(); return; }
               if (k === "services") {
                 const changes = changedServices(svcBase, svc);
                 submitConfig(buildServicesConfigSet(changes));

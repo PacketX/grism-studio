@@ -3833,6 +3833,45 @@ export function parseServiceExtras(cfg) {
   };
 }
 
+/* grism_syslogd, the receiver that turns a firewall's syslog verdicts into
+   entries of a live 5-tuple filter (scripts/grism_syslogd.py). Its UDP port
+   and the filter its blocks go into are keys of its service entry; the filter
+   id key is fortinet_5t_block_filter_id since 2026-11-27 and a configuration
+   from before still carries trend_micro_5t_block_filter_id -- the device sets
+   a key only where its JSON has it, so the page writes the name it found.
+   null where the device has no such service. */
+export const SYSLOGD_FILTER_KEYS = ["fortinet_5t_block_filter_id", "trend_micro_5t_block_filter_id"];
+export function parseSyslogd(cfg) {
+  const s = (cfg?.services ?? []).find((x) => x.name === "grism_syslogd");
+  if (!s) return null;
+  const filterKey = SYSLOGD_FILTER_KEYS.find((k) => k in s) ?? SYSLOGD_FILTER_KEYS[0];
+  return {
+    enable: s.enable === true,
+    port: String(s.port ?? 5144),
+    filterId: String(s[filterKey] ?? 10000),
+    filterKey,
+    live: Number(s.fortinet_5t_block_live_seconds ?? s.trend_micro_5t_block_live_seconds ?? 10),
+  };
+}
+/* What stops a save: a port outside 1..65535, a filter id that is not a positive integer. */
+export function syslogdProblems(d) {
+  const out = [];
+  const port = Number(d?.port);
+  if (!/^\d+$/.test(String(d?.port ?? "")) || port < 1 || port > 65535) out.push("port");
+  if (!/^\d+$/.test(String(d?.filterId ?? "")) || Number(d.filterId) < 1) out.push("filterId");
+  return out;
+}
+export function buildSyslogdConfigSet(d) {
+  const key = SYSLOGD_FILTER_KEYS.includes(d.filterKey) ? d.filterKey : SYSLOGD_FILTER_KEYS[0];
+  return `<configSet reboot="no">\n  <services><find name="grism_syslogd">` +
+    `<enable>${d.enable ? "True" : "False"}</enable>` +
+    `<port>${Number(d.port)}</port>` +
+    `<${key}>${Number(d.filterId)}</${key}>` +
+    `</find></services>\n</configSet>`;
+}
+export const syslogdChanged = (base, d) => !!base && !!d &&
+  (base.enable !== d.enable || String(base.port) !== String(d.port) || String(base.filterId) !== String(d.filterId));
+
 export function buildServiceExtrasConfigSet(extras) {
   const b = extras.backup ?? {};
   return `<configSet reboot="no">\n` +

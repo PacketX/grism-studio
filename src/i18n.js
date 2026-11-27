@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.315.0";
+export const STUDIO_VERSION = "2.316.0";
 
 export const I18N = {
   en: {
@@ -259,6 +259,16 @@ export const I18N = {
     "set.hbTargetOn": "Enabled", "set.hbSend": "Send port", "set.hbReceive": "Receive port",
     "set.hbPacket": "Packet data (hex)", "set.hbUp": "up", "set.hbDown": "down", "set.hbUnknown": "no status",
     "set.svcExtras": "Service options", "set.svcExtrasNote": "Extra settings for services that need more than an on/off switch.",
+    "set.sdTitle": "Firewall syslog block (grism_syslogd)",
+    "set.sdNote": "Receives a firewall's syslog over UDP and, for each connection it reports as blocked (a FortiGate traffic or UTM log with action or utmaction deny, dropped or blocked), puts the connection's addresses, ports and protocol into the live 5-tuple table of the filter below for a few seconds — so a chain on that filter drops or diverts what the firewall blocked. TCP, UDP and SCTP over IPv4.",
+    "set.sdEnable": "Enabled (started at boot, and now)",
+    "set.sdPort": "Service port (UDP)", "set.sdFilter": "Filter id",
+    "set.sdFilterNote": "The filter must be in the running configuration with a tuple5_live_hashtable_size attribute (its 5-tuple.live find is added by the device); each blocked connection stays in it for {live} s. Applying restarts the service with the new settings.",
+    "set.sdFilterMissing": "Filter F{id} is not in the running configuration: a block pushed into it is refused until a filter of that id exists.",
+    "set.sdBad": "The port is 1–65535 and the filter id a positive integer.",
+    "set.sdNotSeen": "The device has not shown the new settings yet; the service was restarted all the same — check the card after it re-reads.",
+    "set.syslogdTitle": "Apply the firewall syslog settings?",
+    "svcDesc.grism_syslogd": "Firewall syslog → live 5-tuple block",
     "set.localhostOnly": "localhost only",
     "set.xmlrpcNote": "Served by grism itself on TCP {port}. Everything the web interface asks the device goes through it; restricting it to localhost leaves this page working and shuts out anything else on the network.",
     "set.bkHost": "Host", "set.bkPort": "Port", "set.bkUser": "User",
@@ -1400,6 +1410,16 @@ export const I18N = {
     "set.hbTargetOn": "啟用", "set.hbSend": "送出埠", "set.hbReceive": "接收埠",
     "set.hbPacket": "封包內容 (十六進位)", "set.hbUp": "正常", "set.hbDown": "中斷", "set.hbUnknown": "無狀態",
     "set.svcExtras": "服務選項", "set.svcExtrasNote": "部分服務除了啟用開關外還有其他設定。",
+    "set.sdTitle": "防火牆 syslog 聯動封鎖 (grism_syslogd)",
+    "set.sdNote": "以 UDP 接收防火牆的 syslog,每一條被它判定為封鎖的連線(FortiGate traffic 或 UTM log 的 action / utmaction 為 deny、dropped、blocked),就把該連線的位址、埠與協定放進下方篩選器的 live 5-tuple 表幾秒鐘 — 掛在這個篩選器上的鏈結就能丟棄或導開防火牆擋掉的連線。僅 IPv4 的 TCP、UDP、SCTP。",
+    "set.sdEnable": "啟用(開機啟動,並立即生效)",
+    "set.sdPort": "服務埠 (UDP)", "set.sdFilter": "篩選器 ID",
+    "set.sdFilterNote": "這個篩選器必須存在於執行中的設定,且帶有 tuple5_live_hashtable_size 屬性(5-tuple.live 的比對條件由裝置自動加上);每條被封鎖的連線會在表中停留 {live} 秒。套用後服務會以新設定重新啟動。",
+    "set.sdFilterMissing": "執行中的設定沒有篩選器 F{id}:在這個 ID 的篩選器存在之前,推進去的封鎖都會被引擎拒絕。",
+    "set.sdBad": "服務埠為 1–65535,篩選器 ID 為正整數。",
+    "set.sdNotSeen": "裝置還沒回報新的設定值;服務仍已重新啟動 — 等這張卡重新讀取後再確認。",
+    "set.syslogdTitle": "套用防火牆 syslog 設定?",
+    "svcDesc.grism_syslogd": "防火牆 syslog → live 5-tuple 封鎖",
     "set.localhostOnly": "僅限本機",
     "set.xmlrpcNote": "由 grism 服務本身提供,使用 TCP {port}。網頁介面對裝置的所有查詢都經由它;設為僅限本機後,這個頁面照常運作,但網路上的其他來源就連不進來。",
     "set.bkHost": "主機", "set.bkPort": "埠", "set.bkUser": "使用者",

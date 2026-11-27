@@ -1051,6 +1051,24 @@ group("settings builders");
   const toggled = svc.map((x) => x.name === "lldpd" ? { ...x, enable: true } : x);
   check("toggled service detected", C.changedServices(svc, toggled).map((x) => x.name).join() === "lldpd");
   check("no toggles means nothing to send", C.changedServices(svc, svc).length === 0);
+  {
+    // grism_syslogd's card: the new key name, the old one, and a device without the service
+    const nu = C.parseSyslogd({ services: [{ name: "grism_syslogd", enable: false, port: 5144, fortinet_5t_block_filter_id: 10000, fortinet_5t_block_live_seconds: 10 }] });
+    const old = C.parseSyslogd({ services: [{ name: "grism_syslogd", enable: true, port: 5145, trend_micro_5t_block_filter_id: 7001, trend_micro_5t_block_live_seconds: 7 }] });
+    check("syslogd: the entry is read with either key name", nu.enable === false && nu.port === "5144" && nu.filterId === "10000" && nu.live === 10
+      && nu.filterKey === "fortinet_5t_block_filter_id" && old.enable === true && old.filterId === "7001" && old.live === 7
+      && old.filterKey === "trend_micro_5t_block_filter_id" && C.parseSyslogd({ services: [{ name: "sshd" }] }) === null);
+    const xml = C.buildSyslogdConfigSet({ ...old, enable: false, port: "5146", filterId: "7002" });
+    check("syslogd: the configSet carries enable, port and the id under the key the device has",
+      xml.includes('<find name="grism_syslogd"><enable>False</enable><port>5146</port><trend_micro_5t_block_filter_id>7002</trend_micro_5t_block_filter_id></find>'));
+    check("syslogd: an unknown key name falls back to the new one",
+      C.buildSyslogdConfigSet({ enable: true, port: 5144, filterId: 1, filterKey: "x" }).includes("<fortinet_5t_block_filter_id>1</fortinet_5t_block_filter_id>"));
+    check("syslogd: problems", C.syslogdProblems({ port: "5144", filterId: "10000" }).length === 0
+      && C.syslogdProblems({ port: "0", filterId: "10000" }).join() === "port" && C.syslogdProblems({ port: "70000", filterId: "x" }).join() === "port,filterId"
+      && C.syslogdProblems({ port: "5144", filterId: "0" }).join() === "filterId");
+    check("syslogd: a change is enable, port or id", !C.syslogdChanged(nu, { ...nu }) && C.syslogdChanged(nu, { ...nu, enable: true })
+      && C.syslogdChanged(nu, { ...nu, port: "5145" }) && C.syslogdChanged(nu, { ...nu, filterId: "7001" }) && !C.syslogdChanged(null, nu));
+  }
   const sx = C.buildServicesConfigSet([{ name: "lldpd", enable: true }]);
   check("service targeted by name", sx.includes('<find name="lldpd">'));
   check("service enable written", sx.includes("<enable>True</enable>"));
