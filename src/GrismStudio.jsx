@@ -7048,7 +7048,7 @@ function TrafficBlockedTab({ loggedIn, t, filterNames = {} }) {
             <label className="ml blk-search"><span>{tr("blk.search")}</span>
               <input type="text" value={query} placeholder={tr("blk.searchPh")}
                 onChange={(e) => { setQuery(e.target.value); setPage(1); }} /></label>
-            <span className="dim blk-count">{tr("blk.count").replace("{n}", String(matched.length)).replace("{total}", String(live.rows.length)).replace("{filters}", filtersOf(live))}</span>
+            <span className="dim blk-count">{tr("blk.count").replace("{n}", matched.length.toLocaleString()).replace("{total}", live.rows.length.toLocaleString()).replace("{filters}", filtersOf(live))}</span>
             {pg.pages > 1 && (
               <div className="mec-pager-btns">
                 <button className="copy-btn" disabled={pg.page <= 1} onClick={() => setPage(pg.page - 1)}>‹</button>
