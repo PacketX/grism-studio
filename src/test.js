@@ -1033,23 +1033,33 @@ group("settings builders");
       !!I18N[l]["set.quicInit"] && !!I18N[l]["set.quicInitNote"]));
   }
 
-  // The matched-log syslog card (2.324.0): matchedLogDedup / matchedLogBlocked
-  // are read as flags, matchedLogInterval as text, an absent matchedLogDedup
-  // reads as on (the engine's default), and the card applies the three together.
+  // The matched-log options (2.325.0; 2.324.0 had them as a packet-processing
+  // card) live in the Logging page's syslog card, once under the matched
+  // collectors and only while one exists -- adding a matched collector brings
+  // them out -- and ride on the card's Apply as an <args> configSet of their own.
   {
     const jsx = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
-    const pktArgs = jsx.match(/const PKT_ARGS = \[[^\]]*\]/)?.[0] ?? "";
-    const sysArgs = jsx.match(/const SYS_ARGS = \[[^\]]*\]/)?.[0] ?? "";
-    check("PKT_ARGS carries matchedLogDedup and matchedLogBlocked", pktArgs.includes('"matchedLogDedup"') && pktArgs.includes('"matchedLogBlocked"'));
-    check("SYS_ARGS carries matchedLogInterval", sysArgs.includes('"matchedLogInterval"'));
-    check("an absent matchedLogDedup reads as on", jsx.includes("shaped.matchedLogDedup = a.matchedLogDedup !== false"));
-    check("the card applies the three keys together",
-      (jsx.match(/const keys = \["matchedLogDedup", "matchedLogInterval", "matchedLogBlocked"\]/g) ?? []).length === 1);
-    check("the card's labels exist in both languages", ["en", "zh-TW"].every((l) =>
-      ["set.mlog", "set.mlogNote", "set.mlogDedupOn", "set.mlogInterval", "set.mlogIntervalBad", "set.mlogBlockedOn", "set.mlogBlockedNote"]
-        .every((k) => !!I18N[l][k])));
-    check("the interval goes out as given", C.buildArgsConfigSet({ matchedLogInterval: "120" }).includes("<matchedLogInterval>120</matchedLogInterval>"));
-    check("the blocked switch goes out as a boolean", C.buildArgsConfigSet({ matchedLogBlocked: false }).includes("<matchedLogBlocked>False</matchedLogBlocked>"));
+    check("no matched-log card on the packet-processing page", !jsx.includes('keys: ["matchedLogDedup", "matchedLogInterval", "matchedLogBlocked"]')
+      && !(jsx.match(/const PKT_ARGS = \[[^\]]*\]/)?.[0] ?? "").includes("matchedLog"));
+    check("the block waits for a matched collector", jsx.includes('shown(lg.syslog.targets).some(({ x }) => x.type === "matched")'));
+    check("one block, not one per collector", (jsx.match(/set\.lgMatchedOpts/g) ?? []).length === 1);
+    check("the logging Apply sends the matched-log args too", (jsx.match(/loggingConfigSets\(lg, lgBase\)/g) ?? []).length === 2);
+    const p = C.parseLogging({ log: {}, args: {} }).matched;
+    check("absent keys read as the engine's defaults (dedup on, blocked off, no interval)", p.dedup === true && p.blocked === false && p.interval === "");
+    const q = C.parseLogging({ log: {}, args: { matchedLogDedup: false, matchedLogInterval: 120, matchedLogBlocked: true } }).matched;
+    check("the keys are read", q.dedup === false && q.interval === "120" && q.blocked === true);
+    const a = C.buildMatchedLogArgsConfigSet({ dedup: false, interval: "", blocked: true });
+    check("an empty interval is not sent", a.includes("<matchedLogDedup>False</matchedLogDedup>") && a.includes("<matchedLogBlocked>True</matchedLogBlocked>")
+      && !a.includes("matchedLogInterval"));
+    check("a given interval is", C.buildMatchedLogArgsConfigSet({ dedup: true, interval: "120", blocked: false }).includes("<matchedLogInterval>120</matchedLogInterval>"));
+    const base = C.parseLogging({ log: {}, args: {} });
+    check("the args configSet goes only when the options changed",
+      C.loggingConfigSets(base, base).length === 1 && C.loggingConfigSets({ ...base, matched: { ...base.matched, blocked: true } }, base).length === 2);
+    check("a bad interval is a problem, a good or empty one is not",
+      C.loggingProblems({ ...base, matched: { ...base.matched, interval: "0" } }).some((x) => /interval/.test(x.msg))
+      && C.loggingProblems({ ...base, matched: { ...base.matched, interval: "120" } }).length === 0 && C.loggingProblems(base).length === 0);
+    check("labels in both languages", ["en", "zh-TW"].every((l) =>
+      ["set.lgMatchedOpts", "set.mlogDedupOn", "set.mlogInterval", "set.mlogIntervalBad", "set.mlogBlockedOn", "set.mlogBlockedNote"].every((k) => !!I18N[l][k])));
   }
 
   const tun = C.buildInTunnelsConfigSet({ GTP: false, GRE: true, VXLAN: false });

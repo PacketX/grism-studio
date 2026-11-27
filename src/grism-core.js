@@ -4029,7 +4029,38 @@ export function parseLogging(cfg) {
       })),
     },
     dns: dpi("dpidnslog"), http: dpi("dpihttplog"), ssl: dpi("dpissllog"),
+    /* The matched-log options are <args>, not <log>, but they belong to the
+       matched collectors on the page, so they ride in the same state. A file
+       without the keys runs the engine's defaults: de-duplication on, 60 s,
+       no blocked= -- the interval stays empty here so it is not sent back. */
+    matched: {
+      dedup: cfg?.args?.matchedLogDedup !== false,
+      interval: cfg?.args?.matchedLogInterval === undefined || cfg?.args?.matchedLogInterval === null ? "" : String(cfg.args.matchedLogInterval),
+      blocked: cfg?.args?.matchedLogBlocked === true,
+    },
   };
+}
+
+/* The matched-log options as their own <args> configSet; an empty interval is
+   left out (an emptied element changes nothing on the device anyway), so the
+   switches can be applied on a box whose file has no interval yet. */
+export function buildMatchedLogArgsConfigSet(m) {
+  const iv = String(m?.interval ?? "").trim();
+  return buildArgsConfigSet({
+    matchedLogDedup: m?.dedup !== false,
+    matchedLogBlocked: m?.blocked === true,
+    ...(iv !== "" ? { matchedLogInterval: iv } : {}),
+  });
+}
+
+/* What the logging page's Apply sends: the <log> configSet, and the
+   matched-log <args> one only when those options changed -- an <args> change
+   is a full reload, the <log> one is not. */
+export function loggingConfigSets(log, base) {
+  const out = [buildLoggingConfigSet(log)];
+  if (JSON.stringify(log?.matched ?? {}) !== JSON.stringify(base?.matched ?? log?.matched ?? {}))
+    out.push(buildMatchedLogArgsConfigSet(log.matched));
+  return out;
 }
 
 /* What the device is set to do, for the system status page: the time and
@@ -4155,6 +4186,9 @@ export function loggingProblems(log, problems = []) {
     if (t.interfaces !== undefined && String(t.interfaces).trim() === "")
       problems.push({ scope: `${where} #${i + 1}`, msg: "select at least one interface" });
   });
+  const iv = String(log.matched?.interval ?? "").trim();
+  if (iv !== "" && !(Number.isInteger(Number(iv)) && Number(iv) >= 1 && Number(iv) <= 86400))
+    problems.push({ scope: "syslog", msg: "matched-log interval must be 1 to 86400 seconds" });
   check1("netflow", log.netflow?.targets);
   check1("syslog", log.syslog?.targets);
   check1("dns log", log.dns?.targets);

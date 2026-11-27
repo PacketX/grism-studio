@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.324.0";
+export const STUDIO_VERSION = "2.325.0";
 
 export const I18N = {
   en: {
@@ -489,8 +489,7 @@ export const I18N = {
     "set.liveUpdate": "Live filter updates",
     "set.liveUpdateOn": "Apply filter changes without interrupting traffic",
     "set.liveUpdateNote": "Rebuilds filters in the background when they change, so large IP, DNS name, HTTP host or TLS server-name blocklists can be updated without dropping traffic or restarting the engine.",
-    "set.mlog": "Matched-log syslog",
-    "set.mlogNote": "What a filter with matchedlog=\"yes\" sends to the syslog targets of type matched.",
+    "set.lgMatchedOpts": "Matched-log options (shared by every matched collector)",
     "set.mlogDedupOn": "One line per connection per interval; the matches in between are counted into the next line's repeats=",
     "set.mlogInterval": "Interval (seconds)",
     "set.mlogIntervalBad": "1 to 86400",
@@ -1661,8 +1660,7 @@ export const I18N = {
     "set.liveUpdate": "篩選器即時更新",
     "set.liveUpdateOn": "更新篩選器時不中斷流量",
     "set.liveUpdateNote": "篩選器變更時在背景重建,讓 IP、DNS 名稱、HTTP host、TLS server name 等大量黑名單更新時不丟封包、也不需要重啟引擎。",
-    "set.mlog": "命中紀錄 syslog",
-    "set.mlogNote": "matchedlog=\"yes\" 的篩選器送往 matched 類型 syslog 目標的內容。",
+    "set.lgMatchedOpts": "命中紀錄選項(所有命中收集器共用)",
     "set.mlogDedupOn": "每條連線每個間隔只送一行;其間的命中筆數記在下一行的 repeats=",
     "set.mlogInterval": "間隔(秒)",
     "set.mlogIntervalBad": "1 到 86400",

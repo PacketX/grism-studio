@@ -11,7 +11,7 @@ import {
   cUpdate, removeTestKeeping, chainProblems, changedPorts, sideChangedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   parseSyslogd, syslogdProblems, buildSyslogdConfigSet, syslogdChanged,
-  FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
+  FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, loggingConfigSets, dataPortNames,
   portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, managedSessionAlive, PROXY_GONE_HEADER, portModeLabel, laneSpeedLabel, portModeTarget, FEC_NAMES, flowTableCapacity, FLOW_CACHE_NODE_TOP,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
@@ -2765,10 +2765,10 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
   // <filters>; the timezone list and SNMP community have endpoints of their own.
   const SYS_ARGS = ["timeServer", "timeServer2", "resolveNameServer", "resolveNameServer2",
     "grel2CorrelationPort", "vxlanCorrelationPort", "encapsulationEncryptKeyTimeout",
-    "deduplicationPorts", "s1apItemsClearIdleCron", "s1apItemsClearIdleMax", "nrCellIdentityBits", "matchedLogInterval"];
+    "deduplicationPorts", "s1apItemsClearIdleCron", "s1apItemsClearIdleMax", "nrCellIdentityBits"];
   const PKT_ARGS = ["deduplication", "ipFragmentCorrelation", "tcpSegmentDataReassemble", "quicInitialReassemble", "sctpDataChunkReconstruct", "tryRunXmltoGdp",
     "grel2Correlation", "vxlanCorrelation", "encapsulationEncrypt",
-    "s1cCorrelation", "flowExtensionGtpTunnelhdr", "matchedLogDedup", "matchedLogBlocked"];
+    "s1cCorrelation", "flowExtensionGtpTunnelhdr"];
   const TUNNELS = ["GTP", "GRE", "IPV4", "VXLAN", "MPLS_IN_UDP", "MPLS_IN_GRE", "L2MPLS_IN_UDP", "L2MPLS_IN_GRE"];
   const busy = React.useRef({});
   const loadSys = React.useCallback(async () => {
@@ -2781,8 +2781,6 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
       setFsList(parseFlowServices(shaped.statisticsFlowService));
       SYS_ARGS.forEach((k) => { shaped[k] = a[k] ?? ""; });
       PKT_ARGS.forEach((k) => { shaped[k] = a[k] === true; });
-      // the engine treats a file without the key as on, so the page does too
-      shaped.matchedLogDedup = a.matchedLogDedup !== false;
       TUNNELS.forEach((k) => { shaped["tun_" + k] = t[k] === true; });
       setSysBase(shaped); setSys(shaped);
     } catch (e) { warnFetch("system settings", e); setSysBase({}); setSys({}); }
@@ -4638,40 +4636,6 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
               </div>
             </section>
 
-            {/* The matched-log syslog: one line per connection per interval
-                (args.matchedLogDedup / matchedLogInterval, on by default in the
-                engine) and the blocked= field (args.matchedLogBlocked, off by
-                default). An empty interval is not sent -- the engine keeps its
-                60 s -- so the switch alone can be applied on a box whose file
-                has no interval yet. */}
-            {(() => {
-              const iv = String(sys.matchedLogInterval ?? "").trim();
-              const n = Number(iv);
-              const ivOk = iv === "" || (Number.isInteger(n) && n >= 1 && n <= 86400);
-              const keys = ["matchedLogDedup", "matchedLogInterval", "matchedLogBlocked"];
-              return (
-                <section className="sys-card" id="sec-matchedlog">
-                  <h3 className="sys-card-title">{tr("set.mlog")}</h3>
-                  <p className="set-hint">{tr("set.mlogNote")}</p>
-                  <label className="set-check"><input type="checkbox" checked={!!sys.matchedLogDedup}
-                    onChange={(e) => setSysField("matchedLogDedup", e.target.checked)} /> {tr("set.mlogDedupOn")}</label>
-                  <div className="set-grid">
-                    <label className="ml"><span>{tr("set.mlogInterval")}</span>
-                      <input type="number" min="1" max="86400" placeholder="60" value={sys.matchedLogInterval ?? ""}
-                        disabled={!sys.matchedLogDedup}
-                        onChange={(e) => setSysField("matchedLogInterval", e.target.value)} />
-                      {!ivOk && <em className="set-derived">{tr("set.mlogIntervalBad")}</em>}</label>
-                  </div>
-                  <label className="set-check"><input type="checkbox" checked={!!sys.matchedLogBlocked}
-                    onChange={(e) => setSysField("matchedLogBlocked", e.target.checked)} /> {tr("set.mlogBlockedOn")}</label>
-                  <p className="set-hint">{tr("set.mlogBlockedNote")}</p>
-                  <div className="set-actions">
-                    <button className="sys-refresh" disabled={submit.state === "sending" || !sysDirty(keys) || !ivOk}
-                      onClick={() => setConfirm({ kind: "args", keys })}>{tr("set.apply")}</button>
-                  </div>
-                </section>
-              );
-            })()}
 
             <section className="sys-card">
               <h3 className="sys-card-title">{tr("set.inTunnels")}</h3>
@@ -5359,6 +5323,33 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                       </>
                     )} />
                 ))}
+                {/* The matched-log options are the device's, not a collector's
+                    (args.matchedLogDedup / matchedLogInterval / matchedLogBlocked),
+                    so they stand once under the matched collectors and only while
+                    there is one: adding a matched collector brings them out. They
+                    go with the card's Apply, as an <args> configSet of their own. */}
+                {shown(lg.syslog.targets).some(({ x }) => x.type === "matched") && (() => {
+                  const m = lg.matched ?? {};
+                  const setM = (p) => setLg((o) => ({ ...o, matched: { ...(o.matched ?? {}), ...p } }));
+                  const iv = String(m.interval ?? "").trim(), n = Number(iv);
+                  const ivOk = iv === "" || (Number.isInteger(n) && n >= 1 && n <= 86400);
+                  return (
+                    <div className="lg-matched-opts" id="sec-matchedlog">
+                      <div className="oattr-subhead">{tr("set.lgMatchedOpts")}</div>
+                      <label className="set-check"><input type="checkbox" checked={m.dedup !== false}
+                        onChange={(e) => setM({ dedup: e.target.checked })} /> {tr("set.mlogDedupOn")}</label>
+                      <div className="set-grid">
+                        <label className="ml" style={{ flex: "0 1 160px" }}><span>{tr("set.mlogInterval")}</span>
+                          <input type="number" min="1" max="86400" placeholder="60" value={m.interval ?? ""} disabled={m.dedup === false}
+                            onChange={(e) => setM({ interval: e.target.value })} />
+                          {!ivOk && <em className="set-derived">{tr("set.mlogIntervalBad")}</em>}</label>
+                      </div>
+                      <label className="set-check"><input type="checkbox" checked={m.blocked === true}
+                        onChange={(e) => setM({ blocked: e.target.checked })} /> {tr("set.mlogBlockedOn")}</label>
+                      <p className="set-hint">{tr("set.mlogBlockedNote")}</p>
+                    </div>
+                  );
+                })()}
                 <div className="add-row">
                   <button className="add-btn" onClick={() => addTo("syslog", () => mkSyslogTarget("system"))}>{tr("set.lgAddSystem")}</button>
                   <button className="add-btn" onClick={() => addTo("syslog", () => mkSyslogTarget("matched"))}>{tr("set.lgAddMatched")}</button>
@@ -6123,10 +6114,13 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
               if (k === "flow") {
                 submitConfigs([
                   buildArgsConfigSet(Object.fromEntries(FLOW_ARGS.map((key) => [key, sys[key]]))),
-                  ...(lg ? [buildLoggingConfigSet(lg)] : []),
+                  ...(lg ? loggingConfigSets(lg, lgBase) : []),
                 ]);
                 return;
               }
+              /* the log configSet and, when the matched-log options changed, their
+                 args configSet: one at a time, as everywhere else */
+              if (k === "logging") { submitConfigs(loggingConfigSets(lg, lgBase)); return; }
               if (k === "snmp") { submitForm("/grism/set_snmp_read_community", "read_community", community,
                 () => setCommunityBase(community)); return; }
               if (k === "mgmtAccess") { saveMgmt(); return; }
@@ -6195,7 +6189,6 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
                 : k === "services" ? buildServicesConfigSet(changedServices(svcBase, svc))
                 : k === "tunnels" ? buildInTunnelsConfigSet(Object.fromEntries(TUNNELS.map((t) => [t, !!sys["tun_" + t]])))
                 : k === "heartbeat" ? buildHeartbeatConfigSet(hb)
-                : k === "logging" ? buildLoggingConfigSet(lg)
                 : k === "views" ? buildViewsConfigSet(views)
                 : k === "extras" ? buildServiceExtrasConfigSet(extras)
                 : k === "args" ? buildArgsConfigSet(Object.fromEntries(confirm.keys.map((key) => [key, sys[key]])))
