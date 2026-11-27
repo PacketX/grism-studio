@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.311.0";
+export const STUDIO_VERSION = "2.312.0";
 
 export const I18N = {
   en: {
@@ -334,6 +334,7 @@ export const I18N = {
     "set.fwPhaseR.updating": "Installing — device still responding",
     "set.fwPhaseR.rebooting": "Restarting the services — the web interface is briefly away",
     "set.fwPhaseR.done": "Update complete",
+    "set.waitViaManager": "Through GRISM Manager: while the device restarts the manager shows the node offline, and this page goes on once the manager sees it back (its poll runs every 15 s).",
     "set.fwHoldLeft": "{n}s left",
     "set.vport": "Virtual ports",
     "set.vportNote": "A virtual port groups physical ports under one name on a VLAN. The VLAN id is required — it is what the group is addressed by. Add and remove them together — applying the change reboots the device.",
@@ -1472,6 +1473,7 @@ export const I18N = {
     "set.fwPhaseR.updating": "更新中 — 裝置仍可連線",
     "set.fwPhaseR.rebooting": "重啟服務中 — 網頁介面會短暫中斷",
     "set.fwPhaseR.done": "更新完成",
+    "set.waitViaManager": "經由 GRISM Manager:裝置重開期間 Manager 會把節點標成離線,等 Manager 看到它回來(每 15 秒輪詢一次)這頁會自動接著走。",
     "set.fwHoldLeft": "還剩 {n} 秒",
     "set.vport": "虛擬埠",
     "set.vportNote": "虛擬埠把多個實體埠歸成一個名稱並掛在一個 VLAN 上。VLAN 編號是必填 — 這組埠就是靠它被定址。新增與刪除一起送出 — 套用時裝置會重新開機。",

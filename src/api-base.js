@@ -16,8 +16,13 @@ export const API_BASE = w && typeof w.GRISM_API_BASE === "string" ? w.GRISM_API_
 export const MANAGER = (w && w.GRISM_MANAGER && typeof w.GRISM_MANAGER === "object") ? w.GRISM_MANAGER : null;
 export const apiUrl = (path) => prefixApiPath(path, API_BASE);
 
+/* The manager's own API (/api/v1/...), reached past the prefixing below: what
+   the page asks the manager about the node rather than the node itself. On a
+   device there is no manager and no caller. */
+const nativeFetch = w ? w.fetch.bind(w) : null;
+export const managerFetch = (input, init) => nativeFetch(input, init);
+
 if (API_BASE && w) {
-  const nativeFetch = w.fetch.bind(w);
   const sameOrigin = (u) => { try { return new URL(u, w.location.href).origin === w.location.origin; } catch { return false; } };
   w.fetch = (input, init) => {
     if (typeof input === "string") return nativeFetch(apiUrl(input), init);

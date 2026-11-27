@@ -738,6 +738,18 @@ group("the update overlay walks its three phases");
     step({ ...reboot, phase: "done" }, down(9)) === "done");
   check("no wait, no phase", C.nextUpdatePhase(null, up("x")) === null);
 
+  // under GRISM Manager: the manager's reading of the node's uptime stands in for the session
+  const backUp = { phase: "rebooting", wasVersion: "", holdUntil: 0 };
+  check("a pending manager reading keeps the overlay at rebooting",
+    step(backUp, { ...up(""), sessionAlive: "pending" }) === "rebooting");
+  check("uptime that kept counting = no reboot", C.managedSessionAlive(9740, 9740 + 120, 120) === true);
+  check("a stale manager poll within the slack still reads as no reboot", C.managedSessionAlive(9740, 9740 + 100, 120) === true);
+  check("uptime from zero again = rebooted", C.managedSessionAlive(9740, 75, 180) === false);
+  check("a device that had just booted and rebooted again", C.managedSessionAlive(40, 70, 200) === false);
+  check("no reading, no verdict", C.managedSessionAlive(null, 75, 180) === null && C.managedSessionAlive(9740, undefined, 180) === null);
+  check("rebooted reads as done", step(backUp, { ...up(""), sessionAlive: false }) === "done");
+  check("the proxy's gone header has a known name", C.PROXY_GONE_HEADER === "x-gm-proxy");
+
   // the poll must hand in a parsed version -- this is the regression itself
   const jsx3 = readFileSync(new URL("./GrismStudio.jsx", import.meta.url), "utf8");
   check("the poll parses get_version before comparing",

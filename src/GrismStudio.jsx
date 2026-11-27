@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffect } from "react";
 import "./GrismStudio.css";
 import { STUDIO_VERSION, makeT } from "./i18n.js";
-import { apiUrl, MANAGER } from "./api-base.js";
+import { apiUrl, MANAGER, managerFetch } from "./api-base.js";
 import { PacketxLogo } from "./PacketxLogo.jsx";
 import ModulesTab from "./ModulesTab.jsx";
 import {
@@ -11,7 +11,7 @@ import {
   cUpdate, removeTestKeeping, chainProblems, changedPorts, sideChangedPorts, changedServices, deviceFilterList, deviceOnlyFilters, runXmlFilterIds, diffDoc, docSnapshot, isDeviceFilterId,
   buildHeartbeatConfigSet, buildServiceExtrasConfigSet, currentTimezone, heartbeatProblems,
   FLOW_ARGS, SYSLOG_MATCHED_SUBTYPES, SYSLOG_SYSTEM_SUBTYPES, buildLoggingConfigSet, dataPortNames,
-  portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, portModeLabel, laneSpeedLabel, portModeTarget, FEC_NAMES, flowTableCapacity, FLOW_CACHE_NODE_TOP,
+  portDescriptions, ifacePortLabel, nextUpdatePhase, deviceRestartHold, managedSessionAlive, PROXY_GONE_HEADER, portModeLabel, laneSpeedLabel, portModeTarget, FEC_NAMES, flowTableCapacity, FLOW_CACHE_NODE_TOP,
   buildFlowServices, buildViewsConfigSet, xmlError, grismXmlProblems, flowProblems, parseDownloadProgress, parseUpdateCheck, flowServiceProblems, mkFlowService,
   parseFlowArgs, parseFlowServices, parseViews, viewsProblems,
   heartbeatStatusRows, heartbeatPortMarks, interfacesToList, listToInterfaces, logSourcePorts,
@@ -3195,12 +3195,36 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
     deviceRestartHold.active = !!wait;
     return () => { deviceRestartHold.active = false; };
   }, [wait]);
+  /* Under GRISM Manager the probes go through its proxy, which answers for a
+     node it cannot reach (with X-GM-Proxy) and answers get_current_user
+     itself, so neither "gone" nor "rebooted" can be read the device's way.
+     What the manager knows about the node -- its uptime, and when it last
+     answered the manager -- is read from the manager's own API instead:
+     `mgr` holds the reading at the start of the wait and the manager's
+     last_ok at the moment the device answered again, so that only a poll the
+     manager made after that decides. */
+  const mgrRef = React.useRef(null);
+  const managedNode = MANAGER && MANAGER.node && MANAGER.node.id ? MANAGER.node.id : null;
+  const managerNodeState = async () => {
+    try {
+      const r = await managerFetch(`/api/v1/nodes/${managedNode}`, { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(4000) });
+      if (!r.ok) return null;
+      const d = await r.json();
+      return d && d.state ? d.state : null;
+    } catch { return null; }
+  };
   React.useEffect(() => {
     if (!waitPhase || waitPhase === "done") return;
+    if (waitPhase === "updating") mgrRef.current = null;     // a new wait starts here
     let alive = true;
     let downRun = 0;
     const ping = async () => {
       let reachable = false, ok = false, version = "";
+      if (managedNode && !mgrRef.current) {
+        const st = await managerNodeState();
+        if (!alive) return;
+        mgrRef.current = { t0: Date.now(), uptime0: st?.system?.uptime_s ?? null, lastOkBack: null };
+      }
       try {
         /* no-store: a cached 200 would read as "back up" while it is still
            down. With a timeout: a device on its way down does not refuse the
@@ -3217,6 +3241,8 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
            applying the configSet and about to reboot (G8S, 2026-11-25). */
         reachable = true;
         ok = res.ok;
+        /* ... unless the manager answered for a node it could not reach. */
+        if (managedNode && res.headers.get(PROXY_GONE_HEADER)) { reachable = false; ok = false; }
         /* Parsed, not raw. get_version answers "<version>-<revision>", and
            wasVersion holds the parsed version alone -- so comparing the whole
            body against it made them differ on the very first poll, every time,
@@ -3235,12 +3261,25 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
          has been round. null = the probe could not tell. */
       let sessionAlive = null;
       if (reachable && ok && waitPhase === "rebooting") {
-        try {
-          const r = await fetch("/grism/task/get_current_user",
-            { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(4000) });
-          sessionAlive = r.ok ? /"username"/.test(await r.text()) : false;
-        } catch { sessionAlive = null; }
-        if (!alive) return;
+        if (!managedNode) {
+          try {
+            const r = await fetch("/grism/task/get_current_user",
+              { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(4000) });
+            sessionAlive = r.ok ? /"username"/.test(await r.text()) : false;
+          } catch { sessionAlive = null; }
+          if (!alive) return;
+        } else {
+          /* Under the manager, its reading of the node -- and only one it took
+             after the device answered again: until then "pending" keeps the
+             overlay where it is. */
+          const st = await managerNodeState();
+          if (!alive) return;
+          const m = mgrRef.current || (mgrRef.current = { t0: Date.now(), uptime0: null, lastOkBack: null });
+          if (m.lastOkBack == null) m.lastOkBack = Number(st?.last_ok) || 0;
+          if (!st) sessionAlive = null;
+          else if (!(Number(st.last_ok) > m.lastOkBack)) sessionAlive = "pending";
+          else sessionAlive = managedSessionAlive(m.uptime0, st.system?.uptime_s, (Date.now() - m.t0) / 1000);
+        }
       }
       setWait((w) => {
         const phase = nextUpdatePhase(w, { reachable, ok, goneFor, version, sessionAlive, now: Date.now() });
@@ -6028,6 +6067,7 @@ function SettingsTab({ loggedIn, readOnly: roProp = false, priv = null, t, lang 
             {wait.phase === "done" ? <div className="apply-tick">✓</div> : <div className="apply-spinner" />}
             <div className="apply-msg">{wait.title}</div>
             <div className="apply-sub">{wait.body}</div>
+            {MANAGER && <div className="apply-sub">{tr("set.waitViaManager")}</div>}
             <div className={"apply-phase" + (wait.phase === "done" ? " ok" : "")}>
               {tr((wait.phaseKey ?? "set.fwPhase.") + wait.phase)}
               {holdLeft > 0 && wait.phase !== "done" &&

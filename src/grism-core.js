@@ -3393,8 +3393,30 @@ export function nextUpdatePhase(wait, { reachable, ok, goneFor, version, session
      unpacking an image answers nothing for a spell and then answers again,
      with the configSet, the sync and the reboot still ahead of it. Say it is
      still updating rather than finished; `null` is a probe that could not tell,
-     where coming back from a long silence is evidence enough. */
+     where coming back from a long silence is evidence enough; "pending" is a
+     probe whose answer is on its way (the manager's next poll, below). */
+  if (sessionAlive === "pending") return "rebooting";
   return sessionAlive === true ? "updating" : "done";
+}
+
+/* The same question under GRISM Manager, which answers get_current_user itself
+   (the Studio's account there is the manager's), so the session says nothing
+   about the node. What does is the manager's own reading of the node's uptime:
+   a device that rebooted counts from zero again, one that only went quiet
+   kept counting. `uptimeBefore` is what the manager showed when the wait
+   began, `uptimeNow` what it shows at a poll after the device answered again,
+   `elapsed` the seconds between -- a stale reading from the manager's
+   15-second poll is covered by the slack. Answers as sessionAlive does: true
+   = no reboot, false = rebooted, null = cannot tell (and then coming back from
+   a long silence is evidence enough). A proxied probe that the manager
+   answered itself -- the node unreachable -- carries X-GM-Proxy, and counts as
+   the device being gone, where a status from the node itself does not. */
+export const PROXY_GONE_HEADER = "x-gm-proxy";
+export const MANAGER_UPTIME_SLACK_S = 30;
+export function managedSessionAlive(uptimeBefore, uptimeNow, elapsed) {
+  const b = Number(uptimeBefore), n = Number(uptimeNow), e = Number(elapsed);
+  if (!Number.isFinite(b) || !Number.isFinite(n) || uptimeBefore == null || uptimeNow == null) return null;
+  return n >= b + (Number.isFinite(e) ? e : 0) - MANAGER_UPTIME_SLACK_S;
 }
 
 /* How long the page stays held after an update that restarts services rather
