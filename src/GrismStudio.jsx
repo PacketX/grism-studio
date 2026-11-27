@@ -30,7 +30,7 @@ import {
   buildInstantCapture, captureProblems, captureRewriteRisk, buildLoopFix, filterLabel, isPartialCapture, outputLabel, countryName, extractUsername, extractPriv, isReadOnlyPriv, isWriteRequest, fmtPct,
   createPcapReader, decodePacket, packetRowText, hexDump, fmtPacketTime, captureFileHref, finishedCaptureName, parseFilterExpr,
   branchConditions, outDestinations, destPitch, compactPorts, fitNodeText, vlanOpText, plainPortRuns, portChoices, advancedInUse, selectAfterRemoval, dirCrumbs, joinDir, parentDir, trafficGenDefaults, parseStorageDirs, parseStorageFiles, parseStorages, storagePath, namesOnly, nid, portLabel, protocolName, signedInUser, sortPortNames,
-  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices, parseTuple5Live, filterTuple5Rows, pageSlice, xmlCommentText, xmlCommentFromText,
+  summarizeCountries, summarizeCountryExtras, summarizeFilterCounters, summarizeFlowServices, parseTuple5Live, filterTuple5Rows, pageSlice, tuple5TableIssue, xmlCommentText, xmlCommentFromText,
   summarizePacketTypes, summarizeSessions, normalizeDoc, outputProblems, parseMgmtIfaces, parseRun, parseRunOrEmpty, parseUserList, sha256Hex,
   newUserProblem, changePasswordProblem, internalAccountsNoteKey, accountsErrorKey,
   PRIV, PRIV_ROLES, isLastAdmin, minPrivForRequest, privAtLeast, privLevel, privRole, userLevelFixed,
@@ -7057,6 +7057,19 @@ function TrafficBlockedTab({ loggedIn, t, filterNames = {} }) {
               </div>
             )}
           </div>
+          {/* each table's fill, and the advice when pushes found it full: the
+              engine replaces the entry expiring soonest, so the table is the
+              one thing the operator has to size */}
+          {live.tables.filter((x) => x.size > 0).map((x) => {
+            const issue = tuple5TableIssue(x);
+            return (
+              <p key={x.filterId} className={"set-hint blk-cap" + (issue ? " warn" : "")}>
+                {tr("blk.capacity").replace("{filter}", "F" + x.filterId).replace("{used}", fmtNum(x.used)).replace("{size}", fmtNum(x.size))}
+                {x.replaced > 0 && " " + tr("blk.replaced").replace("{n}", fmtNum(x.replaced)).replace("{ago}", String(x.replacedAgo ?? "?"))}
+                {issue && " " + tr(issue === "replacing" ? "blk.tableFull" : "blk.tableNearFull").replace("{size}", fmtNum(x.size))}
+              </p>
+            );
+          })}
           {matched.length === 0 ? <p className="sys-note dim">{query ? tr("blk.noMatch") : tr("blk.none")}</p> : (
             <div className="tf-table-wrap">
               <table className="tf-table blk-table">

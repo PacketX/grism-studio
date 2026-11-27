@@ -7,7 +7,7 @@
    keys here to extend coverage. Missing keys fall back to English, then the key. */
 /* Studio build version — bump on every change so it's easy to confirm which
    build is deployed. Shown in the Overview footer and the brand tooltip. */
-export const STUDIO_VERSION = "2.318.0";
+export const STUDIO_VERSION = "2.320.0";
 
 export const I18N = {
   en: {
@@ -151,6 +151,10 @@ export const I18N = {
     "blk.search": "Search", "blk.searchPh": "IP, port, protocol or F id",
     "blk.count": "{n} of {total} connections ({filters})",
     "blk.src": "Source", "blk.dst": "Destination", "blk.left": "Seconds left",
+    "blk.capacity": "{filter}: {used} of {size} slots in use.",
+    "blk.replaced": "{n} pushes have replaced the entry expiring soonest, the last {ago} s ago.",
+    "blk.tableFull": "The table is full: raise this filter's tuple5_live_hashtable_size (now {size}) in the configuration, or shorten the hold time under Settings › Services.",
+    "blk.tableNearFull": "Nearly full: consider a larger tuple5_live_hashtable_size (now {size}) or a shorter hold time.",
     "sess.total": "Total sessions", "sess.concurrent": "Concurrent", "sess.netflow": "NetFlow records",
     "sess.eps": "events/sec", "sess.ofTotal": "of capacity", "sess.protocols": "Protocols", "sess.nextHdr": "Next headers",
     "sess.tcpPorts": "TCP ports", "sess.udpPorts": "UDP ports",
@@ -1311,6 +1315,10 @@ export const I18N = {
     "blk.search": "搜尋", "blk.searchPh": "IP、埠、協定或 F 編號",
     "blk.count": "{n} / {total} 筆({filters})",
     "blk.src": "來源", "blk.dst": "目的", "blk.left": "剩餘秒數",
+    "blk.capacity": "{filter}:使用 {used} / {size} 格。",
+    "blk.replaced": "已有 {n} 次推送取代了最快到期的連線,最近一次在 {ago} 秒前。",
+    "blk.tableFull": "表已滿:請在設定裡加大這個篩選器的 tuple5_live_hashtable_size(目前 {size}),或到 設定 › 服務 縮短存活秒數。",
+    "blk.tableNearFull": "快滿了:建議加大 tuple5_live_hashtable_size(目前 {size})或縮短存活秒數。",
     "sess.total": "總連線數", "sess.concurrent": "在線數", "sess.netflow": "NetFlow 筆數",
     "sess.eps": "筆/秒", "sess.ofTotal": "使用率", "sess.protocols": "協定", "sess.nextHdr": "Next header",
     "sess.tcpPorts": "TCP 埠", "sess.udpPorts": "UDP 埠",

@@ -1082,12 +1082,21 @@ group("settings builders");
     check("blocked: twenty a page, the page clamped to what there is",
       p1.pages === 3 && p1.rows.length === 20 && p1.total === 45 && p3.rows.length === 5 && p3.page === 3 && p9.page === 3 && p0.pages === 1 && p0.page === 1 && p0.rows.length === 0);
     // the engine's live 5-tuple tables, as get.tuple5live writes them (spaces after some commas included)
-    const live = C.parseTuple5Live(JSON.parse('{"ts":1795756150183,"tuple5live":[{"filter_id":7001, "tuple5":[["10.10.78.224",63763,"17.248.223.14",443, 6, 13],["1.1.1.1",1,"2.2.2.2",2, 17, 4]]},{"filter_id":7002, "tuple5":[]}]}'));
-    check("tuple5live: tables and rows, the soonest to go first", live.tables.length === 2 && live.tables[1].rows.length === 0
+    const live = C.parseTuple5Live(JSON.parse('{"ts":1795756150183,"tuple5live":[{"filter_id":7001, "tuple5":[["10.10.78.224",63763,"17.248.223.14",443, 6, 13],["1.1.1.1",1,"2.2.2.2",2, 17, 4],["3.3.3.3",3,"4.4.4.4",4, 6, 0]]},{"filter_id":7002, "tuple5":[]}]}'));
+    check("tuple5live: tables and rows, the soonest to go first, an entry at 0 s left out", live.tables.length === 2 && live.tables[1].rows.length === 0
       && live.rows.length === 2 && live.rows[0].sip === "1.1.1.1" && live.rows[0].left === 4 && live.rows[1].proto === 6 && live.rows[1].filterId === 7001
-      && live.rows[1].dport === 443 && live.ts === 1795756150183);
+      && live.rows[1].dport === 443 && live.ts === 1795756150183 && live.tables[0].rows.length === 2);
     check("tuple5live: no table at all, and a bad payload", C.parseTuple5Live({ ts: 1, tuple5live: [] }).tables.length === 0
       && C.parseTuple5Live(null).rows.length === 0 && C.parseTuple5Live({ tuple5live: [{ filter_id: "x" }, { filter_id: 5, tuple5: [["a"]] }] }).rows.length === 0);
+    // the table's size, fill and replacements (engines 2.11.52 / 2.9.62), and the advice they call for
+    const sized = C.parseTuple5Live({ tuple5live: [{ filter_id: 7002, size: 1024, used: 1024, replaced: 2345, replaced_ago: 12, tuple5: [] },
+      { filter_id: 7003, size: 1024, used: 950, replaced: 0, replaced_ago: -1, tuple5: [] }, { filter_id: 7004, size: 1024, used: 10, replaced: 3, replaced_ago: 9000, tuple5: [] }] }).tables;
+    check("tuple5live: size, used and replacements are read; an older engine gives 0 / null",
+      sized[0].size === 1024 && sized[0].used === 1024 && sized[0].replaced === 2345 && sized[0].replacedAgo === 12 && sized[1].replacedAgo === null
+      && live.tables[0].size === 0 && live.tables[0].replacedAgo === null);
+    check("tuple5live: full and replacing -> advice; nine tenths full -> nearly full; an old replacement alone -> nothing",
+      C.tuple5TableIssue(sized[0]) === "replacing" && C.tuple5TableIssue(sized[1]) === "nearly-full" && C.tuple5TableIssue(sized[2]) === null
+      && C.tuple5TableIssue(live.tables[0]) === null && C.tuple5TableIssue(null) === null);
   }
   const sx = C.buildServicesConfigSet([{ name: "lldpd", enable: true }]);
   check("service targeted by name", sx.includes('<find name="lldpd">'));

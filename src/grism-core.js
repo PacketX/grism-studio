@@ -2559,13 +2559,30 @@ export function parseTuple5Live(payload) {
     .filter((t) => Number.isFinite(Number(t?.filter_id)))
     .map((t) => ({
       filterId: Number(t.filter_id),
+      // the table's size and fill, and the pushes that found it full (engines 2.11.52 / 2.9.62; 0 / null before)
+      size: Number(t.size) || 0,
+      used: Number(t.used) || 0,
+      replaced: Number(t.replaced) || 0,
+      replacedAgo: t.replaced_ago == null || Number(t.replaced_ago) < 0 ? null : Number(t.replaced_ago),
       rows: (Array.isArray(t.tuple5) ? t.tuple5 : [])
         .filter((r) => Array.isArray(r) && r.length >= 6)
         .map((r) => ({ filterId: Number(t.filter_id), sip: String(r[0]), sport: Number(r[1]), dip: String(r[2]),
-          dport: Number(r[3]), proto: Number(r[4]), left: Number(r[5]) })),
+          dport: Number(r[3]), proto: Number(r[4]), left: Number(r[5]) }))
+        // an entry in its last second reads 0 and is as good as gone: not shown, not counted (the user, 2026-11-27)
+        .filter((r) => r.left > 0),
     }));
   const rows = tables.flatMap((t) => t.rows).sort((a, b) => a.left - b.left || a.sip.localeCompare(b.sip) || a.sport - b.sport);
   return { ts: Number(payload?.ts) || null, tables, rows };
+}
+/* Whether a live table wants a bigger tuple5_live_hashtable_size: a push
+   replaced a live entry within the last five minutes ("replacing"), or the
+   table is at least nine tenths full ("nearly-full"). null where the engine
+   does not say (one before 2.11.52 / 2.9.62) or there is nothing to say. */
+export function tuple5TableIssue(t) {
+  if (!t || !t.size) return null;
+  if (t.replaced > 0 && t.replacedAgo != null && t.replacedAgo <= 300) return "replacing";
+  if (t.used >= Math.ceil(t.size * 0.9)) return "nearly-full";
+  return null;
 }
 /* The Blocked page's search: a substring of either address, "ip:port", a port on
    its own, the protocol's name or number, or the filter ("F7002" or "7002"). */
